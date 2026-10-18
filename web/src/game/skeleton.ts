@@ -81,7 +81,7 @@ export function parseBCK(b: Uint8Array | null): ANK1 | null {
 const tmpT = new JointTransformInfo();
 const parentScale = { parentScale: vec3.fromValues(1, 1, 1) } as any;
 /** Every joint's world matrix (J3D's anm matrices) for the base TR matrix (game layout, 3x4 row-major) and scale, at a BCK frame. */
-export function jointMatrices(sk: Skeleton, anm: ANK1 | null, frame: number, base: Mtx, scale: [number, number, number], out: mat4[] = []): mat4[] {
+export function jointMatrices(sk: Skeleton, anm: ANK1 | null, frame: number, base: Mtx, scale: [number, number, number], out: mat4[] = [], post?: (j: number, m: mat4) => void): mat4[] {
     const root = mat4.fromValues(base[0], base[4], base[8], 0, base[1], base[5], base[9], 0, base[2], base[6], base[10], 0, base[3], base[7], base[11], 1);
     mat4.scale(root, root, scale);
     const local = mat4.create();
@@ -93,6 +93,8 @@ export function jointMatrices(sk: Skeleton, anm: ANK1 | null, frame: number, bas
         const p = sk.parent[j];
         out[j] = out[j] || mat4.create();
         mat4.mul(out[j], p >= 0 ? out[p] : root, local);
+        // a joint callback (J3DMtxCalc::calc / setJointCallback): what it does to the joint its children see
+        if (post) post(j, out[j]);
     }
     return out;
 }

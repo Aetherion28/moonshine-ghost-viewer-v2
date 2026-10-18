@@ -425,13 +425,18 @@ export class MActor {
     checkBckPass(f: number) { const c = this.getFrameCtrl(ANM_BCK); return !!c && c.checkPass(f); }
     setFrameRate(r: number, type: number) { const c = this.getFrameCtrl(type); if (c) c.rate = r; }
     /** J3DModel::getAnmMtx: joint j's world matrix at the BCK's frame, for the base TR matrix and scale. */
-    anmMtx(j: number, base: Mtx, scale: V3): mat4 | null {
+    anmMtx(j: number, base: Mtx, scale: V3, post?: (j: number, m: mat4) => void): mat4 | null {
+        const all = this.anmMtxAll(base, scale, post);
+        return all && j >= 0 && j < all.length ? all[j] : null;
+    }
+    /** Every joint's world matrix (J3DModel::calc's anmMtx array), or null with no skeleton. */
+    anmMtxAll(base: Mtx, scale: V3, post?: (j: number, m: mat4) => void): mat4[] | null {
         const sk = Skeleton.of(this.data.files.scene(this.model));
-        if (!sk || j < 0 || j >= sk.names.length) return null;
+        if (!sk) return null;
         const s = this.slots[ANM_BCK];
         const a = s && s.idx >= 0 ? this.data.anms[ANM_BCK][s.idx] : null;
         const anm = a ? parseBCK(this.data.files.scene(this.data.folder + '/' + a.name + '.bck')) : null;
-        return jointMatrices(sk, anm, s ? s.fc.frame : 0, base, [scale.x, scale.y, scale.z])[j];
+        return jointMatrices(sk, anm, s ? s.fc.frame : 0, base, [scale.x, scale.y, scale.z], [], post);
     }
     jointIndex(name: string) { const sk = Skeleton.of(this.data.files.scene(this.model)); return sk ? sk.index(name) : -1; }
     /** The BCK playing and its frame (for the viewer). */
