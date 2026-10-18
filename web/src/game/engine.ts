@@ -401,6 +401,8 @@ class AnmSlot {
 /** MActor: a model and the animations it plays (one at a time per type). */
 export class MActor {
     slots: (AnmSlot | null)[];
+    /** a material table it takes (J3DModelData::setMaterialTable), for the viewer */
+    bmt: string | null = null;
     /** The model file (for the viewer). */
     constructor(public model: string, public data: AnmData) {
         this.slots = data.anms.map((list, t) => (list.length ? new AnmSlot(data, t) : null));
@@ -491,6 +493,8 @@ export class World {
     graphs = new Map<string, GraphWeb>();
     /** Actors no manager holds (enemies' attachments: Piranha Plant seeds...), drawn too. */
     extras: LiveActor[] = [];
+    /** TFlowerCoin items (コイン（フラワー用）): their unit index (unk158) and place */
+    flowerCoins: { unk158: number; pos: V3; kill?: () => void }[] = [];
     nullGraph = new GraphWeb([], '<nullrail>');
     /** Managers by the name their objects use to find them. */
     moveTickCount = 0; tickCount = 0;
@@ -654,8 +658,11 @@ export class LiveActor extends TakeActor {
             }
         } else this.groundActor = null;
     }
+    /** mBinder: binds its movement instead (TWalker...) */
+    binder: { bind(a: LiveActor): void } | null = null;
     bind() {
         if (this.checkLiveFlag(LF.UNK10)) return;
+        if (this.binder) { this.binder.bind(this); return; }
         const next = this.pos.clone().add(this.posDelta).add(this.vel);
         this.vel.y -= this.getGravityY();
         if (this.vel.y < -40) this.vel.y = -40;
@@ -869,6 +876,7 @@ export class GraphTracer {
     graph: GraphWeb | null = null; cur = -1; prev = -1; unkC = 100; unk10 = 1; unk14 = 0;
     init(g: GraphWeb) { this.graph = g; }
     reset() { this.prev = -1; }
+    reset2() { this.cur = -1; }
     setParamFromGraph() {
         this.unk10 = this.cur >= 0 ? this.graph!.nodes[this.cur].pitch * (1 / 65535) : 0;
         if (this.prev >= 0) this.unkC = this.graph!.nodes[this.prev].yaw * 0.01;
@@ -968,6 +976,36 @@ export class SpineEnemy extends LiveActor {
     isInSight(p: V3, len: number, ang: number, aware: number) { return MsIsInSight(this.pos, this.rot.y, p, len, ang, aware); }
     setGoalPathFromGraph() { const p = this.tracer.current(); this.goal = new PathNode(null, p); this.goal104 = new PathNode(null, p.clone()); this.goalStack = []; }
     setGoalPath(n: PathNode) { this.goal = n.copy(); this.goal104 = n.copy(); this.goalStack = []; }
+    /** unk114 (TSolidStack<TPathNode>(4)) */
+    pushGoal(n: PathNode) { if (this.goalStack.length < 4) this.goalStack.push(n.copy()); }
+    popGoal() { return this.goalStack.length ? this.goalStack.pop()! : this.goal.copy(); }
+    zigzagToCurPathNode(speed: number, turn: number, cycle: number, angle: number) {
+        if (this.tracer.unk10 === 0) { this.walkToCurPathNode(speed, turn, 0); return; }
+        let a = angle * this.tracer.unk10;
+        const dist = V3.sub(this.goal.point(), this.pos).length();
+        let ph = MsWrap(dist, 0, cycle) * (360 * (1 / cycle)) + this.getPhaseShift();
+        a *= MsSin(ph);
+        const target = a + MsGetRotFromZaxisY(V3.sub(this.goal.point(), this.pos));
+        const diff = MsAngleDiff(target, this.rot.y);
+        let r: number;
+        // (the game's code reads its minimum turn radius before setting it in one branch: walkToCurPathNode's rule here)
+        if (dist > this.calcMinimumTurnRadius(speed, turn) * 2) r = diff > 0 ? Math.min(diff, turn) : Math.max(diff, -turn);
+        else { const ts = this.calcTurnSpeedToReach(speed, dist * 0.5); r = diff > 0 ? Math.min(diff, ts) : Math.max(diff, -ts); }
+        this.rot.y = MsWrap(this.rot.y + r, 0, 360);
+        this.posDelta.add(new V3(speed * MsSin(this.rot.y), 0, speed * MsCos(this.rot.y)));
+        if (Math.abs(dist - this.unk12C) < 100) this.unk128 += 1; else { this.unk128 = 0; this.unk12C = dist; }
+    }
+    getPhaseShift() { return 0; }
+    doShortCut() {
+        if (this.goalStack.length <= 0) return;
+        if (V3.sub(this.goal.point(), this.pos).length() < this.getBodyRadius()) { if (this.goalStack.length) this.goal = this.popGoal(); return; }
+        const node = this.popGoal();
+        const d = V3.sub(node.point(), this.pos);
+        if (d.x === 0 && d.y === 0 && d.z === 0) d.x = 1;
+        d.normalize().scale(this.marchSpeed).add(this.pos);
+        const p = { x: d.x, z: d.z };
+        if (!this.world.isTouchedOneWallAndMoveXZ(p, d.y + this.getHeadHeight(), this.getBodyRadius() * 2)) { if (this.goalStack.length) this.goal = this.popGoal(); }
+    }
     goToShortestNextGraphNode() {
         const t = this.tracer, g = t.graph;
         if (!g) return -1;
