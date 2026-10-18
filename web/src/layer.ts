@@ -15,7 +15,7 @@ import * as RARC from '../noclip/Common/JSYSTEM/JKRArchive.js';
 import * as Yaz0 from '../noclip/Common/Compression/Yaz0.js';
 import { J3DModelData, J3DModelMaterialData, MaterialInstance } from '../noclip/Common/JSYSTEM/J3D/J3DGraphBase.js';
 import { J3DModelInstanceSimple } from '../noclip/Common/JSYSTEM/J3D/J3DGraphSimple.js';
-import { BCK, BMD, BMT, BRK, BTK } from '../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
+import { BCK, BMD, BMT, BRK, BTK, BPK, BTP } from '../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
 import { AntialiasingMode } from '../noclip/gfx/helpers/RenderGraphHelpers.js';
 import { createSwapChainForWebGL2, GfxPlatformWebGL2Config } from '../noclip/gfx/platform/GfxPlatformWebGL2.js';
 import { GfxDevice, GfxSwapChain } from '../noclip/gfx/platform/GfxPlatform.js';
@@ -497,6 +497,28 @@ export class GameLayer {
             }
             const fc = a.mactor!.getFrameCtrl(0);
             if (fc) m.pin.setTimeInFrames(fc.frame);
+            // its material animations (BPK / BTP / BTK / BRK) at the game's frames
+            const st = a.mactor!.anmState();
+            const mm = m as any;
+            if (!mm.mat) mm.mat = [null, '', '', '', '', ''].map(() => ({ name: '', pin: new PinnedAnimationController(30) }));
+            for (const t of [1, 2, 3, 4]) {
+                const cur = st[t];
+                if (!cur) continue;
+                const slot = mm.mat[t];
+                if (cur.name !== slot.name) {
+                    slot.name = cur.name;
+                    const f = this.files.get((a.mactor!.data.folder + '/' + cur.name + ['', '.bpk', '.btp', '.btk', '.brk'][t]).toLowerCase());
+                    try {
+                        if (f) {
+                            if (t === 1) inst.bindTRK1(BPK.parse(f.buffer), slot.pin);
+                            else if (t === 2) inst.bindTPT1(BTP.parse(f.buffer), slot.pin);
+                            else if (t === 3) inst.bindTTK1(BTK.parse(f.buffer), slot.pin);
+                            else inst.bindTRK1(BRK.parse(f.buffer), slot.pin);
+                        }
+                    } catch { }
+                }
+                slot.pin.setTimeInFrames(cur.frame);
+            }
         }
         if (made.length) {
             swapTextures(this.device, r!.renderHelper.renderInstManager.gfxRenderCache, r!.rarc, made);
