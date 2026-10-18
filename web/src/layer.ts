@@ -13,7 +13,8 @@ import AnimationController from '../noclip/AnimationController.js';
 import { Camera } from '../noclip/Camera.js';
 import * as RARC from '../noclip/Common/JSYSTEM/JKRArchive.js';
 import * as Yaz0 from '../noclip/Common/Compression/Yaz0.js';
-import { J3DModelData, J3DModelMaterialData, MaterialInstance } from '../noclip/Common/JSYSTEM/J3D/J3DGraphBase.js';
+import { J3DModelData, J3DModelMaterialData, MaterialInstance, MaterialData } from '../noclip/Common/JSYSTEM/J3D/J3DGraphBase.js';
+import * as GX from '../noclip/gx/gx_enum.js';
 import { J3DModelInstanceSimple } from '../noclip/Common/JSYSTEM/J3D/J3DGraphSimple.js';
 import { BCK, BMD, BMT, BRK, BTK, BPK, BTP } from '../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
 import { AntialiasingMode } from '../noclip/gfx/helpers/RenderGraphHelpers.js';
@@ -32,6 +33,25 @@ import { LiveActor } from './game/engine.js';
 
 /** Where a viewer library model comes from on the disc (tools/build_objects.py, data["mp"]). */
 interface Spec { f: string; bmt?: string; tex?: number; bck?: string; shrink?: string; parts?: [string, string][]; lift?: number; swap?: [string, string]; }
+
+/**
+ * A Boo's materials (telesa.bmd): their last TEV stage mixes the screen behind it (the indirect
+ * refraction in C2) with the Boo's own colour by KCOLOR0's alpha. The viewer has no screen copy to
+ * refract, so that mix is drawn as blending over what's behind by that alpha.
+ */
+function booMaterials(inst: J3DModelInstanceSimple) {
+    for (const mi of inst.materialInstances) {
+        const me = mi.materialData.material, g0 = me.gxMaterial;
+        const g = { ...g0, tevStages: g0.tevStages.map((t) => ({ ...t })), ropInfo: { ...g0.ropInfo } };
+        const t = g.tevStages[g.tevStages.length - 1];
+        t.colorInA = GX.CC.ZERO; t.colorInB = GX.CC.ZERO; t.colorInC = GX.CC.ZERO; t.colorInD = GX.CC.CPREV;
+        t.alphaInA = GX.CA.ZERO; t.alphaInB = GX.CA.ZERO; t.alphaInC = GX.CA.ZERO; t.alphaInD = GX.CA.KONST;
+        t.konstAlphaSel = GX.KonstAlphaSel.KASEL_K0_A;
+        g.ropInfo.blendMode = GX.BlendMode.BLEND; g.ropInfo.blendSrcFactor = GX.BlendFactor.SRCALPHA; g.ropInfo.blendDstFactor = GX.BlendFactor.INVSRCALPHA;
+        g.ropInfo.depthWrite = false;
+        mi.setMaterialData(new MaterialData({ ...me, gxMaterial: g, translucent: true }));
+    }
+}
 
 /** An animation controller nothing drives: a frame is set on it. */
 class PinnedAnimationController extends AnimationController {
@@ -474,15 +494,19 @@ export class GameLayer {
                 if (!inst) continue;
                 (inst as any).isPlayer = true;
                 m = { inst, bck: '', pin: new PinnedAnimationController(30) };
-                (m as any).model = a.mactor!.model;
+                (m as any).model = a.mactor!.model; (m as any).mactor = a.mactor;
                 const mm = m;
                 // TPakkun's root joints swell with the water in it (PakkunRootCallback / 2)
                 inst.jointMatrixCalcCallback = (dst: mat4, _md: any, j: number) => {
+                    // the game's own joint calc (TBossPakkunMtxCalc: motion blend, belly, head), worked out by the sim
+                    const L = (a as any).locals as mat4[] | undefined;
+                    if (L && L[j] && (a as any).mactor === (mm as any).mactor) { mat4.copy(dst, L[j]); return; }
                     const sc = (a as any).rootScale ? (a as any).rootScale() : 1;
                     if (sc === 1) return;
                     if (j === 1) mat4.scale(dst, dst, [sc, sc, sc]);
                     else if (j === 2) mat4.scale(dst, dst, [1 / sc, 1 / sc, 1 / sc]);
                 };
+                if ((a as any).fadeColor) booMaterials(inst);
                 this.simMirrors.set(a, mm);
                 made.push(inst);
                 this.actorModels.push(inst);
@@ -492,6 +516,17 @@ export class GameLayer {
             if (!inst.visible) continue;
             const B = a.baseTR, sc = a.scale;
             mat4.set(inst.modelMatrix, B[0] * sc.x, B[4] * sc.x, B[8] * sc.x, 0, B[1] * sc.y, B[5] * sc.y, B[9] * sc.y, 0, B[2] * sc.z, B[6] * sc.z, B[10] * sc.z, 0, B[3], B[7], B[11], 1);
+            // Boos (TTelesa): KCOLOR0 on every material is the fade colour (its alpha how visible),
+            // the body's TEVREG0 the base colour (SMS_InitPacket_OneTevKColor / OneTevColorAndOneTevKColor)
+            const fade = (a as any).fadeColor as number[] | undefined;
+            if (fade) {
+                const base = (a as any).baseColor as number[];
+                const k = { r: fade[0] / 255, g: fade[1] / 255, b: fade[2] / 255, a: fade[3] / 255 };
+                for (const mi of inst.materialInstances) {
+                    mi.setColorOverride(ColorKind.K0, k);
+                    if (mi.name === '_mat_body' && base) mi.setColorOverride(ColorKind.C0, { r: base[0] / 255, g: base[1] / 255, b: base[2] / 255, a: base[3] / 255 });
+                }
+            }
             const name = a.mactor!.bckName();
             if (name !== m.bck) {
                 m.bck = name || '';

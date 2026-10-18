@@ -98,3 +98,52 @@ export function jointMatrices(sk: Skeleton, anm: ANK1 | null, frame: number, bas
     }
     return out;
 }
+
+const tmpOld = new JointTransformInfo(), tmpBlend = new JointTransformInfo();
+/** A BCK in a motion blend: the animation and the frame it's at. */
+export interface BlendAnm { anm: ANK1 | null; frame: number; }
+/**
+ * M3UMtxCalcSIAnmBlendQuat::calc for every joint: the new animation's pose blended toward the old
+ * one's by ratio (M3UMtxCalcBlendAux: scale and translation lerped, the rotations' quaternions
+ * JMAQuatLerp'd), the rest pose when neither applies; basic: J3DMtxCalcBasic's rules (else the
+ * model's). post(j, world) may change a joint's world matrix (the owner's calc additions), and
+ * what it leaves is what its children see. locals gets each joint's resulting matrix in its
+ * parent's (for the viewer's joint callback).
+ */
+export function jointMatricesBlend(sk: Skeleton, nw: BlendAnm | null, old: BlendAnm | null, ratio: number, basic: boolean, base: Mtx, scale: [number, number, number],
+    out: mat4[] = [], locals: mat4[] | null = null, post?: (j: number, m: mat4) => void): mat4[] {
+    const root = mat4.fromValues(base[0], base[4], base[8], 0, base[1], base[5], base[9], 0, base[2], base[6], base[10], 0, base[3], base[7], base[11], 1);
+    mat4.scale(root, root, scale);
+    const local = mat4.create(), inv = mat4.create();
+    const flags = (basic ? 0 : sk.loadFlags) as J3DLoadFlags;
+    const sample = (dst: JointTransformInfo, a: BlendAnm | null, j: number) => {
+        const e = a && a.anm && a.anm.jointAnimationEntries[j];
+        if (!e) return sk.rest[j];
+        calcANK1JointAnimationTransform(dst, e, a!.frame, a!.frame + 1);
+        return dst;
+    };
+    for (const j of sk.order) {
+        let t: JointTransformInfo;
+        if ((!nw && !old) || (!nw && ratio === 0) || (!old && ratio === 1)) t = sk.rest[j];
+        else if (ratio === 0 || !old) t = sample(tmpT, nw, j);
+        else if (ratio === 1 || !nw) t = sample(tmpT, old, j);
+        else {
+            const a = sample(tmpT, nw, j), b = sample(tmpOld, old, j), r = ratio, q = 1 - r;
+            const B = tmpBlend;
+            for (let k = 0; k < 3; k++) { B.scale[k] = a.scale[k] * q + b.scale[k] * r; B.translation[k] = a.translation[k] * q + b.translation[k] * r; }
+            const qa = a.rotation, qb = b.rotation;
+            const s = qa[0] * qb[0] + qa[1] * qb[1] + qa[2] * qb[2] + qa[3] * qb[3] < 0 ? -1 : 1;
+            for (let k = 0; k < 4; k++) B.rotation[k] = q * qa[k] + r * s * qb[k];
+            const n = Math.hypot(B.rotation[0], B.rotation[1], B.rotation[2], B.rotation[3]) || 1;   // (MTXQuat normalises)
+            for (let k = 0; k < 4; k++) B.rotation[k] /= n;
+            t = B;
+        }
+        calcJointMatrixFromTransform(local, t, flags, { calcFlags: sk.calcFlags[j] } as any, parentScale);
+        const p = sk.parent[j], P = p >= 0 ? out[p] : root;
+        out[j] = out[j] || mat4.create();
+        mat4.mul(out[j], P, local);
+        if (post) post(j, out[j]);
+        if (locals) { locals[j] = locals[j] || mat4.create(); mat4.invert(inv, P); mat4.mul(locals[j], inv, out[j]); }
+    }
+    return out;
+}

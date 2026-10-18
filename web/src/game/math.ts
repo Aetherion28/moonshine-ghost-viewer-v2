@@ -237,3 +237,10 @@ export class Quat {
         return m;
     }
 }
+
+/** JMAHermiteInterpolation */
+export function JMAHermiteInterpolation(frame: number, t0: number, v0: number, tan0: number, t1: number, v1: number, tan1: number) {
+    const f = Math.fround;
+    const len = f(t1 - t0), f9 = f(frame - t0), f1 = f(1 / len), f2 = f(f(f9 * f9) * f1), f10 = f(f2 * f1), f11 = f(f9 * f10), f12 = f(f11 * f1);
+    return f(f(f(v0 * f(1 + f(f(2 * f12) - f(3 * f10)))) + f(v1 * f(f(-2 * f12) + f(3 * f10)))) + f(f(tan0 * f(f9 + f(f11 - f(2 * f2)))) + f(tan1 * f(f11 - f2))));
+}
