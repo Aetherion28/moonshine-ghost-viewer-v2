@@ -212,6 +212,8 @@ export class GameLayer {
     private simFiles: FileMap | null = null;
     private simMirrors = new Map<LiveActor, SimMirror>();
     private simPlaces = new Set<string>();
+    /** the goop layers' models (TPollutionLayer: map/pollution/pollutionNN.bmd, texture 0 the goop map) */
+    private goop: { stage: any; frame: number; insts: (J3DModelInstanceSimple | null)[] } | null = null;
 
     constructor(public canvas: HTMLCanvasElement) {
         const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: false, depth: false, stencil: false });
@@ -470,6 +472,8 @@ export class GameLayer {
         }
         const st = on ? this.sim!.stage : null;
         const list = st ? this.sim!.drawables() : [];
+        if (st) this.syncGoop(st);
+        else if (this.goop) for (const g of this.goop.insts) if (g) g.visible = false;
         // the viewer's stand-ins
         this.simPlaces.clear();
         for (const d of list) this.simPlaces.add(d.type + '|' + d.place.map((v) => v.toFixed(1)).join(','));
@@ -563,6 +567,49 @@ export class GameLayer {
             r!.modelInstances.push(...made);
         }
         for (const [a, m] of this.simMirrors) if (!seen.has(a)) m.inst.visible = false;
+    }
+
+    /**
+     * The goop as the stage's game code leaves it: each pollution layer's model drawn with its own
+     * materials and animations, its texture 0 the layer's goop map (mPollutionMap, GX I8 tiles),
+     * re-sent after every simulated frame.
+     */
+    private syncGoop(st: any) {
+        const P = st.world.pollution;
+        if (!P) return;
+        if (!this.goop || this.goop.stage !== st) {
+            if (this.goop) for (const g of this.goop.insts) if (g) g.visible = false;
+            const made: J3DModelInstanceSimple[] = [];
+            const insts = P.layers.map((L: any) => {
+                if (L.planeType === 6) return null;
+                const inst = this.makeInstance({ f: `map/pollution/${L.name}.bmd` });
+                if (inst) made.push(inst);
+                return inst;
+            });
+            if (made.length) { swapTextures(this.device, this.renderer!.renderHelper.renderInstManager.gfxRenderCache, this.renderer!.rarc, made); this.renderer!.modelInstances.push(...made); }
+            this.goop = { stage: st, frame: -1, insts };
+        }
+        const G = this.goop;
+        for (const g of G.insts) if (g) g.visible = this.live;
+        if (G.frame === st.frame) return;
+        G.frame = st.frame;
+        P.layers.forEach((L: any, i: number) => {
+            const inst = G.insts[i];
+            if (!inst || !L.map) return;
+            const tex = ((inst as any).tex1Data || (inst as any).modelMaterialData?.tex1Data);
+            const gfx = tex && (tex as any).gfxTextures ? (tex as any).gfxTextures[0] : null;
+            if (!gfx) return;
+            const w = 1 << L.pos.lw, h = 1 << L.pos.lh;
+            const rgba = new Uint8Array(w * h * 4), m = L.map as Uint8Array;
+            // I8: 8x4 texel blocks
+            let o = 0;
+            for (let by = 0; by < h; by += 4) for (let bx = 0; bx < w; bx += 8)
+                for (let y = 0; y < 4; y++) for (let x = 0; x < 8; x++, o++) {
+                    const d = ((by + y) * w + bx + x) * 4, v = m[o];
+                    rgba[d] = rgba[d + 1] = rgba[d + 2] = rgba[d + 3] = v;
+                }
+            try { this.device.uploadTextureData(gfx, 0, [rgba]); } catch { }
+        });
     }
 
     /** For the console and tests: what the layer draws for the viewer's objects. */
