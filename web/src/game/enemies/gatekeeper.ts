@@ -9,7 +9,7 @@
 // Mario (TBGKMtxCalc) is applied to the joints, for where the head hit is.
 
 import { fr, V3, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsRandF, JMASSin, JMASCos, MsMtxSetXYZRPH, mtx } from '../math.js';
-import { World, SpineEnemy, EnemyManager, LF, HF, HC, MSG, nerve, Spine, Stream, ANM_BCK, ANM_BPK, HitActor, readParams, SPINE_PARAMS, PSchema, CUE_MOVE, CUE_CALC_ANIM, NameRef } from '../engine.js';
+import { World, SpineEnemy, EnemyManager, LF, HF, HC, MSG, nerve, Spine, Stream, ANM_BCK, ANM_BPK, HitActor, readParams, SPINE_PARAMS, PSchema, CUE_MOVE, CUE_CALC_ANIM, NameRef, MActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { stampModel } from './igaiga.js';
@@ -67,7 +67,7 @@ const VARIANT_AIRPORT = 0, VARIANT_GENERIC = 1, VARIANT_DOLPIC_TOWN = 2, VARIANT
 /** TGateKeeperBase + TBiancoGateKeeper */
 export class GateKeeper extends SpineEnemy {
     // TGateKeeperBase
-    stampModel: string | null = null; unk154 = 0; unk158 = 0; stampEnabled = 1; vulnerable = 0; stampScale = new V3(1, 1, 1);
+    stampModel: MActor | null = null; unk154 = 0; unk158 = 0; stampEnabled = 1; vulnerable = 0; stampScale = new V3(1, 1, 1);
     // TBiancoGateKeeper
     head: GKHitObj | null = null; unk17C = 0; unk17E = 0; unk180 = 0; unk288 = 0; unk28A = 0;
     obstacle: BGKObstacle | null = null; unk290 = 0; variant = VARIANT_DOLPIC_TOWN; unk296 = 0; unk298 = 0;
@@ -84,7 +84,8 @@ export class GateKeeper extends SpineEnemy {
         else if (this.name === 'ゲートキーパー（マンマ）') this.variant = VARIANT_MAMMA; // TODO: likewise MSF_GELATO_UNLOCKABLE
         else this.variant = map === 0 ? VARIANT_AIRPORT : map === 1 ? VARIANT_DOLPIC_TOWN : VARIANT_GENERIC;
         if (map === 1) {
-            this.stampModel = (this.mgr!.folder() + '/stamp_keeper_model1.bmd').toLowerCase();
+            this.stampModel = this.createMActorByName('stamp_keeper_model1.bmd');
+            if (this.stampModel) this.stampModel.setBckFromIndex(0x13);
             const k = this.variant === VARIANT_DOLPIC_TOWN ? 0.8 : this.variant === VARIANT_RICO ? 1.2 : this.variant === VARIANT_MAMMA ? 1.4 : 1;
             this.stampScale.scale(k);
         }
@@ -203,8 +204,9 @@ export class GateKeeper extends SpineEnemy {
         super.perform(cue);
         if ((cue & CUE_CALC_ANIM) && !this.checkLiveFlag(LF.HIDDEN | LF.CLIPPED_OUT)) this.calcJoints();
         if (this.stampEnabled && this.stampModel && (cue & CUE_CALC_ANIM)) {
-            // CUE_ENTRY: gpPollution->stampModel (the stamp model at its root matrix)
-            stampModel(this.world, this.stampModel, this.pos, this.stampScale);
+            // the stamp model at its root matrix, its BCK on (calcAnm); CUE_ENTRY: gpPollution->stampModel
+            this.stampModel.frameUpdate();
+            stampModel(this.world, this.stampModel, this.baseTR, this.stampScale);
         }
         if (cue & CUE_MOVE) this.unk154 = 0;
     }

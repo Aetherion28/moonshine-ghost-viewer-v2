@@ -131,11 +131,9 @@ export class PolDrop extends HitActor {
             if (this.unk80 === 1) this.ball.mactor!.frameUpdate();
             if (this.unk80 === 2) this.stamp.mactor!.frameUpdate();
         }
-        // CUE_ENTRY: gpPollution->stampModel(the stamp model): its top-down shadow goops the ground under it
-        if ((cue & CUE_CALC_ANIM) && this.unk80 === 2 && this.owner.world.pollution) {
-            const s = this.owner.P.mSLPollBallStampScale;
-            this.owner.world.pollution.stampGround(1, this.pos.x, this.pos.y, this.pos.z, 700 * s);
-        }
+        // CUE_ENTRY: gpPollution->stampModel(the stamp model, posed at its frame): drawn into the goop from above
+        if ((cue & CUE_CALC_ANIM) && this.unk80 === 2 && this.owner.world.pollution)
+            this.owner.world.pollution.stampModel(this.stamp.mactor!, this.stamp.baseTR, this.stamp.scale);
     }
 }
 /** One of the goop ball's models (drawn while its state says). */
@@ -177,15 +175,9 @@ export class Vomit {
         if (a.getCurAnmIdx(ANM_BCK) < 0) return;
         if ((cue & CUE_CALC_ANIM) && a.curAnmEndsNext(ANM_BCK)) { this.vomitFinished(); return; }
         if (cue & CUE_CALC_ANIM) this.white.mactor!.frameUpdate();
-        // CUE_ENTRY: gpPollution->stampModel(the white model): the goop where it lies
-        // TODO: the stamp's shape is the white model's top-down silhouette at its frame; approximated
-        // as a disc in front of him.
-        if ((cue & CUE_CALC_ANIM) && this.owner.world.pollution) {
-            const o = this.owner, f = this.white.mactor!.getFrameCtrl(ANM_BCK);
-            const t = f && f.end > 0 ? f.frame / f.end : 1;
-            const d = 600 + 1400 * t, x = o.pos.x + d * MsSin(o.rot.y), z = o.pos.z + d * MsCos(o.rot.y);
-            o.world.pollution!.stampGround(1, x, o.pos.y, z, 500 * o.scale.x);
-        }
+        // CUE_ENTRY: gpPollution->stampModel(the white model, posed at its frame): the goop where it lies
+        if ((cue & CUE_CALC_ANIM) && this.owner.world.pollution)
+            this.owner.world.pollution.stampModel(this.white.mactor!, this.white.baseTR, this.white.scale);
         if (cue & CUE_CALC_ANIM) a.frameUpdate();
     }
 }

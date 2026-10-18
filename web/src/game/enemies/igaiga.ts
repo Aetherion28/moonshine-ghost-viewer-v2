@@ -22,39 +22,16 @@ const rollParams = (path: string, w: World) => walkerParams(path, w.files, ROLL_
 const rangeRandI = (lo: number, hi: number) => lo + Math.trunc(fr((hi - lo) * MsRandF()));
 
 // ---------------------------------------------------------------- the goop marks
-/** A model's ground footprint (its first joint's box, XZ): gpPollution->stampModel draws the model from above. */
-const extentCache = new Map<Uint8Array, number>();
-export function modelExtentXZ(b: Uint8Array | null): number {
-    if (!b) return 0;
-    if (extentCache.has(b)) return extentCache.get(b)!;
-    let r = 0;
-    try {
-        const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
-        for (let o = 0x20; o + 8 <= b.length;) {
-            const tag = String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]), size = v.getUint32(o + 4);
-            if (tag === 'JNT1') {
-                const d = o + v.getUint32(o + 0xC);
-                const f = (k: number) => Math.abs(v.getFloat32(d + k));
-                r = Math.max(f(0x28), f(0x30), f(0x34), f(0x3C));
-                break;
-            }
-            if (!size) break;
-            o += size;
-        }
-    } catch { }
-    extentCache.set(b, r);
-    return r;
-}
-/** gpPollution->stampModel: (approximated) the footprint's disc, goop. */
-export function stampModel(w: World, file: string, p: V3, s: V3) {
-    if (!w.pollution) return;
-    const e = modelExtentXZ(w.files.scene(file));
-    if (e > 0) w.pollution.stampGround(1, p.x, p.y, p.z, 2 * e * Math.max(s.x, s.z));
+/** gpPollution->stampModel: the model, posed at its frame, drawn into the goop from above. */
+export function stampModel(w: World, a: MActor, baseTR: Float64Array, s: V3) {
+    if (w.pollution) w.pollution.stampModel(a, baseTR, s);
 }
 
 /** TEnemyPolluteModel: a mark's model, playing its BCK while it goops the ground under it. */
 class PolluteModel {
     mactor: MActor; pos = new V3(); scale = new V3(1, 1, 1);
+    /** unk14: its base TR matrix (the translation to where it was made) */
+    baseTR = mtx();
     /** unk5C: out of view (not drawn into the goop); unk5D: active */
     unk5C = 1; unk5D = 0;
     constructor(public w: World, public file: string, owner: LiveActor, public bck: number) {
@@ -64,6 +41,7 @@ class PolluteModel {
         const [, d] = this.w.checkGround(p.x, p.y, p.z);
         if (d.isIllegal() || d.isWaterSurface()) return;
         this.pos.set(p); this.scale.set(s);
+        this.baseTR = mtx(); this.baseTR[3] = p.x; this.baseTR[7] = p.y; this.baseTR[11] = p.z;
         this.unk5D = 1; this.unk5C = 0;
         this.mactor.setBckFromIndex(this.bck);
         this.mactor.getFrameCtrl(ANM_BCK)!.frame = 0;
@@ -74,7 +52,7 @@ class PolluteModel {
             if (this.mactor.curAnmEndsNext(ANM_BCK)) { this.unk5D = 0; return; }
             this.mactor.frameUpdate();
             // CUE_ENTRY: gpPollution->stampModel
-            stampModel(this.w, this.file, this.pos, this.scale);
+            stampModel(this.w, this.mactor, this.baseTR, this.scale);
         }
     }
 }
