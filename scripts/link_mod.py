@@ -1,0 +1,184 @@
+import argparse
+import os
+import re
+from pathlib import Path
+
+from dol_c_kit import Project
+import patches
+
+
+def check_shared_layout():
+    """Keep the build-side layout in lockstep with the shared launcher header."""
+    header = Path(__file__).parent.parent / "include" / "susamune" / "mod_bin.h"
+    text = header.read_text()
+
+    def hex_define(name):
+        match = re.search(
+            r"^#define\s+{}\s+(0x[0-9a-fA-F]+)u?\s*$".format(re.escape(name)),
+            text, re.M)
+        if not match:
+            raise RuntimeError("{} not found as a hex constant in {}".format(name, header))
+        return int(match.group(1), 16)
+
+    expected = {
+        "SUSAMUNE_MOD_BASE_JP": patches.base_addr["jp"],
+        "SUSAMUNE_MOD_BASE_US": patches.base_addr["us"],
+        "SUSAMUNE_MOD_BASE_PAL": patches.base_addr["pal"],
+        "SUSAMUNE_MOD_REGION_SIZE": patches.mod_region_size,
+        "SUSAMUNE_MOD_UPPER_OFFSET": patches.mod_upper_offset,
+        "SUSAMUNE_MOD_UPPER_SIZE": patches.mod_upper_size,
+        "SUSAMUNE_MOD_SCRATCH_OFFSET": patches.mod_scratch_offset,
+        "SUSAMUNE_MOD_BLOB_MAX_SIZE": patches.mod_blob_max_size,
+        "SUSAMUNE_MOD_MEM1_WORKING_CAP_SIZE": patches.mod_mem1_working_cap_size,
+        "SUSAMUNE_MOD_ATTACHMENT_HEAP_OFFSET": patches.mod_attachment_heap_offset,
+        "SUSAMUNE_MOD_ATTACHMENT_HEAP_SIZE": patches.mod_attachment_heap_size,
+        "SUSAMUNE_SCRATCH": patches.mod_scratch_size,
+        "SUSAMUNE_DEBUG_STACK_SIZE": patches.debug_stack_size,
+    }
+    for name, value in expected.items():
+        header_value = hex_define(name)
+        if header_value != value:
+            raise RuntimeError(
+                "{} is {:#x} in {} but {:#x} in patches.py".format(
+                    name, header_value, header, value))
+
+    mem2_header = header.parent / "mem2_map.h"
+    mem2_text = mem2_header.read_text()
+    def mem2_hex_define(name):
+        match = re.search(
+            r"^#define\s+{}\s+(0x[0-9a-fA-F]+)u?\s*$".format(
+                re.escape(name)), mem2_text, re.M)
+        if not match:
+            raise RuntimeError("{} not found as a hex constant in {}".format(
+                name, mem2_header))
+        return int(match.group(1), 16)
+
+    staged_max = mem2_hex_define("SUSAMUNE_MOD_STAGED_FILE_MAX_SIZE")
+    vault_offset = mem2_hex_define("SUSAMUNE_GHOST_ASSET_VAULT_OFFSET")
+    if staged_max != patches.mod_file_max_size or staged_max != vault_offset:
+        raise RuntimeError(
+            "mod file ceiling, asset vault, and patches.py disagree")
+
+
+def check_arena_reserve(linker_script, base):
+    """Verify the debug-stack gap this build's arena reserve assumes.
+
+    OSInit lowers __OSArenaLo to ALIGN32(_stack_addr) when no debug monitor is
+    present, so the reserve has to span that gap plus the mod region. If a
+    region's map disagrees, the heap would silently overlap the blob.
+    """
+    text = Path(linker_script).read_text()
+    syms = {}
+    for name in ("_stack_addr", "__ArenaLo"):
+        m = re.search(r"^{} = (0x[0-9a-fA-F]+);".format(re.escape(name)), text, re.M)
+        if not m:
+            raise RuntimeError("{} not found in {}".format(name, linker_script))
+        syms[name] = int(m.group(1), 16)
+
+    if syms["__ArenaLo"] != base:
+        raise RuntimeError("link base {:#x} is not __ArenaLo {:#x}".format(base, syms["__ArenaLo"]))
+
+    gap = syms["__ArenaLo"] - ((syms["_stack_addr"] + 0x1F) & ~0x1F)
+    if gap != patches.debug_stack_size:
+        raise RuntimeError(
+            "debug stack gap is {:#x} (__ArenaLo {:#x}, _stack_addr {:#x}) but "
+            "patches.debug_stack_size is {:#x}".format(
+                gap, syms["__ArenaLo"], syms["_stack_addr"], patches.debug_stack_size))
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Link the mod object into a patched main.dol, a Gecko code list, or a launcher manifest.")
+    ap.add_argument("--obj", required=True, help="Relocatable mod object (susamune_pre.o)")
+    ap.add_argument("--linker-script", required=True, help="Linker script (.ld) defining SMS symbols")
+    ap.add_argument("--kuribo-home", required=True, help="Kuribo toolchain directory (provides powerpc-eabi-ld)")
+    ap.add_argument("--vers", default="jp", choices=["jp", "us", "pal"])
+    ap.add_argument("--out", required=True, help="Output file")
+    ap.add_argument("--in-dol", help="Input main.dol (required for patch_dol)")
+    ap.add_argument("--print-commands", action="store_true", help="Echo the raw compiler/linker argv")
+    ap.add_argument("mode", choices=["patch_dol", "gecko", "launcher"])
+    args = ap.parse_args()
+
+    check_shared_layout()
+
+    obj = Path(args.obj).resolve()
+    linker_script = Path(args.linker_script).resolve()
+    out = Path(args.out).resolve()
+    in_dol = Path(args.in_dol).resolve() if args.in_dol else None
+
+    # dol_c_kit builds intermediate paths as `obj_dir + name` and prepends
+    # "./", so it only works with a relative obj_dir. Run from the object's
+    # directory and address everything else by absolute path.
+    os.chdir(obj.parent)
+
+    base = patches.base_addr[args.vers]
+    if base is None:
+        raise ValueError(f"Base address unset for version {args.vers}!")
+
+    check_arena_reserve(linker_script, base)
+
+    p = Project()
+    # The intermediates (<name>.o / <name>.bin) live in obj_dir, which is the
+    # build dir shared by every version, and all three versions link in
+    # parallel -- so the name has to carry the version or they clobber
+    # each other mid-link.
+    p.project_name = f"susamune_{args.vers}"
+    p.verbose = True
+    p.print_commands = args.print_commands
+    p.obj_dir = ""
+    p.kuribo_compiler_home = args.kuribo_home
+    p.base_addr = base
+    p.blob_max_size = patches.mod_region_size
+    p.allowed_spans = [(0, patches.mod_mem1_working_cap_size),
+                       (patches.mod_upper_offset, patches.mod_upper_size)]
+    layout = obj.parent / f"foxtrot_{args.vers}.ld"
+    layout.write_text(f"""SECTIONS {{
+      . = {base:#x};
+      .text : {{ *(.text .text.* .init .init.*) }}
+      .rodata : {{ *(.rodata .rodata.* .sdata2 .sdata2.*) }}
+      .data : {{ *(.data .data.* .sdata .sdata.*) }}
+      .bss (NOLOAD) : {{ *(.bss .bss.* .sbss .sbss.* COMMON) }}
+      . = ALIGN(4);
+      ASSERT(. <= {base + patches.mod_mem1_working_cap_size:#x}, "low image overlaps attachment heap")
+      . = {base + patches.mod_upper_offset:#x};
+      .foxtrot.text : {{ *(.foxtrot.text .foxtrot.text.*) }}
+      .foxtrot.rodata : {{ *(.foxtrot.rodata .foxtrot.rodata.*) }}
+      .foxtrot.data : {{ *(.foxtrot.data .foxtrot.data.*) }}
+      .foxtrot.bss (NOLOAD) : {{ *(.foxtrot.bss .foxtrot.bss.*) }}
+      . = ALIGN(4);
+      ASSERT(. <= {base + patches.mod_region_size:#x}, "upper image exceeds reserved arena")
+    }}""")
+    p.add_linker_script_file(str(layout))
+    p.add_linker_script_file(str(linker_script))
+    p.add_obj_file(obj.name)
+    p.linker_flags.append("--gc-sections")
+
+    for i, patch in enumerate(patches.patches):
+        addr = patch[args.vers]
+        if addr is None:
+            raise ValueError(f"Patch {i} address unset for version {args.vers}!")
+        if patch["type"] == patches.PatchType.B:
+            p.linker_flags.append(f"--undefined={patch['sym']}")
+            p.hook_branch(patch[args.vers], patch["sym"], nop_count=patch.get("nop_count", 0))
+        elif patch["type"] == patches.PatchType.BL:
+            p.linker_flags.append(f"--undefined={patch['sym']}")
+            p.hook_branchlink(patch[args.vers], patch["sym"], nop_count=patch.get("nop_count", 0))
+        elif patch["type"] == patches.PatchType.W32:
+            p.hook_word(patch[args.vers], patch["val"])
+
+    if args.mode == "patch_dol":
+        if in_dol is None:
+            ap.error("--in-dol is required to patch a dol")
+        p.build_dol(str(in_dol), str(out))
+    elif args.mode == "gecko":
+        p.build_gecko(str(out))
+    elif args.mode == "launcher":
+        meta = {
+            "game_id": patches.game_id[args.vers],
+            "region": patches.region[args.vers],
+            "disc_name": patches.disc_name[args.vers],
+        }
+        p.build_launcher_manifest(str(out), meta=meta, region_reserve=patches.arena_reserve)
+
+
+if __name__ == "__main__":
+    main()

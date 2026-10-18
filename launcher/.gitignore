@@ -1,0 +1,4 @@
+# The CMake launcher build writes all generated artifacts into the top-level
+# build dir (build/launcher/...), so nothing is generated into this source tree
+# anymore. The only thing to ignore here is the extracted bundled toolchain.
+nintendont_devkitpro

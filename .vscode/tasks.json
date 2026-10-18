@@ -1,0 +1,66 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Configure (Dolphin)",
+            "type": "shell",
+            "command": "cmake --preset dev_emu --fresh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Rebuild",
+            "type": "shell",
+            "command": "cmake --build build --target dol",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": ["Configure (Dolphin)"],
+            "dependsOrder": "sequence",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Launch in Dolphin",
+            "type": "shell",
+            "command": "dolphin.exe -b -e ${workspaceFolder}/build/out_iso/root/sys/main.dol",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+        },
+        {
+            "label": "Launch in Dolphin (with debugger)",
+            "type": "shell",
+            "command": "dolphin.exe -l -d -e ${workspaceFolder}/build/out_iso/root/sys/main.dol",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+        },
+        {
+            "label": "Rebuild & Launch in Dolphin",
+            "type": "shell",
+            "command": "dolphin.exe -b -e ${workspaceFolder}/build/out_iso/root/sys/main.dol",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "dependsOn": ["Rebuild"]
+        },
+        {
+            "label": "Rebuild & Launch in Dolphin (with debugger)",
+            "type": "shell",
+            "command": "dolphin.exe -l -d -e ${workspaceFolder}/build/out_iso/root/sys/main.dol",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "dependsOn": ["Rebuild"]
+        }
+    ]
+}

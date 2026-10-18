@@ -1,0 +1,76 @@
+name: Build Moonshine release artifacts
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    # A prepared release already carries its verified downloads and manifest.
+    if: ${{ !contains(github.event.release.assets.*.name, 'release-manifest.json') }}
+    name: English and 日本語版 downloads
+    runs-on: windows-2022
+    env:
+      PYTHONUTF8: '1'
+
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Verify build tools
+        run: |
+          cmake --version
+          ninja --version
+
+      - name: Install build dependencies
+        run: python setup_venv.py
+
+      - name: Build console launcher
+        run: |
+          cmake --preset release_console
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build --preset console
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Build English and Japanese Dolphin patches
+        run: |
+          cmake -S . -B build/emu -G Ninja -DIS_EMULATOR=ON -DVERS="jp;us;pal"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build/emu --target emulator_patches emulator_patches_japanese
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Run host checks
+        run: |
+          & venv/Scripts/python.exe -m unittest discover -s scripts -p 'test_*.py' 2>&1 | Tee-Object -FilePath build/release-tests.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      # The approved tag is rebuilt without retail ISOs or private Dolphin
+      # recordings. Its manifest identifies that narrower CI verification scope.
+      - name: Package separate language downloads
+        run: >-
+          venv/Scripts/python.exe scripts/package_release.py candidate
+          --build-dir build --emulator-build-dir build/emu
+          --launcher-boot build/launcher/shared/boot.dol
+          --host-log build/release-tests.log --out-dir build/release
+
+      - name: Upload language downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $releaseArchives = @(Get-ChildItem -LiteralPath build/release -Filter 'Moonshine_*.zip' -File)
+          if ($releaseArchives.Count -ne 4) { throw 'Expected English and Japanese launcher and Dolphin downloads.' }
+          $releaseFiles = @(Get-ChildItem -LiteralPath build/release -File | Where-Object { $_.Name -match '\.zip$|\.sha256$|manifest\.json$' } | ForEach-Object { $_.FullName })
+          gh release upload $env:RELEASE_TAG @releaseFiles
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

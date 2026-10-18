@@ -1,0 +1,112 @@
+
+MEM1
+0x80000010-0x8000001C=EXI Fake Interrupt
+0x80001800=loader stub
+0x80002F00-0x00002F60=dvd interface
+0x00002F60=old memory card interface
+
+MEM2
+0x90000000-0x91000000=aram
+0x91000000-0x91300000=ISO cache / RealDI buffer (mutually exclusive)
+0x91300000-0x91400000=Triforce SegaBoot IPL
+0x91400000-0x91700000=Triforce DIMM memory
+0x91300000-0x91700000=Sunshine-only temporary compressed-state candidate after stage setup; never retains a slot
+0x91700000-0x91780000=temporary DI/DSP patch buffer
+0x91780000-0x91900000=PPC loader-only real-disc DMA buffer; three 512 KiB Susamune ghost slots after boot
+0x91880000-0x91880100=ghost storage request/response header (protocol 5)
+0x91880100-0x91890100=PPC-only 64 KiB local practice input take
+0x91891000-0x918DF000=Moonshine codec/CRC scratch (312 KiB; relocation capability required)
+0x918DF000-0x918EA000=split-statistics V9 mailbox (44 KiB allocation)
+0x918EA000-0x91900000=secondary ghost model heap
+0x91900000-0x9193F000=patch.bin / patch.txt immutable loader-to-kernel handoff
+0x9193F000-0x91B3F000=Moonshine extra packed-state bank (2 MiB; capability gated)
+0x91B3F000-0x91C11F00=ghost input recording payload (54,000 samples)
+0x91C11F00-0x91C1F000=PPC-only metadata for three states, save candidate and live owner profile
+0x91C18F00-0x91C1A620=live owner profile inside the metadata tail; never restored
+0x91C1F000-0x91CFF000=ghost input playback bank
+0x91CFF000-0x91E3D000=complete ghost file transfer mailbox
+0x91E3D000-0x91E3F000=SD state/TAS request/response/catalog/metadata mailbox (protocol 7)
+0x91E3F000-0x91EDE000=Susamune mod_<region>.bin immutable staging (reused by PatchGame after reset)
+0x91EDE000-0x91F00000=Susamune ghost model asset vault (published after the mod copy)
+0x91F00000-0x92300000=launcher theme MP3 staging (boot only, overlays snapshot)
+0x91F00000-0x92EF0000=Moonshine full primary packed-state bank (three slots share 17.9375 MiB with extra bank)
+0x92EA2000-0x92EF0000=legacy codec location; current state metadata admission requires the relocated layout
+0x92EF0000-0x92EFF800=Susamune settings block (susamune.ini/PB handoff + save doorbells)
+0x92EF18E0-0x92EF1900=Mario clothing colours
+0x92EF1900-0x92EF1940=FLUDD model and sprayed-water colours
+0x92EF1940-0x92EF1980=IL starting-episode choices
+0x92EF4400-0x92EF5400=Susamune exception capture mailbox (inside the settings-block runtime gap)
+0x92EF5940-0x92EF5B40=Susamune JP font-conversion scratch
+0x92EF5B80-0x92EF5C00=FOXTROT live binds
+0x92EF5C00-0x92EF5D00=FOXTROT live settings
+0x92EF6000-0x92EF6800=FOXTROT menu runtime
+0x92EFF800-0x92F00000=Susamune PPC-only live PB profiles
+
+0x92F00000-0x93000000=Nintendont kernel
+
+Memory-card emulation is disabled in the Moonshine Launcher. Its stock buffer
+starts at 0x91000000 and is incompatible with the dedicated layout above.
+
+0x93000000-0x93003000=padread gc bin
+
+0x93003000=ios58 rev
+0x93003004=hid thread status
+0x93003008=old SIGetType Address
+0x9300300C=ISOShift (34-bit, rshifted by 2)
+
+0x93003010=pad rumble command chan0
+0x93003014=pad rumble command chan1
+0x93003018=pad rumble command chan2
+0x9300301C=pad rumble command chan3
+
+0x93003020=padread hid motor
+0x93003024=padread game setting
+0x93003040-0x93003050=padread bt motor
+0x93003050-0x93003060=padread bt channel free
+0x93003060-0x93003064=SIInited
+0x93003080-0x93003084=Triforce In Testmenu
+0x93003100-0x93003130=PadBuff
+
+0x93003130-0x93003190=pad barrel stuff
+0x930031a0-0x930031c0=ARStartDMA Debug str
+
+0x930031E0-0x93003200=tgc dol header
+
+0x93003420=reset status
+0x93003424=dol flush len
+0x93003428=dol flush addr
+
+0x93003440=hid load request
+0x93003460=hid controller ini
+
+0x93003500-0x93003600=Triforce game settings
+0x93004000-0x93005000=nincfg
+
+0x93005000-0x930050E8=hid controller positions
+0x930050F0-0x93005170=hid packet (may be bigger device dependent)
+
+0x93006000-0x93008000=codehandler
+
+0x93007420-0x93009000=old di thread stack
+0x93010000=old memory card buffer,old EXI Interrupt Handler Status
+0x93010010-0x93020010=loader and our reload stub
+0x93024000-0x93024060=memory interface
+0x93026400-0x93026500=serial interface
+0x93026500-0x93026580=fake interrupts
+0x93026580-0x93026600=audio stream information
+0x93100000-0x93150000=ipl fonts buffer (0x1aff00-0x1fff00)
+0x93160000-0x93160008=OSReport (patch_fwrite)
+0x931C0000=PSO PRS dol location
+0x931C0020=PSO PRS extract function location
+0x931C1800-0x931C3000=replacement memory for 0x80001800-0x80003000
+0x93200000=Cache FST Buffer
+0x93280000-0x932B3000=audio stream buffers
+0x932C0000-0x932C0482=conf_pads
+0x932C0490-0x932C0494=IRSensitivity
+0x932C0494-0x932C0498=SensorBarPosition
+0x932F0000-0x932F008F=BTPad
+0x933F1000-0x932F3000=dol patch spot
+
+Hardware Registers
+0x0D80600C=EXI Command/Loop
+0x0D806010=EXI Command Address
