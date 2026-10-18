@@ -15,6 +15,7 @@ import { MarioProxy, MarioTrack } from './mario.js';
 import { Water, Fludd } from './water.js';
 import { Pollution } from './pollution.js';
 import { CHARAS } from './charas.js';
+import { installMapWires } from './mapwire.js';
 
 /** A class the game makes from scene.bin (TMarNameRefGen::getNameRef_*), by its name there. */
 export type Maker = (w: World, name: string) => NameRef;
@@ -71,6 +72,7 @@ export class Stage {
         w.fludd = new Fludd(w.water, files);
         w.mario = new MarioProxy(w);
         // scene.bin
+        installMapWires(w);
         this.walk(root, false);
         for (const o of this.objects) o.loadAfter();
         for (const gw of w.graphs.values()) { gw.initGoalIndex(new V3()); gw.attachToGround(w); }
@@ -124,6 +126,8 @@ export class Stage {
             w.col.clearMove();
             if (w.pollution) w.pollution.move(w.mario.pos);
             w.conductor.perform(CUE_MOVE);
+            // the manager group: the wires
+            if (w.mapWires) w.mapWires.perform(CUE_MOVE);
             w.mario.update(this.qf);
             w.mario.perform(CUE_MOVE);
             this.emitWater(w.mario);

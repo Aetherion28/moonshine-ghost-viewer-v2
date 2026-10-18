@@ -29,6 +29,8 @@ import './enemies/animal.js';
 import './enemies/boid.js';
 import './enemies/bird.js';
 import './enemies/beehive.js';
+import './enemies/hamukuri.js';
+import './enemies/wiretrap.js';
 
 export interface FileMap { files: Map<string, Uint8Array>; dirs: Map<string, string[]>; }
 export function fileMap(arc: RARC.JKRArchive): FileMap {
