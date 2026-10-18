@@ -109,7 +109,14 @@ export class Stage {
 
     // ---------------------------------------------------------------- running
     /** Restart from the stage's start: the RNG seed (unknown in the game: 0 unless the ghost says). */
-    static fresh(files: StageFiles, sceneName: string, map: number, stage: number, seed = 0) { srand(seed); const s = new Stage(files, sceneName, map, stage); s.seed = seed; return s; }
+    /**
+     * A stage from its start: seed srand's seed, moveTick0 the director's mMoveTickCount at the
+     * ghost's first frame (it decides which ticks run the hit check: every 4th). Both are what the
+     * ghost will record; until then 0.
+     */
+    static fresh(files: StageFiles, sceneName: string, map: number, stage: number, seed = 0, moveTick0 = 0) {
+        srand(seed); const s = new Stage(files, sceneName, map, stage); s.seed = seed; s.world.moveTickCount = moveTick0; return s;
+    }
 
     /** One frame (TMarDirector::direct: four movement ticks of 5 units, 30 frames a second). */
     runFrame(track: MarioTrack | null) {

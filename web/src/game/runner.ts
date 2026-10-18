@@ -9,7 +9,7 @@ import ArrayBufferSlice from '../../noclip/ArrayBufferSlice.js';
 import type { GameFS } from '../disc.js';
 import { Stage, StageFiles, GameCamera } from './scene.js';
 import { MarioSample, MarioTrack } from './mario.js';
-import { LiveActor, NameRef, calcKeyCode } from './engine.js';
+import { LiveActor, NameRef, World, calcKeyCode } from './engine.js';
 import './enemies/pakkun.js';
 import './enemies/sambo.js';
 import './enemies/bosspakkun.js';
@@ -31,6 +31,10 @@ import './enemies/bird.js';
 import './enemies/beehive.js';
 import './enemies/hamukuri.js';
 import './enemies/wiretrap.js';
+import { mapObjWorldHooks } from './mapobj/index.js';
+
+// enemies' coins come out of the item manager's pool (gpItemManager)
+Object.assign(World.prototype, mapObjWorldHooks);
 
 export interface FileMap { files: Map<string, Uint8Array>; dirs: Map<string, string[]>; }
 export function fileMap(arc: RARC.JKRArchive): FileMap {

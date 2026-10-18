@@ -467,11 +467,14 @@ export class GameLayer {
             const a = d.a;
             seen.add(a);
             let m = this.simMirrors.get(a);
+            // (nozzle boxes switch models; a buried object drops its own)
+            if (m && (m as any).model !== a.mactor!.model) { m.inst.visible = false; this.simMirrors.delete(a); m = undefined; }
             if (!m) {
                 const inst = this.makeInstance({ f: a.mactor!.model, bmt: a.mactor!.bmt || undefined } as any);
                 if (!inst) continue;
                 (inst as any).isPlayer = true;
                 m = { inst, bck: '', pin: new PinnedAnimationController(30) };
+                (m as any).model = a.mactor!.model;
                 const mm = m;
                 // TPakkun's root joints swell with the water in it (PakkunRootCallback / 2)
                 inst.jointMatrixCalcCallback = (dst: mat4, _md: any, j: number) => {
