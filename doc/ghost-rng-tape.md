@@ -81,8 +81,10 @@ roll on the game's behalf, they log the game's original call site.
 
 Several objects can share a class and name. Readers number them in table order
 (the reference decoder's `ordinal`); matching one to a placed object is then the
-viewer's job, e.g. by which of them rolls first. Object pointers are forgotten
-at every segment change, so an address reused by the next scene is a new entry.
+viewer's job, e.g. by which of them rolls first. The recorder matches an object
+by its address only within the segment it was seen in, so an address reused by
+the next scene is a new entry, and a savestate reload into an earlier segment
+still finds that segment's objects.
 
 **Flags**
 
@@ -143,7 +145,8 @@ carry the extrapolated QF. The tape is not trimmed to the ghost's
 - **Objects**: `JDrama::TViewObj::testPerform` gets an entry trampoline (only if
   its first word is a plain `stwu r1` or `mflr r0`, checked at install) that
   keeps a small stack of objects being performed. The innermost one on the main
-  thread is the caller's object.
+  thread is the caller's object. Nesting deeper than 8 gives no object (and
+  NO_ACTORS) rather than a wrong one.
 - **Arming**: `beginAttempt` starts a tape for every V6 recording. `frameControl`
   advances it once per unfrozen frame and stops it when recording stops, when
   Watch runs, or on failure. Race keeps recording the local player, so its tape
@@ -159,10 +162,16 @@ carry the extrapolated QF. The tape is not trimmed to the ghost's
   append-only, so a saved prefix is intact unless a later load rewound below it
   and new calls overwrote it. Without per-save history this is judged
   conservatively: a load is accepted if nothing was loaded since that save, or
-  if no load ever rewound shorter than its prefix; a tape id rejects states
-  whose tape sat in the other ghost slot. Otherwise the tape becomes LOST.
-  Repeatedly reloading one practice state always works.
-- **Controls**: the Ricco fruit and crane rolls go through
+  if no load ever rewound shorter than its prefix. A tape id (time-based, so
+  unique across boots) rejects states whose tape sat in the other ghost slot or
+  came from another session. Otherwise the tape becomes LOST. Reloading one
+  state again and again within an attempt works; a death or restart starts a
+  new recording and a new tape, so a state saved in an earlier attempt
+  then makes the restored recording's tape LOST (its data was overwritten).
+- **Interrupts**: every tape write (rolls, overrides, frame ops, export's
+  copy) runs with interrupts off, since the stage loader thread also rolls.
+- **Controls**: CONTROLS is set if an outcome control is on at any recorded
+  frame. The Ricco fruit and crane rolls go through
   `susamuneRngRandFrom(gameLR)`; a fruit result that differs from its roll adds
   OVERRIDE; Petey route, blue-bird and Gelato fish patterns add OVERRIDE_NODE.
 
@@ -174,9 +183,16 @@ carry the extrapolated QF. The tape is not trimmed to the ghost's
   counts; the tape gets the full structural check
   (`SusamuneGhostRngChunkValid`, shared header) and its CRC before the
   chunked pass; the pass then only checksums it. Any other unknown bit is still
-  a forward version.
+  a forward version. That check is a single pass of up to ~140 KiB (CRC plus a
+  structural walk); unlike the rest of the validator it is not split into 16 KiB
+  service chunks, so a maximum tape is one multi-millisecond ARM pass.
 - **Host**: `scripts/ghost_rng.py` (reference decoder/encoder, mirrors the C
   check) and `scripts/validate_ghost.py`.
+
+Known limits: the SEGMENT op changes when the ghost appends the new segment,
+which is after the new stage's first frames; those frames' calls carry the old
+segment number. On JP (tape compiled out) a tape file shows as an unsafe slot
+rather than a forward version.
 
 ## Builds
 
@@ -199,18 +215,22 @@ a clean V2.3.3 build. `SUSAMUNE_GHOST_RNG_REWIND 0` drops savestate rewind
   clang and binutils, run under Wine on Linux). US and PAL link with the tape,
   inside their span and staging limits; JP is byte-identical to clean V2.3.3;
   the Dolphin US objects compile.
-- `scripts/test_ghost_rng.py` (27 tests):
+- `scripts/test_ghost_rng.py` (28 tests):
   - the reference codec: MSL values, run merging, PAL cadence and lag, long
     gaps, overrides, seed breaks and rejections;
   - the shared C validator agrees with the reference on 1,600 mutated chunks;
   - whole files through `validate_ghost.py`, including the maximum size;
   - the production ARM validator, extracted and built for the host;
+  - an independent review of the change; its findings (cross-boot tape ids,
+    actor matching across a scene-change reload, deep nesting, export and
+    override locking, CONTROLS mid-run, viewer checks) are fixed and tested;
   - **`src/ghost_rng.cpp` executed as big-endian PowerPC under qemu-ppc**
     (`scripts/ghost_rng_ppc/`), with stub game memory at the US addresses. It
     runs the real patched `rand()` entry and the `testPerform` trampoline with
     nested objects and a loader-thread call, plus a savestate save, an
     abandoned future, a restore and replay, a seed break, a segment change, an
-    unsafe rewind and a state from another tape (both LOST). Every roll, call site, object, frame, QF and segment
+    unsafe rewind, a state from another tape (both LOST) and a reload across a
+    scene change. Every roll, call site, object, frame, QF and segment
     is checked.
 - The rest of the Python suite is unchanged against clean V2.3.3. Its Windows
   compiler/DLL tests error identically in both trees on Linux.

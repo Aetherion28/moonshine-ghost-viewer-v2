@@ -318,9 +318,10 @@ class FileTests(unittest.TestCase):
         enc = rng.Encoder(0)
         enc.callers = [0x80000000 + 4 * i for i in range(255)]
         enc.actors = [(0x80300000 + 4 * i, i) for i in range(255)]
-        # src/ghost_rng.cpp: the live tape holds a 32-byte header and three
-        # 255-entry tables (callers, actors, pointers) before the stream.
-        stream_capacity = 0x231F0 - (32 + 255 * 4 + 255 * 8 + 255 * 4)
+        # src/ghost_rng.cpp: the live tape holds a 32-byte header, three
+        # 255-entry tables (callers, actors, pointers) and 256 actor segments
+        # before the stream.
+        stream_capacity = 0x231F0 - (32 + 255 * 4 + 255 * 8 + 255 * 4 + 256)
         enc.stream += bytes([0xBF]) * (stream_capacity - len(enc.stream))
         tape = enc.finish()
         data = tape_file_on(base, tape)
@@ -454,6 +455,8 @@ class PpcRecorderTests(unittest.TestCase):
         cls.lost_flags = int(lines[lines.index("lost_flags") + 1], 16)
         cls.lost_stream = int(lines[lines.index("lost_stream") + 1], 16)
         cls.cross_flags = int(lines[lines.index("cross_flags") + 1], 16)
+        cls.scene_actors = int(lines[lines.index("scene_actors") + 1], 16)
+        cls.reload_actors = int(lines[lines.index("reload_actors") + 1], 16)
 
     @staticmethod
     def expected():
@@ -522,6 +525,12 @@ class PpcRecorderTests(unittest.TestCase):
         self.assertEqual(self.lost_flags, rng.LOST)
         self.assertEqual(self.lost_stream, 0)
         self.assertEqual(self.cross_flags, rng.LOST)  # another tape's state
+
+    def test_actors_follow_scenes_across_a_reload(self):
+        # Two objects roll in segment 0; the same addresses in segment 1 are
+        # new objects; after reloading into segment 0 they match again.
+        self.assertEqual(self.scene_actors, 4)
+        self.assertEqual(self.reload_actors, 2)
 
     def test_seed_breaks_are_recorded(self):
         stage = [c for c in self.tape.calls if c.segment == 1]

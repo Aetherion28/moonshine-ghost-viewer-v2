@@ -68,6 +68,8 @@ static bool sInterruptsOn = true;
 extern "C" OSThread *OSGetCurrentThread() { return &sThreads[sCurrentThread]; }
 extern "C" bool OSDisableInterrupts() { bool was = sInterruptsOn; sInterruptsOn = false; return was; }
 extern "C" void OSRestoreInterrupts(bool on) { sInterruptsOn = on; }
+static OSTime sNow = 0x123456789ll;
+extern "C" OSTime OSGetTime() { return sNow += 0x10001; }
 extern "C" void DCFlushRange(void *, size_t) {}
 extern "C" void ICInvalidateRange(void *, size_t) {}
 void writeGameCode(u32 addr, u32 w) { *reinterpret_cast<volatile u32 *>(addr) = w; }
@@ -219,6 +221,21 @@ extern "C" int main() {
     GhostRng::restore(s1, tape3);
     GhostRng::exportChunk(tape3, sOut, sizeof(sOut), &m);
     word("cross_flags ", reinterpret_cast<SusamuneGhostRngHeader *>(sOut)->flags);
+    // A reload across a scene change: segment 1 reuses the same addresses
+    // (new entries); reloading into segment 0 must reuse segment 0's entries.
+    alignas(32) static u8 slot4[0x80000];
+    u8 *tape4 = GhostRng::tapeFor(slot4);
+    GhostRng::begin(tape4);
+    play(0, 2, 0);
+    GhostRng::Saved s4;
+    GhostRng::capture(s4);
+    play(2, 2, 1);
+    GhostRng::exportChunk(tape4, sOut, sizeof(sOut), &m);
+    word("scene_actors ", reinterpret_cast<SusamuneGhostRngHeader *>(sOut)->actorCount);
+    GhostRng::restore(s4, tape4);
+    play(2, 3, 0);
+    GhostRng::exportChunk(tape4, sOut, sizeof(sOut), &m);
+    word("reload_actors ", reinterpret_cast<SusamuneGhostRngHeader *>(sOut)->actorCount);
     sValueCount = keepValues;
     // Re-export the first tape for the main checks.
     GhostRng::exportChunk(sTape, sOut, sizeof(sOut), &n);

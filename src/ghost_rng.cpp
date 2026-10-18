@@ -37,7 +37,11 @@ const u32 kLiveSize = 32;
 const u32 kCallersAt = kLiveSize;
 const u32 kActorsAt = kCallersAt + SUSAMUNE_GHOST_RNG_MAX_CALLERS * 4;
 const u32 kPointersAt = kActorsAt + SUSAMUNE_GHOST_RNG_MAX_ACTORS * 8;
-const u32 kStreamAt = kPointersAt + SUSAMUNE_GHOST_RNG_MAX_ACTORS * 4;
+// The segment each actor was seen in: a pointer only matches within it, so a
+// recycled address in a later scene is a new entry, while a savestate reload
+// into an earlier segment still finds that segment's objects.
+const u32 kActorSegmentsAt = kPointersAt + SUSAMUNE_GHOST_RNG_MAX_ACTORS * 4;
+const u32 kStreamAt = kActorSegmentsAt + 256;
 const u32 kStreamCapacity = GhostRng::kTapeSize - kStreamAt;
 static_assert(GhostRng::kTapeOffset + GhostRng::kTapeSize ==
                   SUSAMUNE_GHOST_MAX_SAMPLE_DATA_SIZE,
@@ -153,8 +157,7 @@ s32 callerIndex(u32 address) {
     return l.callers++;
 }
 
-// Actor reference: 0 for none, otherwise table index + 1. Pointers are
-// forgotten at each scene change, so a recycled address is a new entry.
+// Actor reference: 0 for none, otherwise table index + 1.
 u8 actorRef(const void *object) {
     if (!object) return 0;
     const u32 vtable = *static_cast<const u32 *>(object);
@@ -162,7 +165,8 @@ u8 actorRef(const void *object) {
     Live &l = live(sW.tape);
     for (u32 i = 0; i < l.actors; ++i)
         if (pointers(sW.tape)[i] == object && actors(sW.tape)[i].vtable == vtable &&
-            actors(sW.tape)[i].keyCode == key)
+            actors(sW.tape)[i].keyCode == key &&
+            sW.tape[kActorSegmentsAt + i] == sW.segment)
             return static_cast<u8>(i + 1);
     if (l.actors >= SUSAMUNE_GHOST_RNG_MAX_ACTORS) {
         l.flags |= SUSAMUNE_GHOST_RNG_NO_ACTORS;
@@ -173,6 +177,7 @@ u8 actorRef(const void *object) {
     entry.keyCode = key;
     entry.ordinal = 0;
     pointers(sW.tape)[l.actors] = object;
+    sW.tape[kActorSegmentsAt + l.actors] = sW.segment;
     return static_cast<u8>(++l.actors);
 }
 
@@ -190,8 +195,12 @@ const void *performing() {
         if (sW.tape) live(sW.tape).flags |= SUSAMUNE_GHOST_RNG_FOREIGN_THREAD;
         return nullptr;
     }
-    return sPerformDepth ? sPerforming[(sPerformDepth <= 8 ? sPerformDepth : 8) - 1]
-                         : nullptr;
+    if (sPerformDepth > 8) {
+        // Deeper than the stack keeps: the innermost object is unknown.
+        if (sW.tape) live(sW.tape).flags |= SUSAMUNE_GHOST_RNG_NO_ACTORS;
+        return nullptr;
+    }
+    return sPerformDepth ? sPerforming[sPerformDepth - 1] : nullptr;
 }
 
 void logCall(u32 returnAddress, u32 state) {
@@ -293,7 +302,9 @@ void begin(u8 *tape) {
     memset(tape, 0, kStreamAt);
     Live &l = live(tape);
     l.magic = kLiveMagic;
-    l.id = ++sTapeSerial;
+    // Unique across boots: an SD savestate can outlive the session.
+    l.id = static_cast<u32>(OSGetTime()) ^ (++sTapeSerial << 24);
+    if (!l.id) l.id = 1;
     if (!sTestPerformTrampoline[0]) l.flags |= SUSAMUNE_GHOST_RNG_NO_ACTORS;
     if (outcomeControlsActive()) l.flags |= SUSAMUNE_GHOST_RNG_CONTROLS;
     sW.tape = tape;
@@ -309,6 +320,7 @@ void frameStart(bool armed, bool qfKnown, u32 qf, u8 segment) {
     if (!armed) sW.armed = 0;
     if (!sW.armed) return;
     const bool enabled = OSDisableInterrupts();
+    if (outcomeControlsActive()) live(sW.tape).flags |= SUSAMUNE_GHOST_RNG_CONTROLS;
     ++sW.pendingFrames;
     sW.lastRun = 0;
     sW.prev = sW.cur;
@@ -324,8 +336,6 @@ void frameStart(bool armed, bool qfKnown, u32 qf, u8 segment) {
     if (sW.armed && segment < 64 && segment != sW.segment &&
         emit(SUSAMUNE_GHOST_RNG_OP_SEGMENT, segment, 1)) {
         sW.segment = segment;
-        // A new scene recycles the heap: never match old object pointers.
-        memset(pointers(sW.tape), 0, SUSAMUNE_GHOST_RNG_MAX_ACTORS * 4);
     }
     OSRestoreInterrupts(enabled);
 }
@@ -334,20 +344,28 @@ void stop() { sW.armed = 0; }
 
 // Both note functions run on the main thread right after the call they
 // describe, from code that already holds the game's own ordering.
+// Interrupts stay off around every tape write: the stage loader thread also
+// rolls and could preempt an op half written.
 void noteOverride(u32 value) {
+    const bool enabled = OSDisableInterrupts();
     if (sW.armed)
         emit(SUSAMUNE_GHOST_RNG_OP_OVERRIDE, value & 0x7FFFu, 2);
+    OSRestoreInterrupts(enabled);
 }
 
 void noteNodeOverride(const void *object, s32 node) {
-    if (!sW.armed) return;
-    const u32 actor = actorRef(object ? object : performing());
-    emit(SUSAMUNE_GHOST_RNG_OP_OVERRIDE_NODE,
-         (actor << 16) | (static_cast<u32>(node) & 0xFFFFu), 3);
+    const bool enabled = OSDisableInterrupts();
+    if (sW.armed) {
+        const u32 actor = actorRef(object ? object : performing());
+        emit(SUSAMUNE_GHOST_RNG_OP_OVERRIDE_NODE,
+             (actor << 16) | (static_cast<u32>(node) & 0xFFFFu), 3);
+    }
+    OSRestoreInterrupts(enabled);
 }
 
-bool exportChunk(const u8 *tape, u8 *out, u32 capacity, u32 *size) {
-    *size = 0;
+// The copy is taken with interrupts off so a live tape cannot change between
+// the stream copy and the counts (at most ~140 KiB, at save time only).
+static bool exportLocked(const u8 *tape, u8 *out, u32 capacity, u32 *size) {
     const Live &l = *reinterpret_cast<const Live *>(tape);
     const u32 callerBytes = l.callers * 4u;
     const u32 actorBytes = l.actors * 8u;
@@ -368,10 +386,24 @@ bool exportChunk(const u8 *tape, u8 *out, u32 capacity, u32 *size) {
     h.actorCount = l.actors;
     h.streamSize = l.streamSize;
     h.flags = l.flags;
-    h.checksum = Checksum::crc32(body, total - SUSAMUNE_GHOST_RNG_HEADER_SIZE);
     h.callCount = l.calls;
     h.reserved = 0;
     *size = total;
+    return true;
+}
+
+bool exportChunk(const u8 *tape, u8 *out, u32 capacity, u32 *size) {
+    *size = 0;
+    const bool enabled = OSDisableInterrupts();
+    const bool ok = exportLocked(tape, out, capacity, size);
+    OSRestoreInterrupts(enabled);
+    if (!ok) {
+        *size = 0;
+        return false;
+    }
+    SusamuneGhostRngHeader &h = *reinterpret_cast<SusamuneGhostRngHeader *>(out);
+    h.checksum = Checksum::crc32(out + SUSAMUNE_GHOST_RNG_HEADER_SIZE,
+                                 *size - SUSAMUNE_GHOST_RNG_HEADER_SIZE);
     return true;
 }
 
