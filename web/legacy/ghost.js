@@ -253,7 +253,97 @@ function parseSmsGhost(buffer) {
     } else warnings.push('The camera data this ghost should have is missing; it plays with the viewer\'s own follow camera.');
   }
 
-  return { header, segments, qf, pos, yaw, anim, phase, yoshi, held, attachments, segIndex, inputs, splits, camera, warnings };
+  // RNG tape (SGRN, Moonshine branch moonshine-rng, doc/ghost-rng-tape.md): every rand() call the
+  // game made while the run recorded. It follows SGTI (and SGCA when present).
+  let rng = null;
+  if (inputs) {
+    const off = sampleOff + sampleSize, hs = dv.getUint16(off + 6) || 32;
+    let ro = off + hs + dv.getUint32(off + 8) * (inputs.hasFludd ? 24 : 16) + dv.getUint32(off + 12) * 12;
+    if (ro + 32 <= bytes.length && dv.getUint32(ro) === 0x53474341) ro += 32 + dv.getUint32(ro + 8) * 24;
+    if (ro + 32 <= bytes.length && dv.getUint32(ro) === 0x5347524e) {
+      try { rng = parseRngTape(bytes, dv, ro, header.startQf); }
+      catch (e) { warnings.push(`RNG tape unreadable (${e.message}); playing without it.`); }
+    } else if (dv.getUint32(0x18) & 0x00010000) {
+      warnings.push('This ghost should carry an RNG tape but it is missing.');
+    }
+  }
+
+  return { header, segments, qf, pos, yaw, anim, phase, yoshi, held, attachments, segIndex, inputs, splits, camera, rng, warnings };
+}
+
+// SGRN: header (32 bytes), callers (4 each: return address in the source region's main.dol),
+// actors (8 each: vtable, scene-name hash, reserved), then a byte stream. Values are not stored:
+// MSL rand() is next = next * 1103515245 + 12345, value = (next >> 16) & 0x7fff, so each call's
+// roll is regenerated from the stream's SEEDs. Times are QF from the ghost's start (NaN where the
+// tape never learned the QF); frame 0 is the frame recording began in.
+function parseRngTape(bytes, dv, at, startQf) {
+  const nCallers = dv.getUint16(at + 8), nActors = dv.getUint16(at + 10);
+  const streamSize = dv.getUint32(at + 12), flags = dv.getUint32(at + 16), callCount = dv.getUint32(at + 24);
+  const size = 32 + nCallers * 4 + nActors * 8 + streamSize;
+  if (dv.getUint16(at + 4) !== 1 || dv.getUint16(at + 6) !== 32) throw new Error('unknown tape version');
+  if (at + size > bytes.length) throw new Error('tape runs past the end of the file');
+  const body = bytes.subarray(at + 32, at + size);
+  if (ghostCrc32(body) !== dv.getUint32(at + 20)) throw new Error('checksum mismatch');
+  const callers = [], actors = [], seen = new Map();
+  for (let i = 0; i < nCallers; i++) callers.push(dv.getUint32(at + 32 + i * 4));
+  for (let i = 0; i < nActors; i++) {
+    const o = at + 32 + nCallers * 4 + i * 8, vtable = dv.getUint32(o), keyCode = dv.getUint16(o + 4);
+    const k = vtable + ':' + keyCode, ordinal = seen.get(k) || 0;
+    seen.set(k, ordinal + 1);
+    actors.push({ vtable, keyCode, ordinal });
+  }
+  const tape = {
+    flags, truncated: !!(flags & 1), lost: !!(flags & 2), foreignThread: !!(flags & 4), controls: !!(flags & 8),
+    noActors: !!(flags & 16), callers, actors, count: callCount, frames: 0, nodeOverrides: [],
+    frame: new Uint32Array(callCount), qf: new Float64Array(callCount), segment: new Uint8Array(callCount),
+    caller: new Uint8Array(callCount), actor: new Int16Array(callCount),
+    value: new Uint16Array(callCount), used: new Uint16Array(callCount),
+  };
+  let o = at + size - streamSize, n = 0, frame = 0, segment = 0, state = 0, step = 0;
+  let cur = null, prev = null;
+  const rel = (q) => (q === null ? NaN : q - startQf);
+  while (o < at + size) {
+    const op = bytes[o++];
+    if (op <= 0x7f) {
+      const c = bytes[o], a = bytes[o + 1];
+      o += 2;
+      if (c >= nCallers || a > nActors || n + op + 1 > callCount) throw new Error('bad call run');
+      for (let k = 0; k <= op; k++, n++) {
+        state = (Math.imul(state, 0x41c64e6d) + 0x3039) >>> 0;
+        tape.frame[n] = frame; tape.qf[n] = rel(cur); tape.segment[n] = segment;
+        tape.caller[n] = c; tape.actor[n] = a - 1;
+        tape.value[n] = tape.used[n] = (state >>> 16) & 0x7fff;
+      }
+    } else if (op <= 0xbf) {
+      for (let k = 0; k < op - 0x7f; k++) { frame++; prev = cur; if (cur !== null) cur = (cur + step) >>> 0; }
+    } else if (op === 0xc1) { state = dv.getUint32(o); o += 4; }
+    else if (op === 0xc2) { const q = dv.getUint32(o); o += 4; if (prev !== null) step = (q - prev) >>> 0; cur = q; }
+    else if (op === 0xc3) { segment = bytes[o++]; }
+    else if (op === 0xc4) { if (n) tape.used[n - 1] = dv.getUint16(o); o += 2; }
+    else if (op === 0xc5) {
+      tape.nodeOverrides.push({ frame, qf: rel(cur), actor: bytes[o] - 1, node: dv.getInt16(o + 1) });
+      o += 3;
+    } else throw new Error(`unknown op 0x${op.toString(16)}`);
+  }
+  if (n !== callCount) throw new Error('call count mismatch');
+  tape.frames = frame + 1;
+  return tape;
+}
+
+// The rolls one object (actor table index), one call site (caller address) or both received, in
+// order: [{ i, frame, qf, value, used }]. `used` differs from `value` where a Moonshine RNG control
+// handed the game another number.
+function ghostRngRolls(g, { actor = null, caller = null } = {}) {
+  const t = g.rng, out = [];
+  if (!t) return out;
+  const ci = caller === null ? -1 : t.callers.indexOf(caller);
+  if (caller !== null && ci < 0) return out;
+  for (let i = 0; i < t.count; i++) {
+    if (actor !== null && t.actor[i] !== actor) continue;
+    if (ci >= 0 && t.caller[i] !== ci) continue;
+    out.push({ i, frame: t.frame[i], qf: t.qf[i], value: t.value[i], used: t.used[i] });
+  }
+  return out;
 }
 
 // Interpolated pose at time t (QF from ghost start). Matches Moonshine's playback:
