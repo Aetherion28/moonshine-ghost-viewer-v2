@@ -468,7 +468,7 @@ export class GameLayer {
             seen.add(a);
             let m = this.simMirrors.get(a);
             if (!m) {
-                const inst = this.makeInstance({ f: a.mactor!.model });
+                const inst = this.makeInstance({ f: a.mactor!.model, bmt: a.mactor!.bmt || undefined } as any);
                 if (!inst) continue;
                 (inst as any).isPlayer = true;
                 m = { inst, bck: '', pin: new PinnedAnimationController(30) };

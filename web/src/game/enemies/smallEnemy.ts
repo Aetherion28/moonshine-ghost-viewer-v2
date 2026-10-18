@@ -81,7 +81,7 @@ export class SmallEnemy extends SpineEnemy {
     marioNode() { return new PathNode(this.world.mario); }
     load(s: Stream) {
         super.load(s);
-        this.coinId = s.s32();
+        this.coinId = s.s32(-1);
         if (this.coinId !== 0x65) this.unk18C = 1;
         this.reset();
     }

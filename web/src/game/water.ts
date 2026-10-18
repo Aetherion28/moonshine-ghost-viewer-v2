@@ -96,6 +96,8 @@ export class Water {
         return (e.num - left) & 0xFF;
     }
 
+    /** wind: pushes the drops in flight. */
+    wind(v: V3) { for (let i = 0; i < this.count; i++) if ((this.flag[i] & 0xF) === 1) this.vel[i].add(v); }
     /** TObjHitCheck::checkWater: the actor each drop in flight is in (for move to tell). */
     checkHits(hc: ObjHitCheck) {
         const er = this.staticHitActor.entryRadius;

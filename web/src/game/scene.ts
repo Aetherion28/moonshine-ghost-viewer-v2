@@ -120,6 +120,8 @@ export class Stage {
             if (!(w.moveTickCount & 3)) w.hitCheck.checkActorsHit();
             else w.hitCheck.clearHitNum();
             // PerformList Movement: map group, wave, graffiti group, conductor, manager group, player group, camera, water manager...
+            // TMap::perform: the moving collision's grid starts the tick empty
+            w.col.clearMove();
             if (w.pollution) w.pollution.move(w.mario.pos);
             w.conductor.perform(CUE_MOVE);
             w.mario.update(this.qf);

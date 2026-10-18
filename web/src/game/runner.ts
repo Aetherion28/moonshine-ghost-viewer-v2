@@ -14,8 +14,21 @@ import './enemies/pakkun.js';
 import './enemies/sambo.js';
 import './enemies/bosspakkun.js';
 import './enemies/amenbo.js';
+import './enemies/telesa.js';
+import './enemies/effectEnemy.js';
+import './enemies/yumbo.js';
+import './enemies/kukku.js';
+import './enemies/kazekun.js';
+import './enemies/generator.js';
+import './enemies/launcher.js';
+import './enemies/popo.js';
+import './enemies/namekuri.js';
 import './enemies/igaiga.js';
 import './enemies/gatekeeper.js';
+import './enemies/animal.js';
+import './enemies/boid.js';
+import './enemies/bird.js';
+import './enemies/beehive.js';
 
 export interface FileMap { files: Map<string, Uint8Array>; dirs: Map<string, string[]>; }
 export function fileMap(arc: RARC.JKRArchive): FileMap {

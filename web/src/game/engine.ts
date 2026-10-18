@@ -57,14 +57,18 @@ export class Stream {
     v: DataView;
     constructor(public b: Uint8Array) { this.v = new DataView(b.buffer, b.byteOffset, b.byteLength); }
     get left() { return this.b.length - this.pos; }
-    u8() { return this.v.getUint8(this.pos++); }
-    s8() { return this.v.getInt8(this.pos++); }
-    u16() { const r = this.v.getUint16(this.pos); this.pos += 2; return r; }
-    s16() { const r = this.v.getInt16(this.pos); this.pos += 2; return r; }
-    u32() { const r = this.v.getUint32(this.pos); this.pos += 4; return r; }
-    s32() { const r = this.v.getInt32(this.pos); this.pos += 4; return r; }
-    f32() { const r = this.v.getFloat32(this.pos); this.pos += 4; return r; }
-    str() { const n = this.u16(); const s = sjis.decode(this.b.subarray(this.pos, this.pos + n)); this.pos += n; return s; }
+    // JSUMemoryInputStream past its end reads nothing (the value is left as it was: 0 here, or what
+    // a caller passes) and the string is empty — some nodes end before all their class reads
+    // (Amenbo: TSpineEnemy::load's graph name and TSmallEnemy's coin id aren't in scene.bin).
+    private has(n: number) { if (this.pos + n <= this.b.length) return true; this.pos = this.b.length; return false; }
+    u8(d = 0) { return this.has(1) ? this.v.getUint8(this.pos++) : d; }
+    s8(d = 0) { return this.has(1) ? this.v.getInt8(this.pos++) : d; }
+    u16(d = 0) { if (!this.has(2)) return d; const r = this.v.getUint16(this.pos); this.pos += 2; return r; }
+    s16(d = 0) { if (!this.has(2)) return d; const r = this.v.getInt16(this.pos); this.pos += 2; return r; }
+    u32(d = 0) { if (!this.has(4)) return d; const r = this.v.getUint32(this.pos); this.pos += 4; return r; }
+    s32(d = 0) { if (!this.has(4)) return d; const r = this.v.getInt32(this.pos); this.pos += 4; return r; }
+    f32(d = 0) { if (!this.has(4)) return d; const r = this.v.getFloat32(this.pos); this.pos += 4; return r; }
+    str() { const n = this.u16(); const e = Math.min(this.b.length, this.pos + n); const s = sjis.decode(this.b.subarray(this.pos, e)); this.pos = e; return s; }
     sub(n: number) { const s = new Stream(this.b.subarray(this.pos, this.pos + n)); this.pos += n; return s; }
     skip(n: number) { this.pos += n; }
 }
@@ -984,6 +988,8 @@ export class SpineEnemy extends LiveActor {
     /** unk114 (TSolidStack<TPathNode>(4)) */
     pushGoal(n: PathNode) { if (this.goalStack.length < 4) this.goalStack.push(n.copy()); }
     popGoal() { return this.goalStack.length ? this.goalStack.pop()! : this.goal.copy(); }
+    /** switchNextGoalPath: the next goal off the stack (if any) */
+    switchNextGoalPath() { if (this.goalStack.length) this.goal = this.goalStack.pop()!; }
     zigzagToCurPathNode(speed: number, turn: number, cycle: number, angle: number) {
         if (this.tracer.unk10 === 0) { this.walkToCurPathNode(speed, turn, 0); return; }
         let a = angle * this.tracer.unk10;
@@ -1307,7 +1313,7 @@ export class ObjHitCheck {
 
 // ---------------------------------------------------------------- TConductor
 export class Conductor {
-    liveManagers: LiveManager[] = []; enemyManagers: EnemyManager[] = []; aloneActors: LiveActor[] = []; others: NameRef[] = [];
+    liveManagers: LiveManager[] = []; enemyManagers: EnemyManager[] = []; aloneActors: LiveActor[] = []; generators: NameRef[] = []; others: NameRef[] = [];
     constructor(public w: World) { }
     init() {
         for (const m of this.enemyManagers) if (m.name !== 'ヒノクリ２マネージャー' && m.name !== 'ボスゲッソーマネージャー') m.createEnemies(m.capacity);
@@ -1331,6 +1337,7 @@ export class Conductor {
             for (const m of this.liveManagers) if ((i !== 0) === m.hasMapCollision()) m.testPerform(cue);
             for (const a of this.aloneActors) if ((i !== 0) === a.hasMapCollision()) a.testPerform(cue);
         }
+        for (const g of this.generators) g.testPerform(cue);
         for (const o of this.others) o.testPerform(cue);
     }
 }
@@ -1377,6 +1384,34 @@ World.prototype.checkWater = function (this: World, h: ObjHitCheck) { if (this.w
 /** TStrategy's groups by index (IDX). */
 export const GROUP_NAMES = ['マップグループ', '空グループ', 'マネージャーグループ', 'オブジェクトグループ', '落書きグループ', 'アイテムグループ', 'プレーヤーグループ', '敵グループ', 'ボスグループ', 'ＮＰＣグループ', '水パーティクルグループ', '初期化用グループ'];
 
+/**
+ * TMapCollisionMove: an actor's collision file, put into the move grid (which TMap::perform empties
+ * every tick) wherever its matrix says (moveMtx / moveSRT).
+ */
+export class MoveCollision {
+    private src: BGCheckData[] = [];
+    tris: BGCheckData[] = [];
+    constructor(public w: World, path: string, public owner: LiveActor | null) {
+        const b = w.files.scene(path.replace(/^\/?scene\//i, '').replace(/^\//, ''));
+        if (b) this.src = MapCollision.readCol(b.slice().buffer);
+    }
+    /** moveActiveCollisionMtx with a column-major 4x4 (a joint's anmMtx). */
+    moveMat4(m: ArrayLike<number>) {
+        const tf = (p: number[]) => [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]];
+        this.tris = this.src.map((s) => {
+            const d = new BGCheckData();
+            d.bgType = s.bgType; d.data = s.data; d.flags = s.flags & ~0x8;
+            d.setVertex(tf(s.p1), tf(s.p2), tf(s.p3));
+            d.actor = this.owner;
+            this.w.col.add(d, 'move');
+            return d;
+        });
+    }
+    moveSRT(p: V3, r: V3, sc: V3) {
+        const m = mtx(); MsMtxSetXYZRPH(m, p.x, p.y, p.z, r.x, r.y, r.z);
+        this.moveMat4([m[0] * sc.x, m[4] * sc.x, m[8] * sc.x, 0, m[1] * sc.y, m[5] * sc.y, m[9] * sc.y, 0, m[2] * sc.z, m[6] * sc.z, m[10] * sc.z, 0, m[3], m[7], m[11], 1]);
+    }
+}
 /** TMapCollisionWarp: a collision file put into the map's lists at a place and taken out again. */
 export class WarpCollision {
     tris: BGCheckData[] = [];
