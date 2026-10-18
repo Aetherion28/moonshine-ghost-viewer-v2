@@ -10,7 +10,7 @@
 import { fr, V3, s16, JMASSin, JMASCos, matan, mtx, Mtx } from '../math.js';
 import { World, TakeActor, HitActor, Params, PSchema, FrameCtrl, FC_LOOP } from '../engine.js';
 import { BGCheckData, WallCheck, DONT_MOVE_XZ } from '../collision.js';
-import { Skeleton, parseBCK, jointMatrices } from '../skeleton.js';
+import { Skeleton, parseBCK, jointMatricesBlend } from '../skeleton.js';
 import type { mat4 } from 'gl-matrix';
 import * as P from './params.js';
 import { S, MF, A, ANIME_DATA, ANIME_FILES } from './tables.js';
@@ -99,17 +99,24 @@ export class MarioModel {
         this.fc[1].update();
         this.joints = null;
     }
-    /** getAnmMtx(j): joint j's world matrix after the last calc (the body's BCK only: the motion blend isn't applied). */
-    anmMtx(j: number): mat4 | null {
+    /** Each joint's matrix in its parent's (for the viewer's joint callback: a model rigged like Mario's). */
+    locals: mat4[] = [];
+    /** J3DModel::calc: every joint's world matrix (the body's BCK only: the motion blend isn't applied). */
+    calc(): mat4[] | null {
         const key = this.anm[0] + '|' + this.fc[0].frame + '|' + Array.from(this.baseTR).join(',');
         if (!this.joints || key !== this.jointsKey) {
             const sk = Skeleton.of(marioFile('bmd/ma_mdl1.bmd'));
             if (!sk) return null;
             const b = this.anm[0] >= 0 ? marioFile(`bck/ma_${ANIME_FILES[this.anm[0]]}.bck`) : null;
-            this.joints = jointMatrices(sk, b ? parseBCK(b) : null, this.fc[0].frame, this.baseTR, [1, 1, 1]);
+            this.joints = jointMatricesBlend(sk, { anm: b ? parseBCK(b) : null, frame: this.fc[0].frame }, null, 0, false, this.baseTR, [1, 1, 1], this.joints || [], this.locals);
             this.jointsKey = key;
         }
-        return this.joints[j] || null;
+        return this.joints;
+    }
+    /** getAnmMtx(j): joint j's world matrix after the last calc. */
+    anmMtx(j: number): mat4 | null {
+        const all = this.calc();
+        return all ? all[j] || null : null;
     }
     jointIndex(name: string) { const sk = Skeleton.of(marioFile('bmd/ma_mdl1.bmd')); return sk ? sk.index(name) : -1; }
 }
@@ -217,6 +224,15 @@ export abstract class MarioBase extends TakeActor {
         this.mUpperBodyParams = load(w, '/Mario/UpperBody.prm', P.UpperParams);
         this.mDmgMapParams = [];
         for (let i = 0; i < 10; i++) this.mDmgMapParams.push(load(w, `/Mario/DmgMapCode${i}.prm`, P.EParams));
+        // TMario::TMario's own values
+        this.unk114 = 0x400 | 0x10 | 0x2;   // DO_OCCLUSION_PROBE | UNK10 | VISIBLE
+        this.mStatus = this.mPrevStatus = 0x133f;
+        this.mAnimationId = 0xc3;
+        this.mHealth = this.mDeParams.mHPMax;
+        this.mMaxAir = fr((this.mHealth + 1) - 1e-05);
+        this.mAir = this.mMaxAir;
+        this.mUpperState = 5;   // UPPER_STATE_IDLE
+        this.mPlayerType = 6;   // PLAYER_TYPE_INVALID
     }
 
     // ---------------------------------------------------------------- small accessors (Mario.hpp's inlines)

@@ -33,6 +33,8 @@ import './enemies/beehive.js';
 import './enemies/hamukuri.js';
 import './enemies/wiretrap.js';
 import { mapObjWorldHooks } from './mapobj/index.js';
+import './player/emario.js';
+import { setMarioArchive } from './player/base.js';
 
 // enemies' coins come out of the item manager's pool (gpItemManager)
 Object.assign(World.prototype, mapObjWorldHooks);
@@ -63,6 +65,8 @@ export class DiscCommon {
         try { c.params = parse(await fs.read('data/params.szs')); } catch (e) { console.warn('[game] params.szs', e); }
         try { c.common = parse(await fs.read('data/common.szs')); } catch (e) { console.warn('[game] common.szs', e); }
         try { if (fs.has('data/scenecmn.bin')) c.scenecmn = new Uint8Array(await fs.read('data/scenecmn.bin')); } catch { }
+        // Mario's archive (the simulated Marios' animations and params: Shadow Mario)
+        try { const m = parse(await fs.read('data/mario.szs')); setMarioArchive((p) => m.files.get(p.toLowerCase()) || null); } catch (e) { console.warn('[game] mario.szs', e); }
         return c;
     }
     stageFiles(scene: FileMap): StageFiles {
