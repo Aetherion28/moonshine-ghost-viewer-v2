@@ -64,6 +64,10 @@ export class BGCheckData {
     }
 
     isIllegal() { return !!(this.flags & FLAG_ILLEGAL); }
+    isLegal() { return !this.isIllegal(); }
+    isWaterSlip() { const t = this.bgType; return t === 0x500 || t === 0x4004 || t === 0x8004 || t === 0xC004; }
+    isPool() { const t = this.bgType; return t === BG.POOL || t === BG.INDOOR_POOL || t === BG.SHADED_POOL; }
+    isDeathPlane() { return this.bgType === BG.DEATH_PLANE; }
     isEverythingButMapObjectsThrough() { return this.bgType === BG.EVERYTHING_BUT_MAP_OBJECTS_PHASE_THROUGH; }
     isWaterSurface() {
         const t = this.bgType;

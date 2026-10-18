@@ -1376,6 +1376,7 @@ document.write('<script src="' + V2 + 'game.js"><\/script>');
         }
         if (ex.bg && typeof GessoSim !== 'undefined') setupGesso(node, ex, protos, group, px, py, pz, ry);   // Gooper Blooper (placed each frame by placeGesso)
         node.userData.pick = pick;
+        node.userData.type = it[1];   // (v2: the game code's objects stand in for the ones it simulates)
         node.userData.spin = /^(coin|shine)/.test(pick);
         node.userData.faceCam = /^shine/.test(pick);   // shines: the glow card faces the camera
         node.userData.shineMode = (it[17] && it[17].shine) || '';
@@ -8185,7 +8186,9 @@ void main() {
     renderer.getDrawingBufferSize(_gsz);
     const marios = ghosts.filter((g) => g.marker && g.marker.parent).map((g) => ({ key: g, rig: g.marker.userData.rig, yoshi: g.yoshiNode || null }));
     if (sleepMario && sleepMario.visible) marios.push({ key: sleepMario, rig: sleepMario.userData.rig, yoshi: null });
-    gameLayer.render(camera, _gsz.x, _gsz.y, objectsGroup, objectsGroup.userData.mp, marios, performance.now());
+    const main = ghosts.find((g) => g.data && g.marker && g.marker.parent);
+    const sim = main && $('optGame').checked ? { t, ghost: main.data, api: { ghostSampleAt, ghostAnimAt, ghostFluddAt, ghostCameraAt: typeof ghostCameraAt === 'function' ? ghostCameraAt : undefined } } : null;
+    gameLayer.render(camera, _gsz.x, _gsz.y, objectsGroup, objectsGroup.userData.mp, marios, performance.now(), sim);
     return true;
   }
   async function useDisc(fs) {

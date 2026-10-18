@@ -26,6 +26,9 @@ import { parseStageArc, sceneForRoute } from './stagearc.js';
 import { SMSPass, SunshineRenderer, SunshineSceneDesc } from './sms_scene.js';
 import { MarioModel, YoshiModel, parseArchive, setPlayerLights } from './mario.js';
 import { swapTextures } from './actors.js';
+import { SimRunner, DiscCommon, SimInput, fileMap, FileMap } from './game/runner.js';
+import { CLASSES } from './game/scene.js';
+import { LiveActor } from './game/engine.js';
 
 /** Where a viewer library model comes from on the disc (tools/build_objects.py, data["mp"]). */
 interface Spec { f: string; bmt?: string; tex?: number; bck?: string; shrink?: string; parts?: [string, string][]; lift?: number; swap?: [string, string]; }
@@ -51,6 +54,9 @@ interface Mirror {
     on?: { m: Mirror; joint: number };
     actor: boolean;
 }
+
+/** One of the game code's objects, drawn with its model. */
+interface SimMirror { inst: J3DModelInstanceSimple; bck: string; pin: PinnedAnimationController; }
 
 const _m = mat4.create();
 const REG_KINDS = [ColorKind.C0, ColorKind.C1, ColorKind.C2];   // (TEV register 3 is CPREV's)
@@ -181,6 +187,11 @@ export class GameLayer {
     public onError: (e: any) => void = (e) => console.error(e);
     /** A frame has been drawn for the current scene. */
     public drawn = false;
+    /** The stage's game code (the enemies...), run alongside the ghost. */
+    public sim: SimRunner | null = null;
+    private simFiles: FileMap | null = null;
+    private simMirrors = new Map<LiveActor, SimMirror>();
+    private simPlaces = new Set<string>();
 
     constructor(public canvas: HTMLCanvasElement) {
         const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: false, depth: false, stencil: false });
@@ -201,6 +212,7 @@ export class GameLayer {
         const yoshi = fs.has('data/yoshi.szs') ? parseArchive(await fs.read('data/yoshi.szs'), Yaz0.decompressSW) : null;
         this.destroyScene();
         this.fs = fs; this.stageTable = table; this.marioArc = mario; this.yoshiArc = yoshi;
+        this.sim = new SimRunner(await DiscCommon.load(fs));
     }
 
     public sceneFor(area: number, episode: number) { return sceneForRoute(this.stageTable, area, episode); }
@@ -239,6 +251,7 @@ export class GameLayer {
         this.renderer = null; this.scene = ''; this.mirrors = []; this.byObj.clear(); this.boundGroup = null; this.marios.clear();
         this.actorModels = []; this.dataCache.clear(); this.bmtCache.clear(); this.files.clear();
         this.drawn = false;
+        this.simFiles = null; this.simMirrors.clear(); this.simPlaces.clear();
     }
 
     // ------------------------------------------------------------ the viewer's objects
@@ -422,6 +435,76 @@ export class GameLayer {
         }
     }
 
+    // ------------------------------------------------------------ the game code's objects
+    /**
+     * Runs the stage's game code to the viewer's time and draws what it moves with the disc's
+     * models at their animation frames; the viewer's own stand-ins for those objects (the same
+     * class at the same placement) are hidden.
+     */
+    private syncSim(inp: SimInput | null, group: any) {
+        const r = this.renderer;
+        const on = !!(inp && this.sim && r);
+        if (on) {
+            if (!this.simFiles) this.simFiles = fileMap(r!.rarc);
+            this.sim!.update(this.scene, this.simFiles, inp!);
+        }
+        const st = on ? this.sim!.stage : null;
+        const list = st ? this.sim!.drawables() : [];
+        // the viewer's stand-ins
+        this.simPlaces.clear();
+        for (const d of list) this.simPlaces.add(d.type + '|' + d.place.map((v) => v.toFixed(1)).join(','));
+        if (group) for (const o of group.children) {
+            const b = o.userData && o.userData.base;
+            if (!b || !o.userData.type || !CLASSES.has(o.userData.type)) continue;
+            const k = o.userData.type + '|' + b.p.map((v: number) => v.toFixed(1)).join(',');
+            if (st && this.simPlaces.has(k)) { o.visible = false; o.userData.simHidden = true; }
+            else if (o.userData.simHidden) { o.visible = true; o.userData.simHidden = false; }
+        }
+        // the game's models
+        const seen = new Set<LiveActor>();
+        const made: J3DModelInstanceSimple[] = [];
+        for (const d of list) {
+            const a = d.a;
+            seen.add(a);
+            let m = this.simMirrors.get(a);
+            if (!m) {
+                const inst = this.makeInstance({ f: a.mactor!.model });
+                if (!inst) continue;
+                (inst as any).isPlayer = true;
+                m = { inst, bck: '', pin: new PinnedAnimationController(30) };
+                const mm = m;
+                // TPakkun's root joints swell with the water in it (PakkunRootCallback / 2)
+                inst.jointMatrixCalcCallback = (dst: mat4, _md: any, j: number) => {
+                    const sc = (a as any).rootScale ? (a as any).rootScale() : 1;
+                    if (sc === 1) return;
+                    if (j === 1) mat4.scale(dst, dst, [sc, sc, sc]);
+                    else if (j === 2) mat4.scale(dst, dst, [1 / sc, 1 / sc, 1 / sc]);
+                };
+                this.simMirrors.set(a, mm);
+                made.push(inst);
+                this.actorModels.push(inst);
+            }
+            const inst = m.inst;
+            inst.visible = this.live && a.drawn();
+            if (!inst.visible) continue;
+            const B = a.baseTR, sc = a.scale;
+            mat4.set(inst.modelMatrix, B[0] * sc.x, B[4] * sc.x, B[8] * sc.x, 0, B[1] * sc.y, B[5] * sc.y, B[9] * sc.y, 0, B[2] * sc.z, B[6] * sc.z, B[10] * sc.z, 0, B[3], B[7], B[11], 1);
+            const name = a.mactor!.bckName();
+            if (name !== m.bck) {
+                m.bck = name || '';
+                const f = name ? this.files.get((a.mactor!.data.folder + '/' + name + '.bck').toLowerCase()) : null;
+                try { if (f) inst.bindANK1(BCK.parse(f.buffer), m.pin); else inst.bindANK1(null as any); } catch { }
+            }
+            const fc = a.mactor!.getFrameCtrl(0);
+            if (fc) m.pin.setTimeInFrames(fc.frame);
+        }
+        if (made.length) {
+            swapTextures(this.device, r!.renderHelper.renderInstManager.gfxRenderCache, r!.rarc, made);
+            r!.modelInstances.push(...made);
+        }
+        for (const [a, m] of this.simMirrors) if (!seen.has(a)) m.inst.visible = false;
+    }
+
     /** For the console and tests: what the layer draws for the viewer's objects. */
     public debug() {
         return this.mirrors.map((m) => ({ f: m.inst.name, vis: m.inst.visible, node: m.obj.name || m.obj.type, mi: m.obj.userData.mi,
@@ -463,7 +546,7 @@ export class GameLayer {
      * near/far), w x h the drawing buffer's size, marios the posed Marios on the stage
      * [{ key, rig, yoshi }]. Call after the viewer has placed everything and updated its world matrices.
      */
-    public render(cam: any, w: number, h: number, group: any, mp: Record<string, Spec>, marios: { key: any; rig: any; yoshi: any }[], timeMs: number) {
+    public render(cam: any, w: number, h: number, group: any, mp: Record<string, Spec>, marios: { key: any; rig: any; yoshi: any }[], timeMs: number, sim: SimInput | null = null) {
         const r = this.renderer;
         const canvas = this.canvas;
         if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
@@ -486,6 +569,7 @@ export class GameLayer {
             r.modelInstances = r.modelInstances.filter((x) => !drop.has(x));
             this.marios.delete(k);
         }
+        this.syncSim(sim, group);
         this.syncObjects();
         mat4.copy(this.camera.worldMatrix, cam.matrixWorld.elements);
         this.camera.worldMatrixUpdated();
