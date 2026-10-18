@@ -12,6 +12,8 @@ import { MarioSample, MarioTrack } from './mario.js';
 import { LiveActor, NameRef, calcKeyCode } from './engine.js';
 import './enemies/pakkun.js';
 import './enemies/sambo.js';
+import './enemies/bosspakkun.js';
+import './enemies/amenbo.js';
 
 export interface FileMap { files: Map<string, Uint8Array>; dirs: Map<string, string[]>; }
 export function fileMap(arc: RARC.JKRArchive): FileMap {

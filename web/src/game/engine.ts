@@ -1371,3 +1371,28 @@ World.prototype.inView = function (this: World, p: V3, r: number, far: number) {
 World.prototype.checkWater = function (this: World, h: ObjHitCheck) { if (this.water) this.water.checkHits(h); };
 /** TStrategy's groups by index (IDX). */
 export const GROUP_NAMES = ['マップグループ', '空グループ', 'マネージャーグループ', 'オブジェクトグループ', '落書きグループ', 'アイテムグループ', 'プレーヤーグループ', '敵グループ', 'ボスグループ', 'ＮＰＣグループ', '水パーティクルグループ', '初期化用グループ'];
+
+/** TMapCollisionWarp: a collision file put into the map's lists at a place and taken out again. */
+export class WarpCollision {
+    tris: BGCheckData[] = [];
+    private src: BGCheckData[] = [];
+    setUp = false;
+    constructor(public w: World, path: string, public owner: LiveActor | null) {
+        const b = w.files.scene(path.replace(/^\/?scene\//i, '').replace(/^\//, ''));
+        if (b) this.src = MapCollision.readCol(b.slice().buffer);
+    }
+    isSetUp() { return this.setUp; }
+    setUpTrans(p: V3) {
+        if (this.setUp) return;
+        this.setUp = true;
+        this.tris = this.src.map((s) => {
+            const d = new BGCheckData();
+            d.bgType = s.bgType; d.data = s.data; d.flags = s.flags & ~0x8;
+            d.setVertex([s.p1[0] + p.x, s.p1[1] + p.y, s.p1[2] + p.z], [s.p2[0] + p.x, s.p2[1] + p.y, s.p2[2] + p.z], [s.p3[0] + p.x, s.p3[1] + p.y, s.p3[2] + p.z]);
+            d.actor = this.owner;
+            this.w.col.add(d, 'static');
+            return d;
+        });
+    }
+    remove() { if (!this.setUp) return; this.setUp = false; for (const d of this.tris) this.w.col.remove(d); this.tris = []; }
+}

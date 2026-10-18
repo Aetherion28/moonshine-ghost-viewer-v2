@@ -152,6 +152,13 @@ export class MapCollision {
             }
     }
 
+    /** Takes a triangle out of every list it's in (TMapCollisionWarp::remove). */
+    remove(d: BGCheckData) {
+        for (const grid of [this.stat, this.move]) for (const cell of grid) for (let t = 0; t < 3; t++) {
+            let prev: Node | null = null, cur = cell[t];
+            while (cur) { if (cur.data === d) { if (prev) prev.next = cur.next; else cell[t] = cur.next; } else prev = cur; cur = cur.next; }
+        }
+    }
     private addToList(cell: Cell, type: number, d: BGCheckData) {
         // Walk from the list's head to the node to insert after (addGroundNode etc.).
         let prev: Node | null = null, cur = cell[type];

@@ -196,3 +196,44 @@ export function SMSCalcJumpVelocityY(desired: V3, initial: V3, vy: number, g: nu
     const k = 1 / ticks;
     return new V3((desired.x - initial.x) * k, vy, (desired.z - initial.z) * k);
 }
+
+/** JGeometry::TQuat4<f32> */
+export class Quat {
+    constructor(public x = 0, public y = 0, public z = 0, public w = 1) { }
+    set(q: Quat) { this.x = q.x; this.y = q.y; this.z = q.z; this.w = q.w; return this; }
+    set4(x: number, y: number, z: number, w: number) { this.x = x; this.y = y; this.z = z; this.w = w; return this; }
+    clone() { return new Quat(this.x, this.y, this.z, this.w); }
+    dot(q: Quat) { return this.x * q.x + this.y * q.y + this.z * q.z + this.w * q.w; }
+    normalize() { const l = Math.sqrt(this.dot(this)); this.x /= l; this.y /= l; this.z /= l; this.w /= l; return this; }
+    mul(a: Quat, b: Quat) {
+        const x = a.x * b.w + a.w * b.x + a.y * b.z - a.z * b.y, y = a.y * b.w + a.w * b.y + a.z * b.x - a.x * b.z;
+        const z = a.z * b.w + a.w * b.z + a.x * b.y - a.y * b.x, w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
+        return this.set4(x, y, z, w);
+    }
+    getZDir(out = new V3()) { return out.set(this.x * this.z * 2 + this.w * this.y * 2, this.y * this.z * 2 - this.w * this.x * 2, 1 - this.x * this.x * 2 - this.y * this.y * 2); }
+    setRotateAxis(v: V3, a: number) { const s = Math.sin(a * 0.5); this.x = v.x * s; this.y = v.y * s; this.z = v.z * s; this.w = Math.cos(a * 0.5); return this; }
+    setRotateFromTo(from: V3, to: V3, amount = 1) {
+        const ax = new V3().cross(from, to), len = ax.length();
+        if (len <= 1.1920929e-7) return this.set4(0, 0, 0, 1);
+        const h = 0.5 * Math.atan2(len, from.dot(to)) * amount, k = Math.sin(h) / len;
+        return this.set4(ax.x * k, ax.y * k, ax.z * k, Math.cos(h));
+    }
+    slerp(a: Quat, b: Quat, t: number) {
+        const q1 = a.clone().normalize(), q2 = b.clone().normalize();
+        let d = q1.dot(q2), neg = false;
+        if (d < 0) { neg = true; d = -d; }
+        let k1: number;
+        if (1 - d <= 1.1920929e-7) k1 = 1 - t;
+        else { const o = Math.acos(d), s = Math.sin(o); k1 = Math.sin((1 - t) * o) / s; t = Math.sin(t * o) / s; }
+        if (neg) t = -t;
+        return this.set4(k1 * q1.x + t * q2.x, k1 * q1.y + t * q2.y, k1 * q1.z + t * q2.z, k1 * q1.w + t * q2.w);
+    }
+    /** TPosition3::setQT: the rotation into m (3x4 row-major), translation t */
+    toMtx(m: Mtx, t: V3) {
+        const { x, y, z, w } = this;
+        m[0] = 1 - 2 * (y * y + z * z); m[1] = 2 * (x * y - w * z); m[2] = 2 * (x * z + w * y); m[3] = t.x;
+        m[4] = 2 * (x * y + w * z); m[5] = 1 - 2 * (x * x + z * z); m[6] = 2 * (y * z - w * x); m[7] = t.y;
+        m[8] = 2 * (x * z - w * y); m[9] = 2 * (y * z + w * x); m[10] = 1 - 2 * (x * x + y * y); m[11] = t.z;
+        return m;
+    }
+}

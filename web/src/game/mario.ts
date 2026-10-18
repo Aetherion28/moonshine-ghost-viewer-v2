@@ -44,6 +44,8 @@ export class MarioProxy extends TakeActor {
     /** emitted water this tick (TWaterGun::getEmittedWaterCount != 0) */
     emitted = false;
     present = false;
+    /** entered water this tick (SMS_AskJumpIntoWaterEffectExist, roughly: his splash) */
+    justEnteredWater = false;
     track: MarioTrack | null = null;
     constructor(public w: World) {
         super('マリオ');
@@ -77,8 +79,10 @@ export class MarioProxy extends TakeActor {
         this.diving = DIVE.has(s.anim);
         this.jumping = air;
         // MARIO_FLAG_IN_SHALLOW_WATER / IN_WATER: standing in water (the ground is a water surface just below him)
+        const wasIn = (this.marioFlags & 0x30000) !== 0;
         this.marioFlags &= ~0x30000;
         if (d.isWaterSurface() && s.y <= h + 1) this.marioFlags |= 0x10000;
+        this.justEnteredWater = !wasIn && (this.marioFlags & 0x30000) !== 0;
         // the attack area for his status (setJumpingAttackArea / hip drop / setNormalAttackArea)
         if (this.hipDrop) this.setHitParams(DE.hipdropRadius, DE.attackHeight, DE.damageRadius, DE.damageHeight);
         else if (this.jumping) {
