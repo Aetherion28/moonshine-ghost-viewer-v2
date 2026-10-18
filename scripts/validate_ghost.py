@@ -10,6 +10,8 @@ import struct
 import sys
 import zlib
 
+import ghost_rng
+
 
 GHOST_MAGIC = b"SGHF"
 INDEX_MAGIC = b"SGIX"
@@ -471,7 +473,11 @@ def validate_ghost(data: bytes) -> dict:
     expected_file_crc = _crc32_zeroed(data, (12, 16))
     _require(file_checksum == expected_file_crc, "ghost file checksum mismatch")
 
-    supported_features = (7 if version == GHOST_VERSION_V6 else 3 if version == GHOST_VERSION_V5 else SUPPORTED_REQUIRED_FEATURES_V4
+    # A V6 file may also carry the RNG tape (SGRN) after SGTI.
+    rng_tape = (version == GHOST_VERSION_V6 and
+                required_features == 7 | ghost_rng.REQUIRED_RNG_TAPE)
+    supported_features = (7 | (ghost_rng.REQUIRED_RNG_TAPE if rng_tape else 0)
+                          if version == GHOST_VERSION_V6 else 3 if version == GHOST_VERSION_V5 else SUPPORTED_REQUIRED_FEATURES_V4
                           if version == GHOST_VERSION_V4
                           else SUPPORTED_REQUIRED_FEATURES_V3)
     if required_features & ~supported_features:
@@ -573,8 +579,21 @@ def validate_ghost(data: bytes) -> dict:
     _require(payload_size == file_size - header_size,
              f"{label} payload size disagrees with file")
     pose_end = sample_data_offset + sample_data_size
+    rng = None
     if version >= GHOST_VERSION_V5:
-        teaching = _validate_teaching(data[pose_end:], start_qf, end_qf, version)
+        teaching_end = file_size
+        if rng_tape:
+            _require(file_size - pose_end >= 32, "truncated teaching header")
+            inputs, splits = struct.unpack_from(">II", data, pose_end + 8)
+            _require(inputs <= V6_MAX_INPUT_COUNT and splits <= V5_MAX_SPLIT_COUNT,
+                     "teaching count exceeds bound")
+            teaching_end = pose_end + 32 + inputs * 24 + splits * 12
+            _require(teaching_end <= file_size, "teaching size mismatch")
+            try:
+                rng = ghost_rng.decode(data[teaching_end:])
+            except ValueError as error:
+                _require(False, f"invalid RNG tape: {error}")
+        teaching = _validate_teaching(data[pose_end:teaching_end], start_qf, end_qf, version)
     else:
         _require(file_size == pose_end,
                  f"{label} ghost contains trailing or missing bytes")
@@ -690,6 +709,13 @@ def validate_ghost(data: bytes) -> dict:
     return {
         "kind": "ghost",
         "teaching": teaching,
+        "rng_tape": None if rng is None else {
+            "calls": len(rng.calls),
+            "frames": rng.frames,
+            "callers": len(rng.callers),
+            "actors": len(rng.actors),
+            "flags": rng.flags,
+        },
         "version": version,
         "file_size": file_size,
         "file_checksum": file_checksum,

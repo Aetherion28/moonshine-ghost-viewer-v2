@@ -66,8 +66,12 @@ class RngControlRuntimeTests(unittest.TestCase):
         rot_y = source.split(
             'extern "C" int susamuneCraneRotYRandImpl', 1
         )[1].split('extern "C" void susamuneCraneUpDownControl', 1)[0]
-        self.assertEqual(up_down.count("const int retail = rand();"), 1)
-        self.assertEqual(rot_y.count("const int retail = rand();"), 1)
+        # One retail roll each, through the RNG tape with the game's call site.
+        roll = "const int retail = susamuneRngRandFrom("
+        self.assertEqual(up_down.count(roll), 1)
+        self.assertEqual(rot_y.count(roll), 1)
+        self.assertNotIn("rand()", up_down)
+        self.assertNotIn("rand()", rot_y)
         self.assertIn("choice * 20 - 19 + ((u32)roll * 20u >> 15)", source)
         self.assertIn("0.0015f * (f32)percent", source)
         self.assertIn("retailSpeed * (f32)percent * 0.01f", source)

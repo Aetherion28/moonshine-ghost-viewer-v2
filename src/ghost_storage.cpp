@@ -3,6 +3,8 @@
 #include "Dolphin/OS.h"
 #include "Dolphin/mem.h"
 #include "susamune/ghost.hxx"
+#include "susamune/ghost_rng.h"
+#include "susamune/ghost_rng.hxx"
 #include "susamune/crash_report.hxx"
 #include "susamune/iling.hxx"
 #include "susamune/menu.hxx"
@@ -250,7 +252,10 @@ bool sanitizeSlot(const SusamuneGhostSlotInfo &raw,
         ((raw.canonicalVersion == SUSAMUNE_GHOST_FILE_VERSION_V5 &&
           raw.requiredFeatures == SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V5) ||
          (raw.canonicalVersion == SUSAMUNE_GHOST_FILE_VERSION_V6 &&
-          raw.requiredFeatures == SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V6)) &&
+          (raw.requiredFeatures == SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V6 ||
+           (SUSAMUNE_GHOST_RNG &&
+            raw.requiredFeatures == (SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V6 |
+                                     SUSAMUNE_GHOST_REQUIRED_RNG_TAPE))))) &&
         raw.sampleCodec == SUSAMUNE_GHOST_CODEC_POSE_ATTACHMENTS;
     const bool foreign = raw.gameId != kGameId;
     const bool namespaceSane = imported

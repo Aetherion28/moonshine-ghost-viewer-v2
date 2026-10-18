@@ -7,6 +7,7 @@
 #include "SMS/System/MarDirector.hxx"
 #include "susamune/addresses.hxx"
 #include "susamune/features.hxx"
+#include "susamune/ghost_rng.hxx"
 #include "susamune/iling.hxx"
 #include "susamune/settings.hxx"
 
@@ -192,13 +193,15 @@ void rngControlApply() {
 
 
 extern "C" int susamuneCraneUpDownRandImpl(void *crane) {
-    const int retail = rand();
+    const int retail = susamuneRngRandFrom(
+        reinterpret_cast<u32>(__builtin_return_address(0)));
     recordCrane(crane, retail, true);
     return retail;
 }
 
 extern "C" int susamuneCraneRotYRandImpl(void *crane) {
-    const int retail = rand();
+    const int retail = susamuneRngRandFrom(
+        reinterpret_cast<u32>(__builtin_return_address(0)));
     recordCrane(crane, retail, false);
     return retail;
 }

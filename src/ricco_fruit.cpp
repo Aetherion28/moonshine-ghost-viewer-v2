@@ -8,6 +8,7 @@
 #include "SMS/System/MarDirector.hxx"
 #include "susamune/addresses.hxx"
 #include "susamune/features.hxx"
+#include "susamune/ghost_rng.hxx"
 #include "susamune/settings.hxx"
 
 extern "C" int rand();
@@ -50,9 +51,25 @@ void riccoFruitControlBeforeStageSetup() {
     sPendingLauncher = nullptr;
 }
 
+#if SUSAMUNE_GHOST_RNG
+// The roll goes through the RNG tape with the game's call site; any result
+// other than that roll is recorded as an override.
+static int riccoFruitRoll(void *launcher, u32 returnAddress, int retail);
+
+extern "C" int susamuneRiccoFruitRandImpl(void *launcher,
+                                           u32 returnAddress) {
+    const int retail = susamuneRngRandFrom(returnAddress);
+    const int result = riccoFruitRoll(launcher, returnAddress, retail);
+    if (result != retail) GhostRng::noteOverride(result);
+    return result;
+}
+
+static int riccoFruitRoll(void *launcher, u32 returnAddress, int retail) {
+#else
 extern "C" int susamuneRiccoFruitRandImpl(void *launcher,
                                            u32 returnAddress) {
     const int retail = rand();
+#endif
     const u32 site = returnAddress - 4;
 
     if (site == kFireObj + 0x134) {

@@ -15,6 +15,7 @@ file-header operation or 16 KiB of payload I/O per DI-idle service pass.
 #include "ff_utf8.h"
 
 #include "susamune/ghost_format.h"
+#include "susamune/ghost_rng.h"
 #include "susamune/data_paths.h"
 #include "susamune/ghost_storage.h"
 #include "susamune/mod_bin.h"
@@ -237,6 +238,8 @@ static u32 ValidationSize;
 static u32 ValidationOffset;
 static u32 ValidationPoseEnd;
 static u32 ValidationInputEnd;
+// End of SGTI: the file end, or where an RNG tape (SGRN) begins.
+static u32 ValidationTeachingEnd;
 static u32 ValidationInputStride;
 static u32 ValidationTeachingCrc;
 static u32 ValidationPreviousInputQf;
@@ -544,6 +547,11 @@ static enum ValidateResult ValidateCanonicalHeader(const u8 *header,
 	required = ReadBe32(header + 24);
 	if (!SusamuneGhostRunFlagsValid(ReadBe32(header + 28)))
 		return VALIDATE_INVALID;
+	// A V6 file may carry the RNG tape after SGTI; judge the rest as plain V6.
+	if (version == SUSAMUNE_GHOST_FILE_VERSION_V6 &&
+	    required == (SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V6 |
+	                 SUSAMUNE_GHOST_REQUIRED_RNG_TAPE))
+		required = SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V6;
 	if ((required & ~(version == SUSAMUNE_GHOST_FILE_VERSION_V6
 	                    ? SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V6
 	                    : version == SUSAMUNE_GHOST_FILE_VERSION_V5
@@ -750,10 +758,40 @@ static enum ValidateResult BeginCanonicalValidation(const u8 *bytes,
 	ValidationPreviousSplitQf = 0;
 	ValidationTeachingCrc = SUSAMUNE_GHOST_CRC32_INIT;
 	ValidationInputStride = SusamuneGhostInputStride(ReadBe16(bytes + 4));
+	ValidationTeachingEnd = size;
 	if (ReadBe16(bytes + 4) >= SUSAMUNE_GHOST_FILE_VERSION_V5)
 	{
 		const u8 *teaching = bytes + ValidationPoseEnd;
-		if (!SusamuneGhostTeachingHeaderValid(teaching, size - ValidationPoseEnd) ||
+		if (ReadBe32(bytes + 24) & SUSAMUNE_GHOST_REQUIRED_RNG_TAPE)
+		{
+			/* SGTI's size follows from its counts; SGRN is the rest. The
+			 * tape is checked whole here: at most 140 KiB, linear. */
+			u32 inputs, splits, tapeSize;
+			const u8 *tape;
+			if (size - ValidationPoseEnd < SUSAMUNE_GHOST_TEACHING_HEADER_SIZE)
+				return VALIDATE_INVALID;
+			inputs = ReadBe32(teaching + 8);
+			splits = ReadBe32(teaching + 12);
+			if (inputs > SUSAMUNE_GHOST_V6_INPUT_MAX_COUNT ||
+			    splits > SUSAMUNE_GHOST_SPLIT_MAX_COUNT)
+				return VALIDATE_INVALID;
+			ValidationTeachingEnd = ValidationPoseEnd +
+			    SUSAMUNE_GHOST_TEACHING_HEADER_SIZE +
+			    inputs * ValidationInputStride +
+			    splits * SUSAMUNE_GHOST_SPLIT_SAMPLE_SIZE;
+			if (ValidationTeachingEnd > size)
+				return VALIDATE_INVALID;
+			tape = bytes + ValidationTeachingEnd;
+			tapeSize = size - ValidationTeachingEnd;
+			if (!SusamuneGhostRngChunkValid(tape, tapeSize) ||
+			    (CrcUpdate(SUSAMUNE_GHOST_CRC32_INIT,
+			               tape + SUSAMUNE_GHOST_RNG_HEADER_SIZE,
+			               tapeSize - SUSAMUNE_GHOST_RNG_HEADER_SIZE) ^
+			     SUSAMUNE_GHOST_CRC32_XOR_OUT) != ReadBe32(tape + 20))
+				return VALIDATE_INVALID;
+		}
+		if (!SusamuneGhostTeachingHeaderValid(teaching,
+		        ValidationTeachingEnd - ValidationPoseEnd) ||
 		    teaching[5] != (ReadBe16(bytes + 4) == SUSAMUNE_GHOST_FILE_VERSION_V6
 		        ? SUSAMUNE_GHOST_TEACHING_FLUDD_VERSION : SUSAMUNE_GHOST_TEACHING_VERSION))
 			return VALIDATE_INVALID;
@@ -811,9 +849,13 @@ static int ContinueCanonicalValidation(void)
 		} else if (ValidationOffset < ValidationInputEnd) {
 			phaseEnd = ValidationInputEnd;
 			stride = ValidationInputStride;
-		} else {
-			phaseEnd = ValidationSize;
+		} else if (ValidationOffset < ValidationTeachingEnd) {
+			phaseEnd = ValidationTeachingEnd;
 			stride = SUSAMUNE_GHOST_SPLIT_SAMPLE_SIZE;
+		} else {
+			/* RNG tape: already validated; only the file CRCs remain. */
+			phaseEnd = ValidationSize;
+			stride = 1;
 		}
 	}
 	remaining = phaseEnd - ValidationOffset;
@@ -840,12 +882,17 @@ static int ContinueCanonicalValidation(void)
 	ValidationRawCrc = CrcUpdate(ValidationRawCrc,
 	                             ValidationBytes + ValidationOffset, chunk);
 
-	if (ValidationOffset > ValidationPoseEnd)
+	if (ValidationOffset > ValidationPoseEnd &&
+	    ValidationOffset < ValidationTeachingEnd)
 		ValidationTeachingCrc = CrcUpdate(ValidationTeachingCrc,
 		    ValidationBytes + ValidationOffset, chunk);
 	while (ValidationOffset < end)
 	{
 		sample = ValidationBytes + ValidationOffset;
+		if (ValidationOffset >= ValidationTeachingEnd) {
+			ValidationOffset = end;
+			continue;
+		}
 		if (ValidationOffset >= ValidationPoseEnd)
 		{
 			if (ValidationOffset == ValidationPoseEnd) {

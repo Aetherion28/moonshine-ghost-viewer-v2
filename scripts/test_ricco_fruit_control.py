@@ -33,6 +33,9 @@ class RiccoFruitControlTests(unittest.TestCase):
 
     def test_one_retail_roll_is_preserved_per_reached_site(self) -> None:
         source = RUNTIME.read_text(encoding="utf-8")
+        # One retail roll: through the RNG tape (which logs the game's call
+        # site) when it is built, the plain retail call otherwise.
+        self.assertEqual(source.count("const int retail = susamuneRngRandFrom(returnAddress);"), 1)
         self.assertEqual(source.count("const int retail = rand();"), 1)
         self.assertIn("const int kDurianRoll = 0x6000;", source)
         self.assertTrue(0x4CCD <= 0x6000 <= 0x6666)

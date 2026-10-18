@@ -5,6 +5,7 @@
 #include "SMS/Graph/GraphWeb.hxx"
 #include "SMS/System/MarDirector.hxx"
 #include "susamune/settings.hxx"
+#include "susamune/ghost_rng.hxx"
 
 namespace {
 
@@ -49,5 +50,7 @@ extern "C" int susamuneGelatoFishRandomNext(
 
     const TRailNode *node = graph->mNodes[current].mRailNode;
     if (!node || node->mNeighborCount != 2) return retail;
-    return node->mNeighborIDs[patternSlot(pattern, actorIndex)];
+    const int forced = node->mNeighborIDs[patternSlot(pattern, actorIndex)];
+    GhostRng::noteNodeOverride(nullptr, forced);
+    return forced;
 }

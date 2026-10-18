@@ -23,6 +23,8 @@
 #include "susamune/ghost_model.hxx"
 #include "susamune/ghost_fludd.hxx"
 #include "susamune/ghost_storage.h"
+#include "susamune/ghost_rng.h"
+#include "susamune/ghost_rng.hxx"
 #include "susamune/iling.hxx"
 #include "susamune/input_display.hxx"
 #include "susamune/mem2_map.h"
@@ -194,6 +196,17 @@ enum SavedPrefixFlags {
 };
 static_assert(sizeof(SavedPrefix) <= sizeof(SavestateData),
               "ghost prefix metadata exceeded its snapshot sidecar");
+// The RNG tape's rewind state follows the prefix in the same sidecar. Older
+// builds decode only the prefix and ignore these words.
+const u32 kRngSavedWord = 104;
+static_assert(sizeof(SavedPrefix) <= kRngSavedWord * sizeof(u32),
+              "ghost prefix overlaps the RNG tape words");
+static_assert(kRngSavedWord * sizeof(u32) + sizeof(GhostRng::Saved) <=
+                  sizeof(SavestateData),
+              "RNG tape words exceed the ghost snapshot sidecar");
+GhostRng::Saved &rngSaved(SavestateData &data) {
+    return *reinterpret_cast<GhostRng::Saved *>(&data.words[kRngSavedWord]);
+}
 u32 sAttemptSerial;
 s32 sLastSampleQf;
 SusamuneGhostClock sRecordClock;
@@ -716,6 +729,7 @@ void resetObserverRuntime() {
 
 void failRecording(RecordFailure failure, const char *message) {
     sRecording = false;
+    GhostRng::stop();
     sRecord.valid = false;
     sRecord.failure = static_cast<u8>(failure);
     bumpRecordToken();
@@ -1277,6 +1291,7 @@ void finishRecording(s32 qf, bool completed) {
         bumpRecordToken();
     }
     sRecording = false;
+    GhostRng::stop();
     sClockLastQf = qf;
     sClockPhase = CLOCK_FINISHED;
 }
@@ -1358,6 +1373,9 @@ void beginAttempt(s32 qf, bool boundaryReset = false) {
     // record slot captures a challenger. Once complete, preserve that challenger
     // across restarts until storage acknowledges it or the pin is released.
     sRecording = !keepChallenger;
+    GhostRng::stop();
+    if (sRecording && sRecord.formatVersion == SUSAMUNE_GHOST_FILE_VERSION_V6)
+        GhostRng::begin(GhostRng::tapeFor(sRecord.samples));
     prepareClock(qf);
     if (sRecording && appendSegment()) startEpochSamples(qf);
     if (keepChallenger && !sChallengerNotified && gMenu) {
@@ -2188,8 +2206,13 @@ bool validCanonicalFile(const void *data, u32 size,
     const bool v5 = header.version == SUSAMUNE_GHOST_FILE_VERSION_V5 || v6;
     const bool v4 = header.version == SUSAMUNE_GHOST_FILE_VERSION_V4 || v5;
     if (!v3 && !v4) return false;
+    // A V6 file may also carry the RNG tape (SGRN after SGTI).
+    const bool rngTape = SUSAMUNE_GHOST_RNG && v6 && header.requiredFeatures ==
+        (SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V6 |
+         SUSAMUNE_GHOST_REQUIRED_RNG_TAPE);
     const u32 supportedFeatures = v6
-        ? SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V6 : v5
+        ? SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V6 |
+              (rngTape ? SUSAMUNE_GHOST_REQUIRED_RNG_TAPE : 0u) : v5
         ? SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V5 : v4
         ? SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V4
         : SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V3;
@@ -2402,7 +2425,22 @@ bool validCanonicalFile(const void *data, u32 size,
     if (v5) {
         const u32 offset = extension.sampleDataOffset + sampleDataSize;
         const u8 *teaching = bytes + offset;
-        const u32 teachingSize = size - offset;
+        u32 teachingSize = size - offset;
+        if (rngTape) {
+            if (teachingSize < SUSAMUNE_GHOST_TEACHING_HEADER_SIZE) return false;
+            const u32 inputCount = SusamuneGhostReadBe32(teaching + 8);
+            const u32 splitCount = SusamuneGhostReadBe32(teaching + 12);
+            if (inputCount > SusamuneGhostInputLimit(header.version) ||
+                splitCount > SUSAMUNE_GHOST_SPLIT_MAX_COUNT) return false;
+            const u32 sectionSize = SUSAMUNE_GHOST_TEACHING_HEADER_SIZE +
+                inputCount * SusamuneGhostInputStride(header.version) +
+                splitCount * SUSAMUNE_GHOST_SPLIT_SAMPLE_SIZE;
+            if (sectionSize > teachingSize) return false;
+            const u8 *tape = teaching + sectionSize;
+            const u32 tapeSize = teachingSize - sectionSize;
+            if (!GhostRng::chunkPlausible(tape, tapeSize)) return false;
+            teachingSize = sectionSize;
+        }
         if (!SusamuneGhostTeachingHeaderValid(teaching, teachingSize) ||
             teaching[5] != (v6 ? SUSAMUNE_GHOST_TEACHING_FLUDD_VERSION
                                 : SUSAMUNE_GHOST_TEACHING_VERSION))
@@ -2438,6 +2476,8 @@ bool validCanonicalFile(const void *data, u32 size,
 void installCanonicalTrack(Track &track, const void *data,
                            const SusamuneGhostFileHeader &header) {
     clearTrack(track);
+    // Imported poses may fill the slot's pose tail; any tape there is stale.
+    GhostRng::reset(GhostRng::tapeFor(track.samples));
     const u8 *bytes = static_cast<const u8 *>(data);
     SusamuneGhostFileV4Extension extension;
     memcpy(&extension, header.reserved, sizeof(extension));
@@ -2635,6 +2675,7 @@ void init() {
     sGhostYoshi = SUSAMUNE_GHOST_V4_YOSHI_NONE;
     sGhostIdSerial = 0;
     resetObserverRuntime();
+    GhostRng::init();
 }
 
 void onStageSetup(TMarDirector *director) {
@@ -2739,8 +2780,21 @@ void onStageSetup(TMarDirector *director) {
 void frameControl(bool frozen, bool assisted) {
     sFrameFrozen = frozen;
     sFrameAssisted = assisted;
+#if SUSAMUNE_GHOST_RNG
+    s32 qf = 0;
+    const bool watching = observerRunning();
+    const bool qfKnown = !watching && gQFTTimer.currentQf(&qf);
+    if (qfKnown) qf = recordQf(qf);
+    // A frozen frame runs no gameplay, so it is not a tape frame. The tape
+    // only follows V6 recordings, whose pose tail it occupies.
+    if (!frozen)
+        GhostRng::frameStart(!watching && (sRecording || sPendingContinueRecording),
+                             qfKnown, static_cast<u32>(qf),
+                             static_cast<u8>(sRecord.segmentCount - 1));
+#else
     s32 qf;
     if (!observerRunning() && gQFTTimer.currentQf(&qf)) recordQf(qf);
+#endif
 }
 
 void beforeDirect() {
@@ -3312,6 +3366,18 @@ bool exportLatest(void *out, u32 capacity, u8 sourceProfile,
                                             teachingSize - sizeof(info));
         memcpy(section, &info, sizeof(info));
     }
+    // The RNG tape follows SGTI. A V6 file always has room for a full one
+    // below the shared file limit; any failure just omits it.
+    u32 rngSize = 0;
+    if (teaching && fludd) {
+        const u32 limit = capacity < SUSAMUNE_GHOST_MAX_FILE_SIZE
+            ? capacity : SUSAMUNE_GHOST_MAX_FILE_SIZE;
+        if (limit > fileSize &&
+            !GhostRng::exportChunk(GhostRng::tapeFor(track->samples),
+                                   bytes + fileSize, limit - fileSize, &rngSize))
+            rngSize = 0;
+    }
+    const u32 fileSizeWithTape = fileSize + rngSize;
 
     SusamuneGhostFileHeader header;
     memset(&header, 0, sizeof(header));
@@ -3320,11 +3386,12 @@ bool exportLatest(void *out, u32 capacity, u8 sourceProfile,
                                        : SUSAMUNE_GHOST_FILE_VERSION_V5)
                               : SUSAMUNE_GHOST_FILE_VERSION_V4;
     header.headerSize = SUSAMUNE_GHOST_FILE_HEADER_SIZE;
-    header.fileSize = fileSize;
+    header.fileSize = fileSizeWithTape;
     header.requiredFeatures = teaching
         ? (fludd ? SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V6
                  : SUSAMUNE_GHOST_SUPPORTED_REQUIRED_FEATURES_V5)
         : SUSAMUNE_GHOST_REQUIRED_EXTENDED_CODEC;
+    if (rngSize) header.requiredFeatures |= SUSAMUNE_GHOST_REQUIRED_RNG_TAPE;
     header.runFlags = track->runFlags;
     header.gameId = runningGameId();
     header.discRevision = SUSAMUNE_GHOST_DISC_REVISION;
@@ -3346,7 +3413,7 @@ bool exportLatest(void *out, u32 capacity, u8 sourceProfile,
     header.endQf = track->endQf;
     header.durationQf = duration;
     header.sampleCount = track->count;
-    header.payloadSize = payloadSize;
+    header.payloadSize = payloadSize + rngSize;
     SusamuneGhostFileV4Extension extension;
     memset(&extension, 0, sizeof(extension));
     extension.segmentCount = track->segmentCount;
@@ -3382,22 +3449,22 @@ bool exportLatest(void *out, u32 capacity, u8 sourceProfile,
         header.profileName, sizeof(header.profileName), profileName);
     header.checksumKind = SUSAMUNE_GHOST_CHECKSUM_CRC32;
     header.payloadChecksum = Checksum::crc32(
-        bytes + SUSAMUNE_GHOST_FILE_HEADER_SIZE, payloadSize);
+        bytes + SUSAMUNE_GHOST_FILE_HEADER_SIZE, payloadSize + rngSize);
 
     memcpy(bytes, &header, sizeof(header));
     header.headerChecksum = Checksum::crc32(
         bytes, sizeof(header), SUSAMUNE_GHOST_FILE_CHECKSUM_OFFSET, 8);
     memcpy(bytes, &header, sizeof(header));
     header.fileChecksum = Checksum::crc32(
-        bytes, fileSize, SUSAMUNE_GHOST_FILE_CHECKSUM_OFFSET, 4);
+        bytes, fileSizeWithTape, SUSAMUNE_GHOST_FILE_CHECKSUM_OFFSET, 4);
     memcpy(bytes, &header, sizeof(header));
 
     SusamuneGhostFileHeader checked;
-    if (!validCanonicalFile(bytes, fileSize, &checked)) {
-        memset(bytes, 0, fileSize);
+    if (!validCanonicalFile(bytes, fileSizeWithTape, &checked)) {
+        memset(bytes, 0, fileSizeWithTape);
         return false;
     }
-    *outSize = fileSize;
+    *outSize = fileSizeWithTape;
     if (outRecordToken) *outRecordToken = selection.token;
     return true;
 }
@@ -3983,6 +4050,7 @@ bool captureSavestate(SavestateData &out,
     saved.endpoint = sRestoredPrefix ? sRestoredEndpoint : ILing::savestateGhostEndpoint();
     memcpy(&out, &saved, sizeof(saved));
     if (!decodeSavedPrefix(out, &saved)) return false;
+    GhostRng::capture(rngSaved(out));
     spans[0] = {sRecord.samples, sRecord.count * static_cast<u32>(sizeof(Sample))};
     spans[1] = {sRecord.segments, sRecord.segmentCount * static_cast<u32>(sizeof(Segment))};
     spans[2] = {sRecord.inputs, sRecord.inputCount * SusamuneGhostInputStride(sRecord.formatVersion)};
@@ -4042,9 +4110,13 @@ void restoreSavestate(const SavestateData &data) {
     sLiveEpisode = saved.liveEpisode;
     sLiveRouteParentArea = saved.liveRouteParentArea;
     sLiveRouteFlags = saved.liveRouteFlags;
+    if (sRecord.formatVersion == SUSAMUNE_GHOST_FILE_VERSION_V6)
+        GhostRng::restore(rngSaved(const_cast<SavestateData &>(data)),
+                          GhostRng::tapeFor(sRecord.samples));
 }
 
 void onSavestateLoaded() {
+    GhostRng::stop();
     memset(&sRecordClock, 0, sizeof(sRecordClock));
     sRaceSplitCount = 0;
     clearRaceContext();

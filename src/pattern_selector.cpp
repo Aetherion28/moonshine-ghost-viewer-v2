@@ -17,6 +17,7 @@
 #include "susamune/glyphs.hxx"
 #include "susamune/menu.hxx"
 #include "susamune/settings.hxx"
+#include "susamune/ghost_rng.hxx"
 
 namespace {
 
@@ -213,7 +214,10 @@ extern "C" void susamuneGoToRandomNextGraphNode(TSpineEnemy *enemy) {
             // Preserve the conditional retail RNG advance even though its edge
             // choice is replaced. The graph node itself is the route phase.
             next = graph->getRandomNextIndex(current, tracer->mPreviousNode, (u32)-1);
-            if ((u32)current < sizeof(kPeteyPath)) next = kPeteyPath[current];
+            if ((u32)current < sizeof(kPeteyPath)) {
+                next = kPeteyPath[current];
+                GhostRng::noteNodeOverride(enemy, next);
+            }
         } else {
             const int blueBird = selectedBlueCoinBirdNode(
                 enemy, graph, current, tracer->mPreviousNode);
@@ -222,8 +226,10 @@ extern "C" void susamuneGoToRandomNextGraphNode(TSpineEnemy *enemy) {
                 graph->getRandomNextIndex(current, tracer->mPreviousNode,
                                           (u32)-1);
                 next = blueBird;
+                GhostRng::noteNodeOverride(enemy, next);
             } else {
                 next = selectedNode(enemy, current, tracer->mPreviousNode);
+                if (next >= 0) GhostRng::noteNodeOverride(enemy, next);
             }
             if (next < 0) {
                 next = graph->getRandomNextIndex(current, tracer->mPreviousNode,

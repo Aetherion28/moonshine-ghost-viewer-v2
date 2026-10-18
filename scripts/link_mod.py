@@ -116,7 +116,7 @@ def main():
 
     check_arena_reserve(linker_script, base)
 
-    p = Project()
+    p = Project(kuribo_compiler_home=args.kuribo_home)
     # The intermediates (<name>.o / <name>.bin) live in obj_dir, which is the
     # build dir shared by every version, and all three versions link in
     # parallel -- so the name has to carry the version or they clobber
