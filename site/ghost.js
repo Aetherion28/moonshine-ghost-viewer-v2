@@ -281,13 +281,19 @@ function parseRngTape(bytes, dv, at, startQf) {
   const streamSize = dv.getUint32(at + 12), flags = dv.getUint32(at + 16), callCount = dv.getUint32(at + 24);
   const size = 32 + nCallers * 4 + nActors * 8 + streamSize;
   if (dv.getUint16(at + 4) !== 1 || dv.getUint16(at + 6) !== 32) throw new Error('unknown tape version');
+  if (nCallers > 255 || nActors > 255 || (flags & ~0x1f) || dv.getUint32(at + 28)) throw new Error('bad tape header');
   if (at + size > bytes.length) throw new Error('tape runs past the end of the file');
   const body = bytes.subarray(at + 32, at + size);
   if (ghostCrc32(body) !== dv.getUint32(at + 20)) throw new Error('checksum mismatch');
   const callers = [], actors = [], seen = new Map();
-  for (let i = 0; i < nCallers; i++) callers.push(dv.getUint32(at + 32 + i * 4));
+  for (let i = 0; i < nCallers; i++) {
+    const c = dv.getUint32(at + 32 + i * 4);
+    if (!c || (c & 3) || callers.includes(c)) throw new Error('bad call-site table');
+    callers.push(c);
+  }
   for (let i = 0; i < nActors; i++) {
     const o = at + 32 + nCallers * 4 + i * 8, vtable = dv.getUint32(o), keyCode = dv.getUint16(o + 4);
+    if (!vtable || dv.getUint16(o + 6)) throw new Error('bad object table');
     const k = vtable + ':' + keyCode, ordinal = seen.get(k) || 0;
     seen.set(k, ordinal + 1);
     actors.push({ vtable, keyCode, ordinal });
@@ -300,11 +306,15 @@ function parseRngTape(bytes, dv, at, startQf) {
     value: new Uint16Array(callCount), used: new Uint16Array(callCount),
   };
   let o = at + size - streamSize, n = 0, frame = 0, segment = 0, state = 0, step = 0;
-  let cur = null, prev = null;
+  let cur = null, prev = null, seeded = false;
+  const end = at + size;
+  const need = (k) => { if (o + k > end) throw new Error('tape ends inside an entry'); };
   const rel = (q) => (q === null ? NaN : q - startQf);
   while (o < at + size) {
     const op = bytes[o++];
     if (op <= 0x7f) {
+      need(2);
+      if (!seeded) throw new Error('rolls before a seed');
       const c = bytes[o], a = bytes[o + 1];
       o += 2;
       if (c >= nCallers || a > nActors || n + op + 1 > callCount) throw new Error('bad call run');
@@ -316,11 +326,17 @@ function parseRngTape(bytes, dv, at, startQf) {
       }
     } else if (op <= 0xbf) {
       for (let k = 0; k < op - 0x7f; k++) { frame++; prev = cur; if (cur !== null) cur = (cur + step) >>> 0; }
-    } else if (op === 0xc1) { state = dv.getUint32(o); o += 4; }
-    else if (op === 0xc2) { const q = dv.getUint32(o); o += 4; if (prev !== null) step = (q - prev) >>> 0; cur = q; }
-    else if (op === 0xc3) { segment = bytes[o++]; }
-    else if (op === 0xc4) { if (n) tape.used[n - 1] = dv.getUint16(o); o += 2; }
-    else if (op === 0xc5) {
+    } else if (op === 0xc1) { need(4); state = dv.getUint32(o); o += 4; seeded = true; }
+    else if (op === 0xc2) { need(4); const q = dv.getUint32(o); o += 4; if (prev !== null) step = (q - prev) >>> 0; cur = q; }
+    else if (op === 0xc3) { need(1); segment = bytes[o++]; if (segment >= 64) throw new Error('bad segment'); }
+    else if (op === 0xc4) {
+      need(2);
+      const v = dv.getUint16(o);
+      if (!n || v > 0x7fff) throw new Error('bad override');
+      tape.used[n - 1] = v; o += 2;
+    } else if (op === 0xc5) {
+      need(3);
+      if (bytes[o] > nActors) throw new Error('bad graph override');
       tape.nodeOverrides.push({ frame, qf: rel(cur), actor: bytes[o] - 1, node: dv.getInt16(o + 1) });
       o += 3;
     } else throw new Error(`unknown op 0x${op.toString(16)}`);
