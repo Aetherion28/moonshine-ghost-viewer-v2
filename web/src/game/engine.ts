@@ -7,7 +7,7 @@
 // animations once at the end). Drawing is the viewer's: this only works out where everything is,
 // which animation it plays at which frame, and what's visible.
 
-import { fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsIsInSight, matan, MsRandF, sqDist, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, SMSCalcJumpVelocityY } from './math.js';
+import { rngCtx, fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsIsInSight, matan, MsRandF, sqDist, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, SMSCalcJumpVelocityY } from './math.js';
 import type { MarioProxy } from './mario.js';
 import type { mat4 } from 'gl-matrix';
 import { Skeleton, parseBCK, jointMatrices } from './skeleton.js';
@@ -229,7 +229,12 @@ export class NameRef {
     perform(_cue: number) { }
     /** JDrama::TViewObj::testPerform: unkC masks out cues (the gates aren't used by anything here). */
     flags = 0;
-    testPerform(cue: number) { cue &= ~this.flags; if (cue) this.perform(cue); }
+    testPerform(cue: number) {
+        cue &= ~this.flags;
+        if (!cue) return;
+        const prev = rngCtx.cur; rngCtx.cur = this;
+        try { this.perform(cue); } finally { rngCtx.cur = prev; }
+    }
 }
 
 // ---------------------------------------------------------------- actors
@@ -902,6 +907,9 @@ export class PathNode {
     copy() { return new PathNode(this.actor, this.p.clone()); }
 }
 
+/** A random graph choice, or the node a Moonshine RNG control picked for the object there instead (the ghost's tape). */
+function overrideNode(i: number) { const n = rngCtx.node ? rngCtx.node(rngCtx.cur) : null; return n !== null && n >= 0 ? n : i; }
+
 // ---------------------------------------------------------------- TSpineEnemy
 export class SpineEnemy extends LiveActor {
     goal = new PathNode(); goal104 = new PathNode(); goalStack: PathNode[] = [];
@@ -1036,13 +1044,13 @@ export class SpineEnemy extends LiveActor {
     goToRandomNextGraphNode() {
         const t = this.tracer, g = t.graph!;
         if (t.cur < 0) t.setTo(g.findNearestNodeIndex(this.pos, -1));
-        else t.moveTo(g.getRandomNextIndex(t.cur, t.prev, -1));
+        else t.moveTo(overrideNode(g.getRandomNextIndex(t.cur, t.prev, -1)));
         this.setGoalPathFromGraph(); this.unk128 = 0; this.unk12C = 0;
     }
     goToRandomEscapeGraphNode() {
         const t = this.tracer, g = t.graph!;
         if (t.cur < 0) t.setTo(g.findNearestNodeIndex(this.pos, -1));
-        else t.moveTo(g.getEscapeFromMarioIndex(t.cur, -1, this.pos, this.world.mario.pos, -1));
+        else t.moveTo(overrideNode(g.getEscapeFromMarioIndex(t.cur, -1, this.pos, this.world.mario.pos, -1)));
         this.setGoalPathFromGraph(); this.unk128 = 0; this.unk12C = 0;
     }
     goToExclusiveNextGraphNode() {
@@ -1052,7 +1060,7 @@ export class SpineEnemy extends LiveActor {
         else {
             let idx = g.getRandomNextIndex(t.cur, t.prev, -1);
             for (const e of this.manager.objs as SpineEnemy[]) if (e !== this && idx === e.tracer.cur) idx = g.getRandomNextIndex(t.cur, idx, -1);
-            t.moveTo(idx);
+            t.moveTo(overrideNode(idx));
         }
         this.setGoalPathFromGraph(); this.unk128 = 0; this.unk12C = 0;
     }
@@ -1065,7 +1073,7 @@ export class SpineEnemy extends LiveActor {
     goToDirLimitedNextGraphNode(limit: number) {
         const t = this.tracer, g = t.graph!;
         if (t.cur < 0) t.setTo(g.findNearestNodeIndex(this.pos, -1));
-        else t.moveTo(g.getRandomButDirLimited(t.cur, t.prev, new V3(MsSin(this.rot.y), 0, MsCos(this.rot.y)), this.pos, limit, -1));
+        else t.moveTo(overrideNode(g.getRandomButDirLimited(t.cur, t.prev, new V3(MsSin(this.rot.y), 0, MsCos(this.rot.y)), this.pos, limit, -1)));
         this.setGoalPathFromGraph(); this.unk128 = 0; this.unk12C = 0;
     }
     calcMinimumTurnRadius(speed: number, turn: number) {

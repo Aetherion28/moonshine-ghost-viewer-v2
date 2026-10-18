@@ -7,7 +7,14 @@ export const fr = Math.fround;
 
 // ---------------------------------------------------------------- MSL rand (MSL_Common/rand.c)
 let next = 1;
+/**
+ * Replaying a ghost's RNG tape: cur is the object performing (JDrama::TViewObj::testPerform), roll
+ * gives the number the game's rand() returned for it there (null: none recorded, the sim's own
+ * LCG answers), node a graph node a Moonshine RNG control chose for it.
+ */
+export const rngCtx: { cur: object | null; roll: ((who: object | null) => number | null) | null; node: ((who: object | null) => number | null) | null } = { cur: null, roll: null, node: null };
 export function rand(): number {
+    if (rngCtx.roll) { const v = rngCtx.roll(rngCtx.cur); if (v !== null) return v; }
     next = (Math.imul(0x41C64E6D, next) + 12345) >>> 0;
     return (next >>> 16) & 0x7FFF;
 }

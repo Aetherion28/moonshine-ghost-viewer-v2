@@ -10,6 +10,7 @@ import type { GameFS } from '../disc.js';
 import { Stage, StageFiles, GameCamera } from './scene.js';
 import { MarioSample, MarioTrack } from './mario.js';
 import { LiveActor, NameRef, World, calcKeyCode } from './engine.js';
+import { rngCtx } from './math.js';
 import './enemies/pakkun.js';
 import './enemies/sambo.js';
 import './enemies/bosspakkun.js';
@@ -85,7 +86,63 @@ export interface SimInput {
     api: { ghostSampleAt(g: any, t: number): any; ghostAnimAt(g: any, t: number): any; ghostFluddAt(g: any, t: number): any; ghostCameraAt?(g: any, t: number, seg?: number): any };
 }
 
+/**
+ * A ghost's RNG tape (SGRN, ghost.js's parseRngTape) replayed: each object's rand() calls get the
+ * rolls the game gave that object (the tape's actor: its scene-name key code, in the order objects
+ * first rolled), in order, around the same QF; graph choices a Moonshine RNG control made are
+ * taken too. Calls the tape has nothing for fall back to the sim's own LCG.
+ */
+export class RngReplay {
+    private byActor = new Map<number, number[]>();
+    private ptr = new Map<number, number>();
+    private assigned = new Map<object, number>();
+    private taken = new Set<number>();
+    private nodes = new Map<number, { qf: number; node: number; used: boolean }[]>();
+    constructor(private tape: any, private seg: number, private q0: number, private qfNow: () => number) {
+        for (let i = 0; i < tape.count; i++) {
+            if (tape.segment[i] !== seg || tape.actor[i] < 0) continue;
+            const a = tape.actor[i];
+            (this.byActor.get(a) || this.byActor.set(a, []).get(a)!).push(i);
+        }
+        for (const o of tape.nodeOverrides) if (o.actor >= 0) (this.nodes.get(o.actor) || this.nodes.set(o.actor, []).get(o.actor)!).push({ qf: o.qf, node: o.node, used: false });
+    }
+    private actorOf(who: object | null): number {
+        if (!who) return -1;
+        const got = this.assigned.get(who);
+        if (got !== undefined) return got;
+        const name = (who as NameRef).name;
+        if (typeof name !== 'string') return -1;
+        const key = calcKeyCode(name);
+        let found = -1;
+        for (let a = 0; a < this.tape.actors.length; a++) if (!this.taken.has(a) && this.tape.actors[a].keyCode === key && this.byActor.has(a)) { found = a; break; }
+        if (found >= 0) this.taken.add(found);
+        this.assigned.set(who, found);
+        return found;
+    }
+    roll = (who: object | null): number | null => {
+        const a = this.actorOf(who);
+        if (a < 0) return null;
+        const L = this.byActor.get(a)!, T = this.tape;
+        let p = this.ptr.get(a) || 0;
+        const Q = this.qfNow();
+        // rolls the sim never asked for (it fell behind) are passed over
+        while (p < L.length && T.qf[L[p]] === T.qf[L[p]] && T.qf[L[p]] < Q - 8) p++;
+        if (p >= L.length || (T.qf[L[p]] === T.qf[L[p]] && T.qf[L[p]] > Q + 4)) { this.ptr.set(a, p); return null; }
+        this.ptr.set(a, p + 1);
+        return T.used[L[p]];
+    };
+    node = (who: object | null): number | null => {
+        const a = this.actorOf(who);
+        const L = a >= 0 ? this.nodes.get(a) : undefined;
+        if (!L) return null;
+        const Q = this.qfNow();
+        for (const o of L) if (!o.used && (o.qf !== o.qf || Math.abs(o.qf - Q) <= 8)) { o.used = true; return o.node; }
+        return null;
+    };
+}
+
 export class SimRunner {
+    private rng: RngReplay | null = null;
     stage: Stage | null = null;
     private key = '';
     /** ghost QF of the stage's first tick */
@@ -126,13 +183,17 @@ export class SimRunner {
             this.key = key; this.q0 = q0; this.error = null;
             try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
+            const st0 = this.stage;
+            this.rng = g.rng ? new RngReplay(g.rng, segI, q0, () => q0 + st0.qf) : null;
         }
         const st = this.stage!;
         const track = this.track(inp);
         const t0 = performance.now();
         while (st.qf + 4 <= want) {
             st.camera = this.camera(inp, q0 + st.qf + 4, segI);
+            rngCtx.roll = this.rng ? this.rng.roll : null; rngCtx.node = this.rng ? this.rng.node : null;
             try { st.runFrame(track); } catch (e) { this.error = e; console.warn('[game] frame', e); this.stage = null; return false; }
+            finally { rngCtx.roll = null; rngCtx.node = null; }
             if (performance.now() - t0 > budgetMs) return false;
         }
         return true;
