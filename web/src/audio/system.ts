@@ -26,6 +26,8 @@ export class SoundSystem {
     bgm: Track | null = null; bgmId = -1;
     seSeq: Track | null = null;
     private slots = new Map<number, number>();
+    /** held sounds (ID & 0xC00 clear: JAIBasic keeps them only while the game asks every frame): key -> slot track */
+    private held = new Map<string, { tid: number; id: number }>();
     musicGain = 1; sfxGain = 1;
     constructor(public files: SoundFiles, rate: number) {
         this.init = parseAAF(files.aaf);
@@ -71,10 +73,21 @@ export class SoundSystem {
         for (const c of this.music.channels) c.alive = false;
         this.music.channels = [];
     }
-    /** startSoundActor: an SE on its category's next track (vol 0..1, pan 0..1) */
-    playSe(id: number, vol = 1, pan = 0.5, pitch = 1) {
+    /**
+     * startSoundActor: an SE on its category's next track (vol 0..1, pan 0..1). hold: the key of a
+     * held sound (asked for again each frame: its volume and pan follow; it starts once).
+     */
+    playSe(id: number, vol = 1, pan = 0.5, pitch = 1, hold?: string) {
         const t = this.seSeq, tbl = this.se;
         if (!t || !t.seqState || !tbl) return;
+        if (hold !== undefined) {
+            const h = this.held.get(hold);
+            if (h && h.id === id) {
+                const slot = t.routeTrack(route(h.tid));
+                if (slot && slot.outer && t.readPortApp(route(h.tid) + 0x20000) !== 0) { this.setOuter(slot.outer, id, vol, pan, pitch); return; }
+            }
+            if (h) this.releaseSe(hold);
+        }
         const info = tbl.info(id);
         if (!info) return;
         const cat = (id >>> 12) & 0xFF;
@@ -95,16 +108,29 @@ export class SoundSystem {
         const tid = base + j, r = route(tid);
         const slot = t.routeTrack(r);
         if (!slot) return;
-        const fmt = tbl.data[3];
+        // the slot's last sound, if held, is over
+        for (const [k, h] of this.held) if (h.tid === tid) this.held.delete(k);
+        if (hold !== undefined) this.held.set(hold, { tid, id });
         const o = slot.outer || (slot.outer = new OuterParam());
-        o.switch_ = 0x1F;
-        o.volume = vol * (fmt & 4 ? info.volume / 127 : 1);
-        o.pitch = pitch * (fmt & 2 ? info.pitch : 1);
-        o.pan = pan; o.update = 0xFFFF;
+        this.setOuter(o, id, vol, pan, pitch);
         t.writePortApp(r + 0x30000, 0);
         t.writePortApp(r + 0x60000, 0);
         t.writePortApp(r + 0x40000, id & 0x3FF);
         t.writePortApp(r, 1);
+    }
+    private setOuter(o: OuterParam, id: number, vol: number, pan: number, pitch: number) {
+        const tbl = this.se!, info = tbl.info(id), fmt = tbl.data[3];
+        o.switch_ = 0x1F;
+        o.volume = vol * (info && fmt & 4 ? info.volume / 127 : 1);
+        o.pitch = pitch * (info && fmt & 2 ? info.pitch : 1);
+        o.pan = pan; o.update = 0xFFFF;
+    }
+    /** JAIBasic::releaseSeRegist: a held sound no longer asked for (its track's port 0 to 0: the SE sequence stops it) */
+    releaseSe(hold: string) {
+        const h = this.held.get(hold);
+        if (!h) return;
+        this.held.delete(hold);
+        if (this.seSeq) this.seSeq.writePortApp(route(h.tid), 0);
     }
     render(L: Float32Array, R: Float32Array, n: number) {
         this.mixer.players[0].gain = this.musicGain; this.mixer.players[1].gain = this.sfxGain;

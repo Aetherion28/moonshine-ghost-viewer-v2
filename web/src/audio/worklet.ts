@@ -1,5 +1,5 @@
 // The audio worklet: the game's sound system (system.ts) rendering into the page's audio output.
-// Messages from the page: init (the sound files), bgm / stopBgm, se, gain, pause.
+// Messages from the page: init (the sound files), bgm / stopBgm, se (hold: a held sound's key), seRelease, gain, pause.
 
 import { SoundSystem } from './system.js';
 
@@ -26,7 +26,8 @@ class GameAudioProcessor extends AudioWorkletProcessor {
                     }
                     case 'bgm': if (this.sys) this.sys.playBgm(m.id, m.seek || 0); break;
                     case 'stopBgm': if (this.sys) this.sys.stopBgm(); break;
-                    case 'se': if (this.sys && !this.paused) this.sys.playSe(m.id, m.vol, m.pan, m.pitch); break;
+                    case 'se': if (this.sys && !this.paused) this.sys.playSe(m.id, m.vol, m.pan, m.pitch, m.hold); break;
+                    case 'seRelease': if (this.sys) this.sys.releaseSe(m.hold); break;
                     case 'gain': if (this.sys) { this.sys.musicGain = m.music; this.sys.sfxGain = m.sfx; } break;
                     case 'pause': this.paused = !!m.on; break;
                 }

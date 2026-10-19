@@ -28,6 +28,7 @@ export interface AudioFrame {
     /** the simulated stage's tick now (events older than a few ticks are a catch-up's: silent) */
     tick?: number;
 }
+const QF_PER_SECOND = 120000 / 1001;
 interface BasEntry { id: number; start: number; end: number; pitch: number; volume: number; }
 
 const store = { get(k: string, d: boolean) { try { const v = localStorage.getItem('ghostViewer.' + k); return v === null ? d : v === '1'; } catch { return d; } },
@@ -57,7 +58,9 @@ export class GameAudio {
     private ready = false;
     private gestured = false;
     private bgmKey = ''; private bgmStartedAt = 0; private bgmSeek = 0; private bgmRunning = false;
-    private lastT = -1; private lastMove = 0; private paused = true;
+    private lastT = -1; private paused = true; private lastWall = 0; private lastMusicT = 0;
+    /** held sounds: key -> the playback time it was last asked for */
+    private held = new Map<string, number>();
     private evKey: object | null = null; private evDone = 0;
     private bas: (BasEntry[] | null)[] = []; private bckFrames: number[] = [];
     private marioPrev: { anim: number; frame: number } | null = null;
@@ -147,26 +150,32 @@ export class GameAudio {
         if (!this.ready || !this.node) return;
         const now = performance.now() / 1000;
         const scrubbing = Math.abs(f.t - this.lastT) > 0 && !f.playing;
-        if (f.t !== this.lastT) this.lastMove = now;
         // sound plays only at 1x while playing
         const audible = f.playing && Math.abs(f.speed - 1) < 1e-3;
-        if (audible === this.paused) { this.paused = !audible; this.post({ type: 'pause', on: this.paused }); if (!this.paused) this.bgmRunning = false; }
-        // the stage's music: started from the stage's start, re-synced when the time jumps
+        if (audible === this.paused) {
+            this.paused = !audible; this.post({ type: 'pause', on: this.paused });
+            if (!this.paused) this.bgmRunning = false; else this.releaseHeld(-Infinity);
+        }
+        // the stage's music: started from the stage's start; re-seeked when the time jumps (a scrub,
+        // a skip) or drifts far from the playback (a slow machine), else left to play on
         const id = this.music ? stageBgm(f.area, f.episode) : -1;
         const key = f.segKey + '|' + id;
-        const musicT = Math.max(0, (f.t - f.segStart) / (120000 / 1001));
+        const musicT = Math.max(0, (f.t - f.segStart) / QF_PER_SECOND);
         if (key !== this.bgmKey) {
             this.bgmKey = key; this.bgmRunning = false;
             if (id < 0) this.post({ type: 'stopBgm' });
         }
         if (id >= 0 && audible) {
-            const expect = this.bgmSeek + (now - this.bgmStartedAt);
-            if (!this.bgmRunning || Math.abs(expect - musicT) > 0.35) {
+            const dWall = now - this.lastWall, dMusic = musicT - this.lastMusicT;
+            const jumped = dMusic < -0.05 || dMusic > dWall * 1.5 + 0.5;
+            const drift = this.bgmSeek + (now - this.bgmStartedAt) - musicT;
+            if (!this.bgmRunning || jumped || Math.abs(drift) > 3) {
                 this.post({ type: 'bgm', id, seek: musicT });
                 this.bgmRunning = true; this.bgmSeek = musicT; this.bgmStartedAt = now;
             }
         }
-        // sound effects
+        this.lastWall = now; this.lastMusicT = musicT;
+        // sound effects: the simulated stage's
         if (f.eventsKey !== this.evKey) { this.evKey = f.eventsKey; this.evDone = f.events ? f.events.length : 0; }
         if (f.events) {
             if (f.events.length < this.evDone) this.evDone = 0;
@@ -174,16 +183,25 @@ export class GameAudio {
                 const e = f.events[i];
                 if (e.kind !== 'sound') continue;
                 if (f.tick !== undefined && e.t !== undefined && e.t < f.tick - 3) continue;
-                this.playAt(e.data.id, e.data.p, f);
+                this.playAt(e.data.id, e.data.p, f, 1, 1, 'ev:' + e.data.id);
             }
             this.evDone = f.events.length;
         }
+        // ... and Mario's animation sounds
         if (f.mario && this.sfx) this.marioSounds(f, audible && !scrubbing);
+        // held sounds not asked for in the last few game frames are let go
+        this.releaseHeld(f.t - 3 * 4);
         this.lastT = f.t;
     }
-    /** an SE heard from the camera (JAISound distance volume and pan, simplified) */
-    private playAt(id: number, p: { x: number; y: number; z: number } | null, f: AudioFrame, vol = 1, pitch = 1) {
-        if (id & 0xC00) return;   // looping sounds: they need the game to stop them
+    private releaseHeld(before: number) {
+        for (const [k, t] of this.held) if (t < before) { this.held.delete(k); this.post({ type: 'seRelease', hold: k }); }
+    }
+    /**
+     * An SE heard from the camera (JAISound's distance volume and pan, simplified). An ID with 0xC00
+     * clear is a held sound (JAIBasic::checkNextFrameSe lets it go unless asked for again each frame):
+     * it starts once under its key and stops once no longer asked for. IDs with 0xC00 play out.
+     */
+    private playAt(id: number, p: { x: number; y: number; z: number } | null, f: AudioFrame, vol = 1, pitch = 1, key = '') {
         let pan = 0.5;
         if (p && f.camPos && f.view) {
             const V = f.view;
@@ -195,9 +213,15 @@ export class GameAudio {
             // panDistanceMax (500): sideways over the distance
             pan = 0.5 + 0.5 * Math.max(-1, Math.min(1, x / Math.max(500, d)));
         }
-        this.post({ type: 'se', id, vol, pan, pitch });
+        if (id & 0xC00) { this.post({ type: 'se', id, vol, pan, pitch }); return; }
+        const k = key || 'id:' + id;
+        this.held.set(k, f.t);
+        this.post({ type: 'se', id, vol, pan, pitch, hold: k });
     }
-    /** JAIAnimeSound::setAnimSoundActor for the ghost's Mario: the animation's sounds as its frame passes them */
+    /**
+     * JAIAnimeSound for the ghost's Mario: an animation's one-shot sounds (ID & 0xC00) as its frame
+     * passes their start, its held sounds while the frame is inside their start..end.
+     */
     private marioSounds(f: AudioFrame, on: boolean) {
         const m = f.mario!;
         const row = ANIME_DATA[m.anim];
@@ -210,10 +234,15 @@ export class GameAudio {
         const list = this.bas[bck];
         if (!list) return;
         const P = { x: m.x, y: m.y, z: m.z };
-        const fire = (lo: number, hi: number) => { for (const e of list) if (e.start > lo && e.start <= hi) this.playAt(e.id, P, f, e.volume, e.pitch); };
+        const fire = (lo: number, hi: number) => { for (const e of list) if (e.id & 0xC00 && e.start > lo && e.start <= hi) this.playAt(e.id, P, f, e.volume, e.pitch); };
         if (!prev || prev.anim !== m.anim) fire(-1, frame);
         else if (frame < prev.frame) { fire(prev.frame, Infinity); fire(-1, frame); }
         else fire(prev.frame, frame);
+        list.forEach((e, i) => {
+            if (e.id & 0xC00) return;
+            const inside = e.start === e.end || (e.start < e.end ? frame >= e.start && frame < e.end : frame < e.end || frame > e.start);
+            if (inside) this.playAt(e.id, P, f, e.volume, e.pitch, 'ma:' + m.anim + ':' + i);
+        });
     }
 }
 
