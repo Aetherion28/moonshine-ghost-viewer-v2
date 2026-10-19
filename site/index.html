@@ -381,6 +381,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="The coloured circle at each ghost's feet that tells ghosts apart"><input type="checkbox" id="optRing" checked> Show ghost circles</label>
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
       <label title="With a game disc loaded: draw the stage, objects and Mario with the game's own models (off: the viewer's own)"><input type="checkbox" id="optGame" checked disabled> Game rendering <span class="discInfo" id="discInfo"></span></label>
+      <label title="With game rendering on: the game's HUD from the disc (life meter, coins, Shines, blue and red coins, FLUDD's tank) and the stage's opening words"><input type="checkbox" id="optHud" checked disabled> Show HUD</label>
       <label title="Read the game from an extracted game folder instead of a disc image"><button type="button" id="pickFolder" class="linkBtn">Use an extracted game folder…</button></label>
       <label title="Load zones, cutscene and warp triggers, area cylinders and the camera, area, flow, wire, shadow, mirror, sound and draw-distance cubes, and enemies' own trigger zones (the Monty Mole cannon's), as see-through volumes with labels."><input type="checkbox" id="optTriggers"> Show invisible triggers</label>
       <label><input type="checkbox" id="optNames"> Show model names</label>
@@ -437,6 +438,7 @@ document.write('<script src="' + V2 + 'jpa.js"><\/script>');
 document.write('<script src="' + V2 + 'gesso.js"><\/script>');
 document.write('<script src="' + V2 + 'game.js"><\/script>');
 document.write('<script src="' + V2 + 'audio.js"><\/script>');
+document.write('<script src="' + V2 + 'hud.js"><\/script>');
 </script>
 <script>
 (() => {
@@ -7339,6 +7341,18 @@ void main() {
     while (lo < hi) { const m = (lo + hi) >> 1; if (I.qf[m] < q0) lo = m + 1; else hi = m; }
     if (lo >= I.count) return null;
     const qIn = I.qf[lo];
+    const F = typeof GameHud === 'function' && GameHud.INTRO ? GameHud.INTRO : null;
+    if (F) {
+      // TConsoleStr: the bars close (the demo camera still running), the screen stays dark, the halves open on Mario
+      const total = F.close + F.hold + F.open;   // (ticks: QF)
+      if (time < q0 || time >= qIn || qIn - q0 < total + 8) return null;
+      const close = qIn - total, covered = close + F.close, open = qIn - F.open;
+      if (time < covered) {
+        const cam = gameLayer.introCamera(time - q0) || gameLayer.introCamera(Math.max(0, close - q0 - 1));
+        return cam ? { cam, wipe: time < close ? 0 : (time - close) / (covered - close) } : { cam: null, wipe: 1 };
+      }
+      return { cam: null, wipe: time < open ? 1 : 1 - (time - open) / (qIn - open) };
+    }
     if (time < q0 || time >= qIn || qIn - q0 < 2 * INTRO_WIPE + 8) return null;   // (entered by a pipe or door: no opening demo)
     const end = qIn - 2 * INTRO_WIPE;
     if (time < end) { const cam = gameLayer.introCamera(time - q0); return cam ? { cam, wipe: 0 } : { cam: null, wipe: 1 }; }
@@ -7354,7 +7368,7 @@ void main() {
     const rv = cameraMode === 'follow' ? recordedView(sgLead) : null, rp = rv ? recordedPhase(now) : null;
     // (else a demo camera of a boss Shine's: the boss's fall, then the Shine flying in)
     const iv = cameraMode === 'follow' && !(userCamUntil > now || camDragging) ? introView(sgLead, t) : null;
-    { const w = iv ? Math.max(0, Math.min(1, iv.wipe)) : 0; if (introWipe.style.opacity !== String(w)) introWipe.style.opacity = String(w); }
+    { const w = iv && !(gameHud && gameHud.drawsWipe) ? Math.max(0, Math.min(1, iv.wipe)) : 0; if (introWipe.style.opacity !== String(w)) introWipe.style.opacity = String(w); }
     const sgCam = iv && iv.cam ? iv.cam : !rv && cameraMode === 'follow' && !(userCamUntil > now || camDragging) ? (sgDm ? shineDemoCam(sgDm, t) : flightCam(t)) : null;
     if (sgCam) {
       camera.position.set(sgCam.pos[0], sgCam.pos[1], sgCam.pos[2]);
@@ -7398,6 +7412,7 @@ void main() {
     drawWater();
     drawJpa();
     drawShineOverlay(sgDm, t);
+    hudFrame();
   }
 
   // ---------------------------------------------------------------- stage contexts
@@ -8212,6 +8227,27 @@ void main() {
   }
   let discLabel = '';
   const _gsz = new THREE.Vector2();
+  // the game's HUD (v2 hud/): TGCConsole2 and TConsoleStr drawn from the disc's 2D files, over the game layer
+  let gameHud = null;
+  try {
+    if (typeof GameHud === 'function') {
+      gameHud = new GameHud();
+      // (over the scene, under the page's own overlays: the info box, the inputs, the controls)
+      const rc = renderer && renderer.domElement;
+      if (rc && rc.parentNode === stageEl) rc.after(gameHud.canvas); else stageEl.append(gameHud.canvas);
+    }
+  } catch (e) { console.warn('[hud]', e); }
+  if (gameHud) {
+    $('optHud').checked = gameHud.show;
+    $('optHud').addEventListener('change', (e) => gameHud.setShow(e.target.checked));
+  }
+  function hudFrame() {
+    if (!gameHud) return;
+    const main = ghosts.find((g) => g.data && g.marker && g.marker.parent);
+    const f = { t, on: gameLive && !splitOn(), ghost: main ? main.data : null, api: { ghostSampleAt, ghostAnimAt, ghostFluddAt },
+      sim: gameLayer ? gameLayer.sim : null, demoAt: (q) => !!(main && shineDemoAt(main, q)) };
+    try { gameHud.frame(f); } catch (e) { console.warn('[hud]', e); }
+  }
   // the game's sound (v2 audio/): music and sound effects from the disc, after a user gesture
   let gameAudio = null;
   try { if (typeof GameAudio === 'function') gameAudio = new GameAudio(V2); } catch (e) { console.warn('[audio]', e); }
@@ -8315,6 +8351,7 @@ void main() {
     try {
       $('discInfo').textContent = 'Reading the disc…';
       if (gameAudio) gameAudio.setDisc(fs);
+      if (gameHud) { gameHud.setDisc(fs); $('optHud').disabled = false; }
       await gameLayer.setDisc(fs);
       discLabel = fs.label + (fs.id ? ' · ' + fs.id : '');
       $('discInfo').textContent = discLabel;

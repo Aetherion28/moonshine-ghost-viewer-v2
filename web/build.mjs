@@ -25,10 +25,12 @@ const opts = {
 import fs from 'node:fs';
 fs.copyFileSync(path.join(here, 'viewer.html'), path.join(here, '../site/index.html'));
 for (const f of fs.readdirSync(path.join(here, 'legacy'))) fs.copyFileSync(path.join(here, 'legacy', f), path.join(here, '../site', f));
-// the game audio: the page side (audio.js) and its worklet (audio-worklet.js)
+// the game audio: the page side (audio.js) and its worklet (audio-worklet.js); the HUD (hud.js)
 const audio = [
   { ...opts, entryPoints: [path.join(here, 'src/audio/index.ts')], outfile: path.join(here, '../site/audio.js'), metafile: false },
   { ...opts, entryPoints: [path.join(here, 'src/audio/worklet.ts')], outfile: path.join(here, '../site/audio-worklet.js'), format: 'esm', metafile: false },
+  // the game's HUD (hud.js)
+  { ...opts, entryPoints: [path.join(here, 'src/hud/index.ts')], outfile: path.join(here, '../site/hud.js'), metafile: false },
 ];
 if (process.argv.includes('--watch')) { await (await esbuild.context(opts)).watch(); for (const a of audio) await (await esbuild.context(a)).watch(); }
 else {
