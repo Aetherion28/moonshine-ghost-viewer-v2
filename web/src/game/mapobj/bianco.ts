@@ -372,8 +372,9 @@ export class BellWatermill extends MapObjTurn {
                     const it = im ? im.makeObjAppeared(AT.COIN) : null;
                     if (it) {
                         it.pos.set(this.pos);
-                        // (the arguments' random draws in order: Y's, then Z's)
-                        const vy = fr(10 + fr(100 * MsRandF())), vz = fr(fr(10 * MsRandF()) - 5);
+                        // (the arguments' random draws in order: Z's, then Y's — control__14TBellWatermillFv
+                        // 0x8019CFE4: the first roll goes into fmsubs 10 * r - 5, the second into fmadds 100 * r + 10)
+                        const vz = fr(10 * MsRandF() - 5), vy = fr(100 * MsRandF() + 10);
                         it.vel.set(10, vy, vz);
                         it.offLiveFlag(LF.UNK10);
                     }

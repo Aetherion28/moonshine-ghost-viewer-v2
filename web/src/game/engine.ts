@@ -825,7 +825,7 @@ export class GraphWeb {
             const d = this.point(k).sub(pos).normalize();
             const cr = new V3().cross(d0, d);
             const ang = Math.abs(matan(d0.dot(d), cr.length()) * (360 / 65536));
-            if (Math.abs(ang) < limit) { if (n === 0) r = k; else if (MsRandF() < 1 / (n + 1)) r = k; n++; }
+            if (Math.abs(ang) < limit) { if (n === 0) r = k; else if (MsRandF() < fr(1 / (n + 1))) r = k; n++; }   // (fdivs)
         }
         if (n > 0) return r;
         r = -1; let best = 0;

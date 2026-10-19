@@ -18,6 +18,8 @@ const fr = Math.fround;
 
 export const POLLUTION_TYPE = { SINK: 0, FIRE: 1, SLIP: 2, GLASS_WALL: 3, ELECTRIC: 4, INSTAKILL: 5, SAFE: 6, UNK7: 7, UNK8: 8, UNK10: 10 };
 export const FLAG_CAN_SPREAD = 0x1, FLAG_DECAY = 0x2;
+/** TPollutionLayer::mAreaMinRate (.sdata 0x804092C8) */
+const TPollutionLayer_mAreaMinRate = fr(0.7);
 
 /** A GX texture's texels as intensity + alpha (I4, I8, IA4, IA8), row-major. */
 export interface Img { w: number; h: number; i: Uint8Array; a: Uint8Array; }
@@ -188,9 +190,11 @@ export class Layer {
     getPollutedPosNear(range: number, mario: { x: number, y: number, z: number }, out: { x: number, y: number, z: number }) {
         const P = this.pos;
         for (let i = 0; i < 5; ++i) {
-            const a = fr(fr(MsRandF() - 0.5) * fr(0.7 + MsRandF()));
+            const a0 = MsRandF(), a1 = MsRandF();   // (the first roll is the area rate's, the second the direction's)
+            const a = fr(fr(a1 - 0.5) * fr(TPollutionLayer_mAreaMinRate + a0));
             out.x = fr(a * range + mario.x);
-            const b = fr(fr(MsRandF() - 0.5) * fr(0.7 + MsRandF()));
+            const b0 = MsRandF(), b1 = MsRandF();   // (the first roll is the area rate's, the second the direction's)
+            const b = fr(fr(b1 - 0.5) * fr(TPollutionLayer_mAreaMinRate + b0));
             out.z = fr(b * range + mario.z);
             if (this.isInArea(out.x, 0, out.z)) {
                 const tx = this.texS(out.x), tz = this.texS(out.z);

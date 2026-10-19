@@ -85,7 +85,7 @@ export class AnimalBird extends SpineEnemy {
         this.resetHitPoints();
         this.waterproofTimer = 0; this.floatingTimer = 0; this.walkDir = 1;
         this.offLiveFlag(LF.AIRBORNE);
-        this.birdScale = fr(1 - 0.1 * (MsRandF() - 0.5));
+        this.birdScale = fr(1 - fr(0.1) * (MsRandF() - 0.5));   // (fnmsubs with the f32 0.1)
         if (WireBinder.isOnWire(this.world, this.pos)) { const m = mapWires(this.world)!; this.wireBinder = new WireBinder(m, m.getWireNo(this.pos)); }
     }
     load(s: Stream) {

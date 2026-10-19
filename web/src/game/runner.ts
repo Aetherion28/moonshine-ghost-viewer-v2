@@ -248,6 +248,19 @@ export class ReplayHistory {
     }
 }
 
+/**
+ * The RNG tape's SEED for a segment (MSL rand()'s next when that stage began): the first SEED in the
+ * segment that comes before any of its rolls (ghost.js parseRngTape's tape.seeds); null without one.
+ */
+export function stageSeed(g: any, segment: number): number | null {
+    const t = g && g.rng;
+    if (!t || !t.seeds) return null;
+    let first = t.count;
+    for (let i = 0; i < t.count; i++) if (t.segment[i] === segment) { first = i; break; }
+    for (const sd of t.seeds) if (sd.segment === segment && sd.roll <= first) return sd.state >>> 0;
+    return null;
+}
+
 export class SimRunner {
     private rng: RngReplay | null = null;
     /** run Mario from the ghost's inputs where it has them (the viewer's "Input replay") */
@@ -304,7 +317,10 @@ export class SimRunner {
                 for (let i = seg.firstSample; i < seg.firstSample + seg.sampleCount; i++) { const q = g.qf[i] - q0; if (q > 0) ss.push({ qf: q, anim: g.anim[i], phase: g.phase[i] }); }
                 intro = introTiming(ss);
             }
-            try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, 0, 0, intro); }
+            // MSL rand()'s state at the stage's start (srand(OSGetTick()) at boot, then everything before
+            // it): the ghost's RNG tape SEED for this segment when it has one, else 0
+            const seed = stageSeed(g, segI);
+            try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, seed ?? 0, 0, intro); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
             const st0 = this.stage;
             this.pads = null; this.sync = null; this.history = null;

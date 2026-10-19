@@ -305,7 +305,7 @@ function parseRngTape(bytes, dv, at, startQf) {
   }
   const tape = {
     flags, truncated: !!(flags & 1), lost: !!(flags & 2), foreignThread: !!(flags & 4), controls: !!(flags & 8),
-    noActors: !!(flags & 16), callers, actors, count: callCount, frames: 0, nodeOverrides: [],
+    noActors: !!(flags & 16), callers, actors, count: callCount, frames: 0, nodeOverrides: [], seeds: [],
     frame: new Uint32Array(callCount), qf: new Float64Array(callCount), segment: new Uint8Array(callCount),
     caller: new Uint8Array(callCount), actor: new Int16Array(callCount),
     value: new Uint16Array(callCount), used: new Uint16Array(callCount),
@@ -331,7 +331,11 @@ function parseRngTape(bytes, dv, at, startQf) {
       }
     } else if (op <= 0xbf) {
       for (let k = 0; k < op - 0x7f; k++) { frame++; prev = cur; if (cur !== null) cur = (cur + step) >>> 0; }
-    } else if (op === 0xc1) { need(4); state = dv.getUint32(o); o += 4; seeded = true; }
+    } else if (op === 0xc1) {
+      need(4); state = dv.getUint32(o); o += 4; seeded = true;
+      // (where each SEED stands: its segment, frame, QF and how many rolls came before it)
+      tape.seeds.push({ segment, frame, qf: rel(cur), state, roll: n });
+    }
     else if (op === 0xc2) { need(4); const q = dv.getUint32(o); o += 4; if (prev !== null) step = (q - prev) >>> 0; cur = q; }
     else if (op === 0xc3) { need(1); segment = bytes[o++]; if (segment >= 64) throw new Error('bad segment'); }
     else if (op === 0xc4) {

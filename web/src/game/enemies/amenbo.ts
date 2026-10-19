@@ -133,7 +133,7 @@ export class Amenbo extends SmallEnemy {
         const d = new V3();
         if (this.isOverTerritory(d)) { this.setWalkDirV(d.normalize()); return; }
         if (this.isFindOutMario()) { this.decideTargetOnFindingMario(); return; }
-        const q = new Quat().setRotateAxis(new V3(0, 1, 0), (1.5 - MsRandF()) * Math.PI);
+        const q = new Quat().setRotateAxis(new V3(0, 1, 0), fr(fr(1.5 - MsRandF()) * fr(Math.PI)));   // (f32 pi)
         this.setWalkDirQ(q);
     }
     decideTargetOnFindingMario() {

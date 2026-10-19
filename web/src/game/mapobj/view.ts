@@ -100,7 +100,7 @@ export class MapObjGrassGroup extends HitActor {
         for (let i = 0; i < this.unk68; i++) {
             const x = fr(fr(fr(fr(sx * MsRandF()) * 2) + this.pos.x) - sx);
             const z = fr(fr(fr(fr(sz * MsRandF()) * 2) + this.pos.z) - sz);
-            const y = fr(fr(fr(sy * MsRandF()) + this.pos.y) + 100);
+            const y = fr(fr(sy * MsRandF() + this.pos.y) + 100);   // (fmadds, then fadds)
             this.tips.push(new V3(x, y, z));
         }
         const m = GRASS_MGRS.get(this.world);

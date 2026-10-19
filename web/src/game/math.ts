@@ -20,8 +20,13 @@ export function rand(): number {
 }
 export function srand(seed: number) { next = seed >>> 0; }
 export function randState() { return next; }
-/** MsRandF (RandomUtil.hpp): rand() / 32768. */
-export const MsRandF = (l = 0, r = 1) => fr(rand() * (1 / 32768) * (r - l) + l);
+/**
+ * MsRandF (RandomUtil.hpp): rand() / 32768 (exact in f32). With a range, the fused form (fmadds:
+ * (r - l) * x + l rounded once). The game inlines this at every call site, and most sites multiply
+ * and add separately (fmuls, fadds: two roundings) — write those out at the call site
+ * (enemies/smallEnemy.ts rangeRand); check each site's instructions after `bl rand` in main.dol.
+ */
+export const MsRandF = (l = 0, r = 1) => fr(fr(rand() * (1 / 32768)) * fr(r - l) + l);
 /** MsRandI */
 export const MsRandI = (l: number, r: number) => 1 + l + Math.trunc(rand() * (1 / 32768) * (r - l));
 
@@ -159,16 +164,17 @@ export class V3 {
     setAll(v: number) { this.x = this.y = this.z = v; return this; }
     zero() { this.x = this.y = this.z = 0; return this; }
     clone() { return new V3(this.x, this.y, this.z); }
-    add(v: V3) { this.x += v.x; this.y += v.y; this.z += v.z; return this; }
-    sub(v: V3) { this.x -= v.x; this.y -= v.y; this.z -= v.z; return this; }
-    scale(s: number) { this.x *= s; this.y *= s; this.z *= s; return this; }
+    // (TVec3<f32>: each component's fadds / fsubs / fmuls rounds to f32)
+    add(v: V3) { this.x = fr(this.x + v.x); this.y = fr(this.y + v.y); this.z = fr(this.z + v.z); return this; }
+    sub(v: V3) { this.x = fr(this.x - v.x); this.y = fr(this.y - v.y); this.z = fr(this.z - v.z); return this; }
+    scale(s: number) { s = fr(s); this.x = fr(this.x * s); this.y = fr(this.y * s); this.z = fr(this.z * s); return this; }
     dot(v: V3) { return this.x * v.x + this.y * v.y + this.z * v.z; }
     squared() { return this.x * this.x + this.y * this.y + this.z * this.z; }
     length() { return Math.sqrt(this.squared()); }
     normalize() { const l = this.length(); if (l > 0) this.scale(1 / l); return this; }
     cross(a: V3, b: V3) { const x = a.y * b.z - a.z * b.y, y = a.z * b.x - a.x * b.z, z = a.x * b.y - a.y * b.x; this.x = x; this.y = y; this.z = z; return this; }
-    static sub(a: V3, b: V3) { return new V3(a.x - b.x, a.y - b.y, a.z - b.z); }
-    static add(a: V3, b: V3) { return new V3(a.x + b.x, a.y + b.y, a.z + b.z); }
+    static sub(a: V3, b: V3) { return new V3(fr(a.x - b.x), fr(a.y - b.y), fr(a.z - b.z)); }
+    static add(a: V3, b: V3) { return new V3(fr(a.x + b.x), fr(a.y + b.y), fr(a.z + b.z)); }
     arr(): number[] { return [this.x, this.y, this.z]; }
     /** to f32 */
     fround() { this.x = Math.fround(this.x); this.y = Math.fround(this.y); this.z = Math.fround(this.z); return this; }
@@ -272,7 +278,8 @@ export class Quat {
         return this.set4(x, y, z, w);
     }
     getZDir(out = new V3()) { return out.set(this.x * this.z * 2 + this.w * this.y * 2, this.y * this.z * 2 - this.w * this.x * 2, 1 - this.x * this.x * 2 - this.y * this.y * 2); }
-    setRotateAxis(v: V3, a: number) { const s = Math.sin(a * 0.5); this.x = v.x * s; this.y = v.y * s; this.z = v.z * s; this.w = Math.cos(a * 0.5); return this; }
+    /** TQuat4::setRotate(axis, angle): xyz = axis * sinf(angle * 0.5f), w = cosf(angle * 0.5f), in f32 */
+    setRotateAxis(v: V3, a: number) { const h = fr(fr(a) * 0.5), s = fr(Math.sin(h)); this.x = fr(v.x * s); this.y = fr(v.y * s); this.z = fr(v.z * s); this.w = fr(Math.cos(h)); return this; }
     setRotateFromTo(from: V3, to: V3, amount = 1) {
         const ax = new V3().cross(from, to), len = ax.length();
         if (len <= 1.1920929e-7) return this.set4(0, 0, 0, 1);

@@ -349,7 +349,7 @@ export class Kumokun extends SmallEnemy {
     }
     decideTargetAtRandom() {
         const q = this.unk19C.clone();
-        const p = new Quat().setRotateAxis(new V3(0, 1, 0), fr((MsRandF() + 0.5) * Math.PI));
+        const p = new Quat().setRotateAxis(new V3(0, 1, 0), fr(fr(MsRandF() + 0.5) * fr(Math.PI)));   // (f32 pi)
         q.mul(q.clone(), p);
         this.unk1AC.set(this.unk19C);
         this.unk1BC.set(q);

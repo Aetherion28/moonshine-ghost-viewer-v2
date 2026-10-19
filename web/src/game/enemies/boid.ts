@@ -69,7 +69,7 @@ export class BoidLeader {
     calcForces(b: Boid) {
         const f = b.sep.clone().add(b.ali.clone().scale(this.alignmentStrength)).add(b.coh).add(this.calcGoalForce(b.pos));
         if (f.squared() === 0) return new V3();
-        f.scale(0.01 * (5 * MsRandF() + 95));
+        f.scale(fr(fr(0.01) * fr(5 * MsRandF() + 95)));   // (fmadds, then fmuls by the f32 0.01)
         jnormalize(f);
         if (0 < this.fleeRadius) {
             const r = this.fleeRadius;
