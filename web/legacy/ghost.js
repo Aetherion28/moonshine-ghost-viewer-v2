@@ -1,4 +1,4 @@
-// Parser for Moonshine .smsghost files (canonical SGHF, versions 3 to 8).
+// Parser for Moonshine .smsghost files (canonical SGHF, versions 5 to 8; older ones carry no inputs and are refused).
 // Spec: moonshine/doc/ghost_format.md. All integers are big endian.
 
 const GHOST_CRC_TABLE = (() => {
@@ -59,7 +59,9 @@ function parseSmsGhost(buffer) {
   const magic = String.fromCharCode(...bytes.subarray(0, 4));
   if (magic !== 'SGHF') fail('Not a Moonshine ghost (missing SGHF header).');
   const version = dv.getUint16(4);
-  if (version < 3 || version > 8) fail(`Ghost version ${version} is newer than this viewer supports (3–8). The viewer needs an update for it.`);
+  if (version > 8) fail(`Ghost version ${version} is newer than this viewer supports (5–8). The viewer needs an update for it.`);
+  // The viewer plays a run from its controller inputs (SGTI, V5+); older ghosts recorded none.
+  if (version < 5) fail(`This ghost is format v${version}, recorded before Moonshine saved controller inputs. The viewer plays ghosts from their inputs, so it needs v5 or newer — re-record the run with a current Moonshine.`);
   const fileSize = dv.getUint32(8);
   if (fileSize !== bytes.length) fail('Ghost file is truncated or has extra bytes.');
 

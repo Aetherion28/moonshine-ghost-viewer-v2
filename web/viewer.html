@@ -7862,6 +7862,22 @@ void main() {
   const dgFileUrl = (path) => `${DG.url}/storage/v1/object/public/ghosts/${path.split('/').map(encodeURIComponent).join('/')}`;
   const fmtMs = (ms) => { if (ms == null) return ''; const m = Math.floor(ms / 60000), sec = (ms % 60000) / 1000;
     return m ? `${m}:${sec.toFixed(3).padStart(6, '0')}` : sec.toFixed(3); };
+  // Ghosts older than v5 carry no controller inputs, which the viewer plays from: they're not listed.
+  // The listing doesn't say a ghost's format, so its header's version (bytes 4–5) is read with a range request.
+  const dgVer = new Map();
+  function dgVersion(g) {
+    const known = [g.version, g.format_version, g.ghost_version].find((v) => Number.isFinite(v));
+    if (known !== undefined) return Promise.resolve(known);
+    if (!dgVer.has(g.file_path)) dgVer.set(g.file_path, fetch(dgFileUrl(g.file_path), { headers: { Range: 'bytes=0-7' } })
+      .then((r) => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((b) => { const v = new DataView(b); return b.byteLength >= 6 && v.getUint32(0) === 0x53474846 ? v.getUint16(4) : 0; })
+      .catch((e) => { dgVer.delete(g.file_path); throw e; }));
+    return dgVer.get(g.file_path);
+  }
+  async function dgPlayable(rows) {
+    const ok = await Promise.all(rows.map((g) => dgVersion(g).then((v) => v >= 5, () => true)));
+    return rows.filter((_, i) => ok[i]);
+  }
   function dgRow(g) {
     const li = document.createElement('li');
     const t = document.createElement('div'); t.className = 't'; t.textContent = g.title || g.original_filename;
@@ -7897,7 +7913,12 @@ void main() {
         p_level: $('browseLevel').value || null, p_user: null, p_limit: DG.size, p_offset: DG.page * DG.size });
       if (seq !== DG.seq) return;
       DG.total = rows[0]?.total_count ?? 0;
-      if (!rows.length) dgMsg('No ghosts match.'); else $('browseList').replaceChildren(...rows.map(dgRow));
+      const shown = await dgPlayable(rows);
+      if (seq !== DG.seq) return;
+      const hidden = rows.length - shown.length;
+      if (!shown.length) dgMsg(rows.length ? 'Only older ghosts (format v4 or earlier, no inputs) on this page.' : 'No ghosts match.');
+      else $('browseList').replaceChildren(...shown.map(dgRow));
+      if (hidden) { const li = document.createElement('li'); li.className = 'msg'; li.textContent = `${hidden} older ghost${hidden === 1 ? '' : 's'} (format v4 or earlier, no inputs) hidden.`; if (shown.length) $('browseList').append(li); }
       const pages = Math.max(1, Math.ceil(DG.total / DG.size));
       $('browseCount').textContent = `${DG.total} ghost${DG.total === 1 ? '' : 's'} · page ${DG.page + 1} of ${pages}`;
       $('browsePrev').disabled = DG.page === 0; $('browseNext').disabled = DG.page + 1 >= pages;
@@ -7942,8 +7963,8 @@ void main() {
       if (seq !== dgShareSeq) return;
       dgShareLevels = levels;
       if (!levels.length) { sharedMsg(`No ghosts shared for ${lv.name} yet.`); return; }
-      const rows = (await Promise.all(levels.map((l) => dgRpc('list_ghosts', { p_search: null, p_sort: 'time', p_level: l, p_user: null, p_limit: 25, p_offset: 0 }))))
-        .flat().sort((a, b) => (a.time_ms ?? 1e12) - (b.time_ms ?? 1e12));
+      const rows = await dgPlayable((await Promise.all(levels.map((l) => dgRpc('list_ghosts', { p_search: null, p_sort: 'time', p_level: l, p_user: null, p_limit: 25, p_offset: 0 }))))
+        .flat().sort((a, b) => (a.time_ms ?? 1e12) - (b.time_ms ?? 1e12)));
       if (seq !== dgShareSeq) return;
       sharedMsg(rows.length ? '' : `No ghosts shared for ${lv.name} yet.`);
       rows.forEach((g) => {
