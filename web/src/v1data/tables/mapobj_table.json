@@ -1,0 +1,3782 @@
+{
+"billboard_dolphin": {
+"actor": "ACTOR_TYPE_BILLBOARD_DOLPHIN",
+"bmd": [
+"billboardDol.bmd"
+],
+"hit": "billboard_obj_hit_info",
+"hitbox": [
+100.0,
+60.0,
+100.0,
+60.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"billboard_sun": {
+"actor": "ACTOR_TYPE_BILLBOARD_DOLPHIN",
+"bmd": [
+"billboardSun.bmd"
+],
+"hit": "billboard_obj_hit_info",
+"hitbox": [
+100.0,
+60.0,
+100.0,
+60.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"billboard_restaurant": {
+"actor": "ACTOR_TYPE_BILLBOARD_DOLPHIN",
+"bmd": [
+"billboardRestaurant.bmd"
+],
+"hit": "billboard_obj_hit_info",
+"hitbox": [
+100.0,
+60.0,
+100.0,
+60.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"billboard_fish": {
+"actor": "ACTOR_TYPE_BILLBOARD_DOLPHIN",
+"bmd": [
+"billboardFish.bmd"
+],
+"hit": "billboard_obj_hit_info",
+"hitbox": [
+100.0,
+60.0,
+100.0,
+60.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"HideObj": {
+"actor": "ACTOR_TYPE_HIDE_OBJ",
+"bmd": [],
+"hit": "HideObj_obj_hit_info",
+"hitbox": [
+100.0,
+60.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"WaterHitHideObj": {
+"actor": "ACTOR_TYPE_HIDE_OBJ",
+"bmd": [],
+"hit": "WaterHitHideObj_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+60.0,
+20.0
+],
+"hitcat": "0x00000000"
+},
+"FruitHitHideObj": {
+"actor": "ACTOR_TYPE_HIDE_OBJ",
+"bmd": [],
+"hit": "FruitHitHideObj_obj_hit_info",
+"hitbox": [
+100.0,
+60.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_MAP_OBJECT"
+},
+"HipDropHideObj": {
+"actor": "ACTOR_TYPE_HIDE_OBJ",
+"bmd": [],
+"hit": "HipDropHideObj_obj_hit_info",
+"hitbox": [
+100.0,
+60.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_MAP_OBJECT"
+},
+"monte_chair": {
+"actor": "ACTOR_TYPE_MONTE_CHAIR",
+"bmd": [
+"monte_chair_model.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"door": {
+"actor": "ACTOR_TYPE_DOOR",
+"bmd": [],
+"hit": "door_obj_hit_info",
+"hitbox": [
+150.0,
+250.0,
+150.0,
+250.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"doorHotel": {
+"actor": "ACTOR_TYPE_DOOR",
+"bmd": [
+"doorHotel.bmd"
+],
+"hit": "door_obj_hit_info",
+"hitbox": [
+150.0,
+250.0,
+150.0,
+250.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"manhole": {
+"actor": "ACTOR_TYPE_MANHOLE",
+"bmd": [
+"manhole.bmd"
+],
+"hit": "manhole_obj_hit_info",
+"hitbox": [
+100.0,
+50.0,
+130.0,
+50.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"FruitBasket": {
+"actor": "ACTOR_TYPE_FRUIT_BASKET",
+"bmd": [
+"Basket.bmd"
+],
+"hit": "FruitBasket_obj_hit_info",
+"hitbox": [
+50.0,
+100.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_MAP_OBJECT"
+},
+"BasketReverse": {
+"actor": "ACTOR_TYPE_BASKET_REVERSE",
+"bmd": [
+"Basket.bmd"
+],
+"hit": "BasketReverse_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+100.0,
+200.0
+],
+"hitcat": "0x00000000"
+},
+"CoconutJuice": {
+"actor": "ACTOR_TYPE_COCONUT_JUICE",
+"bmd": [],
+"hit": "CoconutJuice_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+50.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"Pile": {
+"actor": "ACTOR_TYPE_PILE",
+"bmd": [],
+"hit": "Pile_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+30.0,
+100.0
+],
+"hitcat": "0x00000000"
+},
+"ChangeStage": {
+"actor": "ACTOR_TYPE_CHANGE_STAGE",
+"bmd": [],
+"hit": "ChangeStage_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"ChangeStageMerrygoround": {
+"actor": "ACTOR_TYPE_CHANGE_STAGE",
+"bmd": [],
+"hit": "ChangeStage_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"StartDemo": {
+"actor": "ACTOR_TYPE_START_DEMO",
+"bmd": [],
+"hit": "StartDemo_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"ChipShine": {
+"actor": "ACTOR_TYPE_CHIP_SHINE",
+"bmd": [
+"chip_shine_model1.bmd"
+],
+"hit": "ChipShine_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+150.0,
+300.0
+],
+"hitcat": "0x00000000"
+},
+"KoopaJrSignM": {
+"actor": "ACTOR_TYPE_KOOPA_JR_SIGN_M",
+"bmd": [
+"koopa_jr_sign.bmd"
+],
+"hit": "KoopaJrSignM_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+150.0,
+300.0
+],
+"hitcat": "0x00000000"
+},
+"star_sign": {
+"actor": "ACTOR_TYPE_STAR_SIGN",
+"bmd": [],
+"hit": "KoopaJrSignM_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+150.0,
+300.0
+],
+"hitcat": "0x00000000"
+},
+"SignCircle": {
+"actor": "ACTOR_TYPE_SIGN_CIRCLE",
+"bmd": [
+"maru_sign.bmd"
+],
+"hit": "KoopaJrSignM_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+150.0,
+300.0
+],
+"hitcat": "0x00000000"
+},
+"SignCross": {
+"actor": "ACTOR_TYPE_SIGN_CROSS",
+"bmd": [
+"batu_sign.bmd"
+],
+"hit": "KoopaJrSignM_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+150.0,
+300.0
+],
+"hitcat": "0x00000000"
+},
+"SignTriangle": {
+"actor": "ACTOR_TYPE_SIGN_TRIANGLE",
+"bmd": [
+"3kaku_sign.bmd"
+],
+"hit": "KoopaJrSignM_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+150.0,
+300.0
+],
+"hitcat": "0x00000000"
+},
+"ArrowBoardLR": {
+"actor": "ACTOR_TYPE_ARROW_BOARD_LR",
+"bmd": [],
+"hit": "ArrowBoardLR_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+120.0,
+300.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"ArrowBoardUp": {
+"actor": "ACTOR_TYPE_ARROW_BOARD_LR",
+"bmd": [],
+"hit": "ArrowBoardUp_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+80.0,
+440.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"ArrowBoardDown": {
+"actor": "ACTOR_TYPE_ARROW_BOARD_LR",
+"bmd": [],
+"hit": "ArrowBoardDown_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+80.0,
+440.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"WaterSprayCylinder": {
+"actor": "ACTOR_TYPE_WATER_SPRAY_CYLINDER",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"WaterSprayBox": {
+"actor": "ACTOR_TYPE_WATER_SPRAY_CYLINDER",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"ObjSwitch": {
+"actor": "ACTOR_TYPE_OBJ_SWITCH",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"RedCoinSwitch": {
+"actor": "ACTOR_TYPE_RED_COIN_SWITCH",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"bucket": {
+"actor": "ACTOR_TYPE_BUCKET",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"GeneralHitObj": {
+"actor": "ACTOR_TYPE_GENERAL_HIT_OBJ",
+"bmd": [],
+"hit": "GeneralHitObj_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+50.0,
+100.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"bottle_large": {
+"actor": "ACTOR_TYPE_BOTTLE_LARGE",
+"bmd": [],
+"hit": "item_obj_hit_info",
+"hitbox": [
+40.0,
+40.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"bottle_short": {
+"actor": "ACTOR_TYPE_BOTTLE_SHORT",
+"bmd": [],
+"hit": "item_obj_hit_info",
+"hitbox": [
+40.0,
+40.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"WaterRecoverObj": {
+"actor": "ACTOR_TYPE_BOTTLE_LARGE",
+"bmd": [],
+"hit": "WaterRecoverObj_obj_hit_info",
+"hitbox": [
+40.0,
+40.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"watergun_item": {
+"actor": "ACTOR_TYPE_WATERGUN_ITEM",
+"bmd": [],
+"hit": "item_obj_hit_info",
+"hitbox": [
+40.0,
+40.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"normal_nozzle_item": {
+"actor": "ACTOR_TYPE_NORMAL_NOZZLE_ITEM",
+"bmd": [],
+"hit": "item_obj_hit_info",
+"hitbox": [
+40.0,
+40.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"yoshi_whistle_item": {
+"actor": "ACTOR_TYPE_YOSHI_WHISTLE_ITEM",
+"bmd": [],
+"hit": "item_obj_hit_info",
+"hitbox": [
+40.0,
+40.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"rocket_nozzle_item": {
+"actor": "ACTOR_TYPE_ROCKET_NOZZLE_ITEM",
+"bmd": [],
+"hit": "nozzle_item_obj_hit_info",
+"hitbox": [
+40.0,
+40.0,
+100.0,
+40.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"back_nozzle_item": {
+"actor": "ACTOR_TYPE_BACK_NOZZLE_ITEM",
+"bmd": [],
+"hit": "nozzle_item_obj_hit_info",
+"hitbox": [
+40.0,
+40.0,
+100.0,
+40.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"coin": {
+"actor": "ACTOR_TYPE_COIN",
+"bmd": [],
+"hit": "coin_obj_hit_info",
+"hitbox": [
+70.0,
+100.0,
+70.0,
+100.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"invisible_coin": {
+"actor": "ACTOR_TYPE_COIN",
+"bmd": [],
+"hit": "coin_obj_hit_info",
+"hitbox": [
+70.0,
+100.0,
+70.0,
+100.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"coin_red": {
+"actor": "ACTOR_TYPE_COIN_RED",
+"bmd": [],
+"hit": "coin_obj_hit_info",
+"hitbox": [
+70.0,
+100.0,
+70.0,
+100.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"coin_blue": {
+"actor": "ACTOR_TYPE_COIN_BLUE",
+"bmd": [],
+"hit": "coin_obj_hit_info",
+"hitbox": [
+70.0,
+100.0,
+70.0,
+100.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"shine": {
+"actor": "ACTOR_TYPE_SHINE",
+"bmd": [],
+"hit": "coin_obj_hit_info",
+"hitbox": [
+70.0,
+100.0,
+70.0,
+100.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"mario_cap": {
+"actor": "ACTOR_TYPE_MARIO_CAP",
+"bmd": [
+"mariocap.bmd"
+],
+"hit": "mario_cap_obj_hit_info",
+"hitbox": [
+100.0,
+50.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"joint_coin": {
+"actor": "ACTOR_TYPE_COIN",
+"bmd": [
+"coin.bmd"
+],
+"hit": "item_obj_hit_info",
+"hitbox": [
+40.0,
+40.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"eggYoshi": {
+"actor": "ACTOR_TYPE_EGG_YOSHI",
+"bmd": [
+"eggYoshi_normal.bmd"
+],
+"hit": "eggYoshi_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"eggYoshiEvent": {
+"actor": "ACTOR_TYPE_EGG_YOSHI",
+"bmd": [
+"eggYoshi_normal.bmd"
+],
+"hit": "eggYoshi_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"NozzleBox": {
+"actor": "ACTOR_TYPE_NOZZLE_BOX",
+"bmd": [
+"nozzleBox.bmd"
+],
+"hit": "NozzleBox_obj_hit_info",
+"hitbox": [
+200.0,
+200.0,
+100.0,
+200.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"mushroom1up": {
+"actor": "ACTOR_TYPE_MUSHROOM1UP",
+"bmd": [
+"mushroom1up.bmd"
+],
+"hit": "mushroom1up_obj_hit_info",
+"hitbox": [
+20.0,
+40.0,
+20.0,
+40.0
+],
+"hitcat": "0x00000000"
+},
+"mushroom1upR": {
+"actor": "ACTOR_TYPE_MUSHROOM1UP_R",
+"bmd": [
+"mushroom1up.bmd"
+],
+"hit": "mushroom1up_obj_hit_info",
+"hitbox": [
+20.0,
+40.0,
+20.0,
+40.0
+],
+"hitcat": "0x00000000"
+},
+"mushroom1upX": {
+"actor": "ACTOR_TYPE_MUSHROOM1UP_X",
+"bmd": [
+"mushroom1up.bmd"
+],
+"hit": "mushroom1up_obj_hit_info",
+"hitbox": [
+20.0,
+40.0,
+20.0,
+40.0
+],
+"hitcat": "0x00000000"
+},
+"jumpbase": {
+"actor": "ACTOR_TYPE_JUMPBASE",
+"bmd": [
+"jumpbase.bmd"
+],
+"hit": "jumpbase_obj_hit_info",
+"hitbox": [
+50.0,
+80.0,
+50.0,
+80.0
+],
+"hitcat": "0x00000000"
+},
+"FruitCoconut": {
+"actor": "ACTOR_TYPE_FRUIT_COCONUT",
+"bmd": [],
+"hit": "coconut_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"FruitPapaya": {
+"actor": "ACTOR_TYPE_FRUIT_PAPAYA",
+"bmd": [],
+"hit": "papaya_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"FruitPine": {
+"actor": "ACTOR_TYPE_FRUIT_PINE",
+"bmd": [],
+"hit": "pine_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"FruitCoverPine": {
+"actor": "ACTOR_TYPE_FRUIT_COVER_PINE",
+"bmd": [
+"FruitPine.bmd"
+],
+"hit": "cover_pine_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+40.0,
+180.0
+],
+"hitcat": "0x00000000"
+},
+"FruitDurian": {
+"actor": "ACTOR_TYPE_FRUIT_DURIAN",
+"bmd": [],
+"hit": "durian_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"FruitBanana": {
+"actor": "ACTOR_TYPE_FRUIT_BANANA",
+"bmd": [],
+"hit": "banana_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"RedPepper": {
+"actor": "ACTOR_TYPE_RED_PEPPER",
+"bmd": [],
+"hit": "fruit_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"fence_revolve": {
+"actor": "ACTOR_TYPE_FENCE_NORMAL",
+"bmd": [
+"fence_revolve_outer.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"fence_revolve_inner": {
+"actor": "ACTOR_TYPE_FENCE_REVOLVE_INNER",
+"bmd": [],
+"hit": "FenceInner_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"fenceInnerGreen": {
+"actor": "ACTOR_TYPE_FENCE_REVOLVE_INNER",
+"bmd": [],
+"hit": "FenceInner_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"FenceWaterV": {
+"actor": "ACTOR_TYPE_FENCE_WATER_V",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"FenceWaterH": {
+"actor": "ACTOR_TYPE_FENCE_WATER_V",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"RailFence": {
+"actor": "ACTOR_TYPE_RAIL_FENCE",
+"bmd": [
+"fence_normal.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"bambooFence_revolve_inner": {
+"actor": "ACTOR_TYPE_FENCE_REVOLVE_INNER",
+"bmd": [],
+"hit": "FenceInner_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"bambooFence_revolve_outer": {
+"actor": "ACTOR_TYPE_FENCE_NORMAL",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"bambooRailFence": {
+"actor": "ACTOR_TYPE_RAIL_FENCE",
+"bmd": [
+"bambooFence_rail.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"wood_barrel": {
+"actor": "ACTOR_TYPE_WOOD_BARREL",
+"bmd": [
+"barrel_normal.bmd"
+],
+"hit": "wood_barrel_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"wood_barrel_once": {
+"actor": "ACTOR_TYPE_WOOD_BARREL",
+"bmd": [
+"barrel_normal.bmd"
+],
+"hit": "wood_barrel_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"barrel_float": {
+"actor": "ACTOR_TYPE_BARREL_FLOAT",
+"bmd": [],
+"hit": "barrel_float_obj_hit_info",
+"hitbox": [
+120.0,
+100.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"drum_can": {
+"actor": "ACTOR_TYPE_DRUM_CAN",
+"bmd": [
+"drum_can_model.bmd"
+],
+"hit": "drum_can_obj_hit_info",
+"hitbox": [
+50.0,
+180.0,
+50.0,
+170.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"barrel_oil": {
+"actor": "ACTOR_TYPE_BARREL_OIL",
+"bmd": [
+"barrel_oil.bmd"
+],
+"hit": "barrel_oil_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"breakable_block": {
+"actor": "ACTOR_TYPE_BREAKABLE_BLOCK",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "breakable_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"supermario_block": {
+"actor": "ACTOR_TYPE_BREAKABLE_BLOCK",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "supermario_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"move_block": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "breakable_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"fall_slow_block": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "breakable_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"expand_block": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "expand_block_obj_hit_info",
+"hitbox": [
+50.0,
+140.0,
+50.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"spread_block": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "spread_block_obj_hit_info",
+"hitbox": [
+50.0,
+150.0,
+50.0,
+150.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"water_roll_block": {
+"actor": "ACTOR_TYPE_WATER_ROLL_BLOCK",
+"bmd": [
+"water_roll_block.bmd"
+],
+"hit": "water_roll_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "0x00000000"
+},
+"sand_block": {
+"actor": "ACTOR_TYPE_BREAKABLE_BLOCK",
+"bmd": [
+"SandBlock.bmd"
+],
+"hit": "sand_block_obj_hit_info",
+"hitbox": [
+100.0,
+140.0,
+100.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"water_power_lift": {
+"actor": "ACTOR_TYPE_WATER_POWER_LIFT",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "breakable_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"water_power_inertial_lift": {
+"actor": "ACTOR_TYPE_WATER_POWER_LIFT",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "breakable_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"water_power_ship": {
+"actor": "ACTOR_TYPE_WATER_POWER_LIFT",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "breakable_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"lean_direct_block": {
+"actor": "ACTOR_TYPE_LEAN_DIRECT_BLOCK",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "breakable_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"lean_indirect_block": {
+"actor": "ACTOR_TYPE_LEAN_DIRECT_BLOCK",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "breakable_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"lean_block": {
+"actor": "ACTOR_TYPE_LEAN_DIRECT_BLOCK",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "breakable_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"skate_block": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"breakable_block.bmd"
+],
+"hit": "skate_block_obj_hit_info",
+"hitbox": [
+40.0,
+130.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"MoveCoin": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"SandMoveCoin.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"cluster_block": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"test_cluster.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"NormalBlock": {
+"actor": "ACTOR_TYPE_NORMAL_BLOCK",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"IceBlock": {
+"actor": "ACTOR_TYPE_ICE_BLOCK",
+"bmd": [],
+"hit": "ice_block_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+70.0,
+70.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"BrickBlock": {
+"actor": "ACTOR_TYPE_BRICK_BLOCK",
+"bmd": [
+"BrickBlock.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"WaterMelonBlock": {
+"actor": "ACTOR_TYPE_WATER_MELON_BLOCK",
+"bmd": [
+"WaterMelonBlock.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"TelesaBlock": {
+"actor": "ACTOR_TYPE_TELESA_BLOCK",
+"bmd": [],
+"hit": "breakable_block_obj_hit_info",
+"hitbox": [
+70.0,
+140.0,
+70.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"WoodBlockPole": {
+"actor": "ACTOR_TYPE_WOOD_BLOCK_POLE",
+"bmd": [],
+"hit": "WoodBlockPole_obj_hit_info",
+"hitbox": [
+30.0,
+500.0,
+100.0,
+500.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"JuiceBlock": {
+"actor": "ACTOR_TYPE_JUICE_BLOCK",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SuperHipDropBlock": {
+"actor": "ACTOR_TYPE_SUPER_HIP_DROP_BLOCK",
+"bmd": [
+"super_rock.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"palmNormal": {
+"actor": "ACTOR_TYPE_PALM_NORMAL",
+"bmd": [
+"palmNormal.bmd"
+],
+"hit": "palmNormal_obj_hit_info",
+"hitbox": [
+600.0,
+1400.0,
+80.0,
+950.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"palmOugi": {
+"actor": "ACTOR_TYPE_PALM_OUGI",
+"bmd": [],
+"hit": "palmOugi_obj_hit_info",
+"hitbox": [
+530.0,
+1200.0,
+80.0,
+950.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"palmSago": {
+"actor": "ACTOR_TYPE_PALM_SAGO",
+"bmd": [],
+"hit": "palmSago_obj_hit_info",
+"hitbox": [
+750.0,
+1600.0,
+80.0,
+950.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"palmNatume": {
+"actor": "ACTOR_TYPE_PALM_NATUME",
+"bmd": [],
+"hit": "palmNatume_obj_hit_info",
+"hitbox": [
+530.0,
+1400.0,
+80.0,
+950.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"palmLeaf": {
+"actor": "ACTOR_TYPE_PALM_LEAF",
+"bmd": [
+"palmLeaf.bmd"
+],
+"hit": "palmLeaf_obj_hit_info",
+"hitbox": [
+600.0,
+300.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"BananaTree": {
+"actor": "ACTOR_TYPE_BANANA_TREE",
+"bmd": [
+"BananaTree.bmd"
+],
+"hit": "BananaTree_obj_hit_info",
+"hitbox": [
+700.0,
+1600.0,
+80.0,
+700.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"fruitTree": {
+"actor": "ACTOR_TYPE_FRUIT_TREE",
+"bmd": [],
+"hit": "FruitTree_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+80.0,
+400.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"plantFlower": {
+"actor": "ACTOR_TYPE_PLANT_FLOWER",
+"bmd": [],
+"hit": "flower_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"flowerOrange": {
+"actor": "ACTOR_TYPE_FLOWER_ORANGE",
+"bmd": [
+"flowerOrange.bmd"
+],
+"hit": "flower_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"flowerPink": {
+"actor": "ACTOR_TYPE_FLOWER_ORANGE",
+"bmd": [
+"flowerPink.bmd"
+],
+"hit": "flower_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"flowerPurple": {
+"actor": "ACTOR_TYPE_FLOWER_ORANGE",
+"bmd": [
+"flowerPurple.bmd"
+],
+"hit": "flower_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"flowerRed": {
+"actor": "ACTOR_TYPE_FLOWER_ORANGE",
+"bmd": [
+"flowerRed.bmd"
+],
+"hit": "flower_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"flowerYellow": {
+"actor": "ACTOR_TYPE_FLOWER_ORANGE",
+"bmd": [
+"flowerYellow.bmd"
+],
+"hit": "flower_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"flowerSunflower": {
+"actor": "ACTOR_TYPE_FLOWER_ORANGE",
+"bmd": [
+"flowerSunflower.bmd"
+],
+"hit": "flower_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"telegraph_pole_l": {
+"actor": "ACTOR_TYPE_TELEGRAPH_POLE_L",
+"bmd": [],
+"hit": "telegraph_pole_l_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"telegraph_pole_s": {
+"actor": "ACTOR_TYPE_TELEGRAPH_POLE_L",
+"bmd": [],
+"hit": "telegraph_pole_s_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"dptlight": {
+"actor": "ACTOR_TYPE_DPTLIGHT",
+"bmd": [
+"dptlight.bmd"
+],
+"hit": "streetlamp_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"PoleNormal": {
+"actor": "ACTOR_TYPE_POLE_NORMAL",
+"bmd": [],
+"hit": "PoleNormal_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+10.0,
+0.0
+],
+"hitcat": "0x00000000"
+},
+"football": {
+"actor": "ACTOR_TYPE_FOOTBALL",
+"bmd": [
+"soccerball.bmd"
+],
+"hit": "football_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"football_goal": {
+"actor": "ACTOR_TYPE_FOOTBALL_GOAL",
+"bmd": [
+"soccergoal_model.bmd"
+],
+"hit": "football_goal_obj_hit_info",
+"hitbox": [
+85.0,
+115.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_MAP_OBJECT"
+},
+"baloonball": {
+"actor": "ACTOR_TYPE_FOOTBALL",
+"bmd": [
+"soccerball.bmd"
+],
+"hit": "football_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"coconut_ball": {
+"actor": "ACTOR_TYPE_FOOTBALL",
+"bmd": [
+"soccerball.bmd"
+],
+"hit": "football_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"watermelon": {
+"actor": "ACTOR_TYPE_WATERMELON",
+"bmd": [
+"watermelon.bmd"
+],
+"hit": "watermelon_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"WatermelonStatic": {
+"actor": "ACTOR_TYPE_WATERMELON_STATIC",
+"bmd": [
+"watermelon.bmd"
+],
+"hit": "watermelon_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"cloud": {
+"actor": "ACTOR_TYPE_CLOUD",
+"bmd": [
+"cloud.bmd"
+],
+"hit": "cloud_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"normallift": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"NormalBlock.bmd"
+],
+"hit": "normallift_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"exrollcube": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"EXRollCube.bmd"
+],
+"hit": "exrollcube_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"exkickboard": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"EXKickBoard.bmd"
+],
+"hit": "exkickboard_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"railblockr": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"AllPurposeBoardR.bmd"
+],
+"hit": "railblock_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+500.0
+],
+"hitcat": "0x00000000"
+},
+"railblocky": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"AllPurposeBoardY.bmd"
+],
+"hit": "railblock_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+500.0
+],
+"hitcat": "0x00000000"
+},
+"railblockb": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"AllPurposeBoardB.bmd"
+],
+"hit": "railblock_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+500.0
+],
+"hitcat": "0x00000000"
+},
+"rollblockr": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"AllPurposeBoardR.bmd"
+],
+"hit": "railblock_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+500.0
+],
+"hitcat": "0x00000000"
+},
+"rollblocky": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"AllPurposeBoardY.bmd"
+],
+"hit": "railblock_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+500.0
+],
+"hitcat": "0x00000000"
+},
+"rollblockb": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"AllPurposeBoardB.bmd"
+],
+"hit": "railblock_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+500.0
+],
+"hitcat": "0x00000000"
+},
+"umaibou": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"umaibou.bmd"
+],
+"hit": "umaibou_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"kamaboko": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"kamaboko.bmd"
+],
+"hit": "kamaboko_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"getag": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"getaGreen.bmd"
+],
+"hit": "geta_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"getao": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"getaOrange.bmd"
+],
+"hit": "geta_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"uirou": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"uirou.bmd"
+],
+"hit": "uirou_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"hikidashi": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"hikidashi.bmd"
+],
+"hit": "hikidashi_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"castella": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"castella.bmd"
+],
+"hit": "castella_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"yoshiblock": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"yoshiblock.bmd"
+],
+"hit": "yoshiblock_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+400.0
+],
+"hitcat": "0x00000000"
+},
+"WoodBlockTriangle": {
+"actor": "ACTOR_TYPE_WOOD_BLOCK_POLE",
+"bmd": [],
+"hit": "normallift_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"WoodBlockPyramid": {
+"actor": "ACTOR_TYPE_WOOD_BLOCK_POLE",
+"bmd": [],
+"hit": "normallift_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"WoodBlockLong": {
+"actor": "ACTOR_TYPE_WOOD_BLOCK_POLE",
+"bmd": [],
+"hit": "normallift_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"WoodBlockLarge": {
+"actor": "ACTOR_TYPE_WOOD_BLOCK_POLE",
+"bmd": [],
+"hit": "normallift_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"WoodBlockCone": {
+"actor": "ACTOR_TYPE_WOOD_BLOCK_POLE",
+"bmd": [],
+"hit": "normallift_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"WoodBlockL": {
+"actor": "ACTOR_TYPE_WOOD_BLOCK_POLE",
+"bmd": [],
+"hit": "normallift_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"WoodBlockBridge": {
+"actor": "ACTOR_TYPE_WOOD_BLOCK_POLE",
+"bmd": [],
+"hit": "normallift_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"WoodBlockCube": {
+"actor": "ACTOR_TYPE_WOOD_BLOCK_POLE",
+"bmd": [],
+"hit": "normallift_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"normalvariant0": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "normalvariant0_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"normalvariant1": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "normalvariant1_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"normalvariant2": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "normalvariant2_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"normalvariant3": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "normalvariant3_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"normalvariant4": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "normalvariant4_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"railvariant0": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "railvariant0_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"railvariant1": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "railvariant1_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"railvariant2": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "railvariant2_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"railvariant3": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "railvariant3_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"railvariant4": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "railvariant4_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"rollvariant0": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "rollvariant0_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"rollvariant1": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "rollvariant1_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"rollvariant2": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "rollvariant2_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"rollvariant3": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "rollvariant3_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"rollvariant4": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "rollvariant4_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+300.0,
+50.0
+],
+"hitcat": "0x00000000"
+},
+"lamptrapspike": {
+"actor": "ACTOR_TYPE_LAMPTRAPSPIKE",
+"bmd": [
+"lamptrapspike.bmd"
+],
+"hit": "lamptrap_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"lamptrapiron": {
+"actor": "ACTOR_TYPE_LAMPTRAPIRON",
+"bmd": [
+"lamptrapiron.bmd"
+],
+"hit": "lamptrap_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"airplane": {
+"actor": "ACTOR_TYPE_AIRPLANE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"WoodBox": {
+"actor": "ACTOR_TYPE_WOOD_BOX",
+"bmd": [
+"kibako.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"AirportPole": {
+"actor": "ACTOR_TYPE_POLE_NORMAL",
+"bmd": [],
+"hit": "AirportPole_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+60.0,
+2800.0
+],
+"hitcat": "0x00000000"
+},
+"ice_car": {
+"actor": "ACTOR_TYPE_ICE_CAR",
+"bmd": [
+"yatai.bmd"
+],
+"hit": "ice_car_obj_hit_info",
+"hitbox": [
+90.0,
+280.0,
+90.0,
+280.0
+],
+"hitcat": "0x00000000"
+},
+"move_ice_car": {
+"actor": "ACTOR_TYPE_ICE_CAR",
+"bmd": [
+"yatai.bmd"
+],
+"hit": "ice_car_obj_hit_info",
+"hitbox": [
+90.0,
+280.0,
+90.0,
+280.0
+],
+"hitcat": "0x00000000"
+},
+"Buoy": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [],
+"hit": "AirportBuoy_obj_hit_info",
+"hitbox": [
+300.0,
+400.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"dptCannon": {
+"actor": "ACTOR_TYPE_DPT_CANNON",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"dptKing": {
+"actor": "ACTOR_TYPE_DPT_KING",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"KoopaJrSubmarine": {
+"actor": "ACTOR_TYPE_KOOPA_JR_SUBMARINE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"monumentshine": {
+"actor": "ACTOR_TYPE_DPT_KING",
+"bmd": [
+"monumentshine.bmd"
+],
+"hit": "monumentshine_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"belldolpic": {
+"actor": "ACTOR_TYPE_DPT_KING",
+"bmd": [
+"BellDolpic.bmd"
+],
+"hit": "belldolpic_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"dptWeathercock": {
+"actor": "ACTOR_TYPE_DPT_WEATHERCOCK",
+"bmd": [
+"DptWeathercock.bmd"
+],
+"hit": "DptWeathercock_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+80.0,
+280.0
+],
+"hitcat": "0x00000000"
+},
+"dptMonteFence": {
+"actor": "ACTOR_TYPE_DPT_MONTE_FENCE",
+"bmd": [],
+"hit": "DptMonteFence_obj_hit_info",
+"hitbox": [
+50.0,
+80.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"dptCoronaFence": {
+"actor": "ACTOR_TYPE_DPT_CORONA_FENCE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MapSmoke": {
+"actor": "ACTOR_TYPE_MAP_SMOKE",
+"bmd": [],
+"hit": "MapSmoke_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+50.0,
+100.0
+],
+"hitcat": "0x00000000"
+},
+"maregate": {
+"actor": "ACTOR_TYPE_MAREGATE",
+"bmd": [
+"maregate.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"demoCannon": {
+"actor": "ACTOR_TYPE_DEMO_CANNON",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"nozzleDoor": {
+"actor": "ACTOR_TYPE_NOZZLE_DOOR",
+"bmd": [
+"nozzleDoor.bmd"
+],
+"hit": "NozzleDoor_obj_hit_info",
+"hitbox": [
+100.0,
+300.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"DokanGate": {
+"actor": "ACTOR_TYPE_DOKAN_GATE",
+"bmd": [
+"efDokanGate.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"crane": {
+"actor": "ACTOR_TYPE_CRANE",
+"bmd": [],
+"hit": "Crane_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"crane90Scene2": {
+"actor": "ACTOR_TYPE_CRANE",
+"bmd": [],
+"hit": "Crane_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"crane180Scene1": {
+"actor": "ACTOR_TYPE_CRANE",
+"bmd": [],
+"hit": "Crane_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"craneUpDown": {
+"actor": "ACTOR_TYPE_CRANE",
+"bmd": [],
+"hit": "CraneUpDown_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"craneCargoUpDown": {
+"actor": "ACTOR_TYPE_CRANE",
+"bmd": [],
+"hit": "crane_cargo_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"tank": {
+"actor": "ACTOR_TYPE_TANK",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"container": {
+"actor": "ACTOR_TYPE_CONTAINER",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"submarine": {
+"actor": "ACTOR_TYPE_SUBMARINE",
+"bmd": [],
+"hit": "Submarine_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoShip": {
+"actor": "ACTOR_TYPE_RICCO_SHIP",
+"bmd": [],
+"hit": "ricco_ship_obj_hit_info",
+"hitbox": [
+700.0,
+400.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"riccoPole": {
+"actor": "ACTOR_TYPE_POLE_NORMAL",
+"bmd": [],
+"hit": "ricco_pole_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+60.0,
+2800.0
+],
+"hitcat": "0x00000000"
+},
+"riccoLog": {
+"actor": "ACTOR_TYPE_RICCO_LOG",
+"bmd": [],
+"hit": "riccoLog_obj_hit_info",
+"hitbox": [
+500.0,
+400.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"GesoSurfBoard": {
+"actor": "ACTOR_TYPE_GESO_SURF_BOARD",
+"bmd": [
+"surf_geso.bmd"
+],
+"hit": "gesoSurfboard_obj_hit_info",
+"hitbox": [
+40.0,
+40.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"GesoSurfBoardStatic": {
+"actor": "ACTOR_TYPE_GESO_SURF_BOARD",
+"bmd": [
+"surf_geso.bmd"
+],
+"hit": "gesoSurfboard_obj_hit_info",
+"hitbox": [
+40.0,
+40.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"riccoWatermill": {
+"actor": "ACTOR_TYPE_RICCO_WATERMILL",
+"bmd": [],
+"hit": "riccoWatermill_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+400.0,
+600.0
+],
+"hitcat": "0x00000000"
+},
+"riccoShipLog": {
+"actor": "ACTOR_TYPE_RICCO_SHIP",
+"bmd": [],
+"hit": "riccoShipLog_obj_hit_info",
+"hitbox": [
+2200.0,
+1250.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"riccoShipDol": {
+"actor": "ACTOR_TYPE_RICCO_SHIP",
+"bmd": [],
+"hit": "riccoShipDol_obj_hit_info",
+"hitbox": [
+2200.0,
+1500.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"riccoYachtL": {
+"actor": "ACTOR_TYPE_RICCO_SHIP",
+"bmd": [],
+"hit": "riccoYachtL_obj_hit_info",
+"hitbox": [
+1250.0,
+1200.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"riccoYachtS": {
+"actor": "ACTOR_TYPE_RICCO_SHIP",
+"bmd": [],
+"hit": "riccoYachtS_obj_hit_info",
+"hitbox": [
+700.0,
+900.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"riccoBoatL": {
+"actor": "ACTOR_TYPE_RICCO_SHIP",
+"bmd": [],
+"hit": "riccoBoatL_obj_hit_info",
+"hitbox": [
+1050.0,
+800.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"riccoBoatS": {
+"actor": "ACTOR_TYPE_RICCO_SHIP",
+"bmd": [],
+"hit": "riccoBoatS_obj_hit_info",
+"hitbox": [
+800.0,
+700.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"riccoBasket": {
+"actor": "ACTOR_TYPE_RICCO_BASKET",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoGangway": {
+"actor": "ACTOR_TYPE_RICCO_GANGWAY",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoShipFish": {
+"actor": "ACTOR_TYPE_RICCO_SHIP_FISH",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoShipGeso": {
+"actor": "ACTOR_TYPE_RICCO_SHIP_FISH",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoSwitch": {
+"actor": "ACTOR_TYPE_RICCO_SWITCH",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoSwitchShine": {
+"actor": "ACTOR_TYPE_RICCO_SWITCH_SHINE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoFenceMaze": {
+"actor": "ACTOR_TYPE_RICCO_FENCE_MAZE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoStand": {
+"actor": "ACTOR_TYPE_RICCO_STAND",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoGrille": {
+"actor": "ACTOR_TYPE_RICCO_GRILLE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoArrow": {
+"actor": "ACTOR_TYPE_RICCO_ARROW",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoStreetStall": {
+"actor": "ACTOR_TYPE_RICCO_STREET_STALL",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"riccoHericopter": {
+"actor": "ACTOR_TYPE_RICCO_HERICOPTER",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SurfGesoRed": {
+"actor": "ACTOR_TYPE_SURF_GESO_RED",
+"bmd": [],
+"hit": "surfgeso_obj_hit_info",
+"hitbox": [
+40.0,
+50.0,
+40.0,
+50.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"SurfGesoYellow": {
+"actor": "ACTOR_TYPE_SURF_GESO_YELLOW",
+"bmd": [],
+"hit": "surfgeso_obj_hit_info",
+"hitbox": [
+40.0,
+50.0,
+40.0,
+50.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"SurfGesoGreen": {
+"actor": "ACTOR_TYPE_SURF_GESO_GREEN",
+"bmd": [],
+"hit": "surfgeso_obj_hit_info",
+"hitbox": [
+40.0,
+50.0,
+40.0,
+50.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"bigWindmill": {
+"actor": "ACTOR_TYPE_BIG_WINDMILL",
+"bmd": [
+"bigWindmill.bmd"
+],
+"hit": "Windmill_obj_hit_info",
+"hitbox": [
+2500.0,
+5000.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"windmill_far": {
+"actor": "ACTOR_TYPE_WINDMILL_FAR",
+"bmd": [
+"bigWindmill.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MiniWindmillL": {
+"actor": "ACTOR_TYPE_MINI_WINDMILL_L",
+"bmd": [],
+"hit": "MiniWindmill_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+20.0,
+6400.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"MiniWindmillS": {
+"actor": "ACTOR_TYPE_MINI_WINDMILL_L",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"WindmillRoof": {
+"actor": "ACTOR_TYPE_WINDMILL_ROOF",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"lampBianco": {
+"actor": "ACTOR_TYPE_LAMP_BIANCO",
+"bmd": [
+"lampBianco.bmd"
+],
+"hit": "lamp_bianco_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"rootPaku": {
+"actor": "ACTOR_TYPE_ROOT_PAKU",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"bigWindmillBlock": {
+"actor": "ACTOR_TYPE_BIG_WINDMILL_BLOCK",
+"bmd": [],
+"hit": "WindmillBlock_obj_hit_info",
+"hitbox": [
+300.0,
+300.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"PolluterPakkun": {
+"actor": "ACTOR_TYPE_POLLUTER_PAKKUN",
+"bmd": [],
+"hit": "PolluterPakkun_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+100.0,
+100.0
+],
+"hitcat": "0x00000000"
+},
+"BiaBell": {
+"actor": "ACTOR_TYPE_BIA_BELL",
+"bmd": [
+"BiaBell.bmd"
+],
+"hit": "BiaBell_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+100.0,
+100.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"BiaWatermill00": {
+"actor": "ACTOR_TYPE_BIA_WATERMILL00",
+"bmd": [
+"BiaWatermill00.bmd"
+],
+"hit": "BiaWatermill00_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+320.0,
+500.0
+],
+"hitcat": "0x00000000"
+},
+"BiaWatermill01": {
+"actor": "ACTOR_TYPE_BIA_WATERMILL01",
+"bmd": [],
+"hit": "BiaWatermill01_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"BiaWatermillVertical": {
+"actor": "ACTOR_TYPE_BIA_WATERMILL_VERTICAL",
+"bmd": [],
+"hit": "BiaWatermillVertical_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"BiaTurnBridge": {
+"actor": "ACTOR_TYPE_BIA_TURN_BRIDGE",
+"bmd": [],
+"hit": "BiaTurnBridge_obj_hit_info",
+"hitbox": [
+1200.0,
+250.0,
+100.0,
+100.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"LeafBoat": {
+"actor": "ACTOR_TYPE_LEAF_BOAT",
+"bmd": [],
+"hit": "LeafBoat_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"LeafBoatRotten": {
+"actor": "ACTOR_TYPE_LEAF_BOAT_ROTTEN",
+"bmd": [],
+"hit": "LeafBoat_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"LampSeesaw": {
+"actor": "ACTOR_TYPE_LAMP_SEESAW",
+"bmd": [
+"lampBianco.bmd"
+],
+"hit": "LampSeesaw_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"BiaDoor": {
+"actor": "ACTOR_TYPE_BIA_DOOR",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"BiaBridge": {
+"actor": "ACTOR_TYPE_BIA_BRIDGE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBird": {
+"actor": "ACTOR_TYPE_SAND_BIRD",
+"bmd": [
+"SandBird.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBirdBlock": {
+"actor": "ACTOR_TYPE_SAND_BIRD_BLOCK",
+"bmd": [],
+"hit": "SandBirdBlock_obj_hit_info",
+"hitbox": [
+500.0,
+1000.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"SkyIsland": {
+"actor": "ACTOR_TYPE_MOVE_BLOCK",
+"bmd": [
+"SkyIsland.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandLeaf": {
+"actor": "ACTOR_TYPE_SAND_LEAF",
+"bmd": [
+"SandLeaf.bmd"
+],
+"hit": "sand_leaf_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+50.0,
+180.0
+],
+"hitcat": "0x00000000"
+},
+"SandLeafBase00": {
+"actor": "ACTOR_TYPE_SAND_LEAF_BASE00",
+"bmd": [
+"SandLeafBase00.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandLeafBase01": {
+"actor": "ACTOR_TYPE_SAND_LEAF_BASE00",
+"bmd": [
+"SandLeafBase01.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandLeafBase02": {
+"actor": "ACTOR_TYPE_SAND_LEAF_BASE00",
+"bmd": [
+"SandLeafBase02.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandLeafBase03": {
+"actor": "ACTOR_TYPE_SAND_LEAF_BASE00",
+"bmd": [
+"SandLeafBase03.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBomb": {
+"actor": "ACTOR_TYPE_SAND_BOMB",
+"bmd": [
+"SandBomb.bmd"
+],
+"hit": "sand_bomb_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+50.0,
+180.0
+],
+"hitcat": "0x00000000"
+},
+"mirrorL": {
+"actor": "ACTOR_TYPE_MIRROR_L",
+"bmd": [],
+"hit": "mirror_L_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"mirrorM": {
+"actor": "ACTOR_TYPE_MIRROR_L",
+"bmd": [],
+"hit": "mirror_M_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"mirrorS": {
+"actor": "ACTOR_TYPE_MIRROR_L",
+"bmd": [],
+"hit": "mirrorS_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandCastle": {
+"actor": "ACTOR_TYPE_SAND_CASTLE",
+"bmd": [
+"SandCastle.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MammaBlockRotate": {
+"actor": "ACTOR_TYPE_MAMMA_BLOCK_ROTATE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandEggNormal": {
+"actor": "ACTOR_TYPE_SAND_EGG_NORMAL",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandEggBroken": {
+"actor": "ACTOR_TYPE_SAND_EGG_NORMAL",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"ShiningStone": {
+"actor": "ACTOR_TYPE_SHINING_STONE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MammaSurfboard00": {
+"actor": "ACTOR_TYPE_MAMMA_SURFBOARD00",
+"bmd": [],
+"hit": "MammaSurfboard_obj_hit_info",
+"hitbox": [
+100.0,
+200.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"MammaSurfboard01": {
+"actor": "ACTOR_TYPE_MAMMA_SURFBOARD00",
+"bmd": [],
+"hit": "MammaSurfboard_obj_hit_info",
+"hitbox": [
+100.0,
+200.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"MammaSurfboard02": {
+"actor": "ACTOR_TYPE_MAMMA_SURFBOARD00",
+"bmd": [],
+"hit": "MammaSurfboard_obj_hit_info",
+"hitbox": [
+100.0,
+200.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"MammaSurfboard03": {
+"actor": "ACTOR_TYPE_MAMMA_SURFBOARD00",
+"bmd": [],
+"hit": "MammaSurfboard_obj_hit_info",
+"hitbox": [
+100.0,
+200.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"MammaSurfboardStand": {
+"actor": "ACTOR_TYPE_MAMMA_SURFBOARD_STAND",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MammaYacht00": {
+"actor": "ACTOR_TYPE_MAMMA_YACHT00",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MammaYacht01": {
+"actor": "ACTOR_TYPE_MAMMA_YACHT00",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MammaYacht02": {
+"actor": "ACTOR_TYPE_MAMMA_YACHT00",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBombBase00": {
+"actor": "ACTOR_TYPE_SAND_BOMB_BASE00",
+"bmd": [
+"SandBombBase00.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBombBaseMushroom": {
+"actor": "ACTOR_TYPE_SAND_BOMB_BASE00",
+"bmd": [
+"SandBombBaseMushroom.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBombBasePyramid": {
+"actor": "ACTOR_TYPE_SAND_BOMB_BASE00",
+"bmd": [
+"SandBombBasePyramid.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBombBaseShit": {
+"actor": "ACTOR_TYPE_SAND_BOMB_BASE00",
+"bmd": [
+"SandBombBaseShit.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBombBaseStar": {
+"actor": "ACTOR_TYPE_SAND_BOMB_BASE00",
+"bmd": [
+"SandBombBaseStar.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBombBaseTurtle": {
+"actor": "ACTOR_TYPE_SAND_BOMB_BASE00",
+"bmd": [
+"SandBombBaseTurtle.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBombBaseFoot": {
+"actor": "ACTOR_TYPE_SAND_BOMB_BASE_FOOT",
+"bmd": [
+"SandBombBaseFoot.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBombBaseHand": {
+"actor": "ACTOR_TYPE_SAND_BOMB_BASE_FOOT",
+"bmd": [
+"SandBombBaseHand.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SandBombBaseStairs": {
+"actor": "ACTOR_TYPE_SAND_BOMB_BASE_FOOT",
+"bmd": [
+"SandBombBaseStairs.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"coral00": {
+"actor": "ACTOR_TYPE_CORAL00",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"coral01": {
+"actor": "ACTOR_TYPE_CORAL00",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"GoalWatermelon": {
+"actor": "ACTOR_TYPE_GOAL_WATERMELON",
+"bmd": [],
+"hit": "GoalWatermelon_obj_hit_info",
+"hitbox": [
+120.0,
+180.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_MAP_OBJECT"
+},
+"TeethOfJuicer": {
+"actor": "ACTOR_TYPE_TEETH_OF_JUICER",
+"bmd": [
+"TeethOfJuicer.bmd"
+],
+"hit": "TeethOfJuicer_obj_hit_info",
+"hitbox": [
+120.0,
+180.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_MAP_OBJECT"
+},
+"SandEggrepair": {
+"actor": "ACTOR_TYPE_SAND_EGGREPAIR",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"merry": {
+"actor": "ACTOR_TYPE_MERRY",
+"bmd": [
+"merry.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"merry_egg": {
+"actor": "ACTOR_TYPE_MERRY_EGG",
+"bmd": [],
+"hit": "merry_egg_obj_hit_info",
+"hitbox": [
+300.0,
+300.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"merry_pole": {
+"actor": "ACTOR_TYPE_MERRY_POLE",
+"bmd": [],
+"hit": "merry_pole_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+50.0,
+600.0
+],
+"hitcat": "0x00000000"
+},
+"FerrisWheel": {
+"actor": "ACTOR_TYPE_FERRIS_WHEEL",
+"bmd": [
+"FerrisWheel.bmd"
+],
+"hit": "FerrisWheel_obj_hit_info",
+"hitbox": [
+2800.0,
+5600.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"FerrisGondola": {
+"actor": "ACTOR_TYPE_FERRIS_GONDOLA",
+"bmd": [],
+"hit": "FerrisWheelGondola_obj_hit_info",
+"hitbox": [
+500.0,
+800.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"FerrisLOD": {
+"actor": "ACTOR_TYPE_FERRIS_WHEEL",
+"bmd": [
+"FerrisLOD.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"viking": {
+"actor": "ACTOR_TYPE_VIKING",
+"bmd": [],
+"hit": "Viking_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"PinnaDoor": {
+"actor": "ACTOR_TYPE_PINNA_DOOR",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"PinnaDoorOpen": {
+"actor": "ACTOR_TYPE_PINNA_DOOR",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SirenaGate": {
+"actor": "ACTOR_TYPE_SIRENA_GATE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"balloonKoopaJr": {
+"actor": "ACTOR_TYPE_BALLOON_KOOPA_JR",
+"bmd": [
+"balloonKoopaJr.bmd"
+],
+"hit": "balloon_koopajr_obj_hit_info",
+"hitbox": [
+100.0,
+100.0,
+100.0,
+100.0
+],
+"hitcat": "HIT_CATEGORY_ENEMY"
+},
+"ShellCup": {
+"actor": "ACTOR_TYPE_SHELL_CUP",
+"bmd": [
+"ShellCup.bmd"
+],
+"hit": "ShellCup_obj_hit_info",
+"hitbox": [
+1300.0,
+500.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"Gateshell": {
+"actor": "ACTOR_TYPE_GATESHELL",
+"bmd": [
+"Gateshell.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"PinnaHangingBridgeBoard": {
+"actor": "ACTOR_TYPE_PINNA_HANGING_BRIDGE_BOARD",
+"bmd": [
+"PinnaBoard.bmd"
+],
+"hit": "PinnaHangingBridgeBoard_obj_hit_info",
+"hitbox": [
+300.0,
+300.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"GateManta": {
+"actor": "ACTOR_TYPE_GATE_MANTA",
+"bmd": [
+"GateManta.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"PinnaSunFlower": {
+"actor": "ACTOR_TYPE_PINNA_SUN_FLOWER",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"amiking": {
+"actor": "ACTOR_TYPE_AMIKING",
+"bmd": [
+"amiking_model1.bmd"
+],
+"hit": "AmiKing_obj_hit_info",
+"hitbox": [
+300.0,
+500.0,
+300.0,
+500.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"Coaster": {
+"actor": "ACTOR_TYPE_COASTER",
+"bmd": [],
+"hit": "PinnaCoaster_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+300.0,
+300.0
+],
+"hitcat": "0x00000000"
+},
+"casinorulet": {
+"actor": "ACTOR_TYPE_CASINORULET",
+"bmd": [],
+"hit": "nullptr",
+"hitbox": null,
+"hitcat": null
+},
+"rulet00": {
+"actor": "ACTOR_TYPE_CASINORULET",
+"bmd": [
+"rulet00.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"rulet01": {
+"actor": "ACTOR_TYPE_CASINORULET",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"rulet02": {
+"actor": "ACTOR_TYPE_CASINORULET",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"srotdram": {
+"actor": "ACTOR_TYPE_SROTDRAM",
+"bmd": [],
+"hit": "slotdrum_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+500.0,
+300.0
+],
+"hitcat": "0x00000000"
+},
+"srotRulet": {
+"actor": "ACTOR_TYPE_SROT_RULET",
+"bmd": [],
+"hit": "telesaslot_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+400.0,
+300.0
+],
+"hitcat": "0x00000000"
+},
+"Donchou": {
+"actor": "ACTOR_TYPE_DONCHOU",
+"bmd": [],
+"hit": "donchou_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+400.0,
+800.0
+],
+"hitcat": "0x00000000"
+},
+"pazul": {
+"actor": "ACTOR_TYPE_PAZUL",
+"bmd": [],
+"hit": "casino_panel_gate_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+500.0,
+800.0
+],
+"hitcat": "0x00000000"
+},
+"SakuCasino": {
+"actor": "ACTOR_TYPE_SAKU_CASINO",
+"bmd": [],
+"hit": "nullptr",
+"hitbox": null,
+"hitcat": null
+},
+"SirenabossWall": {
+"actor": "ACTOR_TYPE_SAKU_CASINO",
+"bmd": [
+"boss_wall.bmd"
+],
+"hit": "nullptr",
+"hitbox": null,
+"hitcat": null
+},
+"SirenaCasinoRoof": {
+"actor": "ACTOR_TYPE_SAKU_CASINO",
+"bmd": [
+"casino_lighting.bmd"
+],
+"hit": "nullptr",
+"hitbox": null,
+"hitcat": null
+},
+"GlassBreak": {
+"actor": "ACTOR_TYPE_GLASS_BREAK",
+"bmd": [
+"GlassBreak.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"Closet": {
+"actor": "ACTOR_TYPE_CLOSET",
+"bmd": [
+"closet.bmd"
+],
+"hit": "closet_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+400.0,
+450.0
+],
+"hitcat": "0x00000000"
+},
+"ChestRevolve": {
+"actor": "ACTOR_TYPE_CHEST_REVOLVE",
+"bmd": [
+"ChestRevolve.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"PosterTeresa": {
+"actor": "ACTOR_TYPE_POSTER_TERESA",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"PictureTeresa": {
+"actor": "ACTOR_TYPE_PICTURE_TERESA",
+"bmd": [],
+"hit": "PictureTeresa_obj_hit_info",
+"hitbox": [
+200.0,
+400.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"PanelBreak": {
+"actor": "ACTOR_TYPE_PANEL_BREAK",
+"bmd": [
+"PanelBreak.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"PanelRevolve": {
+"actor": "ACTOR_TYPE_PANEL_REVOLVE",
+"bmd": [
+"PanelRevolve.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SirenaBlockBreak": {
+"actor": "ACTOR_TYPE_SIRENA_BLOCK_BREAK",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SirenaShop": {
+"actor": "ACTOR_TYPE_SIRENA_SHOP",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SimiHotel": {
+"actor": "ACTOR_TYPE_SIMI_HOTEL",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"cogwheel": {
+"actor": "ACTOR_TYPE_COGWHEEL",
+"bmd": [
+"cogwheel_wheel.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"cogwheel_plate": {
+"actor": "ACTOR_TYPE_COGWHEEL_PLATE",
+"bmd": [],
+"hit": "CogwheelPlate_obj_hit_info",
+"hitbox": [
+200.0,
+200.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"cogwheel_pot": {
+"actor": "ACTOR_TYPE_COGWHEEL_POT",
+"bmd": [],
+"hit": "CogwheelPot_obj_hit_info",
+"hitbox": [
+300.0,
+300.0,
+250.0,
+500.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"ukisima": {
+"actor": "ACTOR_TYPE_UKISIMA",
+"bmd": [],
+"hit": "mare_float_house_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"StopRock": {
+"actor": "ACTOR_TYPE_STOP_ROCK",
+"bmd": [],
+"hit": "StopRock_obj_hit_info",
+"hitbox": [
+250.0,
+350.0,
+250.0,
+350.0
+],
+"hitcat": "0x00000000"
+},
+"ElasticCode": {
+"actor": "ACTOR_TYPE_ELASTIC_CODE",
+"bmd": [],
+"hit": "ElasticCode_obj_hit_info",
+"hitbox": [
+200.0,
+200.0,
+200.0,
+200.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"Moyasi": {
+"actor": "ACTOR_TYPE_MOYASI",
+"bmd": [
+"Moyasi.bmd"
+],
+"hit": "GrowthTree_obj_hit_info",
+"hitbox": [
+50.0,
+300.0,
+50.0,
+300.0
+],
+"hitcat": "0x00000000"
+},
+"WireBellPurple": {
+"actor": "ACTOR_TYPE_WIRE_BELL_PURPLE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MuddyBoat": {
+"actor": "ACTOR_TYPE_MUDDY_BOAT",
+"bmd": [
+"MuddyBoat.bmd"
+],
+"hit": "MuddyBoat_obj_hit_info",
+"hitbox": [
+300.0,
+500.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"Puncher": {
+"actor": "ACTOR_TYPE_PUNCHER",
+"bmd": [
+"puncher_model1.bmd"
+],
+"hit": "Puncher_obj_hit_info",
+"hitbox": [
+100.0,
+200.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"HatoPop": {
+"actor": "ACTOR_TYPE_PUNCHER",
+"bmd": [
+"hatopop_model1.bmd"
+],
+"hit": "HatoPop_obj_hit_info",
+"hitbox": [
+100.0,
+200.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"mareWaterJump": {
+"actor": "ACTOR_TYPE_MARE_WATER_JUMP",
+"bmd": [],
+"hit": "MareWaterJump_obj_hit_info",
+"hitbox": [
+500.0,
+1200.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"MareEventBumpyWall": {
+"actor": "ACTOR_TYPE_MARE_EVENT_BUMPY_WALL",
+"bmd": [],
+"hit": "BumpyWall_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+100.0,
+200.0
+],
+"hitcat": "0x00000000"
+},
+"exBottle": {
+"actor": "ACTOR_TYPE_EX_BOTTLE",
+"bmd": [],
+"hit": "ExBottle_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+100.0,
+100.0
+],
+"hitcat": "0x00000000"
+},
+"CoinFish": {
+"actor": "ACTOR_TYPE_COIN_FISH",
+"bmd": [
+"CoinFish.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"mareFall": {
+"actor": "ACTOR_TYPE_MARE_FALL",
+"bmd": [
+"MareFall.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MareCork": {
+"actor": "ACTOR_TYPE_MARE_CORK",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MonteRoot": {
+"actor": "ACTOR_TYPE_MONTE_ROOT",
+"bmd": [
+"nekko.bmd"
+],
+"hit": "MonteRoot_obj_hit_info",
+"hitbox": [
+0.0,
+0.0,
+50.0,
+1200.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"JumpMushroom": {
+"actor": "ACTOR_TYPE_JUMP_MUSHROOM",
+"bmd": [
+"JumpKinoko.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MonteGoalFlag": {
+"actor": "ACTOR_TYPE_MONTE_GOAL_FLAG",
+"bmd": [
+"monteflag.bmd"
+],
+"hit": "MonteGoalFlag_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"HangingBridgeBoard": {
+"actor": "ACTOR_TYPE_PINNA_HANGING_BRIDGE_BOARD",
+"bmd": [
+"mon_bri.bmd"
+],
+"hit": "HangingBridgeBoard_obj_hit_info",
+"hitbox": [
+300.0,
+300.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"HangingBridge": {
+"actor": "ACTOR_TYPE_HANGING_BRIDGE",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"SwingBoard": {
+"actor": "ACTOR_TYPE_SWING_BOARD",
+"bmd": [],
+"hit": "SwingBoard_obj_hit_info",
+"hitbox": [
+300.0,
+300.0,
+0.0,
+0.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"Fluff": {
+"actor": "ACTOR_TYPE_FLUFF",
+"bmd": [
+"Watage.bmd"
+],
+"hit": "Fluff_obj_hit_info",
+"hitbox": [
+200.0,
+500.0,
+400.0,
+800.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"FluffManager": {
+"actor": "ACTOR_TYPE_FLUFF",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"bath": {
+"actor": "ACTOR_TYPE_BATH",
+"bmd": [
+"bath.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"stand": {
+"actor": "ACTOR_TYPE_STAND",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"stand_break": {
+"actor": "ACTOR_TYPE_STAND_BREAK",
+"bmd": [
+"stand_break.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"ex1_turn_lift": {
+"actor": "ACTOR_TYPE_EX1_TURN_LIFT",
+"bmd": [
+"TurnLift.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"zTurnDisk": {
+"actor": "ACTOR_TYPE_EX1_TURN_LIFT",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"yTurnLift": {
+"actor": "ACTOR_TYPE_EX1_TURN_LIFT",
+"bmd": [
+"yTurnLift.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"EXskyTumiki": {
+"actor": "ACTOR_TYPE_EX_SKY_TUMIKI",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"EXskyWindow": {
+"actor": "ACTOR_TYPE_EX_SKY_TUMIKI",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"EXskySenro": {
+"actor": "ACTOR_TYPE_EX_SKY_TUMIKI",
+"bmd": [],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"MapObjNail": {
+"actor": "ACTOR_TYPE_MAP_OBJ_NAIL",
+"bmd": [
+"kugi.bmd"
+],
+"hit": "Nail_obj_hit_info",
+"hitbox": [
+50.0,
+200.0,
+40.0,
+140.0
+],
+"hitcat": "HIT_CATEGORY_PLAYER"
+},
+"MapObjPachinkoNail": {
+"actor": "ACTOR_TYPE_MAP_OBJ_PACHINKO_NAIL",
+"bmd": [
+"PachinkoKugi.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"FileLoadBlockA": {
+"actor": "ACTOR_TYPE_FILE_LOAD_BLOCK_A",
+"bmd": [
+"FileLoadBlockA.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"FileLoadBlockB": {
+"actor": "ACTOR_TYPE_FILE_LOAD_BLOCK_B",
+"bmd": [
+"FileLoadBlockB.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+},
+"FileLoadBlockC": {
+"actor": "ACTOR_TYPE_FILE_LOAD_BLOCK_C",
+"bmd": [
+"FileLoadBlockC.bmd"
+],
+"hit": "no_data_obj_hit_info",
+"hitbox": null,
+"hitcat": null
+}
+}

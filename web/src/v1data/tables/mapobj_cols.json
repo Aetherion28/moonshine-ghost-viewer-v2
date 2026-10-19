@@ -1,0 +1,1395 @@
+{
+"BananaTree": [
+{
+"col": "BananaTree",
+"flags": 2
+}
+],
+"BasketReverse": [
+{
+"col": "Basket",
+"flags": 2
+}
+],
+"BiaBridge": [
+{
+"col": "BiaBridge",
+"flags": 0
+}
+],
+"BiaDoor": [
+{
+"col": "BiaDoor",
+"flags": 0
+}
+],
+"BiaTurnBridge": [
+{
+"col": "BiaTurnBridge",
+"flags": 1
+}
+],
+"BiaWatermill01": [
+{
+"col": "BiaWatermill01",
+"flags": 1
+}
+],
+"BiaWatermillVertical": [
+{
+"col": "BiaWatermillVertical",
+"flags": 1
+}
+],
+"BrickBlock": [
+{
+"col": "BrickBlock",
+"flags": 2
+}
+],
+"Buoy": [
+{
+"col": "Buoy",
+"flags": 1
+}
+],
+"ChestRevolve": [
+{
+"col": "ChestRevolve",
+"flags": 2
+},
+{
+"col": "ChestRevolve",
+"flags": 1
+}
+],
+"FenceWaterH": [
+{
+"col": "FenceWaterH",
+"flags": 2
+},
+{
+"col": "FenceWaterH_ground",
+"flags": 1
+}
+],
+"FenceWaterV": [
+{
+"col": "FenceWaterV",
+"flags": 1
+}
+],
+"FerrisGondola": [
+{
+"col": "FerrisGondola",
+"flags": 1
+}
+],
+"FileLoadBlockA": [
+{
+"col": "FileLoadBlock",
+"flags": 0
+}
+],
+"FileLoadBlockB": [
+{
+"col": "FileLoadBlock",
+"flags": 0
+}
+],
+"FileLoadBlockC": [
+{
+"col": "FileLoadBlock",
+"flags": 0
+}
+],
+"FruitBasket": [
+{
+"col": "Basket",
+"flags": 0
+}
+],
+"Gateshell": [
+{
+"col": "Gateshell",
+"flags": 2
+}
+],
+"GlassBreak": [
+{
+"col": "GlassBreak",
+"flags": 2
+}
+],
+"HangingBridgeBoard": [
+{
+"col": "mon_bri",
+"flags": 1
+}
+],
+"IceBlock": [
+{
+"col": "IceBlock",
+"flags": 1
+}
+],
+"JuiceBlock": [
+{
+"col": "NormalBlock",
+"flags": 1
+}
+],
+"JumpMushroom": [
+{
+"col": "JumpKinoko",
+"flags": 0
+}
+],
+"KoopaJrSubmarine": [
+{
+"col": "KoopaJrSubmarine",
+"flags": 0
+}
+],
+"LampSeesaw": [
+{
+"col": "lampBianco",
+"flags": 1
+}
+],
+"LeafBoat": [
+{
+"col": "LeafBoat",
+"flags": 1
+}
+],
+"LeafBoatRotten": [
+{
+"col": "LeafBoat",
+"flags": 1
+}
+],
+"MammaBlockRotate": [
+{
+"col": "MammaBlockRotate",
+"flags": 1
+},
+{
+"col": "MammaBlockRotate",
+"flags": 2
+}
+],
+"MammaSurfboardStand": [
+{
+"col": "MammaSurfboardStand",
+"flags": 0
+}
+],
+"MammaYacht00": [
+{
+"col": "MammaYacht00",
+"flags": 0
+}
+],
+"MammaYacht01": [
+{
+"col": "MammaYacht01",
+"flags": 0
+}
+],
+"MammaYacht02": [
+{
+"col": "MammaYacht02",
+"flags": 0
+}
+],
+"MapObjNail": [
+{
+"col": "kugi",
+"flags": 2
+}
+],
+"MapObjPachinkoNail": [
+{
+"col": "PachinkoKugi",
+"flags": 2
+}
+],
+"MareCork": [
+{
+"col": "MareCork",
+"flags": 2
+}
+],
+"MiniWindmillL": [
+{
+"col": "MiniWindmillL",
+"flags": 2
+}
+],
+"MiniWindmillS": [
+{
+"col": "MiniWindmillS",
+"flags": 2
+}
+],
+"Moyasi": [
+{
+"col": "Moyasi",
+"flags": 2
+}
+],
+"MuddyBoat": [
+{
+"col": "MuddyBoat",
+"flags": 1
+}
+],
+"NormalBlock": [
+{
+"col": "NormalBlock",
+"flags": 1
+}
+],
+"ObjSwitch": [
+{
+"col": "ObjSwitch",
+"flags": 2
+}
+],
+"PanelBreak": [
+{
+"col": "PanelBreak",
+"flags": 2
+}
+],
+"PanelRevolve": [
+{
+"col": "PanelRevolve",
+"flags": 2
+}
+],
+"PictureTeresa": [
+{
+"col": "PictureTeresa",
+"flags": 2
+}
+],
+"Pile": [
+{
+"col": "Pile",
+"flags": 0
+}
+],
+"PinnaDoor": [
+{
+"col": "PinnaDoor",
+"flags": 2
+}
+],
+"PinnaDoorOpen": [
+{
+"col": "PinnaDoor",
+"flags": 2
+}
+],
+"PinnaHangingBridgeBoard": [],
+"PosterTeresa": [
+{
+"col": "PosterTeresa",
+"flags": 2
+}
+],
+"RailFence": [
+{
+"col": "fence_normal_v_tool",
+"flags": 2
+},
+{
+"col": "fence_normal_v_tool",
+"flags": 1
+}
+],
+"RedCoinSwitch": [
+{
+"col": "RedCoinSwitch",
+"flags": 2
+}
+],
+"SandBirdBlock": [
+{
+"col": "SandBirdBlock",
+"flags": 1
+}
+],
+"SandBombBase00": [
+{
+"col": "SandBombBase00",
+"flags": 2
+},
+{
+"col": "SandBombBase00",
+"flags": 1
+}
+],
+"SandBombBaseFoot": [
+{
+"col": "SandBombBaseFoot",
+"flags": 2
+},
+{
+"col": "SandBombBaseFoot",
+"flags": 1
+}
+],
+"SandBombBaseHand": [
+{
+"col": "SandBombBaseHand",
+"flags": 2
+},
+{
+"col": "SandBombBaseHand",
+"flags": 1
+}
+],
+"SandBombBaseMushroom": [
+{
+"col": "SandBombBaseMushroom",
+"flags": 2
+},
+{
+"col": "SandBombBaseMushroom",
+"flags": 1
+}
+],
+"SandBombBasePyramid": [
+{
+"col": "SandBombBasePyramid",
+"flags": 2
+},
+{
+"col": "SandBombBasePyramid",
+"flags": 1
+}
+],
+"SandBombBaseShit": [
+{
+"col": "SandBombBaseShit",
+"flags": 2
+},
+{
+"col": "SandBombBaseShit",
+"flags": 1
+}
+],
+"SandBombBaseStairs": [
+{
+"col": "SandBombBaseStairs",
+"flags": 2
+},
+{
+"col": "SandBombBaseStairs",
+"flags": 1
+}
+],
+"SandBombBaseStar": [
+{
+"col": "SandBombBaseStar",
+"flags": 2
+},
+{
+"col": "SandBombBaseStar",
+"flags": 1
+}
+],
+"SandBombBaseTurtle": [
+{
+"col": "SandBombBaseTurtle",
+"flags": 2
+},
+{
+"col": "SandBombBaseTurtle",
+"flags": 1
+}
+],
+"SandCastle": [
+{
+"col": "SandCastle",
+"flags": 2
+},
+{
+"col": "SandCastle",
+"flags": 1
+}
+],
+"SandEggBroken": [
+{
+"col": "SandEggBroken",
+"flags": 0
+}
+],
+"SandEggNormal": [
+{
+"col": "SandEggNormal",
+"flags": 0
+}
+],
+"SandEggrepair": [
+{
+"col": "SandEggrepair",
+"flags": 0
+}
+],
+"SandLeafBase00": [
+{
+"col": "SandLeafBase00",
+"flags": 2
+},
+{
+"col": "SandLeafBase00",
+"flags": 1
+}
+],
+"SandLeafBase01": [
+{
+"col": "SandLeafBase01",
+"flags": 2
+},
+{
+"col": "SandLeafBase01",
+"flags": 1
+}
+],
+"SandLeafBase02": [
+{
+"col": "SandLeafBase02",
+"flags": 2
+},
+{
+"col": "SandLeafBase02",
+"flags": 1
+}
+],
+"SandLeafBase03": [
+{
+"col": "SandLeafBase03",
+"flags": 2
+},
+{
+"col": "SandLeafBase03",
+"flags": 1
+}
+],
+"ShellCup": [
+{
+"col": "ShellCup_under",
+"flags": 1
+}
+],
+"SirenaGate": [
+{
+"col": "SirenaGate",
+"flags": 2
+}
+],
+"SirenaShop": [
+{
+"col": "SirenaShop",
+"flags": 0
+}
+],
+"SkyIsland": [
+{
+"col": "SkyIsland",
+"flags": 0
+}
+],
+"StopRock": [
+{
+"col": "StopRock",
+"flags": 2
+}
+],
+"SuperHipDropBlock": [
+{
+"col": "super_rock",
+"flags": 2
+}
+],
+"SwingBoard": [
+{
+"col": "SwingBoard",
+"flags": 1
+}
+],
+"TelesaBlock": [
+{
+"col": "TelesaBlock",
+"flags": 1
+}
+],
+"WaterMelonBlock": [
+{
+"col": "WaterMelonBlock",
+"flags": 2
+}
+],
+"WindmillRoof": [
+{
+"col": "WindmillRoof",
+"flags": 2
+}
+],
+"WoodBlockBridge": [
+{
+"col": "WoodBlockBridge",
+"flags": 1
+}
+],
+"WoodBlockCone": [
+{
+"col": "WoodBlockCone",
+"flags": 1
+}
+],
+"WoodBlockCube": [
+{
+"col": "WoodBlockCube",
+"flags": 1
+}
+],
+"WoodBlockL": [
+{
+"col": "WoodBlockL",
+"flags": 1
+}
+],
+"WoodBlockLarge": [
+{
+"col": "WoodBlockLarge",
+"flags": 1
+}
+],
+"WoodBlockLong": [
+{
+"col": "WoodBlockLong",
+"flags": 1
+}
+],
+"WoodBlockPyramid": [
+{
+"col": "WoodBlockPyramid",
+"flags": 1
+}
+],
+"WoodBlockTriangle": [
+{
+"col": "WoodBlockTriangle",
+"flags": 1
+}
+],
+"WoodBox": [
+{
+"col": "kibako",
+"flags": 2
+}
+],
+"airplane": [
+{
+"col": "airplane",
+"flags": 2
+}
+],
+"bambooRailFence": [
+{
+"col": "fence_normal_v_tool",
+"flags": 2
+},
+{
+"col": "fence_normal_v_tool",
+"flags": 1
+}
+],
+"barrel_float": [
+{
+"col": "barrel_float",
+"flags": 1
+}
+],
+"barrel_oil": [
+{
+"col": "barrel",
+"flags": 2
+},
+{
+"col": "barrel",
+"flags": 1
+}
+],
+"bigWindmill": [
+{
+"col": "bigWindmill",
+"flags": 1
+}
+],
+"bigWindmillBlock": [
+{
+"col": "bigWindmillBlock",
+"flags": 1
+}
+],
+"breakable_block": [
+{
+"col": "breakable_block",
+"flags": 2
+}
+],
+"casinorulet": [
+{
+"col": "casinorulet",
+"flags": 1
+}
+],
+"castella": [
+{
+"col": "castella",
+"flags": 1
+}
+],
+"cloud": [
+{
+"col": "cloud",
+"flags": 1
+}
+],
+"cogwheel": [
+{
+"col": "cogwheel_wheel",
+"flags": 2
+}
+],
+"cogwheel_plate": [
+{
+"col": "cogwheel_plate",
+"flags": 1
+}
+],
+"cogwheel_pot": [
+{
+"col": "cogwheel_pot",
+"flags": 1
+}
+],
+"container": [
+{
+"col": "container",
+"flags": 2
+}
+],
+"crane": [
+{
+"col": "crane",
+"flags": 1
+}
+],
+"crane180Scene1": [
+{
+"col": "crane180Scene1",
+"flags": 1
+}
+],
+"crane90Scene2": [
+{
+"col": "crane90Scene2",
+"flags": 1
+}
+],
+"craneCargoUpDown": [
+{
+"col": "craneCargoUpDown",
+"flags": 1
+}
+],
+"craneUpDown": [
+{
+"col": "craneUpDown",
+"flags": 1
+}
+],
+"dptCoronaFence": [
+{
+"col": "dptCoronaFence",
+"flags": 2
+}
+],
+"dptKing": [
+{
+"col": "dptKing",
+"flags": 2
+},
+{
+"col": "dptKing",
+"flags": 1
+}
+],
+"dptMonteFence": [
+{
+"col": "dptMonteFence",
+"flags": 2
+}
+],
+"dptlight": [
+{
+"col": "dptlight",
+"flags": 2
+},
+{
+"col": "dptlight_sink",
+"flags": 1
+}
+],
+"drum_can": [
+{
+"col": "drum_can",
+"flags": 2
+},
+{
+"col": "drum_can_sink",
+"flags": 1
+}
+],
+"ex1_turn_lift": [
+{
+"col": "TurnLift",
+"flags": 1
+}
+],
+"exkickboard": [
+{
+"col": "EXKickBoard",
+"flags": 1
+}
+],
+"expand_block": [
+{
+"col": "lower_block",
+"flags": 1
+}
+],
+"exrollcube": [
+{
+"col": "EXRollCube",
+"flags": 1
+}
+],
+"fall_slow_block": [
+{
+"col": "lower_block",
+"flags": 1
+}
+],
+"football_goal": [
+{
+"col": "soccer_goal",
+"flags": 2
+},
+{
+"col": "soccer_goal_stand",
+"flags": 2
+}
+],
+"fruitTree": [
+{
+"col": "fruitTree",
+"flags": 0
+}
+],
+"getag": [
+{
+"col": "geta",
+"flags": 1
+}
+],
+"getao": [
+{
+"col": "geta",
+"flags": 1
+}
+],
+"hikidashi": [
+{
+"col": "hikidashi",
+"flags": 1
+}
+],
+"ice_car": [
+{
+"col": "yatai",
+"flags": 2
+}
+],
+"jumpbase": [
+{
+"col": "jumpbase",
+"flags": 1
+}
+],
+"kamaboko": [
+{
+"col": "kamaboko",
+"flags": 1
+}
+],
+"lampBianco": [
+{
+"col": "lampBianco",
+"flags": 2
+},
+{
+"col": "lampBianco",
+"flags": 1
+}
+],
+"lamptrapiron": [
+{
+"col": "lamptrap",
+"flags": 1
+}
+],
+"lamptrapspike": [
+{
+"col": "lamptrap",
+"flags": 1
+}
+],
+"lean_block": [
+{
+"col": "center_block",
+"flags": 1
+}
+],
+"lean_direct_block": [
+{
+"col": "center_block",
+"flags": 1
+}
+],
+"lean_indirect_block": [
+{
+"col": "center_block",
+"flags": 1
+}
+],
+"manhole": [
+{
+"col": "manhole",
+"flags": 2
+},
+{
+"col": "manhole",
+"flags": 1
+}
+],
+"mareWaterJump": [
+{
+"col": "mareWaterJump_tool",
+"flags": 1
+}
+],
+"merry": [
+{
+"col": "merry",
+"flags": 0
+}
+],
+"merry_egg": [
+{
+"col": "merry_egg",
+"flags": 1
+}
+],
+"mirrorL": [
+{
+"col": "mirrorL",
+"flags": 1
+},
+{
+"col": "mirrorL",
+"flags": 2
+}
+],
+"mirrorM": [
+{
+"col": "mirrorM",
+"flags": 1
+},
+{
+"col": "mirrorM",
+"flags": 2
+}
+],
+"mirrorS": [
+{
+"col": "mirrorS",
+"flags": 1
+},
+{
+"col": "mirrorS",
+"flags": 2
+}
+],
+"move_block": [
+{
+"col": "lower_block",
+"flags": 1
+}
+],
+"move_ice_car": [
+{
+"col": "yatai",
+"flags": 1
+}
+],
+"normallift": [
+{
+"col": "NormalBlock",
+"flags": 1
+}
+],
+"normalvariant0": [
+{
+"col": "normalvariant0",
+"flags": 1
+}
+],
+"normalvariant1": [
+{
+"col": "normalvariant1",
+"flags": 1
+}
+],
+"normalvariant2": [
+{
+"col": "normalvariant2",
+"flags": 1
+}
+],
+"normalvariant3": [
+{
+"col": "normalvariant3",
+"flags": 1
+}
+],
+"normalvariant4": [
+{
+"col": "normalvariant4",
+"flags": 1
+}
+],
+"nozzleDoor": [
+{
+"col": "nozzleDoor",
+"flags": 2
+}
+],
+"palmLeaf": [
+{
+"col": "palmLeaf",
+"flags": 0
+}
+],
+"palmNatume": [
+{
+"col": "palmNatume",
+"flags": 0
+}
+],
+"palmNormal": [
+{
+"col": "palmNormal",
+"flags": 0
+}
+],
+"palmOugi": [
+{
+"col": "palmOugi",
+"flags": 0
+}
+],
+"palmSago": [
+{
+"col": "palmSago",
+"flags": 0
+}
+],
+"pazul": [
+{
+"col": "pazul",
+"flags": 2
+}
+],
+"railblockb": [
+{
+"col": "AllPurposeBoard",
+"flags": 1
+}
+],
+"railblockr": [
+{
+"col": "AllPurposeBoard",
+"flags": 1
+}
+],
+"railblocky": [
+{
+"col": "AllPurposeBoard",
+"flags": 1
+}
+],
+"railvariant0": [
+{
+"col": "railvariant0",
+"flags": 1
+}
+],
+"railvariant1": [
+{
+"col": "railvariant1",
+"flags": 1
+}
+],
+"railvariant2": [
+{
+"col": "railvariant2",
+"flags": 1
+}
+],
+"railvariant3": [
+{
+"col": "railvariant3",
+"flags": 1
+}
+],
+"railvariant4": [
+{
+"col": "railvariant4",
+"flags": 1
+}
+],
+"riccoArrow": [
+{
+"col": "riccoArrow",
+"flags": 0
+}
+],
+"riccoBasket": [
+{
+"col": "riccoBasket",
+"flags": 0
+}
+],
+"riccoBoatL": [
+{
+"col": "riccoBoatL",
+"flags": 1
+}
+],
+"riccoBoatS": [
+{
+"col": "riccoBoatS",
+"flags": 1
+}
+],
+"riccoFenceMaze": [
+{
+"col": "riccoFenceMaze",
+"flags": 0
+}
+],
+"riccoGangway": [
+{
+"col": "riccoGangway",
+"flags": 0
+}
+],
+"riccoGrille": [
+{
+"col": "riccoGrille",
+"flags": 0
+}
+],
+"riccoHericopter": [
+{
+"col": "riccoHericopter",
+"flags": 0
+}
+],
+"riccoLog": [
+{
+"col": "riccoLog",
+"flags": 1
+}
+],
+"riccoShip": [
+{
+"col": "riccoShip",
+"flags": 1
+}
+],
+"riccoShipDol": [
+{
+"col": "riccoShipDol",
+"flags": 1
+}
+],
+"riccoShipFish": [
+{
+"col": "riccoShipFish",
+"flags": 0
+}
+],
+"riccoShipGeso": [
+{
+"col": "riccoShipGeso",
+"flags": 0
+}
+],
+"riccoShipLog": [
+{
+"col": "riccoShipLog",
+"flags": 1
+}
+],
+"riccoStand": [
+{
+"col": "riccoStand",
+"flags": 0
+}
+],
+"riccoStreetStall": [
+{
+"col": "riccoStreetStall",
+"flags": 0
+}
+],
+"riccoSwitch": [
+{
+"col": "riccoSwitch",
+"flags": 2
+}
+],
+"riccoYachtL": [
+{
+"col": "riccoYachtL",
+"flags": 1
+}
+],
+"riccoYachtS": [
+{
+"col": "riccoYachtS",
+"flags": 1
+}
+],
+"rollblockb": [
+{
+"col": "AllPurposeBoard",
+"flags": 1
+}
+],
+"rollblockr": [
+{
+"col": "AllPurposeBoard",
+"flags": 1
+}
+],
+"rollblocky": [
+{
+"col": "AllPurposeBoard",
+"flags": 1
+}
+],
+"rollvariant0": [
+{
+"col": "rollvariant0",
+"flags": 1
+}
+],
+"rollvariant1": [
+{
+"col": "rollvariant1",
+"flags": 1
+}
+],
+"rollvariant2": [
+{
+"col": "rollvariant2",
+"flags": 1
+}
+],
+"rollvariant3": [
+{
+"col": "rollvariant3",
+"flags": 1
+}
+],
+"rollvariant4": [
+{
+"col": "rollvariant4",
+"flags": 1
+}
+],
+"rootPaku": [
+{
+"col": "rootPaku",
+"flags": 0
+}
+],
+"rulet00": [
+{
+"col": "rulet00",
+"flags": 1
+}
+],
+"rulet01": [
+{
+"col": "rulet01",
+"flags": 0
+}
+],
+"rulet02": [
+{
+"col": "rulet02",
+"flags": 0
+}
+],
+"sand_block": [
+{
+"col": "SandBlock",
+"flags": 2
+},
+{
+"col": "SandBlock",
+"flags": 1
+}
+],
+"skate_block": [
+{
+"col": "center_block",
+"flags": 1
+}
+],
+"spread_block": [
+{
+"col": "lower_block",
+"flags": 1
+}
+],
+"submarine": [
+{
+"col": "submarine",
+"flags": 2
+},
+{
+"col": "submarine",
+"flags": 1
+}
+],
+"supermario_block": [
+{
+"col": "lower_block",
+"flags": 2
+}
+],
+"tank": [
+{
+"col": "tank",
+"flags": 2
+}
+],
+"uirou": [
+{
+"col": "uirou",
+"flags": 1
+}
+],
+"ukisima": [
+{
+"col": "ukisima",
+"flags": 1
+}
+],
+"umaibou": [
+{
+"col": "umaibou",
+"flags": 1
+}
+],
+"viking": [
+{
+"col": "viking",
+"flags": 1
+}
+],
+"water_power_inertial_lift": [
+{
+"col": "center_block",
+"flags": 1
+}
+],
+"water_power_lift": [
+{
+"col": "center_block",
+"flags": 1
+}
+],
+"water_power_ship": [
+{
+"col": "center_block",
+"flags": 1
+}
+],
+"water_roll_block": [
+{
+"col": "water_roll_block",
+"flags": 1
+}
+],
+"wood_barrel": [
+{
+"col": "barrel",
+"flags": 2
+},
+{
+"col": "barrel",
+"flags": 1
+}
+],
+"wood_barrel_once": [
+{
+"col": "barrel",
+"flags": 2
+},
+{
+"col": "barrel",
+"flags": 1
+}
+],
+"yTurnLift": [
+{
+"col": "yTurnLift",
+"flags": 1
+}
+],
+"yoshiblock": [
+{
+"col": "yoshiblock",
+"flags": 1
+}
+],
+"zTurnDisk": [
+{
+"col": "zTurnDisk",
+"flags": 1
+}
+]
+}

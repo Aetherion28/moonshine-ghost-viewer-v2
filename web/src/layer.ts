@@ -32,6 +32,7 @@ import { CLASSES } from './game/scene.js';
 import { LiveActor } from './game/engine.js';
 import { calcANK1JointAnimationTransform } from '../noclip/Common/JSYSTEM/J3D/J3DGraphAnimator.js';
 import { JointTransformInfo } from '../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
+import { V1Data } from './v1data/index.js';
 
 /** Where a viewer library model comes from on the disc (tools/build_objects.py, data["mp"]). */
 interface Spec { f: string; bmt?: string; tex?: number; bck?: string; shrink?: string; parts?: [string, string][]; lift?: number; swap?: [string, string]; }
@@ -839,3 +840,4 @@ function setAmbient(models: J3DModelInstanceSimple[], amb: { r: number, g: numbe
 
 (window as any).GameLayer = GameLayer;
 (window as any).GameDisc = { openDisc, openFolder, rememberHandle, rememberedHandle, forgetHandle };
+(window as any).V1Data = V1Data;

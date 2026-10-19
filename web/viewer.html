@@ -3,11 +3,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <script>
-// The stage, object and model data are v1's (github.com/Aetherion28/Moonshine-Ghost-Viewer):
-// on GitHub Pages its site, locally the folder above this one. This page's own scripts load from
-// its own folder (V2), everything else relative to v1's.
+// Everything the page draws or simulates is read from the user's own disc (v1's stage, object and
+// model data too: made in the browser by v2's port of v1's converters, web/src/v1data). The page's
+// own scripts load from its folder (V2).
 window.V2 = location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, '');
-document.write('<base href="' + (location.hostname.endsWith('github.io') ? '/Moonshine-Ghost-Viewer/' : '../') + '">');
 </script>
 <title>Sunshine Ghost Viewer v2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -452,9 +451,6 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 document.write('<script src="' + V2 + 'ghost.js"><\/script>');
 document.write('<script src="' + V2 + 'mario_anims.js"><\/script>');
 document.write('<script src="' + V2 + 'mario_rig.js"><\/script>');
-document.write('<script src="' + V2 + 'water_tex.js"><\/script>');
-document.write('<script src="' + V2 + 'shine_get.js"><\/script>');
-document.write('<script src="' + V2 + 'jpa_data.js"><\/script>');
 document.write('<script src="' + V2 + 'jpa.js"><\/script>');
 document.write('<script src="' + V2 + 'gesso.js"><\/script>');
 document.write('<script src="' + V2 + 'game.js"><\/script>');
@@ -939,7 +935,17 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   new ResizeObserver(resize).observe(stageEl);
 
   // Binary assets may be published as base64 text (*.b64.txt) where raw binaries can't be served.
+  // v1's data files (maps/, objects/, models/): made from the user's disc (V1Data, game.js)
+  let v1data = null;
+  async function fetchJson(url) {
+    if (v1data && v1data.has(url)) return v1data.get(url);
+    if (!v1data && /^(maps|objects|models)\//.test(url)) await whenDisc();
+    if (v1data && v1data.has(url)) return v1data.get(url);
+    return (await fetch(url, { cache: 'no-cache' })).json();
+  }
   async function fetchBinary(url) {
+    if (!v1data && /^(maps|objects|models)\//.test(url)) await whenDisc();
+    if (v1data && v1data.has(url)) return v1data.get(url);
     const res = await fetch(url, { cache: 'no-cache' });   // revalidate: a new deploy shows at once
     if (!res.ok) throw new Error('A file for this page is missing from the site.');
     if (!url.endsWith('.b64.txt')) return res.arrayBuffer();
@@ -1344,7 +1350,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     }
     const file = info.scenes[routeKey];
     let list = objListCache.get(file);
-    if (!list) { list = fetch(file, { cache: 'no-cache' }).then((r) => r.json()); objListCache.set(file, list); }
+    if (!list) { list = fetchJson(file); objListCache.set(file, list); }
     let back = null;
     try {
       const [libScene, data] = await Promise.all([lib, list]);
@@ -3958,7 +3964,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   // and bgeso_hit.btk (TNerveBGBeakDamage).
   let GESSO_ANIMS = null, gessoAnimsP = null;
   function loadGessoAnims(url) {
-    if (!gessoAnimsP) gessoAnimsP = fetch(url, { cache: 'no-cache' }).then((r) => r.json()).then((a) => { GESSO_ANIMS = a; update(); }).catch(() => { gessoAnimsP = null; });
+    if (!gessoAnimsP) gessoAnimsP = fetchJson(url).then((a) => { GESSO_ANIMS = a; update(); }).catch(() => { gessoAnimsP = null; });
     return gessoAnimsP;
   }
   const GS_HELD = { 0x08000006: 'tentacle', 0x08000008: 'beak' };   // TBGTakeHit, TBGBeakHit (actor types)
@@ -4099,13 +4105,8 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   let bgJpaP = null;
   function loadGessoJpa() {
     if (bgJpaP || typeof JPA_RES === 'undefined') return;
-    bgJpaP = new Promise((res) => {
-      const sc = document.createElement('script');
-      sc.src = 'objects/bgeso_jpa.js';
-      sc.onload = () => { res(); update(); };
-      sc.onerror = () => res();
-      document.head.appendChild(sc);
-    });
+    // (from the stage archive he's in: bgeso/jpa)
+    bgJpaP = (v1data ? v1data.gessoJpa(currentMap) : Promise.resolve({})).then((r) => { Object.assign(JPA_RES, r); update(); }).catch((e) => console.warn('[v1data] Gooper Blooper particles', e));
   }
   const BG_HOLD = [
     { res: 'bg_namida', bit: 1, at: 7 }, { res: 'bg_namida', bit: 1, at: 4 },   // emitAndBindToMtxPtr(namida, eye joints, 1)
@@ -5098,7 +5099,8 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   const sgCanvas = document.createElement('canvas');
   sgCanvas.className = 'sgOverlay';
   $('stage').insertBefore(sgCanvas, $('hud'));
-  const sgLetters = (typeof SG_LETTERS === 'undefined' ? [] : SG_LETTERS).map((l) => {
+  let sgLetters = [];
+  function makeSgLetters() { sgLetters = (typeof SG_LETTERS === 'undefined' ? [] : SG_LETTERS).map((l) => {
     const img = new Image();
     const L = { ...l, img, ready: false, cv: null };
     img.onload = () => {   // J2DPicture: the texture times its corner colours (top pair, bottom pair)
@@ -5113,7 +5115,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     };
     img.src = l.tex;
     return L;
-  });
+  }); }
   function bez(t, a, b, c) { const u = 1 - t; return [a[0] * u * u + b[0] * 2 * u * t + c[0] * t * t, a[1] * u * u + b[1] * 2 * u * t + c[1] * t * t]; }
   // TConsoleStr::processShineGet: letter i comes in at tick 6i from (150, -50) over 40 ticks,
   // overshoots and settles over 20, and at 6i + 200 leaves towards (-200, 65) over 40, fading.
@@ -5333,9 +5335,10 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     if (!seg) return;
     const key = seg.route.area + ':' + seg.route.episode;
     if (key === autoStageRoute) return;
-    autoStageRoute = key;
     const m = mapForRoute(seg.route);
-    if (m) loadMap(m.id, key);
+    if (!m) return;   // (the stage list comes with the disc: try again then)
+    autoStageRoute = key;
+    loadMap(m.id, key);
   }
 
   function setWireframe(on) { mapMaterials.forEach((m) => { m.wireframe = on; }); }
@@ -5366,7 +5369,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   // Mario + FLUDD from the game, skinned to his 29-joint skeleton, plus his animation set
   // (tools/build_mario_iso.py). Ghosts show a stand-in until both have loaded.
   function loadMarioModel() {
-    const anims = fetch('models/mario_bck.json', { cache: 'no-cache' }).then((r) => r.json());
+    const anims = fetchJson('models/mario_bck.json');
     fetchBinary('models/mario.glb.b64.txt').then((buf) => new Promise((resolve, reject) => new THREE.GLTFLoader().parse(buf, '', (g) => resolve(rawTextures(g)), reject)))
       .then(async (gltf) => {
         const animJson = await anims;
@@ -5756,13 +5759,18 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   const waterScene = new THREE.Scene();   // drawn after the scene, over a copy of it (TScreenTexture)
   let waterScreen = null;
   const _wsz = new THREE.Vector2();
-  function waterTex(url, mips) {
-    const tx = new THREE.TextureLoader().load(url);
+  function waterTex(mips) {
+    const tx = new THREE.Texture();
     tx.flipY = false;   // GX t = 0 is the image's top row
     if (!mips) { tx.generateMipmaps = false; tx.minFilter = THREE.LinearFilter; }
     return tx;
   }
-  const WATER_TX = { ref: waterTex(WATER_TEX.ref), mask: waterTex(WATER_TEX.mask, true), spec: waterTex(WATER_TEX.spec, true), splash: waterTex(WATER_TEX.splash, true) };
+  // (textures from the disc's mario.szs timg/, set by applyV1Globals)
+  const WATER_TX = { ref: waterTex(false), mask: waterTex(true), spec: waterTex(true), splash: waterTex(true) };
+  function fillWaterTex() {
+    if (typeof WATER_TEX === 'undefined') return;
+    for (const k of Object.keys(WATER_TX)) { const img = new Image(); img.onload = () => { WATER_TX[k].image = img; WATER_TX[k].needsUpdate = true; }; img.src = WATER_TEX[k]; }
+  }
   const VIEW_VS = `#include <common>
 #include <logdepthbuf_pars_vertex>
 attribute float alpha;
@@ -8451,6 +8459,12 @@ void main() {
     replayText = s && s !== 'no inputs in this ghost' ? s : '';
     setText($('replayInfo'), s ? '· ' + s : '');
   }
+  // The data scripts v1 shipped (particles, FLUDD's water textures, the Shine get), from the disc.
+  function applyV1Globals(g) {
+    for (const [k, v] of Object.entries(g)) window[k] = v;
+    fillWaterTex();
+    makeSgLetters();
+  }
   async function useDisc(fs) {
     try {
       $('discInfo').textContent = 'Reading the disc…';
@@ -8462,6 +8476,11 @@ void main() {
       $('optReplay').disabled = false;
       gameLayer.sim.inputReplay = $('optReplay').checked;
       $('pickDisc').textContent = 'Game disc ✓';
+      $('discInfo').textContent = discLabel + ' · reading the stages…';
+      v1data = new V1Data(fs);
+      await v1data.init();
+      applyV1Globals(await v1data.globals());
+      $('discInfo').textContent = discLabel;
       discReady();
       update();
     } catch (e) { $('discInfo').textContent = ''; showNotice(e && e.message ? e.message : String(e)); console.error(e); }
@@ -8533,7 +8552,7 @@ void main() {
     resize();
     renderGhostList();
     await whenDisc();
-    try { maps = await (await fetch('maps/index.json', { cache: 'no-cache' })).json(); }
+    try { maps = await fetchJson('maps/index.json'); }
     catch { maps = []; showNotice('The stage list could not be loaded.'); }
     const sel = $('mapSelect');
     buildWorlds();
