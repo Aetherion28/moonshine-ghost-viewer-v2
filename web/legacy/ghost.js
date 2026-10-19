@@ -165,7 +165,7 @@ function parseSmsGhost(buffer) {
       inputs = {
         count, hasFludd: stride === 24,
         qf: new Float64Array(count), buttons: new Uint16Array(count), stick: new Int8Array(count * 2),
-        cstick: new Int8Array(count * 2), trig: new Uint8Array(count * 2),
+        cstick: new Int8Array(count * 2), trig: new Uint8Array(count * 2), analogAB: new Uint8Array(count * 2), inputFlags: new Uint8Array(count),
         fluddMode: new Uint8Array(count), fluddOffset: new Float32Array(count * 3),
         fluddYaw: new Float32Array(count), fluddPitch: new Float32Array(count), fluddPower: new Uint8Array(count),
       };
@@ -185,6 +185,9 @@ function parseSmsGhost(buffer) {
         inputs.cstick[i * 2 + 1] = dv.getInt8(r + 9);
         inputs.trig[i * 2] = bytes[r + 10];
         inputs.trig[i * 2 + 1] = bytes[r + 11];
+        inputs.analogAB[i * 2] = bytes[r + 12];
+        inputs.analogAB[i * 2 + 1] = bytes[r + 13];
+        inputs.inputFlags[i] = bytes[r + 15];
         if (stride === 24 && version >= 7 && (bytes[r + 16] & 0x80)) {   // riding Yoshi: his pose
           const f = r + 16;
           inputs.fluddMode[i] = bytes[f];
