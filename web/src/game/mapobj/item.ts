@@ -517,7 +517,13 @@ export function newAndRegisterObjByEventID(w: World, id: number, name: string): 
     if (c) return c;
     switch (id) {
         case 777: return w.search(`シャイン（${name}）`) as MapObjBase | null;
-        // TODO: TResetFruit (1000-1004) and TMushroom1up (2000, 2001): not ported
+        // the fruit (fruit.ts makes them by name)
+        case 1000: return newAndRegisterObj(w, 'FruitBanana');
+        case 1001: return newAndRegisterObj(w, 'FruitDurian');
+        case 1002: return newAndRegisterObj(w, 'FruitPapaya');
+        case 1003: return newAndRegisterObj(w, 'FruitPine');
+        case 1004: return newAndRegisterObj(w, 'FruitCoconut');
+        // TODO: TMushroom1up (2000, 2001): not ported
     }
     return null;
 }

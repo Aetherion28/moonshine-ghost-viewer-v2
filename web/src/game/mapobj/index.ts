@@ -8,6 +8,15 @@ export * from './general.js';
 export * from './item.js';
 export * from './hide.js';
 export { ObjCollision, ObjCollisionManager } from './objcol.js';
+// Bianco Hills' objects (and the shared map objects they use)
+export * from './lib.js';
+export * from './bianco.js';
+export * from './cloud.js';
+export * from './tree.js';
+export * from './fence.js';
+export * from './view.js';
+export * from './town.js';
+export * from './fruit.js';
 
 /**
  * The item hooks the enemies call through World (World.newAndRegisterCoin / makeCoinAppear /
