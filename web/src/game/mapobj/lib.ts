@@ -271,6 +271,8 @@ export function marioWaterGun(w: World): { emitting: boolean; mtx: Mtx } {
     out[0] = fr(Math.sin(f.yaw) * cp); out[4] = fr(Math.sin(f.pitch)); out[8] = fr(Math.cos(f.yaw) * cp);
     return { emitting: true, mtx: out };
 }
+/** SMS_IsMarioOnYoshi (the proxy's flag, the player's onYoshi()) */
+export function marioOnYoshi(w: World): boolean { const m = M(w); return typeof m.onYoshi === 'function' ? !!m.onYoshi() : !!m.onYoshi; }
 /** SMS_SendMessageToMario */
 export function sendToMario(w: World, from: HitActor, msg: number) { return w.mario.receiveMessage(from, msg); }
 

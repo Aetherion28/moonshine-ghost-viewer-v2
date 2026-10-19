@@ -77,6 +77,15 @@ function simWaterGunAt(w: any, t: number): WaterGunRecord | null {
     while (lo < hi) { const k = (lo + hi + 1) >> 1; if (L[k].t <= t) lo = k; else hi = k - 1; }
     return L[lo];
 }
+/** the simulated player's health and air (player/player.ts's World.playerLog), at the stage's tick t, or null */
+interface PlayerRecord { t: number; health: number; air: number; underWater: boolean; }
+function playerStateAt(w: any, t: number): PlayerRecord | null {
+    const L: PlayerRecord[] | null | undefined = w && w.playerLog;
+    if (!L || !L.length || L[0].t > t) return null;
+    let lo = 0, hi = L.length - 1;
+    while (lo < hi) { const k = (lo + hi + 1) >> 1; if (L[k].t <= t) lo = k; else hi = k - 1; }
+    return L[lo];
+}
 
 interface Seg { key: string; q0: number; qIn: number; area: number; episode: number; intro: boolean; }
 interface Nozzle { max: number; dec: number; num: number; numMin: number; pow: number; powMin: number; suck: number; emitters: number; deform: boolean; acc: number; }
@@ -285,9 +294,11 @@ export class GameHud {
             if (recover) water = N.max;
             st.water = Math.max(0, Math.min(1, water / N.max));
         }
-        const air = Math.trunc(st.air);
+        // the simulated player's health and air (TMario::mHealth / mAir), when the sim runs one from the inputs
+        const ps = w ? playerStateAt(w, Math.floor((q - seg.q0) / QF_PER_FRAME)) : null;
+        const air = ps ? Math.trunc(ps.air) : Math.trunc(st.air);
         return {
-            coins: st.coins, red: st.red, blue: st.blue, shines: st.shines, health: 8, air, underWater,
+            coins: st.coins, red: st.red, blue: st.blue, shines: st.shines, health: ps ? ps.health : 8, air, underWater: ps ? ps.underWater : underWater,
             fludd, nozzle: st.nozzle, water: st.water, full: st.water >= 1, waiting: st.still > 0, demo: !!(f.demoAt && f.demoAt(q)), shineTaken,
             diving: DIVING_MAPS.has(seg.area),
         };

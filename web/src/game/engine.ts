@@ -9,6 +9,7 @@
 
 import { rngCtx, fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsIsInSight, matan, MsRandF, sqDist, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, SMSCalcJumpVelocityY } from './math.js';
 import type { MarioProxy } from './mario.js';
+import type { PlayerMario } from './player/player.js';
 import type { mat4 } from 'gl-matrix';
 import { Skeleton, parseBCK, jointMatrices } from './skeleton.js';
 import type { Water, Fludd } from './water.js';
@@ -500,7 +501,8 @@ export class World {
     conductor = new Conductor(this);
     hitCheck = new ObjHitCheck(this);
     groups: (HitActor[] | null)[] = [];
-    mario!: MarioProxy;
+    /** gpMarioAddress: the ghost's proxy, or the input-driven player */
+    mario!: MarioProxy | PlayerMario;
     water: Water | null = null;
     fludd: Fludd | null = null;
     pollution: Pollution | null = null;

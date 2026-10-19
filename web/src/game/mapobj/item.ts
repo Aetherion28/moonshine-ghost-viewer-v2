@@ -14,6 +14,7 @@ import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { MapObjBase, MapObjBaseManager, MOF, STATE_NORMAL, OBJ_MAKERS, mapObjGlobals, newAndRegisterObj } from './base.js';
 import { MapObjGeneral, GS } from './general.js';
+import { marioOnYoshi } from './lib.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 
@@ -286,7 +287,7 @@ export class Shine extends Item {
         this.pos.set(m.pos);
         this.rot.y = fr(180 * ((m.faceAngle << 16) >> 16) / 32768);
         MsMtxSetXYZRPH(this.baseTR, this.pos.x, fr(this.pos.y - this.yOffset), this.pos.z, this.rot.x, this.rot.y, this.rot.z);
-        if (this.mactor) this.mactor.setBck(m.onYoshi ? 'shine_demo_shine_get_yo' : 'shine_demo_shine_get');
+        if (this.mactor) this.mactor.setBck(marioOnYoshi(this.world) ? 'shine_demo_shine_get_yo' : 'shine_demo_shine_get');
         this.state = SHS.UNK10;
         return true;
     }
@@ -349,7 +350,7 @@ export class ItemNozzle extends Item {
     }
     touchPlayer(a: HitActor) {
         if (this.isState(GS.HOLDING)) return;
-        if (this.world.mario.onYoshi) return;
+        if (marioOnYoshi(this.world)) return;
         if ((a.isActorType(AT.MARIO) || a.isActorType(AT.YOSHI_TONGUE)) && !this.checkHitFilter(HF.NO_COLLISION)) this.taken(a);
         let kind = 4;
         if (this.isActorType(AT.ROCKET_NOZZLE_ITEM)) kind = 1; else if (this.isActorType(AT.BACK_NOZZLE_ITEM)) kind = 5;

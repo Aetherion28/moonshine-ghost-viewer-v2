@@ -42,6 +42,11 @@ import './enemies/egggen.js';
 import { mapObjWorldHooks } from './mapobj/index.js';
 import './player/emario.js';
 import { setMarioArchive } from './player/base.js';
+import { PlayerMario, introTiming } from './player/player.js';
+import type { PadStatus } from './player/pad.js';
+import { NO_PAD } from './player/pad.js';
+import type { StickCamera } from './camera/types.js';
+import { matan, s16 } from './math.js';
 
 // enemies' coins come out of the item manager's pool (gpItemManager)
 Object.assign(World.prototype, mapObjWorldHooks);
@@ -152,8 +157,53 @@ export class RngReplay {
     };
 }
 
+/** How the sim's input replay is going for a stage (segment): where it first drifted from the ghost. */
+export interface ReplaySync {
+    /** the player is simulated from the inputs (else the ghost's samples move Mario) */
+    replay: boolean;
+    /** ghost QF of the first frame the sim's Mario was more than 1 unit off the ghost (-1: in sync so far) */
+    firstDriftQf: number;
+    /** that frame's error, and the most since (units) */
+    driftErr: number; maxErr: number;
+    /** frames compared, and frames bit-exact (to the ghost's 1/8 unit) before the first drift */
+    frames: number; exactFrames: number;
+    /** the stick's camera: 'recorded' (v8 SGCA), 'sim' (the game camera port), 'approx' (behind Mario) */
+    camera: string;
+    /** QF Mario lost a life (the run continues) */
+    lostLives: number[];
+}
+
+/** The ghost's controller record of a frame (its QF is the frame's last tick), as the PADStatus the game read. */
+export function ghostPad(I: any, i: number): PadStatus {
+    return { button: I.buttons[i], stickX: I.stick[i * 2], stickY: I.stick[i * 2 + 1], substickX: I.cstick[i * 2], substickY: I.cstick[i * 2 + 1],
+        triggerLeft: I.trig[i * 2], triggerRight: I.trig[i * 2 + 1], analogA: I.analogAB[i * 2], analogB: I.analogAB[i * 2 + 1] };
+}
+
+/**
+ * gpCamera->unk258 from a v8 ghost's recorded camera: the yaw from the camera's target to the camera,
+ * the view's backwards direction (its rotation is the view matrix's: world to view). Mario reads the
+ * one of the tick before his (the camera moves after him), so the recorded view at that QF.
+ */
+export function recordedStickCamera(at: (qf: number) => { quat: [number, number, number, number] } | null, qfNow: () => number, fallback: () => number): StickCamera {
+    return {
+        yaw: () => {
+            const c = at(qfNow() - 1);
+            if (!c) return fallback();
+            const [x, y, z, w] = c.quat;
+            // the view's -Z in the world: the conjugate rotation of (0, 0, -1)
+            const fx = -2 * (x * z - w * y), fz = -(1 - 2 * (x * x + y * y));
+            return matan(-fz, -fx);
+        },
+    };
+}
+
 export class SimRunner {
     private rng: RngReplay | null = null;
+    /** run Mario from the ghost's inputs where it has them (the viewer's "Input replay") */
+    inputReplay = true;
+    /** this stage's input replay (null: the ghost's samples move Mario) */
+    sync: ReplaySync | null = null;
+    private pads: Map<number, number> | null = null;
     stage: Stage | null = null;
     private key = '';
     /** ghost QF of the stage's first tick */
@@ -189,13 +239,34 @@ export class SimRunner {
         const seg = g.segments[segI];
         if (!seg) return false;
         const q0 = seg.startQf - g.header.startQf;
-        const key = `${sceneName}|${segI}|${q0}`;
+        const I = g.inputs;
+        const replay = this.inputReplay && !!I && I.count > 0 && (() => { for (let i = 0; i < I.count; i++) { const q = I.qf[i]; if (q >= q0 && q <= seg.endQf - g.header.startQf) return true; } return false; })();
+        const key = `${sceneName}|${segI}|${q0}|${replay}`;
         const want = inp.t - q0;
         if (this.key !== key || !this.stage || this.stage.qf > want + 4) {
             this.key = key; this.q0 = q0; this.error = null;
-            try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode); }
+            let intro = null;
+            if (replay) {
+                const ss: { qf: number; anim: number; phase: number }[] = [];
+                for (let i = seg.firstSample; i < seg.firstSample + seg.sampleCount; i++) { const q = g.qf[i] - q0; if (q > 0) ss.push({ qf: q, anim: g.anim[i], phase: g.phase[i] }); }
+                intro = introTiming(ss);
+            }
+            try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, 0, 0, intro); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
             const st0 = this.stage;
+            this.pads = null; this.sync = null;
+            if (st0.player) {
+                const P = st0.player;
+                this.pads = new Map();
+                for (let i = 0; i < I.count; i++) this.pads.set(I.qf[i] - q0, i);
+                let cam = P.cameraApprox ? 'approx' : 'sim';
+                if (g.camera && inp.api.ghostCameraAt) {
+                    const at = inp.api.ghostCameraAt;
+                    P.setStickCamera(recordedStickCamera((q) => at(g, q0 + q, segI), () => st0.qf, () => s16(P.mFaceAngle.y + 0x8000)), false);
+                    cam = 'recorded';
+                }
+                this.sync = { replay: true, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: cam, lostLives: P.lostLives };
+            } else this.sync = { replay: false, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: '', lostLives: [] };
             this.rng = g.rng ? new RngReplay(g.rng, segI, q0, () => q0 + st0.qf) : null;
         }
         const st = this.stage!;
@@ -204,12 +275,23 @@ export class SimRunner {
         while (st.qf + 4 <= want) {
             st.camera = this.camera(inp, q0 + st.qf + 4, segI);
             rngCtx.roll = this.rng ? this.rng.roll : null; rngCtx.node = this.rng ? this.rng.node : null;
-            try { st.runFrame(track); } catch (e) { this.error = e; console.warn('[game] frame', e); this.stage = null; return false; }
+            try { st.runFrame(track, st.player ? this.padAt(inp.ghost, st.qf + 4) : null); } catch (e) { this.error = e; console.warn('[game] frame', e); this.stage = null; return false; }
             finally { rngCtx.roll = null; rngCtx.node = null; }
+            if (st.player && this.sync) {
+                const d = st.player.drift, S = this.sync;
+                S.firstDriftQf = d.firstQf >= 0 ? q0 + d.firstQf : -1; S.driftErr = d.firstErr; S.maxErr = d.maxErr; S.frames = d.frames; S.exactFrames = d.synced;
+            }
             if (performance.now() - t0 > budgetMs) return false;
         }
         return true;
     }
+    /** the frame's PADStatus (its record's QF is the frame's last tick); none recorded: a neutral pad */
+    private padAt(g: any, q: number): PadStatus {
+        const i = this.pads ? this.pads.get(q) : undefined;
+        return i === undefined ? { ...NO_PAD } : ghostPad(g.inputs, i);
+    }
+    /** the simulated player, when this stage runs from the inputs */
+    get player(): PlayerMario | null { return this.stage ? this.stage.player : null; }
     private camera(inp: SimInput, t: number, seg: number): GameCamera | null {
         const f = inp.api.ghostCameraAt;
         if (!f) return null;

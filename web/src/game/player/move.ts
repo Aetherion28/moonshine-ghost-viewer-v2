@@ -16,6 +16,8 @@ export abstract class MarioMove extends MarioBase {
     getJumpSlideControl() { return this.mStatus === S.WIRE_JUMP ? this.mWireParams.mWireJumpSlideControl : this.mJumpParams.mJumpSlideControl; }
     /** canSquat: FLUDD's nozzle out and R held (no FLUDD here) */
     canSquat() { return false; }
+    /** mWaterGun->mWatergunParams.mHoverHeight (no water gun: 0) */
+    hoverHeight() { return 0; }
     isUnderWater() { return this.checkFlag(MF.IN_ANY_WATER) && this.mHeadPos.y < this.mFloorPosition.z - this.mSwimParams.mCanBreathDepth; }
     isInvincible() {
         if (this.mInvincibilityFrames > 0) return true;

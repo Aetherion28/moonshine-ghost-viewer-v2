@@ -12,6 +12,8 @@ import {
 } from './engine.js';
 import { MapCollision, mapGridFromPayload } from './collision.js';
 import { MarioProxy, MarioTrack } from './mario.js';
+import { PlayerMario, PlayerDirector, IntroTiming } from './player/player.js';
+import type { PadStatus } from './player/pad.js';
 import { Water, Fludd } from './water.js';
 import { Pollution } from './pollution.js';
 import { CHARAS } from './charas.js';
@@ -44,7 +46,11 @@ export class Stage {
     frame = 0;
     seed = 0;
 
-    constructor(public files: StageFiles, public sceneName: string, map: number, stage: number) {
+    /** the input-driven player and the director's opening, when the stage runs from a ghost's inputs */
+    player: PlayerMario | null = null;
+    director: PlayerDirector | null = null;
+
+    constructor(public files: StageFiles, public sceneName: string, map: number, stage: number, intro: IntroTiming | null = null) {
         const w = this.world;
         w.files = files;
         w.map = map; w.stage = stage;
@@ -70,13 +76,15 @@ export class Stage {
         w.pollution = new Pollution(files, map, stage, files.common);
         w.water = new Water(w, files);
         w.fludd = new Fludd(w.water, files);
-        w.mario = new MarioProxy(w);
+        if (intro) { this.player = new PlayerMario(w); w.mario = this.player; }
+        else w.mario = new MarioProxy(w);
         // scene.bin
         installMapWires(w);
         this.walk(root, false);
         for (const o of this.objects) o.loadAfter();
         for (const gw of w.graphs.values()) { gw.initGoalIndex(new V3()); gw.attachToGround(w); }
         w.conductor.init();
+        if (this.player && intro) { this.director = new PlayerDirector(this.player, map, !!files.scene('map/camera/startcamera.bck'), intro); this.player.driftFrom = Math.max(intro.demoEndTick, (intro.firstSample ?? 0) - 1); }
     }
 
     private walk(n: SceneNode, common: boolean, group = -1) {
@@ -114,16 +122,25 @@ export class Stage {
      * ghost's first frame (it decides which ticks run the hit check: every 4th). Both are what the
      * ghost will record; until then 0.
      */
-    static fresh(files: StageFiles, sceneName: string, map: number, stage: number, seed = 0, moveTick0 = 0) {
-        srand(seed); const s = new Stage(files, sceneName, map, stage); s.seed = seed; s.world.moveTickCount = moveTick0; return s;
+    static fresh(files: StageFiles, sceneName: string, map: number, stage: number, seed = 0, moveTick0 = 0, intro: IntroTiming | null = null) {
+        srand(seed); const s = new Stage(files, sceneName, map, stage, intro); s.seed = seed; s.world.moveTickCount = moveTick0; return s;
     }
 
-    /** One frame (TMarDirector::direct: four movement ticks of 5 units, 30 frames a second). */
-    runFrame(track: MarioTrack | null) {
-        const w = this.world;
-        w.mario.track = track;
+    /**
+     * One frame (TMarDirector::direct: four movement ticks of 5 units, 30 frames a second). With the
+     * player, pad is the frame's PADStatus (TApplication::gameLoop reads it and updates its meaning
+     * before direct; the other ticks resetButtons and updateMeaning), and the director's
+     * changeState runs after every tick.
+     */
+    runFrame(track: MarioTrack | null, pad: PadStatus | null = null) {
+        const w = this.world, P = this.player, D = this.director;
+        if (P) { P.track = track; P.padRead(pad); }
+        else (w.mario as MarioProxy).track = track;
         for (let tick = 0; tick < 4; tick++) {
             const last = tick === 3;
+            // (the changeState after the last tick of the frame before runs here, after the pad's read)
+            if (D && this.qf > 0 && tick === 0) D.changeState(this.qf);
+            if (P && tick > 0) P.padTick();
             w.moveTickCount++; w.tickCount++;
             this.qf++;
             if (!(w.moveTickCount & 3)) w.hitCheck.checkActorsHit();
@@ -135,15 +152,20 @@ export class Stage {
             w.conductor.perform(CUE_MOVE);
             // the manager group: the wires
             if (w.mapWires) w.mapWires.perform(CUE_MOVE);
-            w.mario.update(this.qf);
-            w.mario.perform(CUE_MOVE);
-            this.emitWater(w.mario);
+            if (P) P.testPerform(CUE_MOVE);
+            else {
+                const m = w.mario as MarioProxy;
+                m.update(this.qf);
+                m.perform(CUE_MOVE);
+                this.emitWater(m);
+            }
             if (w.water) w.water.move();
             if (last) {
                 // PerformList CalcAnim
                 this.clip();
                 w.conductor.perform(CUE_CALC_ANIM);
             }
+            if (D && !last) D.changeState(this.qf);
         }
         // the frame's drawing: the goop's stamps
         if (w.pollution) w.pollution.draw();
@@ -158,9 +180,9 @@ export class Stage {
     private clip() { this.world.clipCamera = this.camera; }
 
     /** Run up to QF q (frames are whole: the frame holding q). */
-    runTo(q: number, track: MarioTrack | null, budgetFrames = Infinity) {
+    runTo(q: number, track: MarioTrack | null, budgetFrames = Infinity, pad: ((qf: number) => PadStatus | null) | null = null) {
         let n = 0;
-        while (this.qf + 4 <= q && n < budgetFrames) { this.runFrame(track); n++; }
+        while (this.qf + 4 <= q && n < budgetFrames) { this.runFrame(track, pad ? pad(this.qf + 4) : null); n++; }
         return this.qf + 4 > q;
     }
     extraDrawables() { return this.world.extras; }

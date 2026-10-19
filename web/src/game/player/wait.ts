@@ -32,7 +32,7 @@ export abstract class MarioWait extends MarioJump {
         if (this.checkFlag(MF.FLUDD_EMITTING)) return this.changePlayerStatus(S.RUN, 0, false);
         if (this.canSquat()) { this.mForwardVel = 0; return this.changePlayerStatus(S.SQUAT, 0, false); }
         if (this.mInput & 0x8000) return this.changePlayerStatus(S.TAKE_POSE, 0, false);
-        if (this.rocketCheck()) return this.changePlayerStatus(S.ROCKET, 0, false);
+        if (this.rocketCheck()) { this.unk314 = fr(this.mFloorPosition.y + this.hoverHeight()); return this.changePlayerStatus(S.ROCKET, 0, false); }
         if (this.considerRotateStart()) return 1;
         return 0;
     }

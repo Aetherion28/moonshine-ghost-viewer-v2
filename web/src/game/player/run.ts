@@ -205,7 +205,7 @@ export abstract class MarioRun extends MarioPhysics {
         if (this.mInput & 0x20) return stopping();
         if (this.isRunningTurnning() && this.mForwardVel >= this.mRunParams.mTurnNeedSp) return this.changePlayerStatus(S.TURN, 0, false);
         if (this.canSquat()) { this.setPlayerVelocity(0); return this.changePlayerStatus(S.SQUAT, 0, false); }
-        if (this.rocketCheck()) return this.changePlayerStatus(S.ROCKET, 0, false);
+        if (this.rocketCheck()) { this.unk314 = fr(this.mFloorPosition.y + this.hoverHeight()); return this.changePlayerStatus(S.ROCKET, 0, false); }
         let pushed = false;
         this.mStatusState = 0;
         const prev = this.pos.clone();

@@ -324,6 +324,8 @@ export abstract class MarioJump extends MarioRun {
     rotateBroadJumping() { this.jumpingBasic(S.RUN, A.ROLL_JUMP, 1); return 0; }
     /** rocketCheck: only with FLUDD's rocket or hover nozzle */
     rocketCheck() { return false; }
+    /** rocketing: the rocket and hover nozzles' status (the player's: PlayerMario) */
+    rocketing() { return this.changePlayerStatus(S.ROCKET_LANDING, 0, false); }
     rotateJumping() {
         if (this.checkBackTrig()) return 1;
         if (this.rocketCheck()) return 1;
@@ -419,6 +421,7 @@ export abstract class MarioJump extends MarioRun {
             case S.TRAMPLE: return this.trample();
             case S.HIP_DROP: return this.hipAttacking();
             case S.FALL_DEAD: return this.fallDead();
+            case S.ROCKET: return this.rocketing();
             // (surfing, rocket, pulling, diving: not his)
         }
         return 0;

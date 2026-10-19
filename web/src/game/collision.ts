@@ -97,7 +97,10 @@ export interface WallCheck {
     results: BGCheckData[];
 }
 
-const cross = (x1: number, y1: number, x2: number, y2: number) => x1 * y2 - y1 * x2;
+/** checkGroundList / checkRoofList's edge test: (a.z - z) * (b.x - a.x) - (a.x - x) * (b.z - a.z) (fmuls, then fmsubs) */
+const edge = (a: number[], b: number[], x: number, z: number) => f(f(a[2] - z) * f(b[0] - a[0]) - f(f(a[0] - x) * f(b[2] - a[2])));
+/** the plane's height at (x, z): -(x * nx + z * nz + d) / ny (fmuls, fmadds, fadds, fdivs) */
+const planeY = (d: BGCheckData, x: number, z: number) => f(-f(d.d + f(x * d.n[0] + f(z * d.n[2]))) / d.n[1]);
 
 export class MapCollision {
     /** mGridExtentX / Y: half the grid's size. */
@@ -204,22 +207,22 @@ export class MapCollision {
 
     // ------------------------------------------------------------ queries
     private cell(grid: Cell[], x: number, z: number) {
-        return grid[Math.trunc((x + this.ex) * (1 / 1024)) + Math.trunc((z + this.ez) * (1 / 1024)) * this.nx];
+        return grid[Math.trunc(f(x + this.ex) * (1 / 1024)) + Math.trunc(f(z + this.ez) * (1 / 1024)) * this.nx];
     }
     private outside(x: number, z: number) { return x < -this.ex || this.ex <= x || z < -this.ez || this.ez <= z; }
 
+    /** checkGroundList (its float operations as the DOL has them: fsubs, fmuls, fmsubs; the height fmuls, fmadds, fadds, fdivs) */
     private static groundList(x: number, y: number, z: number, flags: number, head: Node | null): [number, BGCheckData | null] {
         for (let n = head; n; n = n.next) {
             const d = n.data;
             if (d.minY > y) continue;
             if ((flags & IGNORE_WATER_THROUGH) && d.isWaterThrough()) continue;
             if ((flags & IGNORE_WATER_SURFACE) && d.isWaterSurface()) continue;
-            const [p1, p2, p3] = [d.p1, d.p2, d.p3];
-            if ((p1[2] - z) * (p2[0] - p1[0]) - (p1[0] - x) * (p2[2] - p1[2]) < -1) continue;
-            if ((p2[2] - z) * (p3[0] - p2[0]) - (p2[0] - x) * (p3[2] - p2[2]) < -1) continue;
-            if ((p3[2] - z) * (p1[0] - p3[0]) - (p3[0] - x) * (p1[2] - p3[2]) < -1) continue;
-            const h = f(-f(x * d.n[0] + z * d.n[2] + d.d) / d.n[1]);
-            if (!(y - (h + -78) < 0)) return [h, d];
+            if (edge(d.p1, d.p2, x, z) < -1) continue;
+            if (edge(d.p2, d.p3, x, z) < -1) continue;
+            if (edge(d.p3, d.p1, x, z) < -1) continue;
+            const h = planeY(d, x, z);
+            if (!(f(y - f(h + -78)) < 0)) return [h, d];
         }
         return [-32767, null];
     }
@@ -233,16 +236,16 @@ export class MapCollision {
         return h5 > h6 ? [h5, d5 || this.illegal] : [h6, d6 || this.illegal];
     }
 
+    /** checkRoofList */
     private static roofList(x: number, y: number, z: number, flags: number, head: Node | null): [number, BGCheckData | null] {
         for (let n = head; n; n = n.next) {
             const d = n.data;
             if ((flags & 4) && d.isWaterThrough()) continue;
-            const [p1, p2, p3] = [d.p1, d.p2, d.p3];
-            if ((p1[2] - z) * (p2[0] - p1[0]) - (p1[0] - x) * (p2[2] - p1[2]) > 1) continue;
-            if ((p2[2] - z) * (p3[0] - p2[0]) - (p2[0] - x) * (p3[2] - p2[2]) > 1) continue;
-            if ((p3[2] - z) * (p1[0] - p3[0]) - (p3[0] - x) * (p1[2] - p3[2]) > 1) continue;
-            const h = f(-f(x * d.n[0] + z * d.n[2] + d.d) / d.n[1]);
-            if (!(y - (h - -78) > 0)) return [h, d];
+            if (edge(d.p1, d.p2, x, z) > 1) continue;
+            if (edge(d.p2, d.p3, x, z) > 1) continue;
+            if (edge(d.p3, d.p1, x, z) > 1) continue;
+            const h = planeY(d, x, z);
+            if (!(f(y - f(h - -78)) > 0)) return [h, d];
         }
         return [9999999, null];
     }
@@ -255,31 +258,34 @@ export class MapCollision {
         return h5 < h6 ? [h5, d5 || this.illegal] : [h6, d6 || this.illegal];
     }
 
+    /** checkWallList's test of one wall (its float operations as the DOL has them) */
     private static wallHit(d: BGCheckData, r: WallCheck): boolean {
         const radius = r.radius, flags = r.flags;
         if ((flags & IGNORE_WATER_THROUGH) && d.isWaterThrough()) return false;
         if ((flags & IGNORE_WATER_SURFACE) && d.isWaterSurface()) return false;
-        let [cx, cy, cz] = r.center;
-        const [nx, , nz] = d.n;
-        const dist = d.d + (cx * d.n[0] + cy * d.n[1] + cz * d.n[2]);
-        if (dist < -radius || radius < dist) return false;
+        const cx = r.center[0], cy = r.center[1], cz = r.center[2];
+        const [nx, ny, nz] = d.n;
+        const dist = f(d.d + f(cz * nz + f(cx * nx + f(cy * ny))));
+        if (dist < -radius) return false;
+        if (!(radius >= dist)) return false;
         const y1 = d.p1[1], y2 = d.p2[1], y3 = d.p3[1];
+        // s = (ya - cy) * (b - a) - (a - c) * (yb - ya), over the wall's facing axis
+        const side = (ya: number, yb: number, a: number, b: number, c: number) => f((f(ya - cy) * f(b - a)) - f(f(a - c) * f(yb - ya)));
         if (d.flags & FLAG_X_FACING) {
-            cz = -cz;
-            const z1 = -d.p1[2], z2 = -d.p2[2], z3 = -d.p3[2];
-            const s1 = cross(y1 - cy, z1 - cz, y2 - y1, z2 - z1), s2 = cross(y2 - cy, z2 - cz, y3 - y2, z3 - z2), s3 = cross(y3 - cy, z3 - cz, y1 - y3, z1 - z3);
+            const c = -cz, z1 = -d.p1[2], z2 = -d.p2[2], z3 = -d.p3[2];
+            const s1 = side(y1, y2, z1, z2, c), s2 = side(y2, y3, z2, z3, c), s3 = side(y3, y1, z3, z1, c);
             if (nx > 0) { if (s1 > 1 || s2 > 1 || s3 > 1) return false; }
             else if (s1 < -1 || s2 < -1 || s3 < -1) return false;
         } else {
             const x1 = d.p1[0], x2 = d.p2[0], x3 = d.p3[0];
-            const s1 = cross(y1 - cy, x1 - cx, y2 - y1, x2 - x1), s2 = cross(y2 - cy, x2 - cx, y3 - y2, x3 - x2), s3 = cross(y3 - cy, x3 - cx, y1 - y3, x1 - x3);
+            const s1 = side(y1, y2, x1, x2, cx), s2 = side(y2, y3, x2, x3, cx), s3 = side(y3, y1, x3, x1, cx);
             if (nz > 0) { if (s1 > 1 || s2 > 1 || s3 > 1) return false; }
             else if (s1 < -1 || s2 < -1 || s3 < -1) return false;
         }
         if (!(flags & DONT_MOVE_XZ)) {
-            const push = radius - dist;
-            r.center[0] = f(r.center[0] + push * d.n[0]);
-            r.center[2] = f(r.center[2] + push * d.n[2]);
+            const push = f(radius - dist);
+            r.center[0] = f(push * nx + r.center[0]);
+            r.center[2] = f(push * nz + r.center[2]);
         }
         return true;
     }
@@ -304,7 +310,7 @@ export class MapCollision {
         r.results.length = 0;
         const [x, , z] = r.center;
         if (this.outside(x, z)) return 0;
-        const ci = Math.trunc((x + this.ex) * (1 / 1024)) + Math.trunc((z + this.ez) * (1 / 1024)) * this.nx;
+        const ci = Math.trunc(f(x + this.ex) * (1 / 1024)) + Math.trunc(f(z + this.ez) * (1 / 1024)) * this.nx;
         let n = MapCollision.wallList(this.move[ci][2], r);
         if (n >= r.maxResults) return n;
         n += MapCollision.wallList(this.stat[ci][2], r);
