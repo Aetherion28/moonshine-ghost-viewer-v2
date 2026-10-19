@@ -72,7 +72,11 @@ export function swapTextures(device: GfxDevice, cache: GfxRenderCache, arc: RARC
             c.set(path, d);
         }
         if (!d) continue;
-        for (const m of models) { const r = m.getTextureMappingReference(name); if (r) d.fillTextureMapping(r); }
+        // every sampler of that name (a model can hold several: getTextureMappingReference finds only the first)
+        for (const m of models) {
+            const ss = m.tex1Data.tex1.samplers;
+            for (let i = 0; i < ss.length; i++) if (ss[i].name === name) d.fillTextureMapping(m.materialInstanceState.textureMappings[i]);
+        }
     }
 }
 

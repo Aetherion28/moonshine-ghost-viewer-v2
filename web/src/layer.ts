@@ -302,7 +302,51 @@ export class GameLayer {
         return this.bmtCache.get(key)!;
     }
 
-    private makeInstance(spec: Spec): J3DModelInstanceSimple | null {
+    /**
+     * The viewer's object specs carry a few wrong idle animations (its build matched a "wait"
+     * animation from another object's files): map objects keep only their own; Peach plays what
+     * TBaseNPC gives her (sPeach_AnmIndex's wait, or peachParasolIn_'s parasol wait when she holds it).
+     */
+    private gameSpec(spec: Spec): Spec {
+        if (!spec.bck) {
+            const pm = /^peach\/peach_(hair_ponytail|hair_normal|parasol)\.bmd$/.exec(spec.f);
+            if (pm) {
+                const par = this.peachParasol;
+                const b = pm[1] === 'parasol' ? 'peach_parasol_wait_parasol' : pm[1] === 'hair_ponytail' ? (par ? 'peach_hair_pony_parasol_wait' : 'peach_hair_ponytail_wait') : (par ? 'peach_hair_normal_parasol_wait' : 'peach_hair_normal_wait');
+                return { ...spec, bck: `peach/${b}.bck` };
+            }
+            return spec;
+        }
+        if (spec.f === 'peach/peach_model.bmd') return { ...spec, bck: this.peachParasol ? 'peach/peach_parasol_wait.bck' : 'peach/peach_wait.bck' };
+        const mf = spec.f.split('/'), bf = spec.bck.split('/');
+        if (mf[0] === 'mapobj' && bf[0] === 'mapobj' && !bf[1].toLowerCase().startsWith(mf[1].replace(/\.(bmd|bdl)$/i, '').toLowerCase().slice(0, 5))) return { ...spec, bck: undefined };
+        return spec;
+    }
+    /**
+     * Peach's parts (TNpcParts: her hair on "kubi", the parasol on "jnt_hand_R", NpcInitData.cpp's
+     * sPeach_*Data) ride the game model's joints, as posed by its own animation, not the viewer's.
+     */
+    private attachNpcParts() {
+        const PARTS: Record<string, string> = { 'peach/peach_hair_ponytail.bmd': 'kubi', 'peach/peach_hair_normal.bmd': 'kubi', 'peach/peach_parasol.bmd': 'jnt_hand_R' };
+        const bodies = this.mirrors.filter((m) => m.inst.name === 'peach/peach_model.bmd' && !m.on);
+        if (!bodies.length) return;
+        const pos = (m: Mirror) => { const e = m.obj.matrixWorld.elements; return [e[12], e[13], e[14]]; };
+        for (const m of this.mirrors) {
+            const jn = PARTS[m.inst.name];
+            if (!jn || m.on) continue;
+            const p = pos(m);
+            let best: Mirror | null = null, bd = 400 * 400;
+            for (const b of bodies) { const q = pos(b), d = (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2; if (d < bd) { bd = d; best = b; } }
+            if (!best) continue;
+            const j = best.inst.modelData.bmd.jnt1.joints.findIndex((x) => x.name === jn);
+            if (j >= 0) m.on = { m: best, joint: j };
+        }
+    }
+    /** whether the stage's Peach holds her parasol (the viewer gave her the parasol part) */
+    private peachParasol = false;
+
+    private makeInstance(spec0: Spec): J3DModelInstanceSimple | null {
+        const spec = this.gameSpec(spec0);
         const data = this.modelData(spec.f);
         if (!data) return null;
         const m = new J3DModelInstanceSimple(data);
@@ -324,6 +368,7 @@ export class GameLayer {
      * viewer adds later (thrown bombs, a Shine's copy) are picked up; removed ones dropped.
      */
     private syncGroup(group: any, mp: Record<string, Spec>) {
+        this.peachParasol = Object.values(mp || {}).some((sp) => sp && /^peach\/peach_parasol\.bmd$/.test(sp.f));
         const r = this.renderer!;
         if (this.boundGroup !== group) {
             this.dropMirrors(this.mirrors);
@@ -341,6 +386,7 @@ export class GameLayer {
             this.byObj.set(o, list);
             for (const m of list) { this.mirrors.push(m); made.push(m.inst); if (m.actor) this.actorModels.push(m.inst); }
         });
+        if (made.length) this.attachNpcParts();
         if (made.length) {
             const cache = r.renderHelper.renderInstManager.gfxRenderCache;
             setAmbient(made.filter((m) => (m as any).isPlayer), r.objectAmbient);

@@ -95,14 +95,12 @@ export class MarioModel {
         // FLUDD's second (TWaterGun::init, SMS_ChangeTextureAll).
         const bodyTex0 = this.body.materialInstanceState.textureMappings[0];
         for (const m of [...Object.values(this.hands), this.cap]) {
-            const r = m && m.getTextureMappingReference('H_ma_main_dummy');
-            if (r) r.copy(bodyTex0);
+            if (m) for (const r of mappingsNamed(m, 'H_ma_main_dummy')) r.copy(bodyTex0);
         }
         if (this.fludd) {
             const t1 = this.fludd.materialInstanceState.textureMappings[1];
             for (const m of Object.values(this.nozzles)) {
-                const r = m.getTextureMappingReference('H_watergun_main_dummy');
-                if (r && t1) r.copy(t1);
+                if (t1) for (const r of mappingsNamed(m, 'H_watergun_main_dummy')) r.copy(t1);
             }
         }
         // A clean Mario: TMario::addDirty puts mDirty (0 until goop gets on him) in the alpha of
@@ -239,4 +237,11 @@ export class YoshiModel {
         mat4.fromYRotation(this.body.modelMatrix, (yaw / 32768) * Math.PI);
         this.body.modelMatrix[12] = x; this.body.modelMatrix[13] = y; this.body.modelMatrix[14] = z;
     }
+}
+
+/** Every texture mapping of a sampler name (getTextureMappingReference finds only the first). */
+function mappingsNamed(m: J3DModelInstanceSimple, name: string) {
+    const ss = m.tex1Data.tex1.samplers, out = [];
+    for (let i = 0; i < ss.length; i++) if (ss[i].name === name) out.push(m.materialInstanceState.textureMappings[i]);
+    return out;
 }
