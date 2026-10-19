@@ -82,8 +82,62 @@ const ATN = new Uint16Array([0, 10, 20, 31, 41, 51, 61, 71, 81, 92, 102, 112, 12
     7856, 7861, 7866, 7872, 7877, 7883, 7888, 7893, 7899, 7904, 7910, 7915, 7920, 7926, 7931, 7936, 7942, 7947, 7952, 7958, 7963, 7968, 7974, 7979,
     7984, 7990, 7995, 8000, 8005, 8011, 8016, 8021, 8026, 8032, 8037, 8042, 8047, 8053, 8058, 8063, 8068, 8074, 8079, 8084, 8089, 8094, 8100, 8105,
     8110, 8115, 8120, 8125, 8131, 8136, 8141, 8146, 8151, 8156, 8161, 8166, 8172, 8177, 8182, 8187, 8192]);
-// (__fres is the hardware's reciprocal estimate; 1/x here.)
-const atanT = (a: number, b: number) => (a === 0 ? ATN[0] : ATN[Math.trunc(b * (1 / a) * 1024 + 0.5)]);
+// The index is fctiwz(fmadds(1024, fmuls(b, fres(a)), 0.5)): __fres is the Gekko's reciprocal
+// estimate (about 12 bits), so the index is often one off what an exact 1 / a gives.
+const atanT = (a: number, b: number) => (a === 0 ? ATN[0] : ATN[Math.trunc(fr(fr(b * fres(a)) * 1024 + 0.5))]);
+
+// ---------------------------------------------------------------- Gekko estimates (fres, frsqrte)
+// Bit-exact, as Dolphin has them from the hardware (Common/FloatUtils.cpp: ApproximateReciprocal,
+// ApproximateReciprocalSquareRoot).
+const fbuf = new Float64Array(1), ibuf = new BigInt64Array(fbuf.buffer);
+const FRES_T = [
+    [0x7ff800, 0x3e1], [0x783800, 0x3a7], [0x70ea00, 0x371], [0x6a0800, 0x340], [0x638800, 0x313], [0x5d6200, 0x2ea], [0x579000, 0x2c4], [0x520800, 0x2a0],
+    [0x4cc800, 0x27f], [0x47ca00, 0x261], [0x430800, 0x245], [0x3e8000, 0x22a], [0x3a2c00, 0x212], [0x360800, 0x1fb], [0x321400, 0x1e5], [0x2e4a00, 0x1d1],
+    [0x2aa800, 0x1be], [0x272c00, 0x1ac], [0x23d600, 0x19b], [0x209e00, 0x18b], [0x1d8800, 0x17c], [0x1a9000, 0x16e], [0x17ae00, 0x15b], [0x14f800, 0x15b],
+    [0x124400, 0x143], [0x0fbe00, 0x143], [0x0d3800, 0x12d], [0x0ade00, 0x12d], [0x088400, 0x11a], [0x065000, 0x11a], [0x041c00, 0x108], [0x020c00, 0x106],
+];
+const FRSQRTE_T = [
+    [0x1a7e800, -0x568], [0x17cb800, -0x4f3], [0x1552800, -0x48d], [0x130c000, -0x435], [0x10f2000, -0x3e7], [0x0eff000, -0x3a2], [0x0d2e000, -0x365], [0x0b7c000, -0x32e],
+    [0x09e5000, -0x2fc], [0x0867000, -0x2d0], [0x06ff000, -0x2a8], [0x05ab800, -0x283], [0x046a000, -0x261], [0x0339800, -0x243], [0x0218800, -0x226], [0x0105800, -0x20b],
+    [0x3ffa000, -0x7a4], [0x3c29000, -0x700], [0x38aa000, -0x670], [0x3572000, -0x5f2], [0x3279000, -0x584], [0x2fb7000, -0x524], [0x2d26000, -0x4cc], [0x2ac0000, -0x47e],
+    [0x2881000, -0x43a], [0x2665000, -0x3fa], [0x2468000, -0x3c2], [0x2287000, -0x38e], [0x20c1000, -0x35e], [0x1f12000, -0x332], [0x1d79000, -0x30a], [0x1bf4000, -0x2e6],
+];
+const M52 = (1n << 52n) - 1n, EXPM = 0x7FFn << 52n, SIGN = 1n << 63n;
+/** fres: the Gekko's reciprocal estimate (an f32). */
+export function fres(v: number): number {
+    if (v === 0) return Object.is(v, -0) ? -Infinity : Infinity;
+    if (!isFinite(v)) return v !== v ? v : (v > 0 ? 0 : -0);
+    fbuf[0] = v;
+    const bits = ibuf[0], mant = bits & M52, sign = bits & SIGN;
+    let exp = bits & EXPM;
+    if (exp < (895n << 52n)) return v < 0 ? -3.4028234663852886e38 : 3.4028234663852886e38;
+    if (exp >= (1149n << 52n)) return v < 0 ? -0 : 0;
+    exp = (0x7FDn << 52n) - exp;
+    const i = Number(mant >> 37n), e = FRES_T[i >> 10];
+    ibuf[0] = sign | exp | (BigInt(e[0] - Math.trunc((e[1] * (i % 1024) + 1) / 2)) << 29n);
+    return fbuf[0];
+}
+/** frsqrte: the Gekko's reciprocal square root estimate (a double). */
+export function frsqrte(v: number): number {
+    if (v === 0) return Object.is(v, -0) ? -Infinity : Infinity;
+    if (v !== v) return v;
+    if (v < 0) return NaN;
+    if (v === Infinity) return 0;
+    fbuf[0] = v;
+    let mant = ibuf[0] & M52, exp = ibuf[0] & EXPM;
+    if (exp === 0n) { do { exp -= 1n << 52n; mant <<= 1n; } while (!(mant & (1n << 52n))); mant &= M52; exp += 1n << 52n; }
+    const lsb = exp & (1n << 52n);
+    exp = ((0x3FFn << 52n) - ((exp - (0x3FEn << 52n)) / 2n)) & EXPM;
+    const i = Number((lsb | mant) >> 37n), e = FRSQRTE_T[Math.trunc(i / 2048)];
+    ibuf[0] = exp | (BigInt(e[0] + e[1] * (i % 2048)) << 26n);
+    return fbuf[0];
+}
+/** MsSqrtf (MathUtil.hpp): frsqrte and one Newton step in double, then frsp; 0 for x <= 0. */
+export function MsSqrtfHW(x: number): number {
+    if (!(x > 0)) return x;
+    const e = frsqrte(x);
+    return fr(x * ((0.5 * e) * (3 - x * (e * e))));
+}
 /** matan(x, y): atan2(y, x) as a signed 16-bit binary angle. */
 export function matan(x: number, y: number): number {
     let r: number;
