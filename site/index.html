@@ -375,6 +375,8 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
         <input type="range" id="speed" min="-4" max="3" step="0.05" value="0" aria-describedby="speedOut" title="Playback speed (double-click for 1×)">
         <input type="text" id="speedOut" inputmode="decimal" value="1×" aria-label="Playback speed, type a value" title="Click to type a speed">
       </div>
+      <label title="The stage's music, played from the game disc by the game's own sequences and instruments"><input type="checkbox" id="optMusic"> Music</label>
+      <label title="Mario's and the objects' sounds, from the game disc"><input type="checkbox" id="optSfx"> Sound effects <span class="discInfo" id="audioInfo"></span></label>
       <label><input type="checkbox" id="optPath" checked> Show full route lines</label>
       <label title="The coloured circle at each ghost's feet that tells ghosts apart"><input type="checkbox" id="optRing" checked> Show ghost circles</label>
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
@@ -434,6 +436,7 @@ document.write('<script src="' + V2 + 'jpa_data.js"><\/script>');
 document.write('<script src="' + V2 + 'jpa.js"><\/script>');
 document.write('<script src="' + V2 + 'gesso.js"><\/script>');
 document.write('<script src="' + V2 + 'game.js"><\/script>');
+document.write('<script src="' + V2 + 'audio.js"><\/script>');
 </script>
 <script>
 (() => {
@@ -7362,6 +7365,7 @@ void main() {
     updateTriggers();
     updateNames();
     gameFrame();
+    audioFrame();
     renderer.render(scene, camera);
     drawWater();
     drawJpa();
@@ -8159,6 +8163,33 @@ void main() {
   }
   let discLabel = '';
   const _gsz = new THREE.Vector2();
+  // the game's sound (v2 audio/): music and sound effects from the disc, after a user gesture
+  let gameAudio = null;
+  try { if (typeof GameAudio === 'function') gameAudio = new GameAudio(V2); } catch (e) { console.warn('[audio]', e); }
+  if (gameAudio) {
+    $('optMusic').checked = gameAudio.music; $('optSfx').checked = gameAudio.sfx;
+    $('optMusic').addEventListener('change', (e) => gameAudio.setMusic(e.target.checked));
+    $('optSfx').addEventListener('change', (e) => gameAudio.setSfx(e.target.checked));
+    gameAudio.onStatus = (s) => { $('audioInfo').textContent = s || ''; };
+    const wake = () => gameAudio.gesture();
+    window.addEventListener('pointerdown', wake, true);
+    window.addEventListener('keydown', wake, true);
+  } else { $('optMusic').disabled = true; $('optSfx').disabled = true; }
+  function audioFrame() {
+    if (!gameAudio) return;
+    const g = ghosts.find((x) => x.data && x.marker && x.marker.parent);
+    const f = { playing, speed: playbackSpeed(), t, area: -1, episode: 0, segStart: 0, segKey: '', camPos: [camera.position.x, camera.position.y, camera.position.z],
+      view: camera.matrixWorldInverse.elements, mario: null, events: null, eventsKey: null, tick: undefined };
+    if (g) {
+      const d = g.data, s = ghostSampleAt(d, t), seg = d.segments && d.segments[d.segIndex[s.i]];
+      if (seg) { f.area = seg.route.area; f.episode = seg.route.episode; f.segStart = seg.startQf - d.header.startQf; f.segKey = g.fileName + '|' + seg.startQf; }
+      const a = ghostAnimAt(d, t);
+      if (!a.yoshi) f.mario = { x: s.x, y: s.y, z: s.z, anim: a.id, phase: a.phase / 4096 };
+    }
+    const st = gameLayer && gameLive && gameLayer.sim ? gameLayer.sim.stage : null;
+    if (st && st.world) { f.events = st.world.events; f.eventsKey = st; f.tick = st.world.tickCount; }
+    try { gameAudio.frame(f); } catch (e) { console.warn('[audio]', e); }
+  }
   function gameWanted() {
     return gameLayer && gameLayer.fs && $('optGame').checked && !splitOn() && objectsGroup ? objectsGroup.userData.scene : null;
   }
@@ -8194,6 +8225,7 @@ void main() {
   async function useDisc(fs) {
     try {
       $('discInfo').textContent = 'Reading the disc…';
+      if (gameAudio) gameAudio.setDisc(fs);
       await gameLayer.setDisc(fs);
       discLabel = fs.label + (fs.id ? ' · ' + fs.id : '');
       $('discInfo').textContent = discLabel;

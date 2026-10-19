@@ -13,6 +13,8 @@
 import { fr, V3, JMASSin, JMASCos, s16, rand, JMAHermiteInterpolation, MsSin, MsCos, MsGetRotFromZaxisY, MsAngleDiff, MsWrap } from '../math.js';
 import { World, SpineEnemy, EnemyManager, LF, HF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, MActor, readParams, SPINE_PARAMS, PSchema, CUE_MOVE, CUE_CALC_ANIM, NameRef, ANM_BRK, ANM_BTK, ANM_FRAME_RATE, MoveCollision, PathNode, LiveActor } from '../engine.js';
 import { AT } from '../actortypes.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 import { Walker } from './walker.js';
 import { register } from '../scene.js';
 import { emitInfo, EmitInfo } from '../water.js';
@@ -85,6 +87,7 @@ export class PolDrop extends HitActor {
         this.unk80 = 2; this.unk6C.zero();
         this.stamp.mactor!.setBck('pollut_ball_stamp');
         this.owner.world.effect('osendan', this.pos);
+        this.owner.world.sound(SE.BS_BSPAKU_POLLUT_GND, this.pos);
     }
     move() {
         if (this.unk80 === 0) { this.onHitFilter(HF.NO_COLLISION); return; }
@@ -439,6 +442,7 @@ export class BossPakkun extends SpineEnemy {
     gotFlyingDamage() {
         this.weakPoint = WEAK_NONE;
         this.spine!.reset(); this.spine!.setNext(BPNerves.fall);
+        this.world.sound(SE.BS_BSPAKU_FALL, this.pos);
     }
     gotWaterDamage() {
         if (this.unk17C !== 0) return;
@@ -452,8 +456,9 @@ export class BossPakkun extends SpineEnemy {
         this.decHitPoints();
         this.weakPoint = WEAK_NONE;
         if (this.hitPoints === 0) {
-            if (!sp.isNerve(BPNerves.preDie) && !sp.isNerve(BPNerves.die)) sp.setNext(BPNerves.preDie);
+            if (!sp.isNerve(BPNerves.preDie) && !sp.isNerve(BPNerves.die)) { sp.setNext(BPNerves.preDie); this.world.sound(SE.BS_BSPAKU_DOWN, this.pos); }
         } else if (!sp.isNerve(BPNerves.tumbleOut)) {
+            this.world.sound(SE.BS_BSPAKU_DAMAGE, this.pos);
             sp.reset();
             sp.setNext(this.world.stage === 4 ? BPNerves.takeOff : BPNerves.wait);
             sp.pushNerve(BPNerves.getUp);

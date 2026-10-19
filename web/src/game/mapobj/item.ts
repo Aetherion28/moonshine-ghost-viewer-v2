@@ -14,6 +14,8 @@ import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { MapObjBase, MapObjBaseManager, MOF, STATE_NORMAL, OBJ_MAKERS, mapObjGlobals, newAndRegisterObj } from './base.js';
 import { MapObjGeneral, GS } from './general.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 export interface ItemCounts { gold: number; red: number; blue: number[]; shines: number[]; }
 const COUNTS = new WeakMap<World, ItemCounts>();
@@ -54,7 +56,10 @@ export class Item extends MapObjGeneral {
     unk14C = 0; unk150 = 0;
     constructor(w: World, name = 'アイテム') { super(w, name); }
     appeared() {
-        if (this.checkMapObjFlag(MOF.DISAPPEARING) && !this.isStateTimerEngaged() && this.container) this.container.receiveMessage(this, MSG.ATTACH);
+        if (this.checkMapObjFlag(MOF.DISAPPEARING) && !this.isStateTimerEngaged()) {
+            if (this.container) this.container.receiveMessage(this, MSG.ATTACH);
+            if (this.isActorType(AT.COIN_RED) || this.isActorType(AT.COIN_BLUE)) this.world.sound(SE.SY_COIN_DISAPPEAR, this.pos);
+        }
         super.appeared();
     }
     taken(a: HitActor) {
@@ -126,6 +131,7 @@ export class Coin extends Item {
     taken(a: HitActor) {
         const c = itemCounts(this.world);
         c.gold++;
+        this.world.sound(SE.SY_COIN, this.pos);
         tell(this.world, 'coinGet', this, { count: c.gold });
         if (this.container) this.container.receiveMessage(this, MSG.DETACH);
         if (c.gold === 100) {
@@ -139,7 +145,11 @@ export class Coin extends Item {
         this.emit('watcoinKira');
         if (this.isActorType(AT.COIN)) this.offMapObjFlag(MOF.UNK10000000);
     }
-    appear() { this.appearWithoutSound(); }
+    appear() {
+        if (this.isActorType(AT.COIN_BLUE)) { if (!itemCounts(this.world).blue.includes(this.eventId)) this.world.sound(SE.SY_TIMECOIN_APPEAR); }
+        else this.world.sound(SE.SY_COIN_APPEAR);
+        this.appearWithoutSound();
+    }
     perform(cue: number) {
         if (this.checkLiveFlag(LF.DEAD)) return;
         if ((cue & CUE_MOVE) && this.checkLiveFlag(LF.UNK10)) {
@@ -168,6 +178,7 @@ export class CoinRed extends Coin {
     taken(a: HitActor) {
         const c = itemCounts(this.world);
         c.red++;
+        this.world.sound(SE.SY_RED_COIN_GET, this.pos);
         tell(this.world, 'redCoinGet', this, { count: c.red });
         if (this.container) this.container.receiveMessage(this, MSG.DETACH);
         Item.prototype.taken.call(this, a);
@@ -281,6 +292,7 @@ export class Shine extends Item {
     }
     touchPlayer(a: HitActor) {
         a.receiveMessage(this, MSG.ATTACK);
+        this.world.sound(SE.SY_GET_SHINE, this.pos);
         if (this.mactor) this.mactor.setBck('shine_float');
         this.onHitFilter(HF.NO_COLLISION);
         const c = itemCounts(this.world);
@@ -303,6 +315,7 @@ export class Shine extends Item {
         if (yDelta > 0) this.unk15C = fr(this.unk15C + Math.abs(yDelta));
         this.unk160 = fr(this.unk15C * SHINE_CIRCLE_RATE_Y);
         this.emit('shineAppear');
+        this.world.sound(SE.SHINE_APPEAR, this.pos);
         this.stateTimer = this.unk174;
         this.state = SHS.UNKB;
         this.onHitFilter(HF.NO_COLLISION);
@@ -313,6 +326,7 @@ export class Shine extends Item {
         this.unk158 = 0; this.unk15C = 0; this.unk160 = 0; this.upSpeed = 2;
         this.initialPos.set(this.pos);
         this.emit('shineAppear');
+        this.world.sound(SE.SHINE_APPEAR, this.pos);
         this.stateTimer = this.unk174; this.state = SHS.UNKB;
         this.onHitFilter(HF.NO_COLLISION);
     }
@@ -339,6 +353,7 @@ export class ItemNozzle extends Item {
         if ((a.isActorType(AT.MARIO) || a.isActorType(AT.YOSHI_TONGUE)) && !this.checkHitFilter(HF.NO_COLLISION)) this.taken(a);
         let kind = 4;
         if (this.isActorType(AT.ROCKET_NOZZLE_ITEM)) kind = 1; else if (this.isActorType(AT.BACK_NOZZLE_ITEM)) kind = 5;
+        this.world.sound(SE.SY_GET_NOZZLE, this.pos);
         const im = mapObjGlobals(this.world).itemManager as ItemManager | null;
         if (im) im.resetNozzleBoxesModel(kind);
         tell(this.world, 'nozzleGet', this, { item: this.individualName });
