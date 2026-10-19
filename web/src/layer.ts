@@ -511,6 +511,17 @@ export class GameLayer {
      * models at their animation frames; the viewer's own stand-ins for those objects (the same
      * class at the same placement) are hidden.
      */
+    /**
+     * Runs the stage's game code to the viewer's time ahead of the viewer posing Mario (so the input
+     * replay's Mario, SimRunner.history, is there for this frame); render() does it otherwise.
+     */
+    public advanceSim(inp: SimInput | null) {
+        const r = this.renderer;
+        if (!inp || !this.sim || !r || !this.live) return;
+        if (!this.simFiles) this.simFiles = fileMap(r.rarc);
+        this.sim.update(this.scene, this.simFiles, inp);
+    }
+
     private syncSim(inp: SimInput | null, group: any) {
         const r = this.renderer;
         const on = !!(inp && this.sim && r);

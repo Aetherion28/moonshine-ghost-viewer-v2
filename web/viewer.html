@@ -382,6 +382,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
       <label title="With a game disc loaded: draw the stage, objects and Mario with the game's own models (off: the viewer's own)"><input type="checkbox" id="optGame" checked disabled> Game rendering <span class="discInfo" id="discInfo"></span></label>
       <label title="With game rendering on: the game's HUD from the disc (life meter, coins, Shines, blue and red coins, FLUDD's tank) and the stage's opening words"><input type="checkbox" id="optHud" checked disabled> Show HUD</label>
+      <label title="With game rendering on and a ghost that recorded its controller: Mario is played by the game's own code from those inputs (the camera too), instead of following the ghost's recorded positions. Where the replay drifts from the ghost is shown here."><input type="checkbox" id="optReplay" checked disabled> Input replay <span class="discInfo" id="replayInfo"></span></label>
       <label title="Read the game from an extracted game folder instead of a disc image"><button type="button" id="pickFolder" class="linkBtn">Use an extracted game folder…</button></label>
       <label title="Load zones, cutscene and warp triggers, area cylinders and the camera, area, flow, wire, shadow, mirror, sound and draw-distance cubes, and enemies' own trigger zones (the Monty Mole cannon's), as see-through volumes with labels."><input type="checkbox" id="optTriggers"> Show invisible triggers</label>
       <label><input type="checkbox" id="optNames"> Show model names</label>
@@ -454,6 +455,34 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   const setHidden = (el, h) => { h = !!h; if (el.hidden !== h) el.hidden = h; };
   const setValue = (el, v) => { v = String(v); if (el.value !== v) el.value = v; };
   const setMax = (el, v) => { v = String(v); if (el.max !== v) el.max = v; };
+
+  // ---------------------------------------------------------------- the input replay
+  // With the game layer running the ghost's stage from its controller record (SimRunner.history),
+  // the main ghost's Mario is the replay's: his place, facing, animation and FLUDD come from the
+  // game code wherever the replay has run, the ghost's samples elsewhere. These shadow ghost.js's
+  // (RAW: the ghost's own, what the sim itself compares against).
+  const RAW = { ghostSampleAt: window.ghostSampleAt, ghostAnimAt: window.ghostAnimAt, ghostFluddAt: window.ghostFluddAt };
+  let replayLayer = null;   // (the game layer, once made)
+  let replayText = '';   // the info box's line on it
+  function replayOf(d) {
+    const R = replayLayer && replayLayer.live ? replayLayer.sim : null, H = R && R.inputReplay ? R.history : null;
+    return H && H.ghost === d ? H : null;
+  }
+  function ghostSampleAt(d, t) {
+    const s = RAW.ghostSampleAt(d, t), H = replayOf(d), r = H && H.sampleAt(t);
+    return r ? { ...s, x: r.x, y: r.y, z: r.z, yaw: r.yaw, gap: false, replay: true } : s;
+  }
+  function ghostAnimAt(d, t) {
+    const H = replayOf(d), r = H && H.animAt(t);
+    return r || RAW.ghostAnimAt(d, t);
+  }
+  function ghostFluddAt(d, t) {
+    const f = RAW.ghostFluddAt(d, t), H = replayOf(d), v = H ? H.fluddAt(t) : undefined;
+    if (v === undefined) return f;
+    if (v < 0) return { present: false };
+    const base = f && f.present ? f : { burst: false, power: 0, offset: [0, 0, 0], yaw: 0, pitch: 0 };
+    return { ...base, present: true, nozzle: v & 7, nozzleName: FLUDD_NOZZLES[v & 7] || '?', spraying: !!(v & 0x10) };
+  }
 
   // ---------------------------------------------------------------- three.js scene
   // three brings every skinned mesh's skeleton up to date (its bone matrices, and a bone texture
@@ -7016,6 +7045,7 @@ void main() {
   let hudKey = null;   // what the readout shows
   function update() {
     if (ctxQuiet) return;   // a stage finished loading for the view not being drawn: its next frame poses it
+    if (gameLayer && gameLive) gameLayer.advanceSim(gameSimInput());   // (the input replay's Mario, before he's posed)
     let hud = null;
     ghosts.forEach((g) => { if (g.visible || ghosts.length === 1) ensureSims(g); });
     ghosts.forEach((g) => {
@@ -7046,6 +7076,12 @@ void main() {
         const dq = d.qf[i + 1] - d.qf[i] || 1;
         const hs = Math.hypot(d.pos[i * 3 + 3] - d.pos[i * 3], d.pos[i * 3 + 5] - d.pos[i * 3 + 2]) / dq * QF_PER_FRAME;
         hud = { s, hs, fludd, anim: d.anim[s.i], yoshi: d.yoshi[s.i], seg: d.segments[d.segIndex[s.i]], name: d.header.name, gap: s.gap };
+        const H = s.replay ? replayOf(d) : null;
+        if (H) {   // the input replay's Mario: his own animation and speed
+          const a = ghostAnimAt(d, t), k = Math.max(1, Math.min(H.index(t) + 1, H.qf.length - 1)), j = k - 1;
+          hud.anim = a.id; hud.yoshi = 0;
+          hud.hs = k > j ? Math.hypot(H.pos[k * 3] - H.pos[j * 3], H.pos[k * 3 + 2] - H.pos[j * 3 + 2]) / (H.qf[k] - H.qf[j]) * QF_PER_FRAME : 0;
+        }
       }
     });
     updateInputDisplay();
@@ -7070,6 +7106,7 @@ void main() {
         if (counts.shine) parts.push(`${counts.shine} shine`);
         rows.push(['Got', parts.join(', ') || 'nothing yet']);
       }
+      if (replayText) rows.push(['Input replay', replayText]);
     }
     const hudEl = $('hud'), key = rows.join('\n');
     if (hudKey !== key) {
@@ -8221,6 +8258,7 @@ void main() {
   stageEl.prepend(gameCanvas);
   let gameLayer = null, gameLive = false;
   try { gameLayer = new GameLayer(gameCanvas); } catch (e) { console.warn('[game layer]', e); }
+  replayLayer = gameLayer;
   if (gameLayer) {
     gameLayer.onStatus = (text) => { $('discInfo').textContent = text || discLabel; };
     gameLayer.onError = (e) => { console.error(e); showNotice(e && e.message ? e.message : String(e)); };
@@ -8267,6 +8305,18 @@ void main() {
     const out = [], t0 = voiceLast.g === g ? voiceLast.t : -1;
     voiceLast = { g, t };
     if (t0 < 0 || t <= t0 || t - t0 > 60) return out;
+    const H = replayOf(d);
+    if (H) {
+      const q = H.qf, n = q.length;
+      for (let i = Math.max(1, H.index(t0) + 1); i > 0 && i < n && q[i] <= t; i++) {
+        if (q[i] <= t0 || H.anim[i] === H.anim[i - 1]) continue;
+        const j = Math.min(n - 1, i + 2), k = Math.max(0, i - 1);
+        let fludd = null;
+        for (const v of [H.fludd[i], H.fludd[Math.min(n - 1, i + 1)]]) if (v >= 0) fludd = { nozzle: v & 7, spraying: (fludd && fludd.spraying) || !!(v & 0x10) };
+        out.push({ t: q[i], from: H.anim[i - 1], to: H.anim[i], rising: H.pos[j * 3 + 1] - H.pos[k * 3 + 1] > 8, fludd });
+      }
+      return out;
+    }
     const { qf, anim, yoshi, pos, segIndex } = d, n = qf.length;
     let lo = 0, hi = n - 1;
     while (lo < hi) { const mid = (lo + hi) >> 1; if (qf[mid] <= t0) lo = mid + 1; else hi = mid; }
@@ -8342,10 +8392,32 @@ void main() {
     renderer.getDrawingBufferSize(_gsz);
     const marios = ghosts.filter((g) => g.marker && g.marker.parent).map((g) => ({ key: g, rig: g.marker.userData.rig, yoshi: g.yoshiNode || null }));
     if (sleepMario && sleepMario.visible) marios.push({ key: sleepMario, rig: sleepMario.userData.rig, yoshi: null });
-    const main = ghosts.find((g) => g.data && g.marker && g.marker.parent);
-    const sim = main && $('optGame').checked ? { t, ghost: main.data, api: { ghostSampleAt, ghostAnimAt, ghostFluddAt, ghostCameraAt: typeof ghostCameraAt === 'function' ? ghostCameraAt : undefined } } : null;
-    gameLayer.render(camera, _gsz.x, _gsz.y, objectsGroup, objectsGroup.userData.mp, marios, performance.now(), sim);
+    gameLayer.render(camera, _gsz.x, _gsz.y, objectsGroup, objectsGroup.userData.mp, marios, performance.now(), gameSimInput());
+    replayStatus();
     return true;
+  }
+  // what the game layer's sim runs from: the main ghost, its own samples (RAW) and recorded camera
+  function gameSimInput() {
+    const main = ghosts.find((g) => g.data && g.marker && g.marker.parent);
+    return main && $('optGame').checked ? { t, ghost: main.data, api: { ...RAW, ghostCameraAt: typeof ghostCameraAt === 'function' ? ghostCameraAt : undefined } } : null;
+  }
+  // the "Input replay" line: in sync, or where Mario first drifted from the ghost (and by how much)
+  function replayStatus() {
+    const R = gameLayer && gameLive ? gameLayer.sim : null, S = R ? R.sync : null;
+    const main = ghosts.find((g) => g.data && g.marker && g.marker.parent);
+    let s = '';
+    if (R && R.inputReplay) {
+      if (S && S.replay) {
+        s = S.firstDriftQf < 0 ? 'in sync' : `drifted at ${ghostFormatTime(S.firstDriftQf)}s (by ${S.driftErr < 10 ? S.driftErr.toFixed(1) : Math.round(S.driftErr)} units)`;
+        if (S.camera === 'approx') s += ' · camera approximate';
+        const L = S.lostLives.length;
+        if (L) s += L > 1 ? ` · lost ${L} lives` : ' · lost a life';
+        if (R.history && R.history.last < t - 8) s += ' · catching up…';
+      } else if (main && !(main.data.inputs && main.data.inputs.count)) s = 'no inputs in this ghost';
+      else if (S) s = 'no inputs here';
+    }
+    replayText = s && s !== 'no inputs in this ghost' ? s : '';
+    setText($('replayInfo'), s ? '· ' + s : '');
   }
   async function useDisc(fs) {
     try {
@@ -8356,6 +8428,8 @@ void main() {
       discLabel = fs.label + (fs.id ? ' · ' + fs.id : '');
       $('discInfo').textContent = discLabel;
       $('optGame').disabled = false;
+      $('optReplay').disabled = false;
+      gameLayer.sim.inputReplay = $('optReplay').checked;
       $('pickDisc').textContent = 'Game disc ✓';
       update();
     } catch (e) { $('discInfo').textContent = ''; showNotice(e && e.message ? e.message : String(e)); console.error(e); }
@@ -8388,6 +8462,7 @@ void main() {
     e.target.value = '';
   };
   $('optGame').onchange = () => update();
+  $('optReplay').onchange = (e) => { if (gameLayer && gameLayer.sim) gameLayer.sim.inputReplay = e.target.checked; update(); };
   if (gameLayer) GameDisc.rememberedHandle().then((h) => {
     if (!h) return;
     const b = $('reopenDisc');
@@ -8402,7 +8477,9 @@ void main() {
       } catch (e) { GameDisc.forgetHandle(); b.hidden = true; showNotice(e.message || String(e)); }
     };
   }).catch(() => {});
-  window.gameViewer = { get layer() { return gameLayer; }, get live() { return gameLive; }, useDisc, useDiscFile };
+  window.gameViewer = { get layer() { return gameLayer; }, get live() { return gameLive; }, useDisc, useDiscFile,
+    // the main ghost's Mario at t as drawn (the input replay's where it has run) and as recorded
+    marioAt: (time = t) => { const g = ghosts.find((x) => x.data && x.marker && x.marker.parent); return g ? { drawn: ghostSampleAt(g.data, time), anim: ghostAnimAt(g.data, time), ghost: RAW.ghostSampleAt(g.data, time) } : null; } };
 
   async function boot() {
     resize();

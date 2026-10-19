@@ -197,12 +197,65 @@ export function recordedStickCamera(at: (qf: number) => { quat: [number, number,
     };
 }
 
+/**
+ * The input replay's Mario, frame by frame (ghost QFs from the ghost's start): what the viewer draws,
+ * voices and shows in place of the ghost's samples while the replay runs. Read like the ghost's
+ * samples: position linear between frames, yaw the shortest way, animation phase (0..4096)
+ * carried when the animation stays the same.
+ */
+export class ReplayHistory {
+    qf: number[] = []; pos: number[] = []; yaw: number[] = []; anim: number[] = []; phase: number[] = [];
+    /** FLUDD: -1 none, else its nozzle (| 0x10 while it sprays) */
+    fludd: number[] = [];
+    constructor(public ghost: any, public from: number) { }
+    get last() { return this.qf.length ? this.qf[this.qf.length - 1] : -1; }
+    push(qf: number, P: PlayerMario) {
+        this.qf.push(qf); this.pos.push(P.pos.x, P.pos.y, P.pos.z); this.yaw.push(P.mModelFaceAngle);
+        this.anim.push(P.mAnimationId); this.phase.push(Math.round(P.phase * 4096) & 4095);
+        const f = P.fludd;
+        this.fludd.push(f ? (f.nozzle & 7) | (f.spraying ? 0x10 : 0) : -1);
+    }
+    /** the frame at or before t (-1: t is outside what the replay has run) */
+    index(t: number): number {
+        const q = this.qf, n = q.length;
+        if (!n || t < this.from || t < q[0] || t > q[n - 1] + 4) return -1;
+        let lo = 0, hi = n - 1;
+        while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (q[mid] <= t) lo = mid; else hi = mid - 1; }
+        return lo;
+    }
+    sampleAt(t: number) {
+        const i = this.index(t);
+        if (i < 0) return null;
+        const P = this.pos, j = Math.min(i + 1, this.qf.length - 1), f = j > i ? (t - this.qf[i]) / (this.qf[j] - this.qf[i]) : 0;
+        const dy = (((this.yaw[j] - this.yaw[i]) + 32768) & 0xffff) - 32768;
+        return { x: P[i * 3] + (P[j * 3] - P[i * 3]) * f, y: P[i * 3 + 1] + (P[j * 3 + 1] - P[i * 3 + 1]) * f, z: P[i * 3 + 2] + (P[j * 3 + 2] - P[i * 3 + 2]) * f, yaw: this.yaw[i] + dy * f };
+    }
+    animAt(t: number) {
+        const i = this.index(t);
+        if (i < 0) return null;
+        const j = i + 1;
+        let phase = this.phase[i];
+        if (j < this.qf.length && this.anim[j] === this.anim[i]) {
+            const f = (t - this.qf[i]) / (this.qf[j] - this.qf[i]);
+            const d = ((((this.phase[j] - phase) + 2048) % 4096) + 4096) % 4096 - 2048;
+            phase = (((phase + d * f) % 4096) + 4096) % 4096;
+        }
+        return { id: this.anim[i], yoshi: 0, phase };
+    }
+    fluddAt(t: number) {
+        const i = this.index(t);
+        return i < 0 ? undefined : this.fludd[i];
+    }
+}
+
 export class SimRunner {
     private rng: RngReplay | null = null;
     /** run Mario from the ghost's inputs where it has them (the viewer's "Input replay") */
     inputReplay = true;
     /** this stage's input replay (null: the ghost's samples move Mario) */
     sync: ReplaySync | null = null;
+    /** the replay's Mario so far (null: the ghost's samples move Mario) */
+    history: ReplayHistory | null = null;
     private pads: Map<number, number> | null = null;
     stage: Stage | null = null;
     private key = '';
@@ -254,7 +307,7 @@ export class SimRunner {
             try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, 0, 0, intro); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
             const st0 = this.stage;
-            this.pads = null; this.sync = null;
+            this.pads = null; this.sync = null; this.history = null;
             if (st0.player) {
                 const P = st0.player;
                 this.pads = new Map();
@@ -265,6 +318,7 @@ export class SimRunner {
                     P.setStickCamera(recordedStickCamera((q) => at(g, q0 + q, segI), () => st0.qf, () => s16(P.mFaceAngle.y + 0x8000)), false);
                     cam = 'recorded';
                 }
+                this.history = new ReplayHistory(g, q0 + Math.max(0, P.driftFrom));
                 this.sync = { replay: true, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: cam, lostLives: P.lostLives };
             } else this.sync = { replay: false, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: '', lostLives: [] };
             this.rng = g.rng ? new RngReplay(g.rng, segI, q0, () => q0 + st0.qf) : null;
@@ -277,6 +331,7 @@ export class SimRunner {
             rngCtx.roll = this.rng ? this.rng.roll : null; rngCtx.node = this.rng ? this.rng.node : null;
             try { st.runFrame(track, st.player ? this.padAt(inp.ghost, st.qf + 4) : null); } catch (e) { this.error = e; console.warn('[game] frame', e); this.stage = null; return false; }
             finally { rngCtx.roll = null; rngCtx.node = null; }
+            if (st.player && this.history) this.history.push(q0 + st.qf, st.player);
             if (st.player && this.sync) {
                 const d = st.player.drift, S = this.sync;
                 S.firstDriftQf = d.firstQf >= 0 ? q0 + d.firstQf : -1; S.driftErr = d.firstErr; S.maxErr = d.maxErr; S.frames = d.frames; S.exactFrames = d.synced;
