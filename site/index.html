@@ -7320,6 +7320,32 @@ void main() {
     requestAnimationFrame(loop);
   }
 
+  // The stage's opening cutscene (TMarDirector STATE_UNK1: the "startcamera" demo camera, until the
+  // runner skips it or it ends, then the wipe closes and opens on Mario). Moonshine records no
+  // inputs or camera until Mario can move, so the demo spans the segment's start to its first
+  // input, less the two wipes (TConsoleStr::getWipeCloseTime: 30 vsyncs, 120 QF each way).
+  const INTRO_WIPE = 120;
+  const introWipe = (() => { const el = document.createElement('div'); el.style.cssText = 'position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:2'; $('stage').append(el); return el; })();
+  function introView(g, time) {
+    if (!g || !gameLayer || !gameLive || !gameLayer.introCamera) return null;
+    const d = g.data, I = d.inputs;
+    if (!I || !I.count) return null;
+    const s = ghostSampleAt(d, time);
+    if (!s) return null;
+    const seg = d.segments[d.segIndex[s.i]];
+    if (!seg) return null;
+    const q0 = seg.startQf - d.header.startQf;
+    let lo = 0, hi = I.count;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (I.qf[m] < q0) lo = m + 1; else hi = m; }
+    if (lo >= I.count) return null;
+    const qIn = I.qf[lo];
+    if (time < q0 || time >= qIn || qIn - q0 < 2 * INTRO_WIPE + 8) return null;   // (entered by a pipe or door: no opening demo)
+    const end = qIn - 2 * INTRO_WIPE;
+    if (time < end) { const cam = gameLayer.introCamera(time - q0); return cam ? { cam, wipe: 0 } : { cam: null, wipe: 1 }; }
+    if (time < end + INTRO_WIPE) { const cam = gameLayer.introCamera(Math.max(0, end - q0 - 1)); return { cam, wipe: (time - end) / INTRO_WIPE }; }
+    return { cam: null, wipe: 1 - (time - end - INTRO_WIPE) / INTRO_WIPE };
+  }
+
   // One view: camera (the Shine demo's, the follow camera's, or the user's), then the frame.
   function viewStep(dt, now, interactive) {
     // Follow: the run's recorded camera, where the ghost has one; else the Shine get demo camera
@@ -7327,7 +7353,9 @@ void main() {
     const sgLead = leadGhost(), sgDm = sgLead ? shineDemoAt(sgLead, t) : null;
     const rv = cameraMode === 'follow' ? recordedView(sgLead) : null, rp = rv ? recordedPhase(now) : null;
     // (else a demo camera of a boss Shine's: the boss's fall, then the Shine flying in)
-    const sgCam = !rv && cameraMode === 'follow' && !(userCamUntil > now || camDragging) ? (sgDm ? shineDemoCam(sgDm, t) : flightCam(t)) : null;
+    const iv = cameraMode === 'follow' && !(userCamUntil > now || camDragging) ? introView(sgLead, t) : null;
+    { const w = iv ? Math.max(0, Math.min(1, iv.wipe)) : 0; if (introWipe.style.opacity !== String(w)) introWipe.style.opacity = String(w); }
+    const sgCam = iv && iv.cam ? iv.cam : !rv && cameraMode === 'follow' && !(userCamUntil > now || camDragging) ? (sgDm ? shineDemoCam(sgDm, t) : flightCam(t)) : null;
     if (sgCam) {
       camera.position.set(sgCam.pos[0], sgCam.pos[1], sgCam.pos[2]);
       controls.target.set(sgCam.at[0], sgCam.at[1], sgCam.at[2]);
@@ -7335,7 +7363,7 @@ void main() {
       gameCam.at = null;
     } else if (!rv && camera.fov !== 55) { camera.fov = 55; camera.updateProjectionMatrix(); }
     let lead = null;
-    if (isFollow() && !sgCam) {
+    if (isFollow() && !sgCam && !(iv && iv.cam)) {
       const p = leadPosition();
       if (rv && p) {
         // The user's view (theirs, or swinging back): carried along as the ghost moves.
@@ -7360,7 +7388,7 @@ void main() {
     } else camLead = null;
     moveCamera(dt);
     if (interactive) controls.update(); else camera.lookAt(controls.target);
-    if (rv) applyRecordedView(rv, rp, dt, lead);
+    if (rv && !(iv && iv.cam)) applyRecordedView(rv, rp, dt, lead);
     if (mapGroup && mapGroup.userData.sky) mapGroup.userData.sky.position.copy(camera.position);
     updateTriggers();
     updateNames();

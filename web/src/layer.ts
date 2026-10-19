@@ -30,6 +30,8 @@ import { swapTextures } from './actors.js';
 import { SimRunner, DiscCommon, SimInput, fileMap, FileMap } from './game/runner.js';
 import { CLASSES } from './game/scene.js';
 import { LiveActor } from './game/engine.js';
+import { calcANK1JointAnimationTransform } from '../noclip/Common/JSYSTEM/J3D/J3DGraphAnimator.js';
+import { JointTransformInfo } from '../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
 
 /** Where a viewer library model comes from on the disc (tools/build_objects.py, data["mp"]). */
 interface Spec { f: string; bmt?: string; tex?: number; bck?: string; shrink?: string; parts?: [string, string][]; lift?: number; swap?: [string, string]; }
@@ -260,7 +262,7 @@ export class GameLayer {
             this.scene = name;
             this.playerSun = findLight(r, '太陽（プレイヤー）');
             this.objectSun = findLight(r, '太陽（オブジェクト）');
-            this.files = listFiles(r.rarc);
+            this.files = listFiles(r.rarc); this.introBck = undefined;
             r.beforePrepare = () => this.lights();
         } catch (e) { this.onError(e); }
         finally { if (this.loading === name) { this.loading = ''; this.onStatus(''); } }
@@ -657,6 +659,31 @@ export class GameLayer {
             try { this.device.uploadTextureData(gfx, 0, [rgba]); } catch { }
         });
     }
+
+    /**
+     * The stage's opening camera (TMarDirector's STATE_UNK1: gpCamera->startDemoCamera("startcamera"),
+     * map/camera/startcamera.bck): TCameraBck reads its joint 0 as the look point and joint 1, under
+     * it, as the camera, joint 1's Y scale as the field of view; 2 BCK frames a game frame. At QF
+     * q from the demo's start: the view, or null past its end (or with no such file).
+     */
+    public introCamera(q: number): { pos: number[]; at: number[]; fov: number; frames: number } | null {
+        if (this.introBck === undefined) {
+            const f = this.files.get('map/camera/startcamera.bck');
+            try { this.introBck = f ? BCK.parse(f.buffer) : null; } catch { this.introBck = null; }
+        }
+        const A = this.introBck;
+        if (!A || A.jointAnimationEntries.length < 2) return null;
+        const frame = q / 2;
+        if (frame > A.duration) return null;
+        const t0 = new JointTransformInfo(), t1 = new JointTransformInfo();
+        calcANK1JointAnimationTransform(t0, A.jointAnimationEntries[0], frame, frame + 1);
+        calcANK1JointAnimationTransform(t1, A.jointAnimationEntries[1], frame, frame + 1);
+        const m0 = mat4.fromRotationTranslationScale(mat4.create(), t0.rotation, t0.translation, t0.scale);
+        const m1 = mat4.fromRotationTranslationScale(mat4.create(), t1.rotation, t1.translation, [1, 1, 1]);
+        const p = mat4.mul(mat4.create(), m0, m1);
+        return { pos: [p[12], p[13], p[14]], at: [m0[12], m0[13], m0[14]], fov: t1.scale[1], frames: A.duration };
+    }
+    private introBck: any = undefined;
 
     /** For the console and tests: what the layer draws for the viewer's objects. */
     public debug() {
