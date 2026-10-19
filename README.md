@@ -3,8 +3,9 @@
 Super Mario Sunshine practice-mod ghosts (Moonshine `.smsghost`) played back in the game's own
 stages, drawn by the game's own models and materials, read from your own copy of the game.
 
-Live at https://aetherion28.github.io/moonshine-ghost-viewer-v2/ — v1 (no disc needed) is at
-https://aetherion28.github.io/Moonshine-Ghost-Viewer/.
+Live at https://aetherion28.github.io/moonshine-ghost-viewer-v2/. It needs your own copy of the
+game: nothing is loaded or drawn until a disc image (`.iso` / `.gcm`) or an extracted game folder is
+given, and there is no fallback to the viewer's own models.
 
 ## How it works
 
@@ -26,7 +27,8 @@ under it:
   Gooper Blooper, overlays) on a transparent canvas on top, hidden behind its own depth-only copy of
   the stage and objects. Nothing from the disc leaves the browser; the site hosts no game data.
 
-Untick "Game rendering" to see v1's own drawing. The comparison view falls back to v1's drawing.
+There is no option to draw with v1's own models, and the comparison view (which could only draw
+that way) is off.
 
 Known gaps: the specular light is off (see the TODO in `layer.ts`), FLUDD's water gauge isn't drawn,
 Gooper Blooper is still v1's model. `web/src/discformats.ts` (RVZ / WIA / GCZ / CISO) is written

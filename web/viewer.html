@@ -101,6 +101,14 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .inputs .solid { fill: var(--in); }
 .notice { position: absolute; right: 12px; top: 56px; max-width: min(320px, 70%); font-size: 13px;
   background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 8px 10px; }
+.discGate { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 16px; background: var(--bg); }
+.discGate[hidden] { display: none; }
+.discGateBox { max-width: 460px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; }
+.discGateBox h2 { margin: 0 0 8px; font-size: 18px; }
+.discGateBox p { margin: 0 0 14px; font-size: 13px; line-height: 1.5; }
+.discGateBtns { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.discGateNote { margin: 12px 0 0 !important; color: var(--muted, inherit); }
+.discLine { font-size: 12px; }
 .drop { position: absolute; inset: 10px; border: 2px dashed var(--accent); border-radius: 10px; display: grid; place-items: center;
   font-weight: 800; font-size: 18px; background: color-mix(in srgb, var(--panel) 75%, transparent); pointer-events: none; }
 
@@ -293,6 +301,18 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
   </header>
 
   <div class="stage" id="stage">
+    <div class="discGate" id="discGate">
+      <div class="discGateBox">
+        <h2>Load your Super Mario Sunshine disc</h2>
+        <p>The viewer draws and plays everything with the game itself, read from your own copy: a disc image (.iso / .gcm) or an extracted game folder. Nothing is uploaded, and the site hosts no game data.</p>
+        <div class="discGateBtns">
+          <button class="primary" id="gateDisc" type="button">Choose disc image…</button>
+          <button id="gateFolder" type="button" class="linkBtn">Use an extracted game folder…</button>
+          <button id="gateReopen" type="button" hidden></button>
+        </div>
+        <p class="discGateNote" id="gateNote"></p>
+      </div>
+    </div>
     <div class="hud" id="hud" aria-live="off"></div>
     <div class="notice" id="notice" hidden></div>
     <div class="inputsStage" id="inputsStage" hidden></div>
@@ -380,9 +400,9 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label><input type="checkbox" id="optPath" checked> Show full route lines</label>
       <label title="The coloured circle at each ghost's feet that tells ghosts apart"><input type="checkbox" id="optRing" checked> Show ghost circles</label>
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
-      <label title="With a game disc loaded: draw the stage, objects and Mario with the game's own models (off: the viewer's own)"><input type="checkbox" id="optGame" checked disabled> Game rendering <span class="discInfo" id="discInfo"></span></label>
-      <label title="With game rendering on: the game's HUD from the disc (life meter, coins, Shines, blue and red coins, FLUDD's tank) and the stage's opening words"><input type="checkbox" id="optHud" checked disabled> Show HUD</label>
-      <label title="With game rendering on and a ghost that recorded its controller: Mario is played by the game's own code from those inputs (the camera too), instead of following the ghost's recorded positions. Where the replay drifts from the ghost is shown here."><input type="checkbox" id="optReplay" checked disabled> Input replay <span class="discInfo" id="replayInfo"></span></label>
+      <div class="discLine">Disc: <span class="discInfo" id="discInfo">none loaded</span></div>
+      <label title="The game's HUD from the disc (life meter, coins, Shines, blue and red coins, FLUDD's tank) and the stage's opening words"><input type="checkbox" id="optHud" checked disabled> Show HUD</label>
+      <label title="With a ghost that recorded its controller: Mario is played by the game's own code from those inputs (the camera too), instead of following the ghost's recorded positions. Where the replay drifts from the ghost is shown here."><input type="checkbox" id="optReplay" checked disabled> Input replay <span class="discInfo" id="replayInfo"></span></label>
       <label title="Read the game from an extracted game folder instead of a disc image"><button type="button" id="pickFolder" class="linkBtn">Use an extracted game folder…</button></label>
       <label title="Load zones, cutscene and warp triggers, area cylinders and the camera, area, flow, wire, shadow, mirror, sound and draw-distance cubes, and enemies' own trigger zones (the Monty Mole cannon's), as see-through volumes with labels."><input type="checkbox" id="optTriggers"> Show invisible triggers</label>
       <label><input type="checkbox" id="optNames"> Show model names</label>
@@ -391,7 +411,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="Off: playback steps one game frame at a time, as the game does. On: motion is smoothed between frames."><input type="checkbox" id="optSmooth"> Cinematic playback</label>
       <label title="An on-screen stick that flies the camera around the stage, with buttons to raise and lower it. On by default on touch screens."><input type="checkbox" id="optJoy"> Movement joystick</label>
       <label><input type="checkbox" id="optWire"> Wireframe stage</label>
-      <label title="Two ghosts, each in its own view with its own time slider (needs two ghosts loaded)"><input type="checkbox" id="optSplit" disabled> Comparison view</label>
+      <input type="checkbox" id="optSplit" disabled hidden>
     </div>
     <h2>Inputs</h2>
     <div class="opts">
@@ -7443,8 +7463,16 @@ void main() {
     if (mapGroup && mapGroup.userData.sky) mapGroup.userData.sky.position.copy(camera.position);
     updateTriggers();
     updateNames();
-    gameFrame();
+    const drawn = gameFrame();
     audioFrame();
+    // (v2 draws with the game from the user's disc only: until the stage is up, nothing)
+    if (!drawn) {
+      // (transparent, and the clear colour put back: the game's canvas is under this one)
+      renderer.getClearColor(_clearC); const a = renderer.getClearAlpha();
+      renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.setClearColor(_clearC, a);
+      setText($('discInfo'), discLabel ? discLabel + ' · loading the stage…' : 'none loaded');
+      return;
+    }
     renderer.render(scene, camera);
     drawWater();
     drawJpa();
@@ -7497,6 +7525,9 @@ void main() {
   // world at its own time; the stage follows the left ghost.
   // A phone held upright stacks the views; turned on its side (or any wider screen) they sit side by side.
   function splitTall() { return (splitTall.mq || (splitTall.mq = matchMedia('(orientation: portrait) and (max-width: 760px)'))).matches; }
+  // The comparison view drew with the viewer's own models; v2 draws only with the game from the
+  // user's disc, so it's off.
+  const SPLIT_VIEW = false;
   function splitOn() { return !!(split && ghosts.includes(split.a) && ghosts.includes(split.b)); }
   const camSave = () => ({ p: camera.position.clone(), q: controls.target.clone(), at: gameCam.at && gameCam.at.clone(),
     dist: gameCam.dist, lastT: gameCam.lastT, key: gameCam.key, user: userCamUntil, lead: camLead && camLead.clone(), fov: camera.fov });
@@ -7509,6 +7540,7 @@ void main() {
   const ghostEnd = (g) => g.data.qf[g.data.qf.length - 1];
   const splitTB = () => Math.max(0, Math.min(ghostEnd(split.b), t + split.offset));
   function setSplit(on) {
+    if (on && !SPLIT_VIEW) return;
     if (on && ghosts.length >= 2) {
       const a = leadGhost() || ghosts[0], b = ghosts.find((x) => x !== a && x.visible) || ghosts.find((x) => x !== a);
       const c = camSave();
@@ -7855,7 +7887,7 @@ void main() {
     }
     (q.get('h') || '').split(',').filter(Boolean).map(Number).forEach((i) => { if (added[i]) added[i].visible = false; });
     if (q.get('h')) { ghosts.forEach((g) => { g.path.visible = g.visible && $('optPath').checked; }); renderGhostList(); }
-    if (sp.length >= 2 && added[sp[0]] && added[sp[1]]) {
+    if (SPLIT_VIEW && sp.length >= 2 && added[sp[0]] && added[sp[1]]) {
       followGhost = added[sp[0]];
       added[sp[0]].visible = added[sp[1]].visible = true;
       setSplit(true);
@@ -8264,7 +8296,7 @@ void main() {
     gameLayer.onError = (e) => { console.error(e); showNotice(e && e.message ? e.message : String(e)); };
   }
   let discLabel = '';
-  const _gsz = new THREE.Vector2();
+  const _gsz = new THREE.Vector2(), _clearC = new THREE.Color();
   // the game's HUD (v2 hud/): TGCConsole2 and TConsoleStr drawn from the disc's 2D files, over the game layer
   let gameHud = null;
   try {
@@ -8366,7 +8398,7 @@ void main() {
     try { gameAudio.frame(f); } catch (e) { console.warn('[audio]', e); }
   }
   function gameWanted() {
-    return gameLayer && gameLayer.fs && $('optGame').checked && !splitOn() && objectsGroup ? objectsGroup.userData.scene : null;
+    return gameLayer && gameLayer.fs && objectsGroup ? objectsGroup.userData.scene : null;
   }
   function setGameLook(on) {
     mapMaterials.forEach((m) => { if (m.colorWrite !== !on) m.colorWrite = !on; });
@@ -8399,7 +8431,7 @@ void main() {
   // what the game layer's sim runs from: the main ghost, its own samples (RAW) and recorded camera
   function gameSimInput() {
     const main = ghosts.find((g) => g.data && g.marker && g.marker.parent);
-    return main && $('optGame').checked ? { t, ghost: main.data, api: { ...RAW, ghostCameraAt: typeof ghostCameraAt === 'function' ? ghostCameraAt : undefined } } : null;
+    return main ? { t, ghost: main.data, api: { ...RAW, ghostCameraAt: typeof ghostCameraAt === 'function' ? ghostCameraAt : undefined } } : null;
   }
   // the "Input replay" line: in sync, or where Mario first drifted from the ghost (and by how much)
   function replayStatus() {
@@ -8427,10 +8459,10 @@ void main() {
       await gameLayer.setDisc(fs);
       discLabel = fs.label + (fs.id ? ' · ' + fs.id : '');
       $('discInfo').textContent = discLabel;
-      $('optGame').disabled = false;
       $('optReplay').disabled = false;
       gameLayer.sim.inputReplay = $('optReplay').checked;
       $('pickDisc').textContent = 'Game disc ✓';
+      discReady();
       update();
     } catch (e) { $('discInfo').textContent = ''; showNotice(e && e.message ? e.message : String(e)); console.error(e); }
   }
@@ -8461,22 +8493,38 @@ void main() {
     if (list.length) GameDisc.openFolder(list).then(useDisc, (err) => showNotice(err.message || String(err)));
     e.target.value = '';
   };
-  $('optGame').onchange = () => update();
   $('optReplay').onchange = (e) => { if (gameLayer && gameLayer.sim) gameLayer.sim.inputReplay = e.target.checked; update(); };
   if (gameLayer) GameDisc.rememberedHandle().then((h) => {
     if (!h) return;
-    const b = $('reopenDisc');
-    b.hidden = false;
-    b.textContent = 'Open ' + h.name;
-    b.title = 'Use the disc image you picked last time';
-    b.onclick = async () => {
+    const b = $('reopenDisc'), gb = $('gateReopen');
+    b.hidden = false; gb.hidden = false;
+    b.textContent = gb.textContent = 'Open ' + h.name;
+    b.title = gb.title = 'Use the disc image you picked last time';
+    b.onclick = gb.onclick = async () => {
       try {
         if ((await h.queryPermission({ mode: 'read' })) !== 'granted' && (await h.requestPermission({ mode: 'read' })) !== 'granted') return;
-        b.hidden = true;
+        b.hidden = true; gb.hidden = true;
         await useDisc(await GameDisc.openDisc(await h.getFile()));
-      } catch (e) { GameDisc.forgetHandle(); b.hidden = true; showNotice(e.message || String(e)); }
+      } catch (e) { GameDisc.forgetHandle(); b.hidden = true; gb.hidden = true; showNotice(e.message || String(e)); }
     };
   }).catch(() => {});
+  // The disc gate: v2 runs only on the user's own copy of the game. Until one is loaded nothing is
+  // fetched or drawn (the stage list, collision and object data included).
+  let discOk = false;
+  const discWait = [];
+  function discReady() {
+    if (discOk) return;
+    discOk = true;
+    $('discGate').hidden = true;
+    discWait.splice(0).forEach((f) => f());
+  }
+  const whenDisc = () => (discOk ? Promise.resolve() : new Promise((r) => discWait.push(r)));
+  $('gateDisc').onclick = () => $('pickDisc').click();
+  $('gateFolder').onclick = () => $('pickFolder').click();
+  if (!gameLayer) {
+    $('gateDisc').disabled = $('gateFolder').disabled = true;
+    $('gateNote').textContent = 'This browser can\'t run the game renderer (it needs WebGL 2).';
+  }
   window.gameViewer = { get layer() { return gameLayer; }, get live() { return gameLive; }, useDisc, useDiscFile,
     // the main ghost's Mario at t as drawn (the input replay's where it has run) and as recorded
     marioAt: (time = t) => { const g = ghosts.find((x) => x.data && x.marker && x.marker.parent); return g ? { drawn: ghostSampleAt(g.data, time), anim: ghostAnimAt(g.data, time), ghost: RAW.ghostSampleAt(g.data, time) } : null; } };
@@ -8484,6 +8532,7 @@ void main() {
   async function boot() {
     resize();
     renderGhostList();
+    await whenDisc();
     try { maps = await (await fetch('maps/index.json', { cache: 'no-cache' })).json(); }
     catch { maps = []; showNotice('The stage list could not be loaded.'); }
     const sel = $('mapSelect');
