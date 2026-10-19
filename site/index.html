@@ -410,7 +410,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="Off: playback steps one game frame at a time, as the game does. On: motion is smoothed between frames."><input type="checkbox" id="optSmooth"> Cinematic playback</label>
       <label title="An on-screen stick that flies the camera around the stage, with buttons to raise and lower it. On by default on touch screens."><input type="checkbox" id="optJoy"> Movement joystick</label>
       <label><input type="checkbox" id="optWire"> Wireframe stage</label>
-      <input type="checkbox" id="optSplit" disabled hidden>
+      <input type="checkbox" id="optSplit" disabled>
     </div>
     <h2>Inputs</h2>
     <div class="opts">
@@ -6228,7 +6228,8 @@ void main() {
       const gl = renderer.getContext();
       renderer.state.activeTexture(gl.TEXTURE0);
       renderer.state.bindTexture(gl.TEXTURE_2D, renderer.properties.get(tex).__webglTexture);
-      gameLayer.copyInto(gl);
+      if (splitOn()) { renderer.getCurrentViewport(_wvp); gameLayer.copyInto(gl, [_wvp.x, _wvp.y]); }
+      else gameLayer.copyInto(gl);
       renderer.state.unbindTexture();
       P.viewCopy = null;
       return;
@@ -7533,9 +7534,9 @@ void main() {
   // world at its own time; the stage follows the left ghost.
   // A phone held upright stacks the views; turned on its side (or any wider screen) they sit side by side.
   function splitTall() { return (splitTall.mq || (splitTall.mq = matchMedia('(orientation: portrait) and (max-width: 760px)'))).matches; }
-  // The comparison view drew with the viewer's own models; v2 draws only with the game from the
-  // user's disc, so it's off.
-  const SPLIT_VIEW = false;
+  // The comparison view: each half drawn by its own game layer (a second canvas and renderer over
+  // the right or bottom half), with its own stage and input replay.
+  const SPLIT_VIEW = true;
   function splitOn() { return !!(split && ghosts.includes(split.a) && ghosts.includes(split.b)); }
   const camSave = () => ({ p: camera.position.clone(), q: controls.target.clone(), at: gameCam.at && gameCam.at.clone(),
     dist: gameCam.dist, lastT: gameCam.lastT, key: gameCam.key, user: userCamUntil, lead: camLead && camLead.clone(), fov: camera.fov });
@@ -7548,7 +7549,7 @@ void main() {
   const ghostEnd = (g) => g.data.qf[g.data.qf.length - 1];
   const splitTB = () => Math.max(0, Math.min(ghostEnd(split.b), t + split.offset));
   function setSplit(on) {
-    if (on && !SPLIT_VIEW) return;
+    if (on && (!SPLIT_VIEW || !layerSlots[1].layer)) return;
     if (on && ghosts.length >= 2) {
       const a = leadGhost() || ghosts[0], b = ghosts.find((x) => x !== a && x.visible) || ghosts.find((x) => x !== a);
       const c = camSave();
@@ -7562,6 +7563,7 @@ void main() {
     } else {
       if (split && split.ctx) { switchCtx(mainCtx); syncScene(mainCtx, [mainCtx, split.ctx]); }
       split = null;
+      layerOff(1);
     }
     $('optSplit').checked = !!split;
     splitUi();
@@ -7637,6 +7639,7 @@ void main() {
       camLoad(split.cams[i]);
       const ctx = i ? split.ctx : mainCtx;
       switchCtx(ctx); syncScene(ctx, [mainCtx, split.ctx]);
+      useLayer(i);
       splitNoStage = i === 1;
       update();
       splitNoStage = false;
@@ -8292,19 +8295,42 @@ void main() {
   // Everything here still runs as before; the game layer copies the scene graph each frame and
   // this view draws the stage, objects and Mario into depth only, keeping what the game models
   // don't cover (water, effects, wires, overlays) drawn on top and hidden behind walls as before.
-  const gameCanvas = document.createElement('canvas');
-  gameCanvas.className = 'gameLayer';
-  gameCanvas.hidden = true;
-  stageEl.prepend(gameCanvas);
-  let gameLayer = null, gameLive = false;
-  try { gameLayer = new GameLayer(gameCanvas); } catch (e) { console.warn('[game layer]', e); }
+  // The comparison view's right (or bottom) half has a second layer of its own: gameLayer,
+  // gameCanvas and gameLive are the half being drawn's (useLayer), the first one's otherwise.
+  const layerSlots = [0, 1].map((i) => {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'gameLayer';
+    canvas.hidden = true;
+    stageEl.prepend(canvas);
+    let layer = null;
+    try { layer = new GameLayer(canvas); } catch (e) { console.warn('[game layer]', e); }
+    if (layer) {
+      layer.onStatus = (text) => { if (!i || splitOn()) $('discInfo').textContent = text || discLabel; };
+      layer.onError = (e) => { console.error(e); showNotice(e && e.message ? e.message : String(e)); };
+    }
+    return { layer, canvas, live: false };
+  });
+  const gameLayerA = layerSlots[0].layer;
+  let gameLayer = gameLayerA, gameCanvas = layerSlots[0].canvas, gameLive = false, layerSlot = 0;
   replayLayer = gameLayer;
-  if (gameLayer) {
-    gameLayer.onStatus = (text) => { $('discInfo').textContent = text || discLabel; };
-    gameLayer.onError = (e) => { console.error(e); showNotice(e && e.message ? e.message : String(e)); };
+  function useLayer(i) {
+    if (i === layerSlot) return;
+    layerSlots[layerSlot].live = gameLive;
+    layerSlot = i;
+    ({ layer: gameLayer, canvas: gameCanvas, live: gameLive } = layerSlots[i]);
+    replayLayer = gameLayer;
+  }
+  // (out of the comparison view: the second layer hidden, the first one's canvas whole again)
+  function layerOff(i) {
+    useLayer(0);
+    const s = layerSlots[i];
+    s.live = false; s.canvas.hidden = true;
+    if (s.layer) s.layer.setLive(false);
+    const c = layerSlots[0].canvas.style;
+    c.left = c.top = c.width = c.height = '';
   }
   let discLabel = '';
-  const _gsz = new THREE.Vector2(), _clearC = new THREE.Color();
+  const _gsz = new THREE.Vector2(), _gvp = new THREE.Vector4(), _clearC = new THREE.Color();
   // the game's HUD (v2 hud/): TGCConsole2 and TConsoleStr drawn from the disc's 2D files, over the game layer
   let gameHud = null;
   try {
@@ -8422,6 +8448,7 @@ void main() {
     }
   }
   function gameFrame() {
+    if (!splitOn() && (layerSlot || !layerSlots[1].canvas.hidden || layerSlots[0].canvas.style.width)) layerOff(1);   // (the comparison ended)
     const want = gameWanted();
     if (want && gameLayer.scene !== want) gameLayer.loadScene(want);
     const on = !!want && gameLayer.scene === want && !!gameLayer.renderer;
@@ -8430,6 +8457,13 @@ void main() {
     scene.updateMatrixWorld();
     camera.updateMatrixWorld();
     renderer.getDrawingBufferSize(_gsz);
+    if (splitOn()) {
+      // (this half's canvas over its viewport: CSS pixels, GL's y up)
+      renderer.getViewport(_gvp);
+      const pr = renderer.getPixelRatio(), H = renderer.domElement.clientHeight, c = gameCanvas.style;
+      c.left = _gvp.x + 'px'; c.top = (H - _gvp.y - _gvp.w) + 'px'; c.width = _gvp.z + 'px'; c.height = _gvp.w + 'px';
+      _gsz.set(Math.max(1, Math.floor(_gvp.z * pr)), Math.max(1, Math.floor(_gvp.w * pr)));
+    }
     const marios = ghosts.filter((g) => g.marker && g.marker.parent).map((g) => ({ key: g, rig: g.marker.userData.rig, yoshi: g.yoshiNode || null }));
     if (sleepMario && sleepMario.visible) marios.push({ key: sleepMario, rig: sleepMario.userData.rig, yoshi: null });
     gameLayer.render(camera, _gsz.x, _gsz.y, objectsGroup, objectsGroup.userData.mp, marios, performance.now(), gameSimInput());
@@ -8438,7 +8472,7 @@ void main() {
   }
   // what the game layer's sim runs from: the main ghost, its own samples (RAW) and recorded camera
   function gameSimInput() {
-    const main = ghosts.find((g) => g.data && g.marker && g.marker.parent);
+    const main = splitOn() ? followGhost : ghosts.find((g) => g.data && g.marker && g.marker.parent);
     return main ? { t, ghost: main.data, api: { ...RAW, ghostCameraAt: typeof ghostCameraAt === 'function' ? ghostCameraAt : undefined } } : null;
   }
   // the "Input replay" line: in sync, or where Mario first drifted from the ghost (and by how much)
@@ -8470,11 +8504,12 @@ void main() {
       $('discInfo').textContent = 'Reading the disc…';
       if (gameAudio) gameAudio.setDisc(fs);
       if (gameHud) { gameHud.setDisc(fs); $('optHud').disabled = false; }
-      await gameLayer.setDisc(fs);
+      await gameLayerA.setDisc(fs);
+      if (layerSlots[1].layer) await layerSlots[1].layer.setDisc(fs, gameLayerA.common);
       discLabel = fs.label + (fs.id ? ' · ' + fs.id : '');
       $('discInfo').textContent = discLabel;
       $('optReplay').disabled = false;
-      gameLayer.sim.inputReplay = $('optReplay').checked;
+      layerSlots.forEach((s) => { if (s.layer && s.layer.sim) s.layer.sim.inputReplay = $('optReplay').checked; });
       $('pickDisc').textContent = 'Game disc ✓';
       $('discInfo').textContent = discLabel + ' · reading the stages…';
       v1data = new V1Data(fs);
@@ -8512,7 +8547,7 @@ void main() {
     if (list.length) GameDisc.openFolder(list).then(useDisc, (err) => showNotice(err.message || String(err)));
     e.target.value = '';
   };
-  $('optReplay').onchange = (e) => { if (gameLayer && gameLayer.sim) gameLayer.sim.inputReplay = e.target.checked; update(); };
+  $('optReplay').onchange = (e) => { layerSlots.forEach((s) => { if (s.layer && s.layer.sim) s.layer.sim.inputReplay = e.target.checked; }); update(); };
   if (gameLayer) GameDisc.rememberedHandle().then((h) => {
     if (!h) return;
     const b = $('reopenDisc'), gb = $('gateReopen');

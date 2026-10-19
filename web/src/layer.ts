@@ -231,13 +231,16 @@ export class GameLayer {
     }
 
     // ------------------------------------------------------------ the disc
-    public async setDisc(fs: GameFS) {
+    public common: DiscCommon | null = null;
+    /** common: another layer's (the comparison view's second layer shares the first's) */
+    public async setDisc(fs: GameFS, common: DiscCommon | null = null) {
         const table = parseStageArc(await fs.read('data/stageArc.bin'));
         const mario = parseArchive(await fs.read('data/mario.szs'), Yaz0.decompressSW);
         const yoshi = fs.has('data/yoshi.szs') ? parseArchive(await fs.read('data/yoshi.szs'), Yaz0.decompressSW) : null;
         this.destroyScene();
         this.fs = fs; this.stageTable = table; this.marioArc = mario; this.yoshiArc = yoshi;
-        this.sim = new SimRunner(await DiscCommon.load(fs));
+        this.common = common || await DiscCommon.load(fs);
+        this.sim = new SimRunner(this.common);
     }
 
     public sceneFor(area: number, episode: number) { return sceneForRoute(this.stageTable, area, episode); }
@@ -743,9 +746,11 @@ export class GameLayer {
     }
 
     /** Copy what the layer drew into a three.js texture (the viewer's screen copies for water and effects). */
-    public copyInto(gl: WebGL2RenderingContext) {
+    public copyInto(gl: WebGL2RenderingContext, at: number[] | null = null) {
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, this.canvas);
+        // (at: [x, y] in the texture, GL's y up: one half of the comparison view into its place)
+        if (at) gl.texSubImage2D(gl.TEXTURE_2D, 0, at[0], at[1], gl.RGB, gl.UNSIGNED_BYTE, this.canvas);
+        else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, this.canvas);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     }
 

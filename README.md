@@ -30,8 +30,10 @@ under it:
   Gooper Blooper, overlays) on a transparent canvas on top, hidden behind its own depth-only copy of
   the stage and objects. Nothing from the disc leaves the browser; the site hosts no game data.
 
-There is no option to draw with v1's own models, and the comparison view (which could only draw
-that way) is off.
+There is no option to draw with v1's own models.
+The comparison view (two ghosts side by side, or one above the other on a phone held upright) draws
+each half with the game too: the second half has its own game layer, a second canvas over that half
+with its own stage and its own input replay.
 
 Known gaps: the specular light is off (see the TODO in `layer.ts`), FLUDD's water gauge isn't drawn,
 Gooper Blooper is still v1's model. `web/src/discformats.ts` (RVZ / WIA / GCZ / CISO) is written
