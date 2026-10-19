@@ -305,13 +305,14 @@ function parseRngTape(bytes, dv, at, startQf) {
   }
   const tape = {
     flags, truncated: !!(flags & 1), lost: !!(flags & 2), foreignThread: !!(flags & 4), controls: !!(flags & 8),
-    noActors: !!(flags & 16), callers, actors, count: callCount, frames: 0, nodeOverrides: [], seeds: [],
+    noActors: !!(flags & 16), callers, actors, count: callCount, frames: 0, nodeOverrides: [], seeds: [], loads: [],
     frame: new Uint32Array(callCount), qf: new Float64Array(callCount), segment: new Uint8Array(callCount),
     caller: new Uint8Array(callCount), actor: new Int16Array(callCount),
     value: new Uint16Array(callCount), used: new Uint16Array(callCount),
   };
   let o = at + size - streamSize, n = 0, frame = 0, segment = 0, state = 0, step = 0;
-  let cur = null, prev = null, seeded = false;
+  let cur = null, prev = null, seeded = false, pending = null;
+  const settle = () => { if (pending) { pending.load.consistent = pending.expect === state; pending = null; } };
   const end = at + size;
   const need = (k) => { if (o + k > end) throw new Error('tape ends inside an entry'); };
   const rel = (q) => (q === null ? NaN : q - startQf);
@@ -320,6 +321,7 @@ function parseRngTape(bytes, dv, at, startQf) {
     if (op <= 0x7f) {
       need(2);
       if (!seeded) throw new Error('rolls before a seed');
+      settle();
       const c = bytes[o], a = bytes[o + 1];
       o += 2;
       if (c >= nCallers || a > nActors || n + op + 1 > callCount) throw new Error('bad call run');
@@ -332,12 +334,29 @@ function parseRngTape(bytes, dv, at, startQf) {
     } else if (op <= 0xbf) {
       for (let k = 0; k < op - 0x7f; k++) { frame++; prev = cur; if (cur !== null) cur = (cur + step) >>> 0; }
     } else if (op === 0xc1) {
-      need(4); state = dv.getUint32(o); o += 4; seeded = true;
+      need(4); state = dv.getUint32(o); o += 4; seeded = true; settle();
       // (where each SEED stands: its segment, frame, QF and how many rolls came before it)
       tape.seeds.push({ segment, frame, qf: rel(cur), state, roll: n });
+    } else if (op === 0xc6) {
+      // A stage load: the generator state when TMarDirector::setup began, the rolls during the disc
+      // wait (0xffffffff: not seen), the state when setupObjects began (where the stage's objects
+      // are created), and rolls since then that are not on the tape (made before this recording
+      // started). Its ghost segment: the current one when it opens the tape (before the first SEED);
+      // inline, the stage it loads becomes the next SEGMENT (null if the run never got there).
+      need(16);
+      const loadSeed = dv.getUint32(o), wait = dv.getUint32(o + 4), setupSeed = dv.getUint32(o + 8), untaped = dv.getUint32(o + 12);
+      o += 16;
+      const load = { frame, qf: rel(cur), callIndex: n, segment: seeded ? null : segment,
+        loadSeed, waitRolls: wait === 0xffffffff ? null : wait, setupSeed, untaped, consistent: null };
+      if (load.waitRolls !== null && rngSkip(loadSeed, load.waitRolls) !== setupSeed) load.consistent = false;
+      tape.loads.push(load);
+      if (load.consistent === null) pending = { load, expect: rngSkip(setupSeed, untaped) };
     }
     else if (op === 0xc2) { need(4); const q = dv.getUint32(o); o += 4; if (prev !== null) step = (q - prev) >>> 0; cur = q; }
-    else if (op === 0xc3) { need(1); segment = bytes[o++]; if (segment >= 64) throw new Error('bad segment'); }
+    else if (op === 0xc3) {
+      need(1); segment = bytes[o++]; if (segment >= 64) throw new Error('bad segment');
+      for (const l of tape.loads) if (l.segment === null) l.segment = segment;
+    }
     else if (op === 0xc4) {
       need(2);
       const v = dv.getUint16(o);
@@ -351,8 +370,19 @@ function parseRngTape(bytes, dv, at, startQf) {
     } else throw new Error(`unknown op 0x${op.toString(16)}`);
   }
   if (n !== callCount) throw new Error('call count mismatch');
+  if (seeded) settle();
   tape.frames = frame + 1;
   return tape;
+}
+
+// MSL rand()'s state after n more calls, in O(log n): compose the affine step x -> a*x + c.
+function rngSkip(state, n) {
+  let a = 0x41c64e6d, c = 0x3039, ra = 1, rc = 0;
+  for (n >>>= 0; n; n >>>= 1) {
+    if (n & 1) { rc = (Math.imul(a, rc) + c) >>> 0; ra = Math.imul(a, ra) >>> 0; }
+    c = (Math.imul(a, c) + c) >>> 0; a = Math.imul(a, a) >>> 0;
+  }
+  return (Math.imul(ra, state) + rc) >>> 0;
 }
 
 // The rolls one object (actor table index), one call site (caller address) or both received, in
