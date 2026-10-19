@@ -9,8 +9,9 @@
 // Values: the coins, red coins, blue coins and Shines come from the simulated stage's events
 // (counted from the stage's start: the save's totals aren't in a ghost); Mario's health isn't
 // recorded, so it stays full; his air goes down under water (the stage's water surfaces, as
-// TMario::isUnderWater); FLUDD's tank follows the ghost's FLUDD record (its nozzle and what it
-// sprays, at the nozzles' own rates from params.szs) and fills in water while R is held.
+// TMario::isUnderWater); FLUDD's tank is the simulated player's TWaterGun when the sim runs one
+// (World.waterGunLog), else it follows the ghost's FLUDD record (its nozzle and what it sprays, at
+// the nozzles' own rates from params.szs) and fills in water while R is held.
 
 import * as RARC from '../../noclip/Common/JSYSTEM/JKRArchive.js';
 import * as Yaz0 from '../../noclip/Common/Compression/Yaz0.js';
@@ -64,6 +65,17 @@ export interface HudFrame {
     sim: any;
     /** a demo camera at QF q (the Shine get demo) */
     demoAt?: (q: number) => boolean;
+}
+
+/** TWaterGun's tank after a movement tick (player/watergun.ts's WaterGunRecord, in World.waterGunLog) */
+interface WaterGunRecord { t: number; water: number; max: number; nozzle: number; fludd: boolean; }
+/** the simulated player's tank at the stage's tick t (the latest record at or before it), or null */
+function simWaterGunAt(w: any, t: number): WaterGunRecord | null {
+    const L: WaterGunRecord[] | null | undefined = w && w.waterGunLog;
+    if (!L || !L.length || L[0].t > t) return null;
+    let lo = 0, hi = L.length - 1;
+    while (lo < hi) { const k = (lo + hi + 1) >> 1; if (L[k].t <= t) lo = k; else hi = k - 1; }
+    return L[lo];
 }
 
 interface Seg { key: string; q0: number; qIn: number; area: number; episode: number; intro: boolean; }
@@ -243,10 +255,16 @@ export class GameHud {
         if (pos && s4 && !s4.gap && Math.hypot(pos[0] - s4.x, pos[1] - s4.y, pos[2] - s4.z) < 0.05) st.still++; else st.still = 0;
         // air (TMario: mAirDec under water, mAirInc out of it)
         if (underWater) st.air = Math.max(0, st.air - this.airDec); else st.air = Math.min(9 - 1e-5, st.air + this.airInc);
-        // FLUDD's tank
+        // FLUDD's tank: the simulated player's TWaterGun when the sim runs one (its log, player/watergun.ts),
+        // else estimated from the ghost's FLUDD record
         const fl = api.ghostFluddAt(d, q);
-        const fludd = !!(fl && fl.present);
-        if (fludd) {
+        const wg = w ? simWaterGunAt(w, Math.floor((q - seg.q0) / QF_PER_FRAME)) : null;
+        let fludd = !!(fl && fl.present);
+        if (wg) {
+            fludd = wg.fludd;
+            st.nozzle = wg.nozzle in this.nozzles ? wg.nozzle : 0;
+            st.water = wg.max > 0 ? Math.max(0, Math.min(1, wg.water / wg.max)) : 0;
+        } else if (fludd) {
             const n = fl.nozzle in this.nozzles ? fl.nozzle : 0;
             if (n !== st.nozzle) st.nozzle = n;   // (setAmountToRate: the fill carries over)
             const N = this.nozzles[n];
