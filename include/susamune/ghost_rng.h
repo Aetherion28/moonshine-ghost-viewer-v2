@@ -40,7 +40,8 @@
 #define SUSAMUNE_GHOST_RNG_FOREIGN_THREAD 0x04u /* some calls came from another thread */
 #define SUSAMUNE_GHOST_RNG_CONTROLS       0x08u /* an outcome control without OVERRIDE ops was on */
 #define SUSAMUNE_GHOST_RNG_NO_ACTORS      0x10u /* object tracking was unavailable */
-#define SUSAMUNE_GHOST_RNG_FLAGS          0x1Fu
+#define SUSAMUNE_GHOST_RNG_SEEDS_ONLY     0x20u /* only LOAD/SEED/SEGMENT: calls are not logged */
+#define SUSAMUNE_GHOST_RNG_FLAGS          0x3Fu
 
 /* Stream opcodes. */
 #define SUSAMUNE_GHOST_RNG_OP_RUN_MAX       0x7Fu /* 0x00-0x7F: op+1 calls, u8 caller, u8 actor ref */

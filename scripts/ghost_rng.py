@@ -30,7 +30,8 @@ LOST = 0x02
 FOREIGN_THREAD = 0x04
 CONTROLS = 0x08
 NO_ACTORS = 0x10
-FLAGS = 0x1F
+SEEDS_ONLY = 0x20
+FLAGS = 0x3F
 
 OP_RUN_MAX = 0x7F
 OP_FRAME = 0x80
@@ -260,7 +261,8 @@ def decode(data: bytes) -> Tape:
             tape.loads.append(load)
             if load.consistent is None:
                 pending = (load, lcg_skip(setup_seed, untaped))
-    if pending and seeded:
+    # A seeds-only tape has no calls, so its state is only known at a SEED.
+    if pending and seeded and not flags & SEEDS_ONLY:
         pending[0].consistent = pending[1] == state
     tape.frames = frame + 1
     return tape

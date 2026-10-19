@@ -184,6 +184,22 @@ class CodecTests(unittest.TestCase):
         self.assertTrue(load.consistent)
         self.assertIsNone(load.wait_rolls)
 
+    def test_seeds_only_tape(self):
+        # The minimal form: no calls, one LOAD per stage, the opening SEED.
+        setup = rng.lcg_skip(0xABCD, 4)
+        enc = rng.Encoder.__new__(rng.Encoder)
+        rng.Encoder.__init__(enc, 0)
+        enc.stream = bytearray()  # drop the constructor's SEED; LOAD comes first
+        enc.load(0xABCD, 4, setup, 9)
+        enc.stream += bytes([rng.OP_SEED]) + struct.pack(">I", rng.lcg_skip(setup, 9))
+        enc.load(0x1111, 0, 0x1111, 0)
+        enc.stream += bytes([rng.OP_SEGMENT, 1])
+        enc.flags = rng.SEEDS_ONLY
+        tape = rng.decode(enc.finish())
+        self.assertEqual(tape.calls, [])
+        self.assertEqual([(l.setup_seed, l.consistent) for l in tape.loads],
+                         [(setup, True), (0x1111, None)])
+
     def test_inconsistent_load_is_reported(self):
         enc = rng.Encoder(5)
         enc.frame(qf=0)
