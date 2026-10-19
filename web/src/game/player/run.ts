@@ -4,6 +4,7 @@
 import { fr, s16, JMASSin, JMASCos, matan, IConverge, FConverge } from '../math.js';
 import { MarioPhysics } from './physics.js';
 import { MsSqrtf } from './move.js';
+import { fmul, fadd, fsub, fdiv, fmadd, fnmsub, sqrtf } from './fmath.js';
 import { S, MF, A, bg } from './base.js';
 
 type JumpSlipRecord = { max: number; end: number; jump: number; c: number; d: number };
@@ -35,7 +36,7 @@ export abstract class MarioRun extends MarioPhysics {
         return !(-0x471C <= d && d <= 0x471C);
     }
     isRunningInWater() { return this.checkFlag(MF.IN_ANY_WATER) && this.mFloorPosition.z < this.pos.y + this.mRunParams.mSwimDepth; }
-    getRunningInWaterBrake() { return fr(1 - fr(this.mFloorPosition.z - this.pos.y) / this.mRunParams.mSwimDepth * (1 - this.mRunParams.mInWaterBrake)); }
+    getRunningInWaterBrake() { return fnmsub(fdiv(fsub(this.mFloorPosition.z, this.pos.y), this.mRunParams.mSwimDepth), fsub(1, this.mRunParams.mInWaterBrake), 1); }
     doRunningAnimation() {
         const R = this.mRunParams;
         let sp = this.mIntendedMag > this.mForwardVel ? this.mIntendedMag : this.mForwardVel;
@@ -89,65 +90,68 @@ export abstract class MarioRun extends MarioPhysics {
         if (bg.isUnk2(g)) return this.mSlipParams45.mStickSlideMult;
         return this.mSlipParamsNormal.mStickSlideMult;
     }
+    /** slideProcess (its float operations as the DOL has them) */
     slideProcess(acc: number, friction: number) {
         const g = this.mGroundPlane;
         const dirAng = matan(g.n[2], g.n[0]);
-        const mag = MsSqrtf(g.n[0] * g.n[0] + g.n[2] * g.n[2]);
+        const mag = MsSqrtf(fadd(fmul(g.n[0], g.n[0]), fmul(g.n[2], g.n[2])));
         const d = s16(this.mSlopeAngle - this.mFaceAngle.y);
         const [up, down] = this.getSlopeSlideAccele();
-        acc = fr(acc + (d > -0x4000 && d < 0x4000 ? up : down) * mag);
-        this.mSlideVelX = fr(fr(this.mSlideVelX + acc * JMASSin(dirAng)) * friction);
-        this.mSlideVelZ = fr(fr(this.mSlideVelZ + acc * JMASCos(dirAng)) * friction);
+        acc = fmadd(d > -0x4000 && d < 0x4000 ? up : down, mag, acc);
+        this.mSlideVelX = fmadd(acc, JMASSin(dirAng), this.mSlideVelX);
+        this.mSlideVelZ = fmadd(acc, JMASCos(dirAng), this.mSlideVelZ);
+        this.mSlideVelX = fmul(this.mSlideVelX, friction);
+        this.mSlideVelZ = fmul(this.mSlideVelZ, friction);
         this.unk9E = matan(this.mSlideVelZ, this.mSlideVelX);
         let turn = 0;
-        if (!(-0.1 < this.mSlideVelX && this.mSlideVelX < 0.1 && -0.1 < this.mSlideVelZ && this.mSlideVelZ < 0.1)) {
+        if (!(fr(-0.1) < this.mSlideVelX && this.mSlideVelX < fr(0.1) && fr(-0.1) < this.mSlideVelZ && this.mSlideVelZ < fr(0.1))) {
             turn = s16(this.mFaceAngle.y - this.unk9E);
-            const cs = this.getChangeAngleSpeed();
-            if (turn > 0 && turn <= 0x4000) { turn = Math.trunc(turn - cs); if (turn < 0) turn = 0; }
-            else if (turn > -0x4000 && turn < 0) { turn = Math.trunc(turn + cs); if (turn > 0) turn = 0; }
-            else if (turn > 0x4000 && turn < 0x8000) { turn = Math.trunc(turn + cs); if (turn > 0x8000) turn = 0x8000; }
-            else if (turn > -0x8000 && turn < -0x4000) { turn = Math.trunc(turn - cs); if (turn < -0x8000) turn = -0x8000; }
+            if (turn > 0 && turn <= 0x4000) { turn = Math.trunc(fsub(turn, this.getChangeAngleSpeed())); if (turn < 0) turn = 0; }
+            else if (turn > -0x4000 && turn < 0) { turn = Math.trunc(fadd(turn, this.getChangeAngleSpeed())); if (turn > 0) turn = 0; }
+            else if (turn > 0x4000 && turn < 0x8000) { turn = Math.trunc(fadd(turn, this.getChangeAngleSpeed())); if (turn > 0x8000) turn = 0x8000; }
+            else if (turn > -0x8000 && turn < -0x4000) { turn = Math.trunc(fsub(turn, this.getChangeAngleSpeed())); if (turn < -0x8000) turn = -0x8000; }
             this.mFaceAngle.y = s16(this.unk9E + turn);
         }
         this.mVel.x = this.mSlideVelX; this.mVel.y = 0; this.mVel.z = this.mSlideVelZ;
-        this.mForwardVel = MsSqrtf(this.mSlideVelX * this.mSlideVelX + this.mSlideVelZ * this.mSlideVelZ);
-        if (this.mForwardVel > 100) { this.mSlideVelX = fr(100 * this.mSlideVelX / this.mForwardVel); this.mSlideVelZ = fr(100 * this.mSlideVelZ / this.mForwardVel); }
-        if (turn < -0x4000 || turn > 0x4000) this.mForwardVel = fr(this.mForwardVel * -1);
+        this.mForwardVel = MsSqrtf(fadd(fmul(this.mSlideVelX, this.mSlideVelX), fmul(this.mSlideVelZ, this.mSlideVelZ)));
+        if (this.mForwardVel > 100) {
+            this.mSlideVelX = fdiv(fmul(100, this.mSlideVelX), this.mForwardVel);
+            this.mSlideVelZ = fdiv(fmul(100, this.mSlideVelZ), this.mForwardVel);
+        }
+        if (turn < -0x4000 || turn > 0x4000) this.mForwardVel = fmul(this.mForwardVel, -1);
     }
+    /** doSliding (the DOL's float operations; its in-water friction test reads mStatusState's bits 0x30000, never set) */
     doSliding(stop: number) {
         let stopped = false;
         let cs = JMASCos(s16(this.mIntendedYaw - this.unk9E));
         const sn = JMASSin(s16(this.mIntendedYaw - this.unk9E));
-        if (cs < 0 && this.mForwardVel >= 0) cs = fr(cs * (0.01 * (0.5 * this.mForwardVel) + 0.5));
+        if (cs < 0 && this.mForwardVel >= 0) cs = fmul(cs, fmadd(fr(0.01), fmul(0.5, this.mForwardVel), 0.5));
         let fric: number;
         const g = this.mGroundPlane;
         if (this.mStatus === S.OIL_SLIP) fric = this.mSlipParamsOil.mSlipFriction;
         else if (this.isForceSlip()) fric = this.mSlipParamsAll.mSlipFriction;
         else if (bg.isSlider(g)) fric = this.mSlipParamsAllSlider.mSlipFriction;
         else if (bg.isUnk2(g)) fric = this.mSlipParams45.mSlipFriction;
-        else if (bg.isWetGround(g)) fric = g.n[1] > 0.99 ? this.mSlipParamsWaterGround.mSlipFriction : this.mSlipParamsWaterSlope.mSlipFriction;
+        else if (bg.isWetGround(g)) fric = g.n[1] > fr(0.99) ? this.mSlipParamsWaterGround.mSlipFriction : this.mSlipParamsWaterSlope.mSlipFriction;
         else if (this.onYoshi()) fric = this.mSlipParamsYoshi.mSlipFriction;
         else {
             fric = this.mSlipParamsNormal.mSlipFriction;
-            if (this.mStatus === S.CATCH) {
-                if (this.mStatusState === 1) fric = this.mDeParams.mWasOnWaterSlip;
-                if (this.checkFlag(MF.IN_ANY_WATER)) fric = this.mDeParams.mInWaterSlip;
-            }
+            if (this.mStatus === S.CATCH && this.mStatusState === 1) fric = this.mDeParams.mWasOnWaterSlip;
         }
-        const k = fr(this.mIntendedMag / 32);
-        const mult = fr(0.02 * (k * cs) + fric);
-        const old = MsSqrtf(this.mSlideVelX * this.mSlideVelX + this.mSlideVelZ * this.mSlideVelZ);
-        this.mSlideVelX = fr(this.mSlideVelX + sn * (this.mSlideVelZ * k) * this.getSlideStickMult());
-        this.mSlideVelZ = fr(-(sn * (this.mSlideVelX * k) * this.getSlideStickMult() - this.mSlideVelZ));
-        const nm = MsSqrtf(this.mSlideVelX * this.mSlideVelX + this.mSlideVelZ * this.mSlideVelZ);
-        if (old > 0 && nm > 0) { this.mSlideVelX = fr(this.mSlideVelX * old / nm); this.mSlideVelZ = fr(this.mSlideVelZ * old / nm); }
+        const old = MsSqrtf(fadd(fmul(this.mSlideVelX, this.mSlideVelX), fmul(this.mSlideVelZ, this.mSlideVelZ)));
+        const mult = fmadd(fr(0.02), fmul(fmul(this.mIntendedMag, 0.03125), cs), fric);
+        const sm = this.getSlideStickMult();
+        this.mSlideVelX = fmadd(fmul(sn, fmul(this.mSlideVelZ, fmul(this.mIntendedMag, 0.03125))), sm, this.mSlideVelX);
+        this.mSlideVelZ = fnmsub(fmul(sn, fmul(this.mSlideVelX, fmul(this.mIntendedMag, 0.03125))), sm, this.mSlideVelZ);
+        const nm = MsSqrtf(fadd(fmul(this.mSlideVelX, this.mSlideVelX), fmul(this.mSlideVelZ, this.mSlideVelZ)));
+        if (old > 0 && nm > 0) { this.mSlideVelX = fdiv(fmul(this.mSlideVelX, old), nm); this.mSlideVelZ = fdiv(fmul(this.mSlideVelZ, old), nm); }
         this.slideProcess(0, mult);
-        if (!bg.isUnk1(g) && !bg.isSlider(g) && this.mForwardVel * this.mForwardVel < stop * stop) { this.setPlayerVelocity(0); stopped = true; this.mInput &= ~8; }
+        if (!bg.isUnk1(g) && !bg.isSlider(g) && fmul(this.mForwardVel, this.mForwardVel) < fmul(stop, stop)) { this.setPlayerVelocity(0); stopped = true; this.mInput &= ~8; }
         return stopped;
     }
     slopeProcess() {
         const g = this.mGroundPlane;
-        const mag = fr(Math.sqrt(g.n[0] * g.n[0] + g.n[2] * g.n[2]));
+        const mag = sqrtf(fmadd(g.n[2], g.n[2], fmul(g.n[0], g.n[0])));
         const d = s16(this.mSlopeAngle - this.mFaceAngle.y);
         const [up, down] = this.getSlopeNormalAccele();
         if (d > -0x4000 && d < 0x4000) this.mForwardVel = fr(this.mForwardVel + up * mag);
@@ -166,15 +170,17 @@ export abstract class MarioRun extends MarioPhysics {
     doRunning() {
         const R = this.mRunParams, D = this.mDeParams;
         let sp = this.mIntendedMag < R.mMaxSpeed ? this.mIntendedMag : R.mMaxSpeed;
-        if (this.mForwardVel <= 0) this.mForwardVel = fr(this.mForwardVel + R.mVelMinusBrake);
-        else if (this.mForwardVel <= sp) this.mForwardVel = fr(this.mForwardVel + (R.mAddBase - this.mForwardVel * R.mAddVelDiv));
-        else if (this.mGroundPlane.n[1] >= R.mDecStartNrmY) { this.mForwardVel = fr(this.mForwardVel - R.mDecBrake); this.mForwardVel = fr(this.mForwardVel - this.mYoshiParams.mDecBrake); }
+        if (this.onYoshi()) sp = fmul(sp, this.mYoshiParams.mRunYoshiMult);
+        if (this.mForwardVel <= 0) this.mForwardVel = fadd(this.mForwardVel, R.mVelMinusBrake);
+        else if (this.mForwardVel <= sp) this.mForwardVel = fadd(this.mForwardVel, fnmsub(this.mForwardVel, R.mAddVelDiv, R.mAddBase));
+        else if (this.mGroundPlane.n[1] >= R.mDecStartNrmY) { this.mForwardVel = fsub(this.mForwardVel, R.mDecBrake); this.mForwardVel = fsub(this.mForwardVel, this.mYoshiParams.mDecBrake); }
         if (this.mForwardVel < 0) this.mForwardVel = 0;
         let rot: number;
-        if (this.isUpperPumpingStyle()) { const b = D.mPumpingRotSpMin; rot = s16(fr(0.03125 * (this.mForwardVel * (D.mPumpingRotSpMax - b)) + b)); }
-        else { const b = D.mRunningRotSpMin; rot = s16(fr(0.03125 * (this.mForwardVel * (D.mRunningRotSpMax - b)) + b)); }
+        if (this.isUpperPumpingStyle()) { const b = D.mPumpingRotSpMin; rot = s16(fmadd(0.03125, fmul(this.mForwardVel, D.mPumpingRotSpMax - b), b)); }
+        else { const b = D.mRunningRotSpMin; rot = s16(fmadd(0.03125, fmul(this.mForwardVel, D.mRunningRotSpMax - b), b)); }
+        if (this.onYoshi()) rot = s16(fmul(rot, this.mYoshiParams.mRotYoshiMult));
         if (this.checkFlag(MF.FLUDD_EMITTING)) rot = R.mDashRotSp;
-        if (this.isRunningInWater()) this.mForwardVel = fr(this.mForwardVel * this.getRunningInWaterBrake());
+        if (this.isRunningInWater()) this.mForwardVel = fmul(this.mForwardVel, this.getRunningInWaterBrake());
         this.mFaceAngle.y = s16(this.mIntendedYaw - iconv(s16(this.mIntendedYaw - this.mFaceAngle.y), 0, rot, rot));
         this.slopeProcess();
     }

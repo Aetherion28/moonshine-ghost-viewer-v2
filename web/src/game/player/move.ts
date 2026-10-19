@@ -9,7 +9,8 @@ import { MarioBase, S, MF, A, bg, Bg, wallRecord } from './base.js';
 
 const sqrtf = (v: number) => fr(Math.sqrt(v));
 /** MsSqrtf */
-export const MsSqrtf = (v: number) => (v > 0 ? fr(Math.sqrt(v)) : 0);
+import { MsSqrtf } from './fmath.js';
+export { MsSqrtf };
 
 export abstract class MarioMove extends MarioBase {
     getJumpAccelControl() { return this.mStatus === S.WIRE_JUMP ? this.mWireParams.mWireJumpAccelControl : this.mJumpParams.mJumpAccelControl; }
@@ -78,7 +79,7 @@ export abstract class MarioMove extends MarioBase {
         if (this.isTouchedWallsAndMoveXZ(r)) {
             for (const w of r.results) {
                 if (w.actor && w.actor === this.unk2C0) { result = w; break; }
-                let d = fr(w.n[0] * p.x + w.n[1] * p.y + w.n[2] * p.z + w.d);
+                let d = fr(fr(w.n[2] * p.z + fr(w.n[0] * p.x + fr(w.n[1] * p.y))) + w.d);
                 if (d < 0) d = -d;
                 if (d < best) { result = w; best = d; }
             }

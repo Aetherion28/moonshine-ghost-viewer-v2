@@ -152,7 +152,7 @@ export class Stage {
             w.conductor.perform(CUE_MOVE);
             // the manager group: the wires
             if (w.mapWires) w.mapWires.perform(CUE_MOVE);
-            if (P) P.testPerform(CUE_MOVE);
+            if (P) { P.testPerform(CUE_MOVE); P.cameraTick((tick === 0 ? 1 : 0) | (last ? 2 : 0)); }
             else {
                 const m = w.mario as MarioProxy;
                 m.update(this.qf);

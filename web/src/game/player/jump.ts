@@ -4,6 +4,7 @@
 import { fr, s16, JMASSin, JMASCos, matan, FConverge } from '../math.js';
 import { HitActor, MSG } from '../engine.js';
 import { MarioRun } from './run.js';
+import { fmul, fadd, fsub, fmadd } from './fmath.js';
 import { S, MF, A, bg } from './base.js';
 
 /** s16 += f32 (the game converts the sum) */
@@ -35,22 +36,26 @@ export abstract class MarioJump extends MarioRun {
         if (this.mVel.y < 0) { this.attackRadius = this.mDeParams.mTrampleRadius; this.attackHeight = this.mDeParams.mAttackHeight; }
         else { this.attackRadius = this.mDeParams.mPushupRadius; this.attackHeight = this.mDeParams.mPushupHeight; }
     }
+    /** canSpray for doJumping's rocket boost (no water gun: false) */
+    gunCanSpray() { return false; }
+    /** doJumping (the DOL's float operations) */
     doJumping() {
         let side = 0;
-        this.mForwardVel = fr(this.mForwardVel * this.mJumpParams.mJumpSpeedBrake);
+        this.mForwardVel = fmul(this.mForwardVel, this.mJumpParams.mJumpSpeedBrake);
         if (this.mInput & 1) {
             let mag = this.mIntendedMag;
             const d = s16(this.mIntendedYaw - this.mFaceAngle.y);
+            if (this.mStatus === S.ROCKET && this.checkFlag(MF.HAS_FLUDD) && this.gunCanSpray()) mag = fmul(2.5, this.mIntendedMag);
             if (this.mStatus === S.WALL_JUMP && this.mVel.y > 0 && (d < -0x4000 || d > 0x4000)) mag = 0;
-            this.mForwardVel = fr(this.mForwardVel + mag * JMASCos(d) * this.getJumpAccelControl());
-            side = fr(mag * JMASSin(d) * this.getJumpSlideControl());
+            this.mForwardVel = fmadd(this.getJumpAccelControl(), fmul(mag, JMASCos(d)), this.mForwardVel);
+            side = fmul(fmul(mag, JMASSin(d)), this.getJumpSlideControl());
         }
-        if (this.mForwardVel > 32) this.mForwardVel = fr(this.mForwardVel - 0.2);
-        if (this.mForwardVel < -16) this.mForwardVel = fr(this.mForwardVel + 0.4);
-        this.mSlideVelX = fr(this.mForwardVel * JMASSin(this.mFaceAngle.y));
-        this.mSlideVelZ = fr(this.mForwardVel * JMASCos(this.mFaceAngle.y));
-        this.mSlideVelX = fr(this.mSlideVelX + side * JMASSin(this.mFaceAngle.y + 0x4000));
-        this.mSlideVelZ = fr(this.mSlideVelZ + side * JMASCos(this.mFaceAngle.y + 0x4000));
+        if (this.mForwardVel > 32) this.mForwardVel = fsub(this.mForwardVel, fr(0.2));
+        if (this.mForwardVel < -16) this.mForwardVel = fadd(this.mForwardVel, fr(0.4));
+        this.mSlideVelX = fmul(this.mForwardVel, JMASSin(this.mFaceAngle.y));
+        this.mSlideVelZ = fmul(this.mForwardVel, JMASCos(this.mFaceAngle.y));
+        this.mSlideVelX = fmadd(side, JMASSin(this.mFaceAngle.y + 0x4000), this.mSlideVelX);
+        this.mSlideVelZ = fmadd(side, JMASCos(this.mFaceAngle.y + 0x4000), this.mSlideVelZ);
         this.mVel.x = this.mSlideVelX; this.mVel.z = this.mSlideVelZ;
         this.setJumpingAttackArea();
     }

@@ -113,3 +113,18 @@ export const s16f = (v: number) => (Math.trunc(v) << 16) >> 16;
 export const s32f = (v: number) => (v !== v ? -0x80000000 : v >= 2147483647 ? 2147483647 : v <= -2147483648 ? -2147483648 : Math.trunc(v));
 /** (u8)(f32): fctiwz, then the low byte */
 export const u8f = (v: number) => s32f(v) & 0xFF;
+
+// ---------------------------------------------------------------- JGeometry (single-precision Newton steps)
+/** JGeometry::TUtil<f32>::inv_sqrt: frsqrte rounded to f32, one Newton step in f32 (fmuls, fnmsubs); x itself for x <= 0 */
+export function invSqrtJ(x: number): number {
+    if (x <= 0) return x;
+    const e = fr(frsqrte(x));
+    return fmul(fmul(0.5, e), fnmsub(x, fmul(e, e), 3));
+}
+/** TVec3<f32>::length: (x*x + y*y) + z*z, times its inv_sqrt step */
+export function lengthJ(x: number, y: number, z: number): number {
+    const sq = fadd(fadd(fmul(x, x), fmul(y, y)), fmul(z, z));
+    if (!(sq > 0)) return 0;
+    const e = fr(frsqrte(sq));
+    return fmul(sq, fmul(fmul(0.5, e), fnmsub(sq, fmul(e, e), 3)));
+}

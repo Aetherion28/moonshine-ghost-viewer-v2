@@ -24,6 +24,7 @@ import type { MarioTrack, MarioSample } from '../mario.js';
 import type { StickCamera, SimCamera } from '../camera/types.js';
 import { fr, fmul, fadd, fsub, fdiv, fmadd, MsSqrtf, sqrtf, s16f, u8f } from './fmath.js';
 import { TWaterGun, marioGunExec } from './watergun.js';
+import { makePlayerCamera, PolarSubCamera } from '../camera/index.js';
 
 const T = AT as Record<string, number>;
 const types = (...names: string[]) => new Set(names.map((n) => T[n]).filter((v) => v !== undefined));
@@ -86,6 +87,8 @@ export class PlayerMario extends TMarioSim {
     mWaterGun: PlayerWaterGun | null = null;
     /** gpCamera, as the stick reads it */
     camera: StickCamera;
+    /** the simulated game camera (CPolarSubCamera), updated after him every tick */
+    simCamera: SimCamera | null = null;
     /** true while the stick's camera is a stand-in (Mario's back), not the game's */
     cameraApprox = true;
     mCoinCount = 0; unk144 = 0; unk148: HitActor | null = null; unk298 = 100;
@@ -178,10 +181,13 @@ export class PlayerMario extends TMarioSim {
     }
     loadAfter() {
         if (this.checkFlag(MF.HAS_FLUDD) && this.mWaterGun && this.mWaterGun.initInLoadAfter) this.mWaterGun.initInLoadAfter();
-        if (playerHooks.makeCamera) {
-            try { const c = playerHooks.makeCamera(this.world, this); this.camera = c; this.cameraApprox = false; }
-            catch (e) { console.warn('[player] camera', e); }
-        }
+        try {
+            const c = playerHooks.makeCamera ? playerHooks.makeCamera(this.world, this) : makePlayerCamera(this.world, this as any);
+            this.simCamera = c; this.camera = c; this.cameraApprox = false;
+            const G = this.mWaterGun as any;
+            if (G && G.cameraHook && (c as any).isLButtonCamera) G.cameraHook = { isLButtonCamera: () => (c as any).isLButtonCamera(), isJetCoaster1stCamera: () => false, pitch: () => ((c as any).unk256 | 0) };
+            if ((c as any).setWaterGun && G) (c as any).setWaterGun(G);
+        } catch (e) { console.warn('[player] camera', e); }
     }
     /** Use this camera for the stick (a recorded one, the simulated one). */
     setStickCamera(c: StickCamera, approximate: boolean) { this.camera = c; this.cameraApprox = approximate; }
@@ -478,6 +484,7 @@ export class PlayerMario extends TMarioSim {
 
     // ---------------------------------------------------------------- MarioJump.cpp: the rocket and hover nozzles
     hoverHeight() { const W = this.mWaterGun && this.mWaterGun.mWatergunParams; return W ? (W.mHHoverHeight ?? W.mHoverHeight ?? 160) : 160; }
+    gunCanSpray() { return this.canSprayGun(); }
     canSprayGun() { const G = this.mWaterGun; return !!G && (G.canSpray ? G.canSpray() : G.isEmitting()); }
     rocketCheck() {
         let ok = true;
@@ -1210,6 +1217,8 @@ export class PlayerMario extends TMarioSim {
     padRead(p: PadStatus | null) { this.mGamePad.read(p); this.mGamePad.updateMeaning(); }
     /** the other three ticks of a frame: resetButtons, updateMeaning */
     padTick() { this.mGamePad.resetButtons(); this.mGamePad.updateMeaning(); }
+    /** the camera group after the player group: CPolarSubCamera::perform (tick: 1 the frame's first, 2 its last) */
+    cameraTick(tick: number) { const C = this.simCamera as any; if (C && C.update) C.update(this, this.mGamePad, tick); }
 
     // ---------------------------------------------------------------- drift against the ghost
     /** the stage tick drift checks start after (the end of the opening demo) */
@@ -1312,11 +1321,14 @@ export class PlayerDirector {
         // currentStateFinalize
         if (prev === DIR.DEMO) {
             this.mario.mGamePad.offFlag(PAD_FLAG.MENU_INPUT);
-            // gpCamera->endDemoCamera (endReproduceDemoCamera_: onNeutralMarioKey, the stick eased in), the open wipe
-            this.mario.mGamePad.onNeutralMarioKey();
+            // gpCamera->endDemoCamera (endReproduceDemoCamera_: onNeutralMarioKey, the stick eased in; the
+            // simulated camera does it itself), the open wipe
+            if (!this.mario.simCamera) this.mario.mGamePad.onNeutralMarioKey();
             this.wipeDoneTick = tick + OPEN_WIPE_TICKS;
         }
         this.state = next;
+        const C = this.mario.simCamera as any;
+        if (C && C.setDirectorState) C.setDirectorState(next);
         // nextStateInitialize
         switch (next) {
             case DIR.DEMO: this.mario.mGamePad.onFlag(PAD_FLAG.MENU_INPUT); break;

@@ -4,6 +4,7 @@
 import { V3, fr, s16, JMASSin, JMASCos, matan } from '../math.js';
 import { HitActor, MSG } from '../engine.js';
 import { MarioMove, MsSqrtf } from './move.js';
+import { fmul, fadd, fsub, fdiv, fmadd, sqrtf, lengthJ, invSqrtJ } from './fmath.js';
 import { S, MF, A, bg, Bg, wallRecord } from './base.js';
 
 type P3 = { x: number; y: number; z: number };
@@ -14,27 +15,33 @@ export abstract class MarioPhysics extends MarioMove {
         if (back !== 0) this.setPlayerVelocity(-this.mForwardVel);
         else this.mFaceAngle.y = s16(this.mFaceAngle.y + 0x8000);
     }
+    /** keepDistance (the DOL's float operations) */
     keepDistance(t: V3, r2: number, r3: number) {
-        const dz = fr(this.pos.z - t.z);
-        let dx = fr(this.pos.x - t.x);
-        const thresh = fr(r3 + fr(r2 + this.unk15C));
-        let dist = MsSqrtf(dx * dx + dz * dz);
+        const dz = fsub(this.pos.z, t.z);
+        let dx = fsub(this.pos.x, t.x);
+        const thresh = fadd(r3, fadd(r2, this.unk15C));
+        let dist = MsSqrtf(fmadd(dx, dx, fmul(dz, dz)));
         if (dist === 0) dist = dx = 1;
         if (!(dist < thresh)) return;
         if (!this.onYoshi()) {
             let burst = this.mForwardVel > this.mDeParams.mClashSpeed;
-            if (fr(Math.sqrt(this.mVel.x * this.mVel.x + this.mVel.z * this.mVel.z)) > this.mDeParams.mClashSpeed) burst = true;
+            if (sqrtf(fadd(fmul(this.mVel.x, this.mVel.x), fmul(this.mVel.z, this.mVel.z))) > this.mDeParams.mClashSpeed) burst = true;
             if (burst) { this.changePlayerDropping(S.JUMP_SHORT_BACK_DOWN, 0); return; }
         }
         const ang = dist === 0 ? this.mFaceAngle.y : matan(dz, dx);
-        const np = { x: fr(t.x + thresh * JMASSin(ang)), y: this.pos.y, z: fr(t.z + thresh * JMASCos(ang)) };
+        const np = { x: fmadd(thresh, JMASSin(ang), t.x), y: this.pos.y, z: fmadd(thresh, JMASCos(ang), t.z) };
         this.checkWallPlane(np, 60, this.unk15C);
-        const [, g, legal] = this.checkGroundPlane(np.x, np.y, np.z);
+        const [, , legal] = this.checkGroundPlane(np.x, np.y, np.z);
         if (!legal) return;
-        const d = new V3(np.x - this.pos.x, np.y - this.pos.y, np.z - this.pos.z);
-        let step = fr(d.length());
-        if (step > 0) { if (50 < step) step = 50; d.normalize(); this.pos.set(fr(this.pos.x + d.x * step), fr(this.pos.y + d.y * step), fr(this.pos.z + d.z * step)); }
-        void g;
+        let ddx = fsub(np.x, this.pos.x), ddy = fsub(np.y, this.pos.y), ddz = fsub(np.z, this.pos.z);
+        let step = lengthJ(ddx, ddy, ddz);
+        if (step > 0) {
+            if (50 < step) step = 50;
+            const sq = fadd(fadd(fmul(ddx, ddx), fmul(ddy, ddy)), fmul(ddz, ddz));
+            if (sq <= 3.814697265625e-06) { ddx = ddy = ddz = 0; }
+            else { const k = fmul(1, invSqrtJ(sq)); ddx = fmul(ddx, k); ddy = fmul(ddy, k); ddz = fmul(ddz, k); }
+            this.pos.set(fadd(this.pos.x, fmul(ddx, step)), fadd(this.pos.y, fmul(ddy, step)), fadd(this.pos.z, fmul(ddz, step)));
+        }
     }
     keepDistanceActor(a: HitActor, r: number) { this.keepDistance(a.pos, a.damageRadius, r); }
     checkDescent() {
@@ -67,9 +74,9 @@ export abstract class MarioPhysics extends MarioMove {
         const [ry] = this.checkRoof(v.x, fr(this.pos.y + 80), v.z);
         this.mWallPlane = wall;
         if (g.isIllegal()) return 2;
-        if (v.y + 160 >= ry) return 2;
-        if (v.y > fy + 100) { this.pos.set(v.x, v.y, v.z); this.mGroundPlane = g; this.mFloorPosition.y = fy; return 0; }
-        if (Math.abs(this.pos.y - fy) > 100000) this.pos.set(this.mPrevPosition);
+        if (fadd(160, v.y) >= ry) return 2;
+        if (v.y > fadd(100, fy)) { this.pos.set(v.x, v.y, v.z); this.mGroundPlane = g; this.mFloorPosition.y = fy; return 0; }
+        if (Math.abs(fsub(this.pos.y, fy)) > 100000) this.pos.set(this.mPrevPosition);
         else { this.pos.set(v.x, fy, v.z); this.mGroundPlane = g; this.mFloorPosition.y = fy; }
         if (wall && !wall.isMarioThrough()) {
             const d = s16(matan(wall.n[2], wall.n[0]) - this.mFaceAngle.y);
@@ -186,9 +193,9 @@ export abstract class MarioPhysics extends MarioMove {
     }
     jumpProcess(flags: number) {
         let result = 0;
-        const sp = fr(Math.sqrt(this.mVel.x * this.mVel.x + this.mVel.z * this.mVel.z));
+        const sp = sqrtf(fadd(fmul(this.mVel.x, this.mVel.x), fmul(this.mVel.z, this.mVel.z)));
         const max = this.mJumpParams.mJumpingMax;
-        if (sp > max) { this.mVel.x = fr(this.mVel.x * fr(max / sp)); this.mVel.z = fr(this.mVel.z * fr(max / sp)); }
+        if (sp > max) { this.mVel.x = fmul(this.mVel.x, fdiv(max, sp)); this.mVel.z = fmul(this.mVel.z, fdiv(max, sp)); }
         const next = { x: fr(this.pos.x + 0.25 * this.mVel.x), y: fr(this.pos.y + 0.25 * this.mVel.y), z: fr(this.pos.z + 0.25 * this.mVel.z) };
         const r = this.checkGroundAtJumping(next, flags);
         if (r !== 0) result = r;
