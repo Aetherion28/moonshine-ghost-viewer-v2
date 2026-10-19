@@ -155,6 +155,8 @@ export class FireWanwanTailNode extends LiveActor {
     }
     /** the link's TEVREG0 (the tail's colour, GXColorS10) */
     get tevColor0() { return this.owner.tail ? this.owner.tail.unkBC.cur : cBodyColorOnFire; }
+    /** (its material 0: SMS_InitPacket_OneTevColor(model, 0, GX_TEVREG0, ...)) */
+    tevColorMaterialIndex = 0;
     setBarAnmMtx(m: Mtx) { this.barMtx.set(m); }
     performNode(cue: number, p: V3, dir: V3) {
         if (cue & CUE_CALC_ANIM) {

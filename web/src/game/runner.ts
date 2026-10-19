@@ -170,7 +170,8 @@ export class SimRunner {
                 const s = A.ghostSampleAt(g, t);
                 if (!s || s.gap) return null;
                 const a = A.ghostAnimAt(g, t), f = A.ghostFluddAt(g, t);
-                return { x: s.x, y: s.y, z: s.z, yaw: s.yaw, anim: a.id, phase: a.phase / 4096, yoshi: !!a.yoshi, fludd: f && f.present ? f : null };
+                const h = g.held ? g.held[s.i] : 0, att = h && h !== 15 && g.attachments ? g.attachments[h - 1] || null : null;
+                return { x: s.x, y: s.y, z: s.z, yaw: s.yaw, anim: a.id, phase: a.phase / 4096, yoshi: !!a.yoshi, fludd: f && f.present ? f : null, held: att };
             },
         };
     }

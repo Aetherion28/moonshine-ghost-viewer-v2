@@ -6,7 +6,7 @@
 
 import { V3 } from './math.js';
 import { AT } from './actortypes.js';
-import { HitActor, TakeActor, HC, MSG, World, LiveActor } from './engine.js';
+import { HitActor, TakeActor, HC, MSG, World, LiveActor, calcKeyCode } from './engine.js';
 import type { BGCheckData } from './collision.js';
 
 /** The ghost's samples at a QF (the viewer's ghostSampleAt, plus FLUDD from the inputs). */
@@ -20,6 +20,8 @@ export interface MarioSample {
     yoshi: boolean;
     /** FLUDD this tick: spraying (mode bit 0x10), nozzle (TWaterGun: 0 spray, 1 rocket, 4 hover, 5 turbo...), power, emit offset and direction. */
     fludd: { spraying: boolean; nozzle: number; power: number; offset: [number, number, number]; yaw: number; pitch: number } | null;
+    /** what he holds (the ghost's attachment: retail actor type and name key), null for nothing or an unknown actor */
+    held?: { objectId: number; nameKey: number } | null;
 }
 export interface MarioTrack { at(qf: number): MarioSample | null; }
 
@@ -72,6 +74,7 @@ export class MarioProxy extends TakeActor {
         this.onYoshi = s.yoshi;
         this.fludd = s.fludd;
         this.emitted = !!(s.fludd && s.fludd.spraying && s.fludd.power > 0);
+        this.syncHeld(s.held || null);
         const [h, d] = this.w.checkGround(s.x, s.y + 100, s.z);
         this.groundPlane = d; this.groundHeight = h;
         const air = s.y > h + 4;
@@ -92,6 +95,36 @@ export class MarioProxy extends TakeActor {
     }
 
     receiveMessage(_sender: HitActor, _msg: number) { return true; }
+
+    // ---------------------------------------------------------------- what he holds
+    /** The take actor the ghost's attachment names: its actor type and name key (calcKeyCode). */
+    private findTakeActor(want: { objectId: number; nameKey: number }): TakeActor | null {
+        let best: TakeActor | null = null, bestD = Infinity;
+        for (const g of this.w.groups) if (g) for (const a of g) {
+            if (!(a instanceof TakeActor) || a === this) continue;
+            if (a.actorType !== want.objectId) continue;
+            if (!a.keyCode) a.keyCode = calcKeyCode(a.name);
+            if ((a.keyCode & 0xffff) !== want.nameKey) continue;
+            const d = Math.hypot(a.pos.x - this.pos.x, a.pos.y - this.pos.y, a.pos.z - this.pos.z);
+            if (d < bestD) { bestD = d; best = a; }
+        }
+        return best;
+    }
+    /**
+     * TMario's mHeldObject, from the ghost: TAKE when he picks something up (TMario::checkCollision's
+     * take), DETACH when he lets go, and each tick his position as the move request
+     * (TMario::pulling: mHeldObject->moveRequest(pos); the ghost's position is where he ended up).
+     */
+    private syncHeld(want: { objectId: number; nameKey: number } | null) {
+        const target = want ? (this.held && this.held.actorType === want.objectId ? this.held : this.findTakeActor(want)) : null;
+        if (target !== this.held) {
+            if (this.held) { const h = this.held; this.held = null; h.receiveMessage(this, MSG.DETACH); }
+            if (target && target.receiveMessage(this, MSG.TAKE)) this.held = target;
+        }
+        if (this.held) { const h = this.held as any; if (h.moveRequest) h.moveRequest(this.pos); }
+    }
+    /** TMario::moveRequest: the ghost already says where he is. */
+    moveRequest(_p: unknown) { return true; }
 
     // ---------------------------------------------------------------- TMario::checkCollision
     private trampleExec(a: HitActor) {

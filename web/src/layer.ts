@@ -7,7 +7,7 @@
 // under the viewer's. The viewer then draws only what the game models can't (water, particles,
 // wires, overlays), depth-tested against its own copies of the stage and objects.
 
-import { mat4 } from 'gl-matrix';
+import { mat4, ReadonlyMat4 } from 'gl-matrix';
 import ArrayBufferSlice from '../noclip/ArrayBufferSlice.js';
 import AnimationController from '../noclip/AnimationController.js';
 import { Camera } from '../noclip/Camera.js';
@@ -529,8 +529,10 @@ export class GameLayer {
             const b = o.userData && o.userData.base;
             if (!b || !o.userData.type || !CLASSES.has(o.userData.type)) continue;
             const k = o.userData.type + '|' + b.p.map((v: number) => v.toFixed(1)).join(',');
-            if (st && this.simPlaces.has(k)) { o.visible = false; o.userData.simHidden = true; }
-            else if (o.userData.simHidden) { o.visible = true; o.userData.simHidden = false; }
+            // (the viewer's Chain Chomp keeps its stake and chain links as separate nodes)
+            const bw = o.userData.bw, parts: any[] = bw ? [bw.pkNode, ...(bw.links || [])].filter(Boolean) : [];
+            if (st && this.simPlaces.has(k)) { o.visible = false; o.userData.simHidden = true; for (const p of parts) p.visible = false; }
+            else if (o.userData.simHidden) { o.visible = true; o.userData.simHidden = false; for (const p of parts) p.visible = true; }
         }
         // the game's models
         const seen = new Set<LiveActor>();
@@ -549,8 +551,15 @@ export class GameLayer {
                 (m as any).model = a.mactor!.model; (m as any).mactor = a.mactor;
                 const mm = m;
                 // TPakkun's root joints swell with the water in it (PakkunRootCallback / 2)
-                inst.jointMatrixCalcCallback = (dst: mat4, _md: any, j: number) => {
+                inst.jointMatrixCalcCallback = (dst: mat4, _md: any, j: number, parent: ReadonlyMat4) => {
                     // the game's own joint calc (TBossPakkunMtxCalc: motion blend, belly, head), worked out by the sim
+                    // TFireWanwanTailNode::setBarAnmMtx: tail_null1's matrix set outright (the next link's place)
+                    const bar = (a as any).barMtx as number[] | undefined;
+                    if (bar && _md.bmd.jnt1.joints[j] && _md.bmd.jnt1.joints[j].name === 'tail_null1') {
+                        const w = mat4.fromValues(bar[0], bar[4], bar[8], 0, bar[1], bar[5], bar[9], 0, bar[2], bar[6], bar[10], 0, bar[3], bar[7], bar[11], 1);
+                        const inv = mat4.invert(mat4.create(), parent);
+                        if (inv) { mat4.mul(dst, inv, w); return; }
+                    }
                     const L = (a as any).locals as mat4[] | undefined;
                     if (L && L[j] && (a as any).mactor === (mm as any).mactor) { mat4.copy(dst, L[j]); return; }
                     const sc = (a as any).rootScale ? (a as any).rootScale() : 1;
@@ -578,6 +587,14 @@ export class GameLayer {
                     mi.setColorOverride(ColorKind.K0, k);
                     if (mi.name === '_mat_body' && base) mi.setColorOverride(ColorKind.C0, { r: base[0] / 255, g: base[1] / 255, b: base[2] / 255, a: base[3] / 255 });
                 }
+            }
+            // TEVREG0 the game code sets (GXColorS10): the Fire Chomps' body and tail colour
+            const tc = (a as any).tevColor0 as number[] | undefined;
+            if (tc) {
+                // (a material by name, else by index: SMS_InitPacket_OneTevColor's material)
+                const only = (a as any).tevColorMaterial as string | undefined, idx = ((a as any).tevColorMaterialIndex as number | undefined) ?? 0;
+                const c = { r: tc[0] / 255, g: tc[1] / 255, b: tc[2] / 255, a: tc[3] / 255 };
+                inst.materialInstances.forEach((mi, i) => { if (only ? mi.name === only : i === idx) mi.setColorOverride(ColorKind.C0, c); });
             }
             const name = a.mactor!.bckName();
             if (name !== m.bck) {
