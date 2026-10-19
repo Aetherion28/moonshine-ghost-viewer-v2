@@ -8224,6 +8224,44 @@ void main() {
     window.addEventListener('pointerdown', wake, true);
     window.addEventListener('keydown', wake, true);
   } else { $('optMusic').disabled = true; $('optSfx').disabled = true; }
+  // Mario's animation changes between the last audio frame and t, from the ghost's samples (what
+  // the audio's voice lines follow: from → to, and whether Mario is going up there)
+  let voiceLast = { g: null, t: -1 };
+  function ghostMarioChanges(g, d, t) {
+    const out = [], t0 = voiceLast.g === g ? voiceLast.t : -1;
+    voiceLast = { g, t };
+    if (t0 < 0 || t <= t0 || t - t0 > 60) return out;
+    const { qf, anim, yoshi, pos, segIndex } = d, n = qf.length;
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (qf[mid] <= t0) lo = mid + 1; else hi = mid; }
+    for (let i = Math.max(1, lo); i < n && qf[i] <= t; i++) {
+      if (qf[i] <= t0 || anim[i] === anim[i - 1] || yoshi[i] || yoshi[i - 1] || segIndex[i] !== segIndex[i - 1]) continue;
+      const j = Math.min(n - 1, i + 2), k = Math.max(0, i - 1);
+      // FLUDD as the change happens (spraying at it or the next sample)
+      let fludd = null;
+      for (const q of [qf[i], qf[Math.min(n - 1, i + 1)]]) { const w = ghostFluddAt(d, q); if (w && w.present) { fludd = { nozzle: w.nozzle, spraying: (fludd && fludd.spraying) || w.spraying }; } }
+      out.push({ t: qf[i], from: anim[i - 1], to: anim[i], rising: segIndex[j] === segIndex[i] && pos[j * 3 + 1] - pos[k * 3 + 1] > 8, fludd });
+    }
+    return out;
+  }
+  // JALCalc::getRandom_0_1 for startMarioVoice: the ghost's RNG tape rolls at its call sites when
+  // the tape has them (MSound::startMarioVoice, JP 0x8017CF44..0x8017D610), else Math.random
+  const voiceRolls = new WeakMap();
+  function ghostVoiceRandom(d) {
+    let r = voiceRolls.get(d);
+    if (!r) {
+      const rolls = [];
+      if (d.rng && d.header && d.header.region === 'JP') for (const c of d.rng.callers) if (c >= 0x8017CF44 && c < 0x8017D610) rolls.push(...ghostRngRolls(d, { caller: c }));
+      rolls.sort((a, b) => a.qf - b.qf);
+      r = { rolls, next: 0 }; voiceRolls.set(d, r);
+    }
+    if (!r.rolls.length) return Math.random;
+    return () => {
+      while (r.next < r.rolls.length && r.rolls[r.next].qf < t - 8) r.next++;
+      if (r.next < r.rolls.length && r.rolls[r.next].qf <= t + 8) return r.rolls[r.next++].used / 32768;
+      return Math.random();
+    };
+  }
   function audioFrame() {
     if (!gameAudio) return;
     const g = ghosts.find((x) => x.data && x.marker && x.marker.parent);
@@ -8234,6 +8272,8 @@ void main() {
       if (seg) { f.area = seg.route.area; f.episode = seg.route.episode; f.segStart = seg.startQf - d.header.startQf; f.segKey = g.fileName + '|' + seg.startQf; }
       const a = ghostAnimAt(d, t);
       if (!a.yoshi) f.mario = { x: s.x, y: s.y, z: s.z, anim: a.id, phase: a.phase / 4096 };
+      f.marioChanges = ghostMarioChanges(g, d, t);
+      f.marioVoice = { random: ghostVoiceRandom(d) };
     }
     const st = gameLayer && gameLive && gameLayer.sim ? gameLayer.sim.stage : null;
     if (st && st.world) { f.events = st.world.events; f.eventsKey = st; f.tick = st.world.tickCount; }

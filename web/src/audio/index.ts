@@ -13,6 +13,8 @@ import ArrayBufferSlice from '../../noclip/ArrayBufferSlice.js';
 import { parseAAF, WaveSystem, SeqArchive } from './formats.js';
 import { stageBgm } from './system.js';
 import { ANIME_DATA, ANIME_FILES } from '../game/player/tables.js';
+import { marioVoiceChange, startMarioVoice, isAnimVoice, VoiceContext } from './voice.js';
+import { SE } from '../game/soundids.js';
 
 interface GameFS { has(p: string): boolean; read(p: string): Promise<ArrayBuffer>; list(): string[]; }
 export interface AudioFrame {
@@ -27,8 +29,18 @@ export interface AudioFrame {
     events: { t?: number; kind: string; data: any }[] | null; eventsKey: object | null;
     /** the simulated stage's tick now (events older than a few ticks are a catch-up's: silent) */
     tick?: number;
+    /**
+     * Mario's animation changes since the last frame (the ghost's samples between the two times):
+     * from → to at time t (QF), rising: Mario going up there; or a voice line by its startVoice ID.
+     * Absent: the changes are taken from frame to frame's mario.anim.
+     */
+    marioChanges?: ({ t: number; from: number; to: number; rising?: boolean; fludd?: VoiceContext['fludd'] } | { t: number; voice: number })[];
+    /** what Mario's voice lines need (health, JALCalc's random numbers) */
+    marioVoice?: VoiceContext;
 }
 const QF_PER_SECOND = 120000 / 1001;
+/** a game frame (30 per second) in QF */
+const QF_PER_FRAME = QF_PER_SECOND / 30;
 interface BasEntry { id: number; start: number; end: number; pitch: number; volume: number; }
 
 const store = { get(k: string, d: boolean) { try { const v = localStorage.getItem('ghostViewer.' + k); return v === null ? d : v === '1'; } catch { return d; } },
@@ -64,6 +76,9 @@ export class GameAudio {
     private evKey: object | null = null; private evDone = 0;
     private bas: (BasEntry[] | null)[] = []; private bckFrames: number[] = [];
     private marioPrev: { anim: number; frame: number } | null = null;
+    /** voice lines waiting for their game frame: [due QF, startVoice ID, the animation they need] */
+    private voicePending: { t: number; id: number; anim: number }[] = [];
+    private voiceAnim = -1;
     constructor(public base = '') { }
     setDisc(fs: GameFS) { this.fs = fs; this.ready = false; this.loading = null; this.bgmKey = ''; if (this.node) { this.node.disconnect(); this.node = null; } if (this.gestured) this.gesture(); }
     setMusic(on: boolean) { this.music = on; store.set('audioMusic', on); this.sendGain(); this.gesture(); }
@@ -187,6 +202,8 @@ export class GameAudio {
             }
             this.evDone = f.events.length;
         }
+        // ... Mario's voice ...
+        if (this.sfx) this.marioVoices(f, audible && !scrubbing);
         // ... and Mario's animation sounds
         if (f.mario && this.sfx) this.marioSounds(f, audible && !scrubbing);
         // held sounds not asked for in the last few game frames are let go
@@ -201,7 +218,7 @@ export class GameAudio {
      * clear is a held sound (JAIBasic::checkNextFrameSe lets it go unless asked for again each frame):
      * it starts once under its key and stops once no longer asked for. IDs with 0xC00 play out.
      */
-    private playAt(id: number, p: { x: number; y: number; z: number } | null, f: AudioFrame, vol = 1, pitch = 1, key = '') {
+    private heard(p: { x: number; y: number; z: number } | null, f: AudioFrame, vol = 1) {
         let pan = 0.5;
         if (p && f.camPos && f.view) {
             const V = f.view;
@@ -209,14 +226,54 @@ export class GameAudio {
             const d = Math.hypot(x, y, z);
             // JAIGlobalParameter: full volume within maxVolumeDistance (1000), none past distanceMax (5000)
             vol *= d <= 1000 ? 1 : d >= 5000 ? 0 : 1 - (d - 1000) / 4000;
-            if (vol <= 0) return;
             // panDistanceMax (500): sideways over the distance
             pan = 0.5 + 0.5 * Math.max(-1, Math.min(1, x / Math.max(500, d)));
         }
+        return { vol, pan };
+    }
+    private playAt(id: number, p: { x: number; y: number; z: number } | null, f: AudioFrame, vol0 = 1, pitch = 1, key = '') {
+        const { vol, pan } = this.heard(p, f, vol0);
+        if (vol <= 0) return;
         if (id & 0xC00) { this.post({ type: 'se', id, vol, pan, pitch }); return; }
         const k = key || 'id:' + id;
         this.held.set(k, f.t);
         this.post({ type: 'se', id, vol, pan, pitch, hold: k });
+    }
+    /**
+     * Mario's voice lines: each animation change through marioVoiceChange (voice.ts), said from
+     * Mario's position. Lines with a delay wait for their game frame and are dropped if the
+     * animation has moved on; loserDown's second line follows the first.
+     */
+    private marioVoices(f: AudioFrame, on: boolean) {
+        const m = f.mario;
+        if (!on || !m) { this.voicePending = []; this.voiceAnim = m ? m.anim : -1; return; }
+        const ctx = f.marioVoice || {};
+        let changes = f.marioChanges;
+        if (!changes) changes = this.voiceAnim >= 0 && this.voiceAnim !== m.anim ? [{ t: f.t, from: this.voiceAnim, to: m.anim }] : [];
+        this.voiceAnim = m.anim;
+        for (const c of changes) {
+            if ('voice' in c) { this.voicePending.push({ t: c.t, id: c.voice, anim: -1 }); continue; }
+            const line = marioVoiceChange(c.from, c.to, { ...ctx, rising: c.rising, fludd: c.fludd });
+            if (!line) continue;
+            this.voicePending.push({ t: c.t + (line.delay || 0) * QF_PER_FRAME, id: line.id, anim: line.delay ? c.to : -1 });
+            // loserDown: MV08B once the first line is over and 60 frames have passed
+            if (line.id === SE.MV08A_DOWN_01) this.voicePending.push({ t: c.t + 150 * QF_PER_FRAME, id: SE.MV08B_DOWN_REACT_01, anim: c.to });
+        }
+        const keep: typeof this.voicePending = [];
+        for (const v of this.voicePending) {
+            if (v.t > f.t) { if (v.anim < 0 || v.anim === m.anim) keep.push(v); continue; }
+            if (v.anim >= 0 && v.anim !== m.anim) continue;
+            this.voice(v.id, f, ctx);
+        }
+        this.voicePending = keep;
+    }
+    /** TMario::startVoice: startMarioVoice's line, heard from Mario like his other sounds */
+    private voice(id: number, f: AudioFrame, ctx: VoiceContext = f.marioVoice || {}) {
+        const r = startMarioVoice(id, ctx);
+        if (r.id < 0 || !f.mario) return;
+        const { vol, pan } = this.heard(f.mario, f);
+        if (vol <= 0) return;
+        this.post({ type: 'voice', id: r.id, vol, pan, ifQuiet: r.ifQuiet });
     }
     /**
      * JAIAnimeSound for the ghost's Mario: an animation's one-shot sounds (ID & 0xC00) as its frame
@@ -234,7 +291,13 @@ export class GameAudio {
         const list = this.bas[bck];
         if (!list) return;
         const P = { x: m.x, y: m.y, z: m.z };
-        const fire = (lo: number, hi: number) => { for (const e of list) if (e.id & 0xC00 && e.start > lo && e.start <= hi) this.playAt(e.id, P, f, e.volume, e.pitch); };
+        const fire = (lo: number, hi: number) => {
+            for (const e of list) if (e.id & 0xC00 && e.start > lo && e.start <= hi) {
+                // MAnmSound::startAnimSound: a voice ID goes to startMarioVoice
+                if (isAnimVoice(e.id)) this.voice(e.id, f);
+                else this.playAt(e.id, P, f, e.volume, e.pitch);
+            }
+        };
         if (!prev || prev.anim !== m.anim) fire(-1, frame);
         else if (frame < prev.frame) { fire(prev.frame, Infinity); fire(-1, frame); }
         else fire(prev.frame, frame);

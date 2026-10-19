@@ -77,27 +77,27 @@ export class SoundSystem {
      * startSoundActor: an SE on its category's next track (vol 0..1, pan 0..1). hold: the key of a
      * held sound (asked for again each frame: its volume and pan follow; it starts once).
      */
-    playSe(id: number, vol = 1, pan = 0.5, pitch = 1, hold?: string) {
+    playSe(id: number, vol = 1, pan = 0.5, pitch = 1, hold?: string): number {
         const t = this.seSeq, tbl = this.se;
-        if (!t || !t.seqState || !tbl) return;
+        if (!t || !t.seqState || !tbl) return -1;
         if (hold !== undefined) {
             const h = this.held.get(hold);
             if (h && h.id === id) {
                 const slot = t.routeTrack(route(h.tid));
-                if (slot && slot.outer && t.readPortApp(route(h.tid) + 0x20000) !== 0) { this.setOuter(slot.outer, id, vol, pan, pitch); return; }
+                if (slot && slot.outer && t.readPortApp(route(h.tid) + 0x20000) !== 0) { this.setOuter(slot.outer, id, vol, pan, pitch); return h.tid; }
             }
             if (h) this.releaseSe(hold);
         }
         const info = tbl.info(id);
-        if (!info) return;
+        if (!info) return -1;
         const cat = (id >>> 12) & 0xFF;
-        if (cat >= tbl.categoryMax) return;
+        if (cat >= tbl.categoryMax) return -1;
         const scene = this.init.soundScenes ? this.init.soundScenes[0] : null;
         const max = (c: number) => (scene ? scene[c].maxPlaying : 4);
         let base = 0;
         for (let c = 0; c < cat; c++) base += max(c);
         const n = max(cat);
-        if (!n) return;
+        if (!n) return -1;
         // a free track (its port 2 reads 0) of the category, else the next in turn
         let j = (this.slots.get(cat) || 0) % n;
         for (let k = 0; k < n; k++) {
@@ -107,7 +107,7 @@ export class SoundSystem {
         this.slots.set(cat, j + 1);
         const tid = base + j, r = route(tid);
         const slot = t.routeTrack(r);
-        if (!slot) return;
+        if (!slot) return -1;
         // the slot's last sound, if held, is over
         for (const [k, h] of this.held) if (h.tid === tid) this.held.delete(k);
         if (hold !== undefined) this.held.set(hold, { tid, id });
@@ -117,7 +117,38 @@ export class SoundSystem {
         t.writePortApp(r + 0x60000, 0);
         t.writePortApp(r + 0x40000, id & 0x3FF);
         t.writePortApp(r, 1);
+        return tid;
     }
+    /** Mario's voice (MSound::unk8C[0]): its SE track and ID while it plays */
+    private voice: { tid: number; id: number } | null = null;
+    /** is Mario's last voice still playing (MSound::checkMarioVoicePlaying) */
+    voicePlaying(): boolean {
+        const v = this.voice, t = this.seSeq;
+        if (!v || !t) return false;
+        if (t.readPortApp(route(v.tid) + 0x20000) === 0) { this.voice = null; return false; }
+        return true;
+    }
+    /**
+     * MSound::startMarioVoice's play: the voice on Mario's one voice handle. A playing voice is
+     * stopped for the new one unless it has the higher priority (JAIEntry::checkSoundHandle);
+     * ifQuiet: the reaction voices, which don't start over a playing voice.
+     */
+    playVoice(id: number, vol = 1, pan = 0.5, ifQuiet = false) {
+        const tbl = this.se, t = this.seSeq;
+        if (!tbl || !t) return;
+        const info = tbl.info(id);
+        if (!info) return;
+        if (this.voicePlaying()) {
+            if (ifQuiet) return;
+            const old = tbl.info(this.voice!.id);
+            if (old && old.priority > info.priority) return;
+            t.writePortApp(route(this.voice!.tid), 0);
+            this.voice = null;
+        }
+        const tid = this.playSe(id, vol, pan, 1);
+        if (tid >= 0) this.voice = { tid, id };
+    }
+    stopVoice() { if (this.voicePlaying() && this.seSeq) this.seSeq.writePortApp(route(this.voice!.tid), 0); this.voice = null; }
     private setOuter(o: OuterParam, id: number, vol: number, pan: number, pitch: number) {
         const tbl = this.se!, info = tbl.info(id), fmt = tbl.data[3];
         o.switch_ = 0x1F;
