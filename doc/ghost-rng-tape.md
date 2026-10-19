@@ -107,6 +107,7 @@ still finds that segment's objects.
 | 0xC3 SEGMENT | u8 | ghost segment of the current frame (< 64) |
 | 0xC4 OVERRIDE | u16 | the game received this value instead of the last roll |
 | 0xC5 OVERRIDE_NODE | u8 actor ref, s16 node | the mod chose this object's next graph node |
+| 0xC6 LOAD | u32 load seed, u32 wait rolls, u32 setup seed, u32 untaped | a stage load (below) |
 
 Actor ref 0 means no object (outside any `testPerform`, or another thread);
 `k` means actor-table entry `k − 1`. Every other op byte is invalid. A RUN
@@ -117,6 +118,38 @@ Reading: keep `state`. For each call, `state = state * 0x41C64E6D + 0x3039`,
 `value = (state >> 16) & 0x7FFF`. A SEED replaces `state`. The recorder writes
 one whenever the live seed differs from the tape's prediction: a savestate load
 without "Save RNG state", or anything else that touched it.
+
+### Stage loads
+
+A LOAD records the generator at a stage load, so a viewer can simulate a stage
+from the moment it starts loading:
+
+- **load seed**: the state when `TMarDirector::setup` began, before any disc
+  reads;
+- **wait rolls**: `rand()` calls on any thread between then and
+  `setupObjects` (the disc wait), or 0xFFFFFFFF if the load start was not
+  seen. If this is always 0 in practice, nothing rolls while the disc loads;
+- **setup seed**: the state when `TMarDirector::setupObjects` began, which
+  is where the stage's objects are created. It always equals the load seed
+  advanced by the wait rolls;
+- **untaped**: calls made after `setupObjects` began that are not on the tape,
+  because the recording had not started yet.
+
+Where it appears:
+
+- **At the start of a tape** (before the opening SEED), when the recording
+  starts after the load, as it does at a level start or restart. The setup
+  seed advanced by `untaped` calls is the opening SEED.
+- **Inline**, when a recording continues through a stage transition. It is
+  written as `setupObjects` begins, `untaped` is 0, and the setup rolls that
+  follow are on the tape.
+
+There is no LOAD after a savestate load: that world came from the state, not
+from a stage load, so a recording started after one has none. A loaded state
+also rewinds the tape and its LOADs with it.
+
+Readers can check that each LOAD agrees with the tape: the reference decoder and
+the viewer set `consistent`.
 
 ### Time
 
@@ -147,6 +180,11 @@ carry the extrapolated QF. The tape is not trimmed to the ghost's
   keeps a small stack of objects being performed. The innermost one on the main
   thread is the caller's object. Nesting deeper than 8 gives no object (and
   NO_ACTORS) rather than a wrong one.
+- **Stage loads**: an entry hook on `TMarDirector::setup` (the same checked
+  prologue relocation as `testPerform`) notes the seed and a running count of
+  every `rand()` call. `onSetup` calls `GhostRng::onSetupObjects()` just before
+  `setupObjects`. That state is kept whether or not a tape is armed, and a
+  savestate load clears it.
 - **Arming**: `beginAttempt` starts a tape for every V6 recording. `frameControl`
   advances it once per unfrozen frame and stops it when recording stops, when
   Watch runs, or on failure. Race keeps recording the local player, so its tape
@@ -203,7 +241,8 @@ rather than a forward version.
 
 The clean V2.3.3 JP `mod_jp.bin` is 548,824 bytes against a ceiling of 548,864
 (`SUSAMUNE_JP_UI_OFFSET`: the Japanese UI asset follows the mod in MEM2
-staging, and that asset has 1,824 bytes of slack). The recorder and its hooks need
+staging, and that asset has 1,824 bytes of slack). The recorder and its hooks (all in the low code span on US/PAL, which keeps
+about 9.5 KB free) need
 about 4–4.5 KB of code, so JP cannot take it without moving that asset or the model
 vault. With the tape compiled out, the JP `mod_jp.bin` is byte-identical to
 a clean V2.3.3 build. `SUSAMUNE_GHOST_RNG_REWIND 0` drops savestate rewind
@@ -215,7 +254,7 @@ a clean V2.3.3 build. `SUSAMUNE_GHOST_RNG_REWIND 0` drops savestate rewind
   clang and binutils, run under Wine on Linux). US and PAL link with the tape,
   inside their span and staging limits; JP is byte-identical to clean V2.3.3;
   the Dolphin US objects compile.
-- `scripts/test_ghost_rng.py` (28 tests):
+- `scripts/test_ghost_rng.py` (33 tests):
   - the reference codec: MSL values, run merging, PAL cadence and lag, long
     gaps, overrides, seed breaks and rejections;
   - the shared C validator agrees with the reference on 1,600 mutated chunks;
@@ -229,8 +268,11 @@ a clean V2.3.3 build. `SUSAMUNE_GHOST_RNG_REWIND 0` drops savestate rewind
     runs the real patched `rand()` entry and the `testPerform` trampoline with
     nested objects and a loader-thread call, plus a savestate save, an
     abandoned future, a restore and replay, a seed break, a segment change, an
-    unsafe rewind, a state from another tape (both LOST) and a reload across a
-    scene change. Every roll, call site, object, frame, QF and segment
+    unsafe rewind, a state from another tape (both LOST), a reload across a
+    scene change, and stage loads through the hooked `TMarDirector::setup` at
+    its real US address. That covers a recording starting after a load (load
+    seed, loader-thread rolls during the wait, untaped setup rolls), one
+    continuing through a load, and none after a savestate load. Every roll, call site, object, frame, QF and segment
     is checked.
 - The rest of the Python suite is unchanged against clean V2.3.3. Its Windows
   compiler/DLL tests error identically in both trees on Linux.

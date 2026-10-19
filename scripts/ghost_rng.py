@@ -40,6 +40,8 @@ OP_QF = 0xC2
 OP_SEGMENT = 0xC3
 OP_OVERRIDE = 0xC4
 OP_OVERRIDE_NODE = 0xC5
+OP_LOAD = 0xC6
+WAIT_UNKNOWN = 0xFFFFFFFF
 MAX_RUN = 128
 MAX_FRAME_SHORT = 64
 
@@ -50,6 +52,18 @@ def lcg_next(state: int) -> int:
 
 def lcg_value(state_after: int) -> int:
     return (state_after >> 16) & 0x7FFF
+
+
+def lcg_skip(state: int, n: int) -> int:
+    """`state` advanced by n calls, in O(log n) (affine map composition)."""
+    a, c = LCG_MUL, LCG_ADD          # one step
+    ra, rc = 1, 0                    # identity
+    while n:
+        if n & 1:
+            ra, rc = (a * ra) & 0xFFFFFFFF, (a * rc + c) & 0xFFFFFFFF
+        a, c = (a * a) & 0xFFFFFFFF, (a * c + c) & 0xFFFFFFFF
+        n >>= 1
+    return (ra * state + rc) & 0xFFFFFFFF
 
 
 @dataclass
@@ -80,12 +94,25 @@ class NodeOverride:
 
 
 @dataclass
+class StageLoad:
+    """A stage load the run went through (or began in)."""
+    frame: int
+    call_index: int    # index of the first call on the tape after this point
+    load_seed: int     # generator state when TMarDirector::setup began
+    wait_rolls: int | None  # rolls during the disc wait; None if unseen
+    setup_seed: int    # state when TMarDirector::setupObjects began
+    untaped: int       # rolls after setupObjects began that are not on the tape
+    consistent: bool | None = None  # setup seed + untaped rolls == the tape's state
+
+
+@dataclass
 class Tape:
     flags: int
     callers: list[int]
     actors: list[Actor]
     calls: list[Call] = field(default_factory=list)
     node_overrides: list[NodeOverride] = field(default_factory=list)
+    loads: list[StageLoad] = field(default_factory=list)
     frames: int = 0
 
 
@@ -151,6 +178,10 @@ def validate(data: bytes) -> None:
             if end - at < 3 or data[at] > actors:
                 raise ValueError("bad OVERRIDE_NODE")
             at += 3
+        elif op == OP_LOAD:
+            if end - at < 16:
+                raise ValueError("truncated LOAD")
+            at += 16
         else:
             raise ValueError(f"unknown SGRN op {op:#x} at {at - 1}")
     if counted != calls:
@@ -172,7 +203,8 @@ def decode(data: bytes) -> Tape:
         actors.append(Actor(vtable, key, ordinal))
     tape = Tape(flags, callers, actors)
 
-    frame, segment, state = 0, 0, 0
+    frame, segment, state, seeded = 0, 0, 0, False
+    pending = None  # (load, expected state) awaiting the next known state
     cur = prev = None  # QF of the current / previous frame
     step = 0
     at, end = len(data) - stream, len(data)
@@ -182,6 +214,9 @@ def decode(data: bytes) -> Tape:
         if op <= OP_RUN_MAX:
             caller, actor = data[at], data[at + 1]
             at += 2
+            if pending:
+                pending[0].consistent = pending[1] == state
+                pending = None
             for _ in range(op + 1):
                 state = lcg_next(state)
                 value = lcg_value(state)
@@ -195,6 +230,10 @@ def decode(data: bytes) -> Tape:
         elif op == OP_SEED:
             state = struct.unpack_from(">I", data, at)[0]
             at += 4
+            seeded = True
+            if pending:
+                pending[0].consistent = pending[1] == state
+                pending = None
         elif op == OP_QF:
             qf = struct.unpack_from(">I", data, at)[0]
             at += 4
@@ -211,6 +250,18 @@ def decode(data: bytes) -> Tape:
             actor, node = struct.unpack_from(">Bh", data, at)
             at += 3
             tape.node_overrides.append(NodeOverride(frame, cur, actor - 1, node))
+        elif op == OP_LOAD:
+            load_seed, wait, setup_seed, untaped = struct.unpack_from(">IIII", data, at)
+            at += 16
+            load = StageLoad(frame, len(tape.calls), load_seed,
+                             None if wait == WAIT_UNKNOWN else wait, setup_seed, untaped)
+            if load.wait_rolls is not None and lcg_skip(load_seed, load.wait_rolls) != setup_seed:
+                load.consistent = False
+            tape.loads.append(load)
+            if load.consistent is None:
+                pending = (load, lcg_skip(setup_seed, untaped))
+    if pending and seeded:
+        pending[0].consistent = pending[1] == state
     tape.frames = frame + 1
     return tape
 
@@ -293,6 +344,12 @@ class Encoder:
             a = self.actors.index(actor) + 1
         self._flush()
         self.stream += bytes([OP_OVERRIDE_NODE, a]) + struct.pack(">h", node)
+
+    def load(self, load_seed: int, wait_rolls: int | None, setup_seed: int, untaped: int):
+        self._flush()
+        self.stream += bytes([OP_LOAD]) + struct.pack(
+            ">IIII", load_seed, WAIT_UNKNOWN if wait_rolls is None else wait_rolls,
+            setup_seed, untaped)
 
     def finish(self) -> bytes:
         body = b"".join(struct.pack(">I", c) for c in self.callers)

@@ -4117,6 +4117,7 @@ void restoreSavestate(const SavestateData &data) {
 
 void onSavestateLoaded() {
     GhostRng::stop();
+    GhostRng::forgetLoad();
     memset(&sRecordClock, 0, sizeof(sRecordClock));
     sRaceSplitCount = 0;
     clearRaceContext();

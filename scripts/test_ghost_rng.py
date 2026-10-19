@@ -78,6 +78,8 @@ def sample_tape(seed=0x1234ABCD, calls=40) -> bytes:
             state = rng.lcg_next(state)
         if frame == 15:
             enc.override_node(pianta, 7)
+        if frame == 30:  # the run goes through a stage load
+            enc.load(state, None, state, 0)
     return enc.finish()
 
 
@@ -176,6 +178,18 @@ class CodecTests(unittest.TestCase):
         self.assertEqual([c.used for c in used], [0x6000])
         self.assertEqual(tape.node_overrides[0].node, 7)
         self.assertEqual(tape.actors[tape.node_overrides[0].actor].key_code, 0x42)
+
+    def test_inline_load_is_consistent(self):
+        (load,) = rng.decode(sample_tape()).loads
+        self.assertTrue(load.consistent)
+        self.assertIsNone(load.wait_rolls)
+
+    def test_inconsistent_load_is_reported(self):
+        enc = rng.Encoder(5)
+        enc.frame(qf=0)
+        enc.load(1, 0, 1, 0)  # claims state 1; the tape's state is 5
+        enc.call(0x80001000, None, 5)
+        self.assertFalse(rng.decode(enc.finish()).loads[0].consistent)
 
     def test_seed_breaks_resume_from_new_state(self):
         tape = rng.decode(sample_tape())
@@ -456,6 +470,12 @@ class PpcRecorderTests(unittest.TestCase):
         cls.lost_stream = int(lines[lines.index("lost_stream") + 1], 16)
         cls.cross_flags = int(lines[lines.index("cross_flags") + 1], 16)
         cls.scene_actors = int(lines[lines.index("scene_actors") + 1], 16)
+        cls.load_a = int(lines[lines.index("loadA_seed") + 1], 16)
+        cls.load_b = int(lines[lines.index("loadB_seed") + 1], 16)
+        cls.setup_ret = int(lines[lines.index("setup_ret") + 1], 16)
+        hexrange = lambda a, b: bytes.fromhex("".join(lines[lines.index(a) + 1:lines.index(b)]))
+        cls.load_tape = rng.decode(hexrange("load_chunk", "noload_chunk"))
+        cls.noload_tape = rng.decode(hexrange("noload_chunk", "load_end"))
         cls.reload_actors = int(lines[lines.index("reload_actors") + 1], 16)
 
     @staticmethod
@@ -531,6 +551,29 @@ class PpcRecorderTests(unittest.TestCase):
         # new objects; after reloading into segment 0 they match again.
         self.assertEqual(self.scene_actors, 4)
         self.assertEqual(self.reload_actors, 2)
+
+    def test_stage_load_seed_when_recording_starts_after_the_load(self):
+        self.assertEqual(self.setup_ret, 7)  # the hooked setup() still returns
+        a = self.load_tape.loads[0]
+        self.assertEqual((a.load_seed, a.wait_rolls, a.untaped), (self.load_a, 3, 5))
+        self.assertEqual(a.setup_seed, rng.lcg_skip(self.load_a, 3))
+        self.assertTrue(a.consistent)
+        self.assertEqual(a.call_index, 0)
+        # From the load seed, 3 + 5 rolls reach the tape's first roll.
+        first = self.load_tape.calls[0]
+        self.assertEqual(first.state, rng.lcg_next(rng.lcg_skip(self.load_a, 8)))
+
+    def test_stage_load_seed_inline_when_recording_continues(self):
+        b = self.load_tape.loads[1]
+        self.assertEqual((b.load_seed, b.wait_rolls, b.untaped), (self.load_b, 2, 0))
+        self.assertTrue(b.consistent)
+        # The wait and setup rolls are on the tape, the wait ones unattributed.
+        after = self.load_tape.calls[b.call_index - 2:b.call_index + 4]
+        self.assertEqual([c.actor for c in after[:2]], [-1, -1])
+        self.assertEqual(after[0].state, rng.lcg_next(self.load_b))
+
+    def test_no_stage_load_after_a_savestate_load(self):
+        self.assertEqual(self.noload_tape.loads, [])
 
     def test_seed_breaks_are_recorded(self):
         stage = [c for c in self.tape.calls if c.segment == 1]

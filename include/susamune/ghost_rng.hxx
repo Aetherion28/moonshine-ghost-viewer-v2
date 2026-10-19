@@ -47,6 +47,12 @@ u8 *tapeFor(const void *slotBase);
 void reset(u8 *tape);
 // Starts a new tape for the recording that just began.
 void begin(u8 *tape);
+// Right before TMarDirector::setupObjects: the stage's objects are about to be
+// created. Pairs with the TMarDirector::setup entry hook (load start).
+void onSetupObjects();
+// A savestate was loaded: the world no longer follows from the last stage
+// load, so later recordings carry no LOAD.
+void forgetLoad();
 // Once per simulated game frame, before TMarDirector::direct().
 void frameStart(bool armed, bool qfKnown, u32 qf, u8 segment);
 // The recording ended or failed; the tape keeps what it has.
@@ -86,6 +92,8 @@ inline void init() {}
 inline u8 *tapeFor(const void *) { return nullptr; }
 inline void reset(u8 *) {}
 inline void begin(u8 *) {}
+inline void onSetupObjects() {}
+inline void forgetLoad() {}
 inline void frameStart(bool, bool, u32, u8) {}
 inline void stop() {}
 inline bool exportChunk(const u8 *, u8 *, u32, u32 *size) { *size = 0; return false; }

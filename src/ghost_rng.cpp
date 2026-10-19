@@ -21,12 +21,15 @@
 
 #if SUSAMUNE_GHOST_RNG
 
-// The per-call path lives in the low span; setup, export and savestate code
-// in the upper (.foxtrot) span. JP V2.3.3 has little room in either.
+// All of it lives in the low span: US and PAL V2.3.3 have ~13 KB free there
+// and almost none in the upper (.foxtrot) span. JP compiles it out.
 
 namespace {
 
 const u32 kRandSite = SUSAMUNE_MEM1_ADDR(0x80085AC4u, 0x8033B1A4u, 0x80333324u);
+// TMarDirector::setup: where a stage starts loading.
+const u32 kStageSetupSite =
+    SUSAMUNE_MEM1_ADDR(0x800EA31Cu, 0x80296D60u, 0x8028EBF8u);
 const u32 kTestPerformSite =
     SUSAMUNE_MEM1_ADDR(0x80046F6Cu, 0x802FCC94u, 0x802F4E24u);
 
@@ -84,6 +87,20 @@ struct Writer {
 
 Writer sW;
 u32 sTapeSerial;
+
+// The most recent stage load, kept whether or not a tape is armed, so a
+// recording that starts after the load still knows the seed it began from.
+u32 sRandCalls;        // every rand() call since boot, all threads
+u32 sStageSetupTrampoline[2];
+struct StageLoad {
+    u32 loadSeed;      // generator state when TMarDirector::setup began
+    u32 loadCalls;     // sRandCalls then
+    u32 setupSeed;     // state when setupObjects began
+    u32 setupCalls;    // sRandCalls then
+    u8 loadSeen;       // the setup() entry was observed for this load
+    u8 known;          // setupSeed is valid (no savestate load since)
+};
+StageLoad sLoad;
 u32 sTestPerformTrampoline[2];
 const JDrama::TViewObj *sPerforming[8];
 u32 sPerformDepth;
@@ -105,7 +122,6 @@ void stopWith(u32 flag) {
     sW.armed = 0;
 }
 
-#pragma clang section text=".foxtrot.text"
 bool reserve(u32 bytes) {
     if (live(sW.tape).streamSize + bytes <= kStreamCapacity) return true;
     stopWith(SUSAMUNE_GHOST_RNG_TRUNCATED);
@@ -114,7 +130,6 @@ bool reserve(u32 bytes) {
 
 u8 *streamEnd() { return sW.tape + kStreamAt + live(sW.tape).streamSize; }
 
-#pragma clang section text=""
 bool flushFrames() {
     while (sW.pendingFrames) {
         const u32 frames = sW.pendingFrames < SUSAMUNE_GHOST_RNG_MAX_FRAME_SHORT
@@ -128,7 +143,6 @@ bool flushFrames() {
     return true;
 }
 
-#pragma clang section text=".foxtrot.text"
 // Writes op + big-endian payload (payloadBytes of value's low bytes).
 bool emit(u8 op, u32 value, u32 payloadBytes) {
     if (!flushFrames() || !reserve(1 + payloadBytes)) return false;
@@ -141,7 +155,6 @@ bool emit(u8 op, u32 value, u32 payloadBytes) {
     return true;
 }
 
-#pragma clang section text=""
 // Caller index, or -1 when the table is full (the tape stops). A linear
 // search: the open run already covers repeated calls from one site.
 s32 callerIndex(u32 address) {
@@ -181,14 +194,12 @@ u8 actorRef(const void *object) {
     return static_cast<u8>(++l.actors);
 }
 
-#pragma clang section text=".foxtrot.text"
 bool outcomeControlsActive() {
     return gSettings.getBool(SETTING_KING_BOO_ALWAYS_FRUIT) ||
            gSettings.getBool(SETTING_PETEY_NO_TORNADO) ||
            gSettings.get(SETTING_RICCO_CRANE_SPEED) != 0;
 }
 
-#pragma clang section text=""
 // The innermost scene object being performed on the main thread, if any.
 const void *performing() {
     if (OSGetCurrentThread() != sMainThread) {
@@ -239,6 +250,7 @@ int randFrom(u32 returnAddress) {
     const u32 state = *seed;
     const u32 next = SusamuneGhostRngNext(state);
     *seed = next;
+    ++sRandCalls;
     if (sW.armed) logCall(returnAddress, state);
     OSRestoreInterrupts(enabled);
     return static_cast<int>(SusamuneGhostRngValue(next));
@@ -265,23 +277,65 @@ extern "C" void susamuneRngTestPerform(JDrama::TViewObj *object, u32 flags,
     --sPerformDepth;
 }
 
-#pragma clang section text=".foxtrot.text"
+// TMarDirector::setup entry: the stage load starts here, before any disc
+// reads. Records the generator state; the load itself is unchanged.
+extern "C" s32 susamuneRngStageSetup(void *director, void *display, void *pads,
+                                     u32 area, u32 episode) {
+    typedef s32 (*SetupFn)(void *, void *, void *, u32, u32);
+    const bool enabled = OSDisableInterrupts();
+    sLoad.loadSeed = *reinterpret_cast<volatile u32 *>(SUSAMUNE_ADDR_LIBC_RAND_SEED);
+    sLoad.loadCalls = sRandCalls;
+    sLoad.loadSeen = 1;
+    sLoad.known = 0;
+    OSRestoreInterrupts(enabled);
+    return reinterpret_cast<SetupFn>(sStageSetupTrampoline)(director, display, pads,
+                                                          area, episode);
+}
+
+namespace {
+
+// Relocates a plain prologue word (`stwu r1` or `mflr r0`) into a two-word
+// trampoline and branches the site to `wrapper`. Leaves the site alone and
+// returns false for anything else.
+bool hookEntry(u32 site, const void *wrapper, u32 *trampoline) {
+    const u32 first = *reinterpret_cast<volatile const u32 *>(site);
+    if ((first & 0xFFFF0000u) != 0x94210000u && first != 0x7C0802A6u) return false;
+    trampoline[0] = first;
+    trampoline[1] = branchWord(reinterpret_cast<u32>(&trampoline[1]), site + 4);
+    DCFlushRange(trampoline, 8);
+    ICInvalidateRange(trampoline, 8);
+    writeGameCode(site, branchWord(site, reinterpret_cast<u32>(wrapper)));
+    return true;
+}
+
+// LOAD: u32 load seed, u32 rolls during the disc wait (all ones if the load
+// start was not seen), u32 setup seed, u32 rolls since setupObjects began that
+// are not on the tape.
+bool emitLoad(u32 untaped) {
+    if (!flushFrames() || !reserve(17)) return false;
+    u8 *p = streamEnd();
+    const u32 words[4] = {
+        sLoad.loadSeen ? sLoad.loadSeed : sLoad.setupSeed,
+        sLoad.loadSeen ? sLoad.setupCalls - sLoad.loadCalls : 0xFFFFFFFFu,
+        sLoad.setupSeed, untaped};
+    p[0] = SUSAMUNE_GHOST_RNG_OP_LOAD;
+    memcpy(p + 1, words, 16);  // big endian target
+    live(sW.tape).streamSize += 17;
+    sW.lastRun = 0;
+    return true;
+}
+
+}  // namespace
+
 namespace GhostRng {
 
 void init() {
     sMainThread = OSGetCurrentThread();
-    const u32 first = *reinterpret_cast<volatile const u32 *>(kTestPerformSite);
-    // Relocate only a plain prologue store or LR move into the trampoline.
-    if ((first & 0xFFFF0000u) == 0x94210000u || first == 0x7C0802A6u) {
-        sTestPerformTrampoline[0] = first;
-        sTestPerformTrampoline[1] = branchWord(
-            reinterpret_cast<u32>(&sTestPerformTrampoline[1]), kTestPerformSite + 4);
-        DCFlushRange(sTestPerformTrampoline, sizeof(sTestPerformTrampoline));
-        ICInvalidateRange(sTestPerformTrampoline, sizeof(sTestPerformTrampoline));
-        writeGameCode(kTestPerformSite,
-                      branchWord(kTestPerformSite,
-                                 reinterpret_cast<u32>(&susamuneRngTestPerform)));
-    }
+    if (!hookEntry(kTestPerformSite, reinterpret_cast<const void *>(&susamuneRngTestPerform),
+                   sTestPerformTrampoline))
+        sTestPerformTrampoline[0] = 0;
+    hookEntry(kStageSetupSite, reinterpret_cast<const void *>(&susamuneRngStageSetup),
+              sStageSetupTrampoline);
     writeGameCode(kRandSite, branchWord(kRandSite,
                                         reinterpret_cast<u32>(&susamuneRngRand)));
 }
@@ -311,9 +365,27 @@ void begin(u8 *tape) {
     sW.armed = 1;
     // The opening SEED; frameStart reports the QF and any segment change.
     const bool enabled = OSDisableInterrupts();
+    // The stage load this recording started in, when no savestate load has
+    // happened since: a viewer can simulate from its seed.
+    if (sLoad.known) emitLoad(sRandCalls - sLoad.setupCalls);
     sW.predicted = *reinterpret_cast<volatile u32 *>(SUSAMUNE_ADDR_LIBC_RAND_SEED);
     emit(SUSAMUNE_GHOST_RNG_OP_SEED, sW.predicted, 4);
     OSRestoreInterrupts(enabled);
+}
+
+void onSetupObjects() {
+    const bool enabled = OSDisableInterrupts();
+    sLoad.setupSeed = *reinterpret_cast<volatile u32 *>(SUSAMUNE_ADDR_LIBC_RAND_SEED);
+    sLoad.setupCalls = sRandCalls;
+    sLoad.known = 1;
+    // A recording continuing into this stage logs the setup rolls inline.
+    if (sW.armed) emitLoad(0);
+    OSRestoreInterrupts(enabled);
+}
+
+void forgetLoad() {
+    sLoad.known = 0;
+    sLoad.loadSeen = 0;
 }
 
 void frameStart(bool armed, bool qfKnown, u32 qf, u8 segment) {
@@ -497,6 +569,5 @@ bool chunkPlausible(const u8 *p, u32 size) {
 
 }  // namespace GhostRng
 
-#pragma clang section text=""
 
 #endif  // SUSAMUNE_GHOST_RNG

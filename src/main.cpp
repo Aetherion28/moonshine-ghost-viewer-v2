@@ -29,6 +29,7 @@
 #include "susamune/attempt_counter.hxx"
 #include "susamune/qft_timer.hxx"
 #include "susamune/ghost.hxx"
+#include "susamune/ghost_rng.hxx"
 #include "susamune/ghost_model.hxx"
 #include "susamune/ghost_storage.hxx"
 #include "susamune/state_storage.hxx"
@@ -243,6 +244,7 @@ extern "C" void onSetup(TMarDirector* director) {
     ILing::beforeStageSetup();
     rngControlBeforeStageSetup();
     riccoFruitControlBeforeStageSetup();
+    GhostRng::onSetupObjects();
     director->setupObjects();
     CrashReport::note(SUSAMUNE_CRASH_EVENT_SETUP_RETURN,
                       static_cast<u32>(director->mAreaID) << 8 |

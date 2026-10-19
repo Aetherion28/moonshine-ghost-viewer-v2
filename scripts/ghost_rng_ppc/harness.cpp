@@ -89,6 +89,21 @@ fakeTestPerform(void *object, u32, void *) {
 }
 extern "C" char __start_fake_test_perform[], __stop_fake_test_perform[];
 
+// TMarDirector::setup stand-in: the disc wait, during which the loader
+// thread may roll.
+// It is copied to the game address, so it may only call through a pointer.
+static u32 sWaitRolls;
+extern "C" void (*gWaitRoll)();
+void (*gWaitRoll)();
+extern "C" __attribute__((section("fake_stage_setup"), noinline)) s32
+fakeStageSetup(void *, void *, void *, u32, u32) {
+    for (u32 i = 0; i < sWaitRolls; ++i) gWaitRoll();
+    return 7;
+}
+extern "C" char __start_fake_stage_setup[], __stop_fake_stage_setup[];
+const u32 kStageSetupSite = SUSAMUNE_MEM1_ADDR(0x800EA31Cu, 0x80296D60u, 0x8028EBF8u);
+typedef s32 (*StageSetupFn)(void *, void *, void *, u32, u32);
+
 const u32 kRandSite = SUSAMUNE_MEM1_ADDR(0x80085AC4u, 0x8033B1A4u, 0x80333324u);
 const u32 kTestPerformSite = SUSAMUNE_MEM1_ADDR(0x80046F6Cu, 0x802FCC94u, 0x802F4E24u);
 typedef int (*RandFn)();
@@ -103,6 +118,11 @@ static u32 sValues[4096];
 static u32 sValueCount;
 __attribute__((noinline)) static void siteA() { sValues[sValueCount++] = reinterpret_cast<RandFn>(kRandSite)(); }
 __attribute__((noinline)) static void siteB() { sValues[sValueCount++] = reinterpret_cast<RandFn>(kRandSite)(); }
+__attribute__((noinline)) static void waitRoll() {
+    sCurrentThread = 1;  // the loader thread
+    sValues[sValueCount++] = reinterpret_cast<RandFn>(kRandSite)();
+    sCurrentThread = 0;
+}
 __attribute__((noinline)) static void siteC() { sValues[sValueCount++] = susamuneRngRandFrom(0x80001234u); }
 
 struct FakeObject {   // JDrama::TNameRef / TViewObj layout
@@ -161,6 +181,9 @@ extern "C" int main() {
     // Settings stay zero: no outcome controls.
     const u32 size = __stop_fake_test_perform - __start_fake_test_perform;
     memcpy(reinterpret_cast<void *>(kTestPerformSite), __start_fake_test_perform, size);
+    gWaitRoll = waitRoll;
+    memcpy(reinterpret_cast<void *>(kStageSetupSite), __start_fake_stage_setup,
+           __stop_fake_stage_setup - __start_fake_stage_setup);
     seed() = 0x0BADF00Du;
     GhostRng::init();
     word("hook_rand ", *reinterpret_cast<volatile u32 *>(kRandSite));
@@ -236,6 +259,40 @@ extern "C" int main() {
     play(2, 3, 0);
     GhostRng::exportChunk(tape4, sOut, sizeof(sOut), &m);
     word("reload_actors ", reinterpret_cast<SusamuneGhostRngHeader *>(sOut)->actorCount);
+    // Stage loads. A: the recording starts after the load, as at a level
+    // start: LOAD carries the load seed, 3 disc-wait rolls, the setup seed and
+    // the 5 setupObjects rolls the tape did not see.
+    alignas(32) static u8 slot5[0x80000];
+    u8 *tape5 = GhostRng::tapeFor(slot5);
+    seed() = 0x00C0FFEEu;
+    word("loadA_seed ", seed());
+    sWaitRolls = 3;
+    const s32 ret = reinterpret_cast<StageSetupFn>(kStageSetupSite)(0, 0, 0, 2, 0);
+    word("setup_ret ", static_cast<u32>(ret));
+    GhostRng::onSetupObjects();
+    for (u32 i = 0; i < 5; ++i) siteA();
+    GhostRng::begin(tape5);
+    play(0, 3, 0);
+    // B: the recording continues through a load into the next stage.
+    word("loadB_seed ", seed());
+    sWaitRolls = 2;
+    reinterpret_cast<StageSetupFn>(kStageSetupSite)(0, 0, 0, 3, 1);
+    GhostRng::onSetupObjects();
+    for (u32 i = 0; i < 4; ++i) siteA();
+    play(3, 3, 1);
+    GhostRng::exportChunk(tape5, sOut, sizeof(sOut), &m);
+    outs("load_chunk\n");
+    hex(sOut, m);
+    // C: after a savestate load the world no longer follows from a stage
+    // load, so a new recording carries no LOAD.
+    GhostRng::forgetLoad();
+    GhostRng::begin(tape5);
+    play(0, 2, 0);
+    GhostRng::exportChunk(tape5, sOut, sizeof(sOut), &m);
+    outs("noload_chunk\n");
+    hex(sOut, m);
+    outs("load_end\n");
+
     sValueCount = keepValues;
     // Re-export the first tape for the main checks.
     GhostRng::exportChunk(sTape, sOut, sizeof(sOut), &n);

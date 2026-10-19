@@ -7,6 +7,7 @@ SECTIONS {
     . = 0x80480000;
     .text : { *(.text.start) *(.text .text.*) } :all
     fake_test_perform : { *(fake_test_perform) } :all
+    fake_stage_setup : { *(fake_stage_setup) } :all
     .rodata : { *(.rodata .rodata.* .sdata2 .sdata2.*) } :all
     .data : { *(.data .data.* .sdata .sdata.* .got .got2 .toc) } :all
     .bss : { *(.bss .bss.* .sbss .sbss.* COMMON) } :all

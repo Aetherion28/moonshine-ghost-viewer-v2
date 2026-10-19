@@ -51,6 +51,8 @@
 #define SUSAMUNE_GHOST_RNG_OP_SEGMENT       0xC3u /* u8 ghost segment of the current frame */
 #define SUSAMUNE_GHOST_RNG_OP_OVERRIDE      0xC4u /* u16 value the game got instead of the last roll */
 #define SUSAMUNE_GHOST_RNG_OP_OVERRIDE_NODE 0xC5u /* u8 actor ref, s16 graph node chosen by the mod */
+#define SUSAMUNE_GHOST_RNG_OP_LOAD          0xC6u /* u32 load seed, u32 wait rolls, u32 setup seed, u32 untaped rolls */
+#define SUSAMUNE_GHOST_RNG_WAIT_UNKNOWN     0xFFFFFFFFu
 
 #define SUSAMUNE_GHOST_RNG_MAX_RUN 128u
 #define SUSAMUNE_GHOST_RNG_MAX_FRAME_SHORT 64u
@@ -176,6 +178,9 @@ static inline int SusamuneGhostRngChunkValid(const unsigned char *p,
                 SusamuneGhostRngBe16(p + at) > 0x7FFFu)
                 return 0;
             at += 2;
+        } else if (op == SUSAMUNE_GHOST_RNG_OP_LOAD) {
+            if (end - at < 16) return 0;
+            at += 16;
         } else if (op == SUSAMUNE_GHOST_RNG_OP_OVERRIDE_NODE) {
             if (end - at < 3 || p[at] > actors) return 0;
             at += 3;
