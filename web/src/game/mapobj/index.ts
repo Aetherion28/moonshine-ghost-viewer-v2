@@ -29,6 +29,8 @@ export * from './ex.js';
 export * from './mare.js';
 export * from './corona.js';
 export * from './bathtub.js';
+// Sirena Beach's and Hotel Delfino's
+export * from './sirena.js';
 
 /**
  * The item hooks the enemies call through World (World.newAndRegisterCoin / makeCoinAppear /

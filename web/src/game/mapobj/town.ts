@@ -18,7 +18,7 @@ import type { Coin, ItemManager } from './item.js';
 import { MapObjGeneral } from './general.js';
 import { ObjCollision, KIND_WARP } from './objcol.js';
 import { JMASCos, s16 } from '../math.js';
-import { marioHipDropping, marioSpeedY, marioGroundLevel, marioStatus, marioTouchGround4cm } from './lib.js';
+import { marioHipDropping, marioSpeedY, marioGroundLevel, marioStatus, marioTouchGround4cm, marioHeld } from './lib.js';
 
 export class MapObjChangeStage extends MapObjBase {
     unk138 = 0;
@@ -167,6 +167,26 @@ export class MapObjSwitch extends MapObjBase {
     }
 }
 
+// ---------------------------------------------------------------- TDoor
+/**
+ * A door: Mario touching it is told to open it (UNK11, or UNK12 for a locked one: unk138 from
+ * scene.bin); if he takes it, the door's swing matches the side he opens it from (anim 2 / 1 for
+ * DOOR_OPEN_R / L, 4 / 3 holding something).
+ */
+export class Door extends MapObjBase {
+    unk138 = false;
+    constructor(w: World, name = 'ドア') { super(w, name); }
+    touchPlayer(a: HitActor) {
+        if (!a.isActorType(AT.MARIO)) return;
+        const msg = this.unk138 ? MSG.UNK12 : MSG.UNK11;
+        if (!a.receiveMessage(this, msg)) return;
+        const st = marioStatus(this.world), held = !!marioHeld(this.world);
+        if (st === 0x1320) this.startAnim(held ? 4 : 2);        // MARIO_STATUS_DOOR_OPEN_R
+        else if (st === 0x1321) this.startAnim(held ? 3 : 1);   // MARIO_STATUS_DOOR_OPEN_L
+    }
+    load(s: Stream) { super.load(s); if (s.s32()) this.unk138 = true; }
+}
+
 // ---------------------------------------------------------------- TManhole
 /**
  * A manhole: Mario standing on it presses it down a little (it bobs back up when he's off), a
@@ -281,6 +301,7 @@ export class Manhole extends MapObjGeneral {
     }
 }
 
+register('Door', (w, n) => new Door(w, n));
 register('Manhole', (w, n) => new Manhole(w, n));
 register('RedCoinSwitch', (w, n) => new RedCoinSwitch(w, n));
 register('MapObjChangeStage', (w, n) => new MapObjChangeStage(w, n));

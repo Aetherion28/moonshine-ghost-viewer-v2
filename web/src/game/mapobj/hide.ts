@@ -210,5 +210,7 @@ register('HideObj', (w, n) => new HideObjBase(w, n));
 register('HipDropHideObj', (w, n) => new HipDropHideObj(w, n));
 register('WaterHitHideObj', (w, n) => new WaterHitHideObj(w, n));
 register('WaterHitPictureHideObj', (w, n) => new WaterHitPictureHideObj(w, n));
+// (MarNameRefGen_MapObj.cpp: Hotel Delfino's Boo posters)
+register('PosterTeresa', (w, n) => new WaterHitPictureHideObj(w, n));
 register('HideObjPictureTwin', (w, n) => new HideObjPictureTwin(w, n));
 register('WaterRecoverObj', (w, n) => new WaterRecoverObj(w, n));
