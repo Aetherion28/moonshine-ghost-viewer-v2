@@ -11,6 +11,7 @@ import { Stage, StageFiles, GameCamera } from './scene.js';
 import { MarioSample, MarioTrack } from './mario.js';
 import { LiveActor, NameRef, World, calcKeyCode } from './engine.js';
 import { rngCtx } from './math.js';
+import './npc/manager.js';
 import './enemies/pakkun.js';
 import './enemies/sambo.js';
 import './enemies/bosspakkun.js';

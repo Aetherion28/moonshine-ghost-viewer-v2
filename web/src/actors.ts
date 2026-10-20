@@ -80,6 +80,32 @@ export function swapTextures(device: GfxDevice, cache: GfxRenderCache, arc: RARC
     }
 }
 
+/**
+ * A simulated NPC (game/npc/base.ts) dressed as setIndividualDifference_ dresses it: its body's
+ * colours (kind 0..2 by the scene's indices), and the parts its flags pick: [file, joint, colour
+ * changes, colour index] for the caller to make and hang on the body's joints.
+ */
+export function npcDress(body: J3DModelInstanceSimple, kind: number, look: { c0: number[]; c1: number[]; parts: number }) {
+    const info: any = (NPC_INIT as any)[kind];
+    const out: { file: string; joint: string; colors: any[]; idx: number }[] = [];
+    if (!info) return out;
+    for (let j = 0; j < 2; j++) npcColour(body, info.body[j], look.c0[j]);
+    info.parts.forEach((part: any, i: number) => {
+        if (!part || !((look.parts >> i) & 1)) return;
+        out.push({ file: part.file, joint: part.joint, colors: part.colors || [], idx: part.slot < 3 ? look.c1[part.slot] : -1 });
+    });
+    return out;
+}
+/** A part's colour changes (SMS_InitChangeNpcColor), by its colour index. */
+export function npcPartColours(part: J3DModelInstanceSimple, colors: any[], idx: number) { for (const cc of colors) npcColour(part, cc, idx); }
+/** KCOLOR0 (TBaseNPC::unk174: white, the goop amount in its alpha) on every material but the eyes. */
+export function npcGoop(body: J3DModelInstanceSimple, kind: number, k0: number[]) {
+    const t = NPC_ORDER[kind];
+    if (!POLLUTION_NPCS.has(t) && !SPECIAL_NPCS.has(t)) return;
+    const c = { r: k0[0] / 255, g: k0[1] / 255, b: k0[2] / 255, a: k0[3] / 255 };
+    for (const mi of body.materialInstances) if (!/eye/i.test(mi.name)) mi.setColorOverride(ColorKind.K0, c);
+}
+
 /** Parts hung on a character's joints, placed each frame after its animation. */
 export interface ActorPart { part: J3DModelInstanceSimple; body: J3DModelInstanceSimple; joint: number; }
 export function updateActorParts(parts: ActorPart[], timeMs: number) {

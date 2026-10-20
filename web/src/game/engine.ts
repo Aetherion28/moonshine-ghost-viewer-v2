@@ -1356,7 +1356,7 @@ declare module './engine.js' {
     interface World {
         addToGroup(name: string, a: HitActor): void;
         inAreaCube(p: V3): boolean;
-        inView(p: V3, r: number, far: number): boolean;
+        inView(p: V3, r: number, far: number, near?: number): boolean;
         effect(kind: string, p: V3, s?: V3): void;
         newAndRegisterCoin(id: number): any;
         makeCoinAppear(coin: any): any;
@@ -1375,7 +1375,7 @@ World.prototype.newAndRegisterCoin = function () { return null; };
 World.prototype.makeCoinAppear = function (this: World, _c: any) { return null; };
 World.prototype.makeCoinAt = function (this: World, x: number, y: number, z: number) { this.events.push({ t: this.tickCount, kind: 'coin', data: { p: new V3(x, y, z) } }); return null; };
 /** ViewFrustumClipCheck against the frame's game camera (SetViewFrustumClipCheckPerspective's planes). */
-World.prototype.inView = function (this: World, p: V3, r: number, far: number) {
+World.prototype.inView = function (this: World, p: V3, r: number, far: number, near?: number) {
     const c = (this as any).clipCamera as { pos: number[]; quat: number[]; fovy: number; aspect: number; near: number } | null;
     if (!c) return true;
     // into view space: the inverse of the camera's rotation
@@ -1384,7 +1384,7 @@ World.prototype.inView = function (this: World, p: V3, r: number, far: number) {
     const tx = 2 * (-qy * dz + qz * dy), ty = 2 * (-qz * dx + qx * dz), tz = 2 * (-qx * dy + qy * dx);
     const x = dx + qw * tx + (-qy * tz + qz * ty), y = dy + qw * ty + (-qz * tx + qx * tz), z = dz + qw * tz + (-qx * ty + qy * tx);
     const tv = Math.tan((c.fovy * Math.PI) / 360), th = tv * c.aspect;
-    if (-z - c.near < -r || far + z < -r) return false;
+    if (-z - (near ?? c.near) < -r || far + z < -r) return false;
     const kv = 1 / Math.sqrt(1 + tv * tv), kh = 1 / Math.sqrt(1 + th * th);
     if (-(x + z * th) * kh < -r || (x - z * th) * kh < -r) return false;
     if (-(y + z * tv) * kv < -r || (y - z * tv) * kv < -r) return false;

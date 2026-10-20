@@ -26,7 +26,7 @@ import { GameFS, openDisc, openFolder, rememberHandle, rememberedHandle, forgetH
 import { parseStageArc, sceneForRoute } from './stagearc.js';
 import { SMSPass, SunshineRenderer, SunshineSceneDesc } from './sms_scene.js';
 import { MarioModel, YoshiModel, parseArchive, setPlayerLights } from './mario.js';
-import { swapTextures } from './actors.js';
+import { swapTextures, npcDress, npcPartColours, npcGoop } from './actors.js';
 import { SimRunner, DiscCommon, SimInput, fileMap, FileMap } from './game/runner.js';
 import { CLASSES } from './game/scene.js';
 import { LiveActor } from './game/engine.js';
@@ -583,12 +583,31 @@ export class GameLayer {
                     else if (j === 2) mat4.scale(dst, dst, [1 / sc, 1 / sc, 1 / sc]);
                 };
                 if ((a as any).fadeColor) booMaterials(inst);
+                // an NPC: its colours and the parts on its joints (TBaseNPC::setIndividualDifference_)
+                const look = (a as any).look, kind = (a as any).kindIndex;
+                if (look && kind !== undefined) {
+                    const parts: { inst: J3DModelInstanceSimple; joint: number }[] = [];
+                    for (const p of npcDress(inst, kind, look)) {
+                        const path = [...this.files.keys()].find((k) => k.endsWith('/' + p.file.toLowerCase()));
+                        const pi = path ? this.makeInstance({ f: path } as any) : null;
+                        if (!pi) continue;
+                        (pi as any).isPlayer = true;
+                        npcPartColours(pi, p.colors, p.idx);
+                        const j = inst.modelData.bmd.jnt1.joints.findIndex((x) => x.name === p.joint);
+                        parts.push({ inst: pi, joint: j < 0 ? 0 : j });
+                        made.push(pi);
+                        this.actorModels.push(pi);
+                    }
+                    (mm as any).parts = parts;
+                }
                 this.simMirrors.set(a, mm);
                 made.push(inst);
                 this.actorModels.push(inst);
             }
             const inst = m.inst;
             inst.visible = this.live && a.drawn();
+            const parts = (m as any).parts as { inst: J3DModelInstanceSimple; joint: number }[] | undefined;
+            if (parts) for (const p of parts) p.inst.visible = inst.visible;
             if (!inst.visible) continue;
             const B = a.baseTR, sc = a.scale;
             mat4.set(inst.modelMatrix, B[0] * sc.x, B[4] * sc.x, B[8] * sc.x, 0, B[1] * sc.y, B[5] * sc.y, B[9] * sc.y, 0, B[2] * sc.z, B[6] * sc.z, B[10] * sc.z, 0, B[3], B[7], B[11], 1);
@@ -619,6 +638,13 @@ export class GameLayer {
             }
             const fc = a.mactor!.getFrameCtrl(0);
             if (fc) m.pin.setTimeInFrames(fc.frame);
+            // (an NPC's goop: KCOLOR0's alpha, as it's washed)
+            const k0 = (a as any).look ? (a as any).unk174 as number[] : null;
+            if (k0) npcGoop(inst, (a as any).kindIndex, k0);
+            if (parts && parts.length) {
+                inst.calcAnim();
+                for (const p of parts) mat4.copy(p.inst.modelMatrix, inst.shapeInstanceState.jointToWorldMatrixArray[p.joint] || inst.modelMatrix);
+            }
             // its material animations (BPK / BTP / BTK / BRK) at the game's frames
             const st = a.mactor!.anmState();
             const mm = m as any;
@@ -646,7 +672,7 @@ export class GameLayer {
             swapTextures(this.device, r!.renderHelper.renderInstManager.gfxRenderCache, r!.rarc, made);
             r!.modelInstances.push(...made);
         }
-        for (const [a, m] of this.simMirrors) if (!seen.has(a)) m.inst.visible = false;
+        for (const [a, m] of this.simMirrors) if (!seen.has(a)) { m.inst.visible = false; const ps = (m as any).parts; if (ps) for (const p of ps) p.inst.visible = false; }
     }
 
     /**
