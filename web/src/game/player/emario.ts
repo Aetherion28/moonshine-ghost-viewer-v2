@@ -10,6 +10,7 @@ import {
     LF, HF, HC, MSG, CUE_MOVE, CUE_CALC_ANIM, ANM_BCK, ANM_BTK, ANM_FRAME_RATE, readParams, SPINE_PARAMS,
 } from '../engine.js';
 import { register } from '../scene.js';
+import { MSF } from '../msflags.js';
 import { AT } from '../actortypes.js';
 import { TMarioSim, j3dTRMtx } from './tmario.js';
 import { S, A, MF, ControllerWork } from './base.js';
@@ -114,7 +115,10 @@ class EMarioPart extends LiveActor {
     perform(_cue: number) { }
 }
 
-/** MSF_SHADOW_MARIO_EVENT (TFlagManager): 0 he's gone, 1 the pad/ replays, 2 pad2/, 3 pad3/. */
+/**
+ * MSF_SHADOW_MARIO_EVENT (TFlagManager): 0 he's gone, 1 the pad/ replays, 2 pad2/, 3 pad3/. Read
+ * from the world's flags (setupStage sets it as setupObjects does); value: the fallback without them.
+ */
 export const shadowMarioEvent = { value: 1 };
 
 export class EnemyMario extends TMarioSim {
@@ -192,7 +196,7 @@ export class EnemyMario extends TMarioSim {
             W.extras.push(this.mBrushModel, this.mStampActor);
         }
         this.mDisappearPosition.set(0, 0, 0);
-        const ev = shadowMarioEvent.value;
+        const ev = W.flags ? W.flags.getFlag(MSF.SHADOW_MARIO_EVENT) : shadowMarioEvent.value;
         if (ev === 0) { this.onHitFilter(HF.NO_COLLISION); this.mEMario.onHitFilter(HF.NO_COLLISION); }
         else { this.offHitFilter(HF.NO_COLLISION); this.mEMario.offHitFilter(HF.NO_COLLISION); }
         if (ev === 2) { this.mPadIndex = 1; this.mSettingParams = sceneParams(W.files, '/../map/pad2/Setting.prm'); }
