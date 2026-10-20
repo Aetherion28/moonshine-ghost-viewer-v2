@@ -213,6 +213,8 @@ export class GameLayer {
      * in progressive scan (480p), where the game's filter is no blur.
      */
     public copyFilter = false;
+    /** The specular light (GX_LIGHT2) on Mario and the actors; see lights(). */
+    public specular = false;
     /** A frame has been drawn for the current scene. */
     public drawn = false;
     /** The stage's game code (the enemies...), run alongside the ghost. */
@@ -764,6 +766,13 @@ export class GameLayer {
         // LightingShaderGen has it: distance attenuation normalised when the channel has a diffuse
         // function, as these SPEC channels do) lights most of the side facing the sun full white,
         // which the game doesn't do. Something about it is still missing; off until it's found.
+        // What is known (graphics_findings.md): the game loads GX_LIGHT2 with the same light as
+        // GX_LIGHT0 (TLightCommon::setLight: getLightColor/getLightPosition(index * 2), the sun),
+        // as setPlayerLights does, and Mario's last TEV stage adds it as CPREV + lerp(C1, spec, 1/2)
+        // - 1/2 (KCSEL_1_2, TEVBIAS_SUBHALF, C1 about 0.63), so with the light off Mario comes out
+        // about 0.19 darker than the game everywhere; on, he and the NPCs wash out (a blue Pianta goes
+        // nearly white). The footage is in between. layer.specular = true turns it on, for testing.
+        if (this.specular) return;
         for (const m of marios) { const l = m.getGXLightReference(2); l.Color.r = l.Color.g = l.Color.b = 0; }
         for (const m of this.actorModels) { const l = m.getGXLightReference(2); l.Color.r = l.Color.g = l.Color.b = 0; }
     }
