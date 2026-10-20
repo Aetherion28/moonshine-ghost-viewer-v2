@@ -7426,6 +7426,7 @@ void main() {
     return { cam: null, wipe: 1 - (time - end - INTRO_WIPE) / INTRO_WIPE };
   }
 
+  let debugView = null;
   // One view: camera (the Shine demo's, the follow camera's, or the user's), then the frame.
   function viewStep(dt, now, interactive) {
     // Follow: the run's recorded camera, where the ghost has one; else the Shine get demo camera
@@ -7469,6 +7470,15 @@ void main() {
     moveCamera(dt);
     if (interactive) controls.update(); else camera.lookAt(controls.target);
     if (rv && !(iv && iv.cam)) applyRecordedView(rv, rp, dt, lead);
+    // (debug: gameViewer.setView({ pos, at, fov }) holds the camera at a given view, for comparing
+    // the drawing with footage of the game; setView(null) lets go of it)
+    if (debugView) {
+      camera.position.set(debugView.pos[0], debugView.pos[1], debugView.pos[2]);
+      controls.target.set(debugView.at[0], debugView.at[1], debugView.at[2]);
+      camera.lookAt(controls.target);
+      const f = debugView.fov || 55;
+      if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); }
+    }
     if (mapGroup && mapGroup.userData.sky) mapGroup.userData.sky.position.copy(camera.position);
     updateTriggers();
     updateNames();
@@ -8583,6 +8593,7 @@ void main() {
     $('gateNote').textContent = 'This browser can\'t run the game renderer (it needs WebGL 2).';
   }
   window.gameViewer = { get layer() { return gameLayer; }, get live() { return gameLive; }, useDisc, useDiscFile,
+    setView: (v) => { debugView = v; }, getView: () => ({ pos: camera.position.toArray(), at: controls.target.toArray(), fov: camera.fov, aspect: camera.aspect }),
     // the main ghost's Mario at t as drawn (the input replay's where it has run) and as recorded
     marioAt: (time = t) => { const g = ghosts.find((x) => x.data && x.marker && x.marker.parent); return g ? { drawn: ghostSampleAt(g.data, time), anim: ghostAnimAt(g.data, time), ghost: RAW.ghostSampleAt(g.data, time) } : null; } };
 

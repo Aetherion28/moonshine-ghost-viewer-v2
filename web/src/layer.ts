@@ -208,6 +208,8 @@ export class GameLayer {
     private files = new Map<string, RARC.RARCFile>();
     public onStatus: (text: string) => void = () => { };
     public onError: (e: any) => void = (e) => console.error(e);
+    /** The game's interlaced copy filter (copyfilter.ts); false: the progressive picture. */
+    public copyFilter = true;
     /** A frame has been drawn for the current scene. */
     public drawn = false;
     /** The stage's game code (the enemies...), run alongside the ghost. */
@@ -821,6 +823,7 @@ export class GameLayer {
         this.swapChain.configureSwapChain(w, h);
         this.device.beginFrame();
         vi.onscreenTexture = this.swapChain.getOnscreenTexture();
+        r.copyFilterOn = this.copyFilter;
         r.render(this.device, vi);
         this.device.endFrame();
         this.drawn = true;
