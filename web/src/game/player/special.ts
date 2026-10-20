@@ -9,6 +9,7 @@ import { MarioSwim } from './swim.js';
 import { S, A, MF, bg, Bg, wallRecord, ControllerWork } from './base.js';
 import { MsSqrtf } from './move.js';
 import { AT } from '../actortypes.js';
+import { SE } from '../soundids.js';
 
 export abstract class MarioSpecial extends MarioSwim {
     mWireBounceVel = 0; mWireBounceVelPrev = 0; mWireSag = 0;
@@ -218,7 +219,7 @@ export abstract class MarioSpecial extends MarioSwim {
     }
     kickRoofRollUp() {
         this.setAnimation(A.LADDER_ROLL_UP, 1);
-        this.mStatusTimer++;
+        if (this.mStatusTimer++ === 8) this.startVoice(SE.MV15_EXERT_INST_02);
         if (this.isLast1AnimeFrame()) {
             this.pos.y = fr(this.pos.y + 160);
             this.mFloorPosition.y = this.pos.y;
@@ -265,7 +266,7 @@ export abstract class MarioSpecial extends MarioSwim {
             this.mInput &= ~4; this.mInput &= ~0x8000;
             return this.startHangLanding(S.WALL_SLIDE);
         }
-        if ((this.mInput & 2) && onCeil) return this.changePlayerStatus(S.HANG_JUMPING, 0, false);
+        if ((this.mInput & 2) && onCeil) { this.startVoice(SE.MV15_EXERT_INST_01); return this.changePlayerStatus(S.HANG_JUMPING, 0, false); }
         const rec = wallRecord(this.pos.x, fr(this.pos.y - 10), this.pos.z, 30, 4, 0);
         this.isTouchedWallsAndMoveXZ(rec);
         const wall = this.findNearestWall(rec);
@@ -316,7 +317,7 @@ export abstract class MarioSpecial extends MarioSwim {
         }
         if (this.mStatusTimer >= H.mLimitTime) return this.startHangLanding(S.LAND_SAFE_DOWN);
         const below = fr(this.pos.y - this.checkPlayerAround(-0x8000, 30));
-        if (onCeil && below < 100) return this.changePlayerStatus(S.HANG_JUMPING, 0, false);
+        if (onCeil && below < 100) { this.startVoice(SE.MV15_EXERT_INST_01); return this.changePlayerStatus(S.HANG_JUMPING, 0, false); }
         this.setPlayerVelocity(0);
         this.mVel.y = 0;
         this.pos.y = this.mFloorPosition.y;
@@ -482,6 +483,7 @@ export abstract class MarioSpecial extends MarioSwim {
             const a = this.unk2C0;
             if (a) {
                 (a as HitActor).receiveMessage(this, MSG.SUPER_HIP_DROP);
+                this.startVoice(SE.MV15_EXERT_INST_02);
                 if (a.actorType === AT.FENCE_REVOLVE_INNER) {
                     let x = this.unk2F4.x, z = this.unk2F4.y;
                     if (x < -120) x = -120; if (120 < x) x = 120;
@@ -514,8 +516,8 @@ export abstract class MarioSpecial extends MarioSwim {
     pulling() {
         const h = this.mHeldObject as any;
         if (!h) return this.changePlayerStatus(S.LANDING, 0, false);
-        if (this.mInput & 4) { h.receiveMessage(this, MSG.DETACH); this.mHeldObject = null; return this.changePlayerStatus(S.LANDING, 0, false); }
-        if (!(this.unk108.mInput & ControllerWork.B)) { h.receiveMessage(this, MSG.DETACH); this.mHeldObject = null; return this.changePlayerStatus(S.PULL_END, 0, false); }
+        if (this.mInput & 4) { h.receiveMessage(this, MSG.DETACH); this.mHeldObject = null; this.startVoice(SE.MV30_FRIGHT_01); return this.changePlayerStatus(S.LANDING, 0, false); }
+        if (!(this.unk108.mInput & ControllerWork.B)) { h.receiveMessage(this, MSG.DETACH); this.mHeldObject = null; this.startVoice(SE.MV30_FRIGHT_01); return this.changePlayerStatus(S.PULL_END, 0, false); }
         if (this.mInput & 2) { this.setAnimation(A.HOLD_TO_HANG, 1); return this.changePlayerJumping(S.PULL_JUMP, 0); }
         if (this.mStatus === S.OIL_PULLING && !this.checkFlag(MF.DIRTY)) this.changePlayerStatus(S.PULLING, 0, false);
         const m = h.getTakingMtx() as Mtx | null;

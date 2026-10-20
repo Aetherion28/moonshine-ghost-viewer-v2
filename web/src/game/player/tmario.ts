@@ -24,7 +24,7 @@ export abstract class TMarioSim extends MarioSpecial {
         if (this.mInput & 4) return this.changePlayerDropping(S.LANDING, 0);
         this.setAnimation(A.RAISE, 1);
         if (this.unk384 && this.mModel.fc[0].checkPass(11)) {
-            if (this.unk384.receiveMessage(this, MSG.TAKE) === true) this.mHeldObject = this.unk384;
+            if (this.unk384.receiveMessage(this, MSG.TAKE) === true) { this.startVoice(SE.MV15_EXERT_INST_01); this.mHeldObject = this.unk384; }
             else return this.changePlayerStatus(S.WAIT, 0, false);
             this.unk384 = null;
         }

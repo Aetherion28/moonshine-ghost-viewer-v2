@@ -240,6 +240,8 @@ export class ReplayHistory {
     qf: number[] = []; pos: number[] = []; yaw: number[] = []; anim: number[] = []; phase: number[] = [];
     /** FLUDD: -1 none, else its nozzle (| 0x10 while it sprays) */
     fludd: number[] = [];
+    /** the voice lines the simulated Mario asked for (TMario::startVoice), at their tick's ghost QF, in order */
+    voices: { qf: number; id: number; ifNoVoice?: boolean; unlessId?: number }[] = [];
     constructor(public ghost: any, public from: number) { }
     get last() { return this.qf.length ? this.qf[this.qf.length - 1] : -1; }
     push(qf: number, P: PlayerMario) {
@@ -247,6 +249,18 @@ export class ReplayHistory {
         this.anim.push(P.mAnimationId); this.phase.push(Math.round(P.phase * 4096) & 4095);
         const f = P.fludd;
         this.fludd.push(f ? (f.nozzle & 7) | (f.spraying ? 0x10 : 0) : -1);
+        // the frame's voice lines: tick k of the world's count was QF qf - (now - k)
+        const now = P.world.tickCount;
+        for (const v of P.voiceLog) this.voices.push({ qf: qf - (now - v.tick), id: v.id, ifNoVoice: v.ifNoVoice, unlessId: v.unlessId });
+        P.voiceLog.length = 0;
+    }
+    /** the voice lines from just after t0 to t */
+    voicesIn(t0: number, t: number) {
+        const V = this.voices, out: typeof V = [];
+        let lo = 0, hi = V.length;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (V[mid].qf <= t0) lo = mid + 1; else hi = mid; }
+        for (let i = lo; i < V.length && V[i].qf <= t; i++) out.push(V[i]);
+        return out;
     }
     /** the frame at or before t (-1: t is outside what the replay has run) */
     index(t: number): number {

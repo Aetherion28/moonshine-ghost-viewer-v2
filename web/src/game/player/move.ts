@@ -6,6 +6,7 @@ import { HitActor, MSG } from '../engine.js';
 import { DONT_MOVE_XZ } from '../collision.js';
 import { AT } from '../actortypes.js';
 import { MarioBase, S, MF, A, bg, Bg, wallRecord } from './base.js';
+import { SE } from '../soundids.js';
 
 const sqrtf = (v: number) => fr(Math.sqrt(v));
 /** MsSqrtf */
@@ -167,30 +168,34 @@ export abstract class MarioMove extends MarioBase {
                     else if (bg.isThing3(g)) {
                         this.mVel.y = fr(this.mVel.y + (-this.unkBC + this.getGroundJumpPower()));
                         if (g.actor) (g.actor as HitActor).receiveMessage(this, MSG.TRAMPLE);
+                        this.startVoice(SE.MV24_JUMP_SPECIAL_01);
                         next = S.FORCE_JUMP; break;
                     }
                 }
+                this.startVoice(this.isFeelDeep() ? SE.MV19_JMP_PT_01 : SE.MV21_JUMP_SMALL_01);
                 break;
-            case S.SECOND_JUMP: this.setPlayerJumpSpeed(J.mSecJumpSpeedMult, J.mSecJumpForce); this.mForwardVel = fr(this.mForwardVel * J.mSecJumpXZMult); break;
-            case S.ULTRA_JUMP: this.setPlayerJumpSpeed(J.mUltraJumpSpeedMult, J.mUltraJumpForce); this.mForwardVel = fr(this.mForwardVel * J.mUltraJumpXZMult); break;
-            case S.FORCE_JUMP: this.mVel.y = this.getGroundJumpPower(); break;
-            case S.LEFT_ROTATE_JUMP: case S.RIGHT_ROTATE_JUMP: this.setPlayerJumpSpeed(0.25, J.mRotateJumpForceY); this.mForwardVel = fr(this.mForwardVel * 0.8); break;
+            case S.SECOND_JUMP: this.setPlayerJumpSpeed(J.mSecJumpSpeedMult, J.mSecJumpForce); this.mForwardVel = fr(this.mForwardVel * J.mSecJumpXZMult); this.startVoice(SE.MV22_JUMP_MID_01); break;
+            case S.ULTRA_JUMP: this.setPlayerJumpSpeed(J.mUltraJumpSpeedMult, J.mUltraJumpForce); this.mForwardVel = fr(this.mForwardVel * J.mUltraJumpXZMult); this.startVoice(SE.MV23_JUMP_LARGE_01); break;
+            case S.FORCE_JUMP: this.mVel.y = this.getGroundJumpPower(); this.startVoice(SE.MV22_JUMP_MID_01); break;
+            case S.LEFT_ROTATE_JUMP: case S.RIGHT_ROTATE_JUMP: this.setPlayerJumpSpeed(0.25, J.mRotateJumpForceY); this.mForwardVel = fr(this.mForwardVel * 0.8); this.startVoice(SE.MV23_JUMP_LARGE_01); break;
             case S.FIRE_JUMP: this.mVel.y = 31.5; this.mForwardVel = 8; break;
             case 0x281089A: {
+                this.startVoice(SE.MV21_JUMP_SMALL_01);
                 const [, d] = this.checkGround(this.pos.x, this.pos.y, this.pos.z);
                 if (d.isWaterSurface()) this.setPlayerJumpSpeed(this.mSurfingParamsWaterRed.mJumpXZRatio, this.mSurfingParamsWaterRed.mJumpPow);
                 else this.setPlayerJumpSpeed(this.mSurfingParamsGroundRed.mJumpXZRatio, this.mSurfingParamsGroundRed.mJumpPow);
                 break;
             }
-            case S.BACK_JUMP: this.mForwardVel = J.mBackJumpForce; this.setPlayerJumpSpeed(0, J.mBackJumpForceY); break;
-            case S.WALL_JUMP: this.setPlayerJumpSpeed(0, 62); this.mForwardVel = 24; break;
-            case S.U_TURN_JUMP: this.setPlayerJumpSpeed(0, J.mTurnJumpForce); this.mForwardVel = 8; this.mFaceAngle.y = this.mIntendedYaw; break;
-            case S.MISS_JUMP: this.setPlayerJumpSpeed(0.25, 42); break;
+            case S.BACK_JUMP: this.mForwardVel = J.mBackJumpForce; this.setPlayerJumpSpeed(0, J.mBackJumpForceY); this.startVoice(SE.MV23_JUMP_LARGE_01); break;
+            case S.WALL_JUMP: this.setPlayerJumpSpeed(0, 62); this.mForwardVel = 24; this.startVoice(SE.MV22_JUMP_MID_01); break;
+            case S.U_TURN_JUMP: this.setPlayerJumpSpeed(0, J.mTurnJumpForce); this.mForwardVel = 8; this.mFaceAngle.y = this.mIntendedYaw; this.startVoice(SE.MV23_JUMP_LARGE_01); break;
+            case S.MISS_JUMP: this.startVoice(SE.MV21_JUMP_SMALL_01); this.setPlayerJumpSpeed(0.25, 42); break;
             case S.THROWN_DOWN: break;
             case S.FIRE_DOWN:
                 if (this.mStatusArg !== 2) { this.mVel.y = J.mFireDownForce; if (this.mStatusArg === 0) this.mForwardVel = -J.mFireBackVelocity; }
                 break;
             case S.JUMP_CATCH: {
+                this.startVoice(SE.MV13_ACTION_SMALL_01);
                 let sp = fr(15 + this.mForwardVel);
                 if (sp > 48) sp = 48;
                 this.mForwardVel = sp;
@@ -198,26 +203,37 @@ export abstract class MarioMove extends MarioBase {
                 this.mVel.x = this.mSlideVelX; this.mVel.z = this.mSlideVelZ;
                 break;
             }
-            case S.BROAD_JUMP: this.mForwardVel = J.mBroadJumpForce; this.mVel.y = J.mBroadJumpForceY; break;
-            case S.ROTATE_BROAD_JUMP: this.mForwardVel = J.mRotBroadJumpForce; this.mVel.y = J.mRotBroadJumpForceY; break;
-            case S.ROCKET: break;   // (no FLUDD)
+            case S.BROAD_JUMP: this.startVoice(SE.MV22_JUMP_MID_01); this.mForwardVel = J.mBroadJumpForce; this.mVel.y = J.mBroadJumpForceY; break;
+            case S.ROTATE_BROAD_JUMP: this.startVoice(SE.MV22_JUMP_MID_01); this.mForwardVel = J.mRotBroadJumpForce; this.mVel.y = J.mRotBroadJumpForceY; break;
+            case S.ROCKET: {
+                // the nozzle's line (the jump speed and rocketEffectStart are not simulated here)
+                const G = (this as any).mWaterGun as { mCurrentNozzle: number } | null;
+                if (G) {
+                    if (G.mCurrentNozzle === 1) this.startVoice(SE.MV24_JUMP_SPECIAL_01);
+                    if (G.mCurrentNozzle === 5) this.startVoice(SE.MV15_EXERT_INST_01);
+                    if (G.mCurrentNozzle === 4) this.startVoice(SE.MV21_JUMP_SMALL_01);
+                }
+                break;
+            }
             case S.TRAMPLE:
                 switch (this.mAnimationId) {
-                    default: this.setPlayerJumpSpeed(0.25, this.mDeParams.mTramplePowStep1); break;
-                    case A.STEP2: this.setPlayerJumpSpeed(0.25, this.mDeParams.mTramplePowStep2); break;
-                    case A.STEP3: this.setPlayerJumpSpeed(0.25, this.mDeParams.mTramplePowStep3); break;
+                    default: this.startVoice(SE.MV21_JUMP_SMALL_01); this.setPlayerJumpSpeed(0.25, this.mDeParams.mTramplePowStep1); break;
+                    case A.STEP2: this.startVoice(SE.MV22_JUMP_MID_01); this.setPlayerJumpSpeed(0.25, this.mDeParams.mTramplePowStep2); break;
+                    case A.STEP3: this.startVoice(SE.MV23_JUMP_LARGE_01); this.setPlayerJumpSpeed(0.25, this.mDeParams.mTramplePowStep3); break;
                 }
                 this.mForwardVel = fr(this.mForwardVel * 0.8);
                 break;
             case S.WIRE_JUMP: case S.PULL_JUMP:
                 this.setPlayerJumpSpeed(status === S.WIRE_JUMP ? 0.25 : 0, 42);
                 this.mForwardVel = 0; this.mSlideVelX = 0; this.mSlideVelZ = 0; this.mVel.x = 0; this.mVel.z = 0;
+                this.startVoice(status === S.WIRE_JUMP ? SE.MV23_JUMP_LARGE_01 : SE.MV21_JUMP_SMALL_01);
                 break;
             case S.WIRE_ROLL_JUMP: {
                 const p = fr(this.unkF6 * this.mWireParams.mJumpRate * 1);
                 const a = arg === 0 ? 0xE000 : 0x6000;
                 this.mVel.y = fr(p * JMASSin(a));
                 this.setPlayerVelocity(fr(p * -JMASCos(a)));
+                this.startVoice(SE.MV24_JUMP_SPECIAL_01);
                 break;
             }
         }
@@ -237,7 +253,7 @@ export abstract class MarioMove extends MarioBase {
         const mag = this.mIntendedMag <= 8 ? this.mIntendedMag : 8;
         switch (status) {
             case S.RUN: if (0 <= this.mForwardVel && this.mForwardVel < mag) this.mForwardVel = mag; break;
-            case S.SLIP: status = this.isFrontSlip(0) ? S.SLIP_FORE : S.SLIP_BACK; break;
+            case S.SLIP: status = this.isFrontSlip(0) ? S.SLIP_FORE : S.SLIP_BACK; this.startVoice(SE.MV27_SPRISE_01); break;
         }
         return status;
     }
@@ -321,6 +337,7 @@ export abstract class MarioMove extends MarioBase {
     checkEnforceJump() {
         const g = this.mGroundPlane;
         if (g.isLegal() && bg.isBounceOnLanding(g) && this.isTouchGround4cm() && (this.mPrevStatus & 0x800)) {
+            this.startVoice(SE.MV24_JUMP_SPECIAL_01);
             this.changePlayerStatus(S.FORCE_JUMP, 0, false);
             if (g.actor) (g.actor as HitActor).receiveMessage(this, MSG.TRAMPLE);
         }
@@ -331,7 +348,7 @@ export abstract class MarioMove extends MarioBase {
         this.unk2A8.set(this.pos);
         this.unk2B4 = { ...this.mFaceAngle };
     }
-    checkThrowObject() { if (this.mModel.fc[0].checkPass(4)) this.dropObject(); }
+    checkThrowObject() { if (this.mModel.fc[0].checkPass(4)) { this.startVoice(SE.MV15_EXERT_INST_01); this.dropObject(); } }
     getLRLevel(level: number) {
         const C = this.mControllerParams;
         const zero = C.mAnalogLRToZeroVal, mid = C.mAnalogLRToMiddleVal, max = C.mAnalogLRToMaxVal, ml = C.mAnalogLRMiddleLevel;

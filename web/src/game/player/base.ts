@@ -124,6 +124,9 @@ export class MarioModel {
 function load<S extends PSchema>(w: World, path: string, schema: S) { return new Params(path, w.files).read(schema); }
 
 /** TBGWallCheckRecord */
+/** the voice line's playing state, when something can tell it (see marioVoicePlaying) */
+export const marioVoiceHooks: { playing: ((m: any) => boolean) | null } = { playing: null };
+
 export function wallRecord(x: number, y: number, z: number, r: number, max: number, flags: number): WallCheck {
     return { center: [x, y, z], radius: r, maxResults: max, flags, results: [] };
 }
@@ -299,8 +302,24 @@ export abstract class MarioBase extends TakeActor {
     getTrampleCt() { return this.mAnimationId === A.STEP1 ? 1 : this.mAnimationId === A.STEP2 ? 2 : this.mAnimationId === A.STEP3 ? 3 : 0; }
     // effects and sounds: told to the viewer
     effect(kind: string) { this.world.effect('mario:' + kind, this.pos); }
-    startVoice(_id: number) { return 0; }
-    startVoiceIfNoVoice(_id: number) { return 0; }
+    /**
+     * TMario::startVoice: the voice line asked for this tick (none on Yoshi). MSound::startMarioVoice
+     * (its tired and older-take variants, the lines said only into silence) is the viewer's audio
+     * side, which hears these from the replay; the sim keeps only what the game's own code reads back.
+     */
+    voiceLog: { tick: number; id: number; ifNoVoice?: boolean; unlessId?: number }[] = [];
+    startVoice(id: number, opt: { ifNoVoice?: boolean; unlessId?: number } = {}) {
+        if (this.onYoshi()) return 0;
+        this.voiceLog.push({ tick: this.world.tickCount, id: id >>> 0 === 0xFFFFFFFE ? -2 : id, ...opt });
+        return 1;
+    }
+    /** TMario::startVoiceIfNoVoice: only when no voice of his is playing (the audio side decides) */
+    startVoiceIfNoVoice(id: number) { return this.startVoice(id, { ifNoVoice: true }); }
+    /**
+     * gpMSound->checkMarioVoicePlaying(0), which loserDown waits on: the sim doesn't play the voice,
+     * so it takes the hook's answer (the line's length), else that it's over at once.
+     */
+    marioVoicePlaying(): boolean { return marioVoiceHooks.playing ? marioVoiceHooks.playing(this) : false; }
     startSoundActor(_id: number) { }
     rumbleStart(_a: number, _b: number) { }
     emitParticle(_id: number, _a?: number) { return false; }

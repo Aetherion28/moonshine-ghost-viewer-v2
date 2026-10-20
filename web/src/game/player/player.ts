@@ -17,6 +17,7 @@ import { POLLUTION_TYPE } from '../pollution.js';
 import { TMarioSim, j3dTRMtx } from './tmario.js';
 import { S, A, MF, ControllerWork, bg, marioBckInfo } from './base.js';
 import { ANIME_DATA } from './tables.js';
+import { SE } from '../soundids.js';
 import { MarioGamePad, PadStatus, MEANING, PAD_FLAG } from './pad.js';
 import * as P from './params.js';
 import { Params } from '../engine.js';
@@ -419,9 +420,11 @@ export class PlayerMario extends TMarioSim {
             if (this.mGroundPlane.n[1] <= D.mSlopeAngle) {
                 this.mOilBrake = D.mBrakeStartValSlip; this.mDirtyTimer = D.mDirtyTimeSlip;
                 this.changePlayerStatus(S.OIL_SLOPE, 0, false);
+                this.startVoice(SE.MV28_SPRISE_SMALL_01);
             } else if (this.mStatus === S.JUMP_CATCH || this.mStatus === S.CATCH || this.mStatus === S.OIL_SLIP || this.mStatus === S.OIL_SLOPE) {
                 this.mOilBrake = D.mBrakeStartValSlip; this.mDirtyTimer = D.mDirtyTimeSlip;
                 this.changePlayerStatus(S.OIL_SLIP, 0, false);
+                if (this.mPrevStatus !== S.OIL_SLIP) this.startVoice(SE.MV28_SPRISE_SMALL_01);
             } else if (this.mStatus !== S.CATCH_LOST) {
                 this.mOilBrake = D.mBrakeStartValRun; this.mDirtyTimer = D.mDirtyTimeRun;
                 if (this.mStatus === S.PULLING) this.changePlayerStatus(S.OIL_PULLING, 0, false);
@@ -456,6 +459,7 @@ export class PlayerMario extends TMarioSim {
             if (this.mHealth > 0 && this.mSinkTimer > lim) this.mSinkTimer = lim;
             if (this.world.moveTickCount % G.mSinkDmgTime === 0) this.floorDamageExec(1, 3, 0, this.mMotorParams.mMotorReturn);
             if (this.mSinkTimer > G.mSinkTime) { this.loserExec(); this.changePlayerStatus(S.SINK_LOSER, 0, false); }
+            this.startVoice(SE.MV10A_CRY_SHORT_01);
             return;
         }
         if (this.mPollutionTypeStandingOn === POLLUTION_TYPE.INSTAKILL && this.checkFlag(MF.DIRTY)) {
@@ -705,6 +709,7 @@ export class PlayerMario extends TMarioSim {
         this.decHP(damage);
         if (this.checkFlag(MF.HAS_FLUDD) && this.mWaterGun) for (let i = 0; i < waterEmit; i++) this.mWaterGun.damage();
         if (downType !== 3) this.calcDamagePos(from.pos);
+        if (this.mHealth > 0) this.startVoice(damage > 1 ? SE.MV01_DAMAGE_BIG_01 : downType === 0 ? SE.MV03_DAMAGE_LITLE_01 : SE.MV02_DAMAGE_MID_01);
         this.mDirty = fadd(this.mDirty, dirty);
         this.dirtyLimitCheck();
         this.event('damage', { damage, downType, hp: this.mHealth });
@@ -772,7 +777,13 @@ export class PlayerMario extends TMarioSim {
         if (this.checkFlag(MF.GAME_OVER)) return false;
         const t = sender.actorType;
         const inv = () => this.isInvincible();
-        if (msg === MSG.THROWN) { this.changePlayerStatus(S.THROWN_DOWN, 0, false); return true; }
+        if (msg === MSG.THROWN) {
+            if (t === T.POI_HANA) this.startVoice(SE.MV27_SPRISE_01);
+            // (said unless that same line is what he's saying: the audio side checks)
+            if (sender.isHitCategory(HC.MAP_OBJECT)) this.startVoice(SE.MV28_SPRISE_SMALL_01, { unlessId: SE.MV28_SPRISE_SMALL_01 });
+            this.changePlayerStatus(S.THROWN_DOWN, 0, false);
+            return true;
+        }
         if (sender.isHitCategory(HC.ITEM)) {
             switch (t) {
                 case T.BOTTLE_SHORT: if (msg === MSG.ATTACK) { if (this.checkFlag(MF.HAS_FLUDD) && this.mWaterGun) this.mWaterGun.addWater(Math.trunc(this.mWaterGun.getMaxWater() / 2)); this.event('waterRecover'); return true; } break;
@@ -826,7 +837,7 @@ export class PlayerMario extends TMarioSim {
                 case T.BATH: if (msg === MSG.TAKE) { this.holder = sender as TakeActor; this.changePlayerStatus(S.NOMOTION, 0, false); return true; } break;
                 case T.BATH_WATER:
                     if (msg === MSG.BURN) {
-                        if (!inv()) { this.dmg(sender, this.mDmgParamsFire); this.changePlayerStatus(S.THROWN_DOWN, 1, false); return true; }
+                        if (!inv()) { this.dmg(sender, this.mDmgParamsFire); this.startVoice(SE.MV27_SPRISE_01); this.changePlayerStatus(S.THROWN_DOWN, 1, false); return true; }
                         return false;
                     }
                     break;
@@ -1134,11 +1145,12 @@ export class PlayerMario extends TMarioSim {
     downLoser() { this.setPlayerVelocity(0); this.setAnimation(A.LAND, 1); if (this.jumpProcess(0) === 1) this.changePlayerStatus(S.LOSER_DOWN, 0, true); return 0; }
     elecDowning() { this.setAnimation(A.SHOCK_DOWN, 1); return 0; }
     electricDamage() {
-        if (this.mStatusState === 0) { this.setAnimation(A.SHOCK, 1); this.decHP(this.mDmgParamsGraffitoElec.mDamage); this.mStatusState = 1; }
+        if (this.mStatusState === 0) { this.startVoice(SE.MV04_DAMAGE_ELEC_01); this.setAnimation(A.SHOCK, 1); this.decHP(this.mDmgParamsGraffitoElec.mDamage); this.mStatusState = 1; }
         this.mStatusTimer += 1;
         if (this.mStatusTimer > 0x78) {
             this.getMotionFrameCtrl().frame = 0;
             this.mStatusTimer += 1;
+            this.startVoice(SE.MV07_DAMAGE_REACT_01);
             this.mFloorHitActor.pos.x = fadd(this.pos.x, JMASSin(this.mFaceAngle.y));
             this.mFloorHitActor.pos.z = fadd(this.pos.z, JMASCos(this.mFaceAngle.y));
             const E = this.mDmgParamsGraffitoElec;

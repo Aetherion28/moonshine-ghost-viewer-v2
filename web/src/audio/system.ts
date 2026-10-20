@@ -133,11 +133,13 @@ export class SoundSystem {
      * stopped for the new one unless it has the higher priority (JAIEntry::checkSoundHandle);
      * ifQuiet: the reaction voices, which don't start over a playing voice.
      */
-    playVoice(id: number, vol = 1, pan = 0.5, ifQuiet = false) {
+    playVoice(id: number, vol = 1, pan = 0.5, ifQuiet = false, unlessId = -1) {
         const tbl = this.se, t = this.seSeq;
         if (!tbl || !t) return;
         const info = tbl.info(id);
         if (!info) return;
+        // (getMarioVoiceID(0) != unlessId: not said over that same line)
+        if (unlessId >= 0 && this.voicePlaying() && this.voice!.id === unlessId) return;
         if (this.voicePlaying()) {
             if (ifQuiet) return;
             const old = tbl.info(this.voice!.id);

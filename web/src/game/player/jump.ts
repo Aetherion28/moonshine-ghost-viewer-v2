@@ -6,6 +6,8 @@ import { HitActor, MSG } from '../engine.js';
 import { MarioRun } from './run.js';
 import { fmul, fadd, fsub, fmadd } from './fmath.js';
 import { S, MF, A, bg } from './base.js';
+import { SE } from '../soundids.js';
+import { AT } from '../actortypes.js';
 
 /** s16 += f32 (the game converts the sum) */
 const addAngle = (a: number, f: number) => s16(Math.trunc(a + f));
@@ -267,6 +269,7 @@ export abstract class MarioJump extends MarioRun {
         return 0;
     }
     fireDowning() {
+        if (this.mStatusTimer === 1) this.startVoice(SE.MV05_DAMAGE_FIRE_01);
         this.mStatusTimer += 1;
         if (!(this.mInput & 1)) this.mForwardVel = fr(FConverge(this.mForwardVel, 0, 0.35, 0.35));
         if (this.mInput & 1) {
@@ -282,7 +285,7 @@ export abstract class MarioJump extends MarioRun {
         switch (this.jumpProcess(0)) {
             case 1:
                 if (this.mStatusState < 2 && this.mVel.y < 0) { this.mVel.y = fr(0.4 * -this.mVel.y); this.setPlayerVelocity(fr(0.5 * this.mForwardVel)); this.mStatusState += 1; }
-                else this.changePlayerStatus(S.FIRE_JUMP_END, 0, false);
+                else { this.startVoice(SE.MV07_DAMAGE_REACT_01); this.changePlayerStatus(S.FIRE_JUMP_END, 0, false); }
                 break;
             case 2: this.playerRefrection(0); break;
         }
@@ -318,6 +321,7 @@ export abstract class MarioJump extends MarioRun {
         return 0;
     }
     fireJumping() {
+        if (this.mStatusTimer === 1) this.startVoice(SE.MV05_DAMAGE_FIRE_01);
         this.mStatusTimer += 1;
         this.setPlayerVelocity(this.mForwardVel);
         if (this.jumpProcess(0) === 1) this.changePlayerStatus(S.FIRE_DASH, 0, false);
@@ -349,7 +353,7 @@ export abstract class MarioJump extends MarioRun {
     }
     hipAttacking() {
         switch (this.mStatusState) {
-            case 0: this.mStatusState = 1;
+            case 0: this.startVoice(SE.MV15_EXERT_INST_01); this.mStatusState = 1;
             // fallthrough
             case 1: {
                 if (this.mFloorPosition.y > this.pos.y) { this.pos.y = fr(1 + this.mFloorPosition.y); this.changePlayerStatus(S.HIP_ATTACK_END, 0, false); }
@@ -378,6 +382,14 @@ export abstract class MarioJump extends MarioRun {
                 if (r === 1) {
                     const a = this.mGroundPlane.actor as HitActor | null;
                     if (a) {
+                        // the revolving fence's inner panel: he drops through it, flipping it
+                        if (!this.onYoshi() && a.actorType === AT.FENCE_REVOLVE_INNER) {
+                            this.effect('amiAttack');
+                            this.pos.y = fr(this.pos.y - 160);
+                            a.receiveMessage(this, MSG.SUPER_HIP_DROP);
+                            this.startVoice(SE.MV28_SPRISE_SMALL_01);
+                            return this.changePlayerStatus(S.KICK_ROOF_ROLL_DOWN, 0, false);
+                        }
                         if (this.mStatusState === 2) a.receiveMessage(this, MSG.HIP_DROP);
                         else { a.receiveMessage(this, MSG.SUPER_HIP_DROP); a.receiveMessage(this, MSG.HIP_DROP); }
                     }

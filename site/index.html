@@ -8382,6 +8382,8 @@ void main() {
     voiceLast = { g, t };
     if (t0 < 0 || t <= t0 || t - t0 > 60) return out;
     const H = replayOf(d);
+    // the simulated Mario's own voice lines (TMario::startVoice, where the game says them)
+    if (H && H.voicesIn) return H.voicesIn(t0, t).map((v) => ({ t: v.qf, voice: v.id, ifNoVoice: v.ifNoVoice, unlessId: v.unlessId }));
     if (H) {
       const q = H.qf, n = q.length;
       for (let i = Math.max(1, H.index(t0) + 1); i > 0 && i < n && q[i] <= t; i++) {

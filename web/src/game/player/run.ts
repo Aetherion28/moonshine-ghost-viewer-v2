@@ -6,6 +6,7 @@ import { MarioPhysics } from './physics.js';
 import { MsSqrtf } from './move.js';
 import { fmul, fadd, fsub, fdiv, fmadd, fnmsub, sqrtf } from './fmath.js';
 import { S, MF, A, bg } from './base.js';
+import { SE } from '../soundids.js';
 
 type JumpSlipRecord = { max: number; end: number; jump: number; c: number; d: number };
 const iconv = (v: number, t: number, inc: number, dec: number) => IConverge(Math.trunc(v), t, Math.trunc(inc), Math.trunc(dec));
@@ -189,7 +190,7 @@ export abstract class MarioRun extends MarioPhysics {
         if (this.mForwardVel > 6) this.setPlayerVelocity(6);
         let wa = 0, d = 0;
         if (this.mWallPlane) { wa = this.getWallAngle(); d = s16(wa - this.mFaceAngle.y); }
-        if (!this.mWallPlane || d < -0x71C7 || d > 0x71C7) { this.setAnimation(A.PUSH, 1); return; }
+        if (!this.mWallPlane || d < -0x71C7 || d > 0x71C7) { this.setAnimation(A.PUSH, 1); this.startVoice(SE.MV16_EXERT_CONT_01); return; }
         const rate = fr(2 * MsSqrtf(dx * dx + dz * dz));
         this.setAnimation(d < 0 ? A.SWLKR : A.SWLKL, rate);
         this.mFaceAngle.x = 0;
@@ -420,7 +421,7 @@ export abstract class MarioRun extends MarioPhysics {
         this.mVel.x = fr(this.mVel.x * this.mOilBrake); this.mVel.z = fr(this.mVel.z * this.mOilBrake);
         this.mForwardVel = 0; this.mSlideVelX = 0; this.mSlideVelZ = 0;
         if (this.mIntendedMag === 0) this.setAnimation(this.mInput & 0x4000 ? A.SQWAT : A.WAIT, 0.5);
-        else this.setAnimation(A.RUN2, fr(0.5 * this.mIntendedMag * D.mSlipAnmSpeed));
+        else { this.setAnimation(A.RUN2, fr(0.5 * this.mIntendedMag * D.mSlipAnmSpeed)); this.startVoiceIfNoVoice(SE.MV28_SPRISE_SMALL_01); }
         if (this.walkProcess() === 0) return this.changePlayerStatus(S.LANDING, 0, false);
         return 0;
     }
@@ -470,10 +471,10 @@ export abstract class MarioRun extends MarioPhysics {
         if (this.mForwardVel * this.mForwardVel < 1) this.setPlayerVelocity(0);
         this.setAnimation(A.DIE, 1);
         switch (this.mStatusState) {
-            case 0: this.mStatusState++; break;
-            case 1: this.mStatusTimer = 0; this.mStatusState++; break;   // (once his voice ends)
+            case 0: this.startVoice(SE.MV08A_DOWN_01); this.mStatusState++; break;
+            case 1: if (!this.marioVoicePlaying()) { this.mStatusTimer = 0; this.mStatusState++; } break;
             case 2: if (this.mStatusTimer++ > 60) this.mStatusState++; break;
-            case 3: this.mStatusState++; break;
+            case 3: this.startVoice(SE.MV08B_DOWN_REACT_01); this.mStatusState++; break;
         }
         return 0;
     }
