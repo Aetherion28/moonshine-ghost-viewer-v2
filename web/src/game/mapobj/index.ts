@@ -37,6 +37,8 @@ export * from './pinna.js';
 export * from './dolpic.js';
 // Gelato Beach's
 export * from './mamma.js';
+// Noki Bay's jellyfish gates
+export * from './modelgate.js';
 
 /**
  * The item hooks the enemies call through World (World.newAndRegisterCoin / makeCoinAppear /
