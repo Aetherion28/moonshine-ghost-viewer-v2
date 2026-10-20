@@ -5595,6 +5595,15 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     return { spray: null, since: k >= 0 ? af(time - runs[k][1]) : null, power, nozzle, h, pump };
   }
   let sleepMario = null;
+  // shut (ma_sleep_tx / ma_sleep_wait_tx.btp: TEX1 texture 8) or his own eyes on the sleeper's rig
+  function marioEyes(m, shut) {
+    if (m.userData.eyesShut === shut) return;
+    m.userData.eyesShut = shut;
+    m.traverse((o) => { if (o.isMesh) [].concat(o.material).forEach((mt) => {
+      const tx = shut ? mt.userData.eyeShut : mt.userData.eyeOpen;
+      if (tx && mt.map !== tx) { mt.map = tx; mt.needsUpdate = true; }
+    }); });
+  }
   const MARIO_EYE_TEX = new Map();
   function updateSleeper() {
     const show = !!(marioModel && objSpawn && !ghosts.length && MarioRig.ready());
@@ -5609,7 +5618,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
         if (!o.isMesh) return;
         [].concat(o.material).forEach((m) => {
           const tx = m.userData.eyes ? MARIO_EYE_TEX.get(m.userData.eyes['8']) : null;
-          if (tx && m.map) { tx.wrapS = m.map.wrapS; tx.wrapT = m.map.wrapT; m.map = tx; m.needsUpdate = true; }
+          if (tx && m.map) { tx.wrapS = m.map.wrapS; tx.wrapT = m.map.wrapT; m.userData.eyeOpen = m.map; m.userData.eyeShut = tx; m.map = tx; m.needsUpdate = true; }
         });
       });
       sleepMario.userData.rig = MarioRig.attach(body);
@@ -5620,7 +5629,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     if (poseLiveMario(sleepMario)) return;
     const [x, y, z, yaw] = objSpawn;
     const ck = activeCol() ? 1 : 0;
-    if (sleepMario.userData.livePosed) { sleepMario.userData.livePosed = false; sleepMario.userData.at = null; if (sleepMario.userData.zzz) sleepMario.userData.zzz.forEach((sp) => { sp.visible = true; }); }
+    if (sleepMario.userData.livePosed) { sleepMario.userData.livePosed = false; sleepMario.userData.at = null; marioEyes(sleepMario, true); }
     if (sleepMario.userData.at !== objSpawn || sleepMario.userData.col !== ck) {   // light set from the floor, once collision is in
       sleepMario.userData.at = objSpawn; sleepMario.userData.col = ck;
       // Some stages start Mario in the air (he drops in): asleep he lies on the floor below.
@@ -5633,8 +5642,10 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     // TMario::sleeping's last state, already lying down: sleep_wait (309) looped (the game first
     // sits him through sit_wait 41 times and lies him down with sleep); 60 fps animation at 30 fps.
     const F = (idleClock / QF_PER_FRAME) * 2, a = MarioRig.bckFor(309, false), d = a && a.data ? a.data.d : 120;
-    MarioRig.pose(sleepMario.userData.rig, 309, false, ((F % d) / d) * 4096);
+    sleepMario.userData.phase = (F % d) / d;   // (live play starts the sim's sleeping Mario here: liveSimInput)
+    MarioRig.pose(sleepMario.userData.rig, 309, false, sleepMario.userData.phase * 4096);
     updateZzz(sleepMario, F / 2);
+    if (sleepMario.userData.zzz) sleepMario.userData.zzz.forEach((sp) => { sp.visible = true; });
     // FLUDD with only its spray nozzle, as at the start of a stage.
     const parts = sleepMario.userData.rig.parts;
     if (parts.nozzle_normal_wg) parts.nozzle_normal_wg.visible = true;
@@ -5777,7 +5788,10 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   function liveSimInput() {
     if (!livePad.active || !objectsKey) return null;
     const [a, e] = objectsKey.split('|').pop().split(':').map(Number);
-    return { t: 0, ghost: null, api: RAW, live: { area: a, episode: e, frames: livePad.frames, pad: readLivePad, reset: livePad.reset, record: livePad.rec } };
+    // (not recording: the sim's Mario starts asleep where the sleeper lies, at his sleep_wait phase, and
+    // the pad wakes him; a recording starts from the stage's own start so the ghost replays in sync)
+    const sp = sleepMario && sleepMario.visible && !sleepMario.userData.livePosed && sleepMario.userData.phase != null ? sleepMario.userData.phase : null;
+    return { t: 0, ghost: null, api: RAW, live: { area: a, episode: e, frames: livePad.frames, pad: readLivePad, reset: livePad.reset, record: livePad.rec, sleepPhase: livePad.rec ? null : sp } };
   }
   function liveStep(dt) {
     const want = livePad.on && !ghosts.length && !!gameLayer && !!gameLayer.common && !splitOn() && !!objectsGroup;
@@ -5810,13 +5824,18 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     m.rotation.set(0, (s.yaw / 32768) * Math.PI, 0);
     gxApply(m, gxSet('player', lightSetAt(s.x, s.y, s.z)));
     MarioRig.pose(m.userData.rig, a.id, a.yoshi, a.phase);
-    if (m.userData.zzz) m.userData.zzz.forEach((sp) => { sp.visible = false; });
+    // TMario::sleeping: asleep (sleep, sleep_wait) his eyes shut and the Z's over him (sleepingEffect)
+    // until he wakes (sleep_end)
+    const asleep = !a.yoshi && (a.id === 308 || a.id === 309), dozing = asleep;
+    marioEyes(m, asleep);
+    if (dozing) updateZzz(m, (idleClock / QF_PER_FRAME));
+    if (m.userData.zzz) m.userData.zzz.forEach((sp) => { sp.visible = dozing; });
     const v = H.fluddAt(q), parts = m.userData.rig.parts;
     if (parts.fludd_body) parts.fludd_body.visible = v >= 0;
     const n = v & 7;
     if (parts.nozzle_normal_wg) parts.nozzle_normal_wg.visible = v >= 0;
     Object.entries(NOZZLE_PARTS).forEach(([k, nm]) => { if (parts[nm]) parts[nm].visible = v >= 0 && +k === n; });
-    if (v >= 0) poseFludd(m.userData.rig, { spray: v & 0x10 ? 0 : null, since: null, power: v & 0x10 ? 1 : 0, nozzle: n === 0 || n === 2 ? 'normal_wg' : (NOZZLE_PARTS[n] || 'nozzle_normal_wg').replace(/^nozzle_/, ''), h: 0 });
+    if (v >= 0) poseFludd(m.userData.rig, { spray: v & 0x10 ? 0 : null, since: null, power: v & 0x10 ? 1 : 0, nozzle: n === 0 || n === 2 ? 'normal_wg' : (NOZZLE_PARTS[n] || 'nozzle_normal_wg').replace(/^nozzle_/, ''), h: asleep ? 1 : 0 });
     return true;
   }
 

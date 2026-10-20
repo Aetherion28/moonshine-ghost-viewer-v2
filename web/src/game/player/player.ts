@@ -1219,6 +1219,23 @@ export class PlayerMario extends TMarioSim {
         this.changePlayerStatus(S.WAIT, 0, true);
         return true;
     }
+    /**
+     * (the viewer's, not the game's: live play from the sleeping Mario) waitingStart, but already asleep:
+     * on the floor below his start, in TMario::sleeping's last state (sleep_wait looped at the given
+     * phase), so the pad wakes him (wakeup: sleep_end) the way the game does.
+     */
+    sleepingStart(phase: number) {
+        this.startCommon(null, 0);
+        if (this.mGroundPlane && this.mFloorPosition.y > -1e8 && this.mFloorPosition.y <= this.pos.y + 25) this.pos.y = this.mFloorPosition.y;
+        this.mVel.set(0, 0, 0); this.mForwardVel = 0;
+        this.onUnk114(2);
+        this.changePlayerStatus(S.SLEEP, 0, true);
+        this.mStatusState = 2;
+        this.setAnimation(A.SLEEP_WAIT, 1);
+        const fc = this.mModel.fc[0];
+        fc.frame = fr(Math.max(0, Math.min(0.9999, phase)) * fc.end);
+        return true;
+    }
     warpOut() {
         this.mStatusTimer += 1;
         this.onUnk114(2);
@@ -1471,6 +1488,9 @@ export interface IntroTiming {
     firstSample?: number;
     /** a secret stage's Shine was got before the run (the ghost saw FLUDD on Mario): its red coin switch is there and he keeps FLUDD */
     exShineGot?: boolean;
+    /** live play from the viewer's sleeping Mario: setMario lays him down asleep (sleepingStart) at this
+     * phase (0..1) of sleep_wait instead of the stage's start; null: the stage's own start */
+    sleepPhase?: number | null;
 }
 
 /**
@@ -1491,7 +1511,8 @@ export class PlayerDirector {
         if (this.setMarioDone) return;
         this.setMarioDone = true;
         const m = this.mario;
-        if (DEMO_STAGES.has(this.map)) m.rollingStart(null, 0);
+        if (this.timing.sleepPhase != null) m.sleepingStart(this.timing.sleepPhase);
+        else if (DEMO_STAGES.has(this.map)) m.rollingStart(null, 0);
         else m.waitingStart(null, 0);
         if (m.checkFlag(MF.HAS_FLUDD) && m.mWaterGun) {
             switch (this.map) {

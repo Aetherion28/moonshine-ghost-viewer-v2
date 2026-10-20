@@ -501,7 +501,7 @@ export { calcKeyCode };
  * pad read each frame, no ghost. inp.live: the route, the frames wanted since the start (the
  * viewer's real-time clock) and the pad reader (a post-PADClamp PADStatus); reset restarts it.
  */
-export interface LiveInput { area: number; episode: number; frames: number; pad: () => PadStatus; reset: number; record?: boolean }
+export interface LiveInput { area: number; episode: number; frames: number; pad: () => PadStatus; reset: number; record?: boolean; sleepPhase?: number | null }
 export class LiveRunner extends SimRunner {
     private liveKey = '';
     /** the frames recorded since the stage (re)started with record on (ghostwrite.ts), else null */
@@ -522,7 +522,7 @@ export class LiveRunner extends SimRunner {
             this.recording = L.record ? [] : null;
             // (the opening a ghost of it implies: its first sample the first frame's end, QF 4; no FLUDD
             // observation before the stage starts, so a secret stage's Shine is not got)
-            try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, L.area, L.episode, 0, 0, introTiming([{ qf: 4, anim: 0, phase: 0 }], null, 0)); }
+            try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, L.area, L.episode, 0, 0, { ...introTiming([{ qf: 4, anim: 0, phase: 0 }], null, 0), sleepPhase: !L.record && L.sleepPhase != null ? L.sleepPhase : null }); }
             catch (e) { this.error = e; this.stage = null; console.warn('[live] stage', e); return false; }
             if (this.stage.player) this.history = new ReplayHistory(null, 0);
         }
