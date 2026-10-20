@@ -85,6 +85,17 @@ const SAVE_FILES = ['npcMonteM', 'npcMonteM', 'npcMonteM', 'npcMonteM', 'npcMont
 export interface NpcParams { far: Vals<typeof NPC_FAR_SCHEMA>; normal: NpcNormal; individual: NpcIndividual[]; }
 const PARAMS = new WeakMap<World, NpcParams>();
 const f32All = (o: any, schema: PSchema) => { for (const k in schema) if (schema[k][0] === 'f') o[k] = fr(o[k]); return o; };
+/** gpConductor's TCondParams (/conductor.prm): only mEnemyFarClip is read here */
+const COND = new WeakMap<World, { mEnemyFarClip: number }>();
+export function condParams(w: World) {
+    let p = COND.get(w);
+    if (!p) {
+        const schema = { mEnemyFarClip: F(5000), mGenerateRadiusMax: F(1000), mGenerateRadiusMin: F(200), mGenerateTime: I(300), mGenerateProp: F(0.01) };
+        p = f32All(readParams('/conductor.prm', w.files, schema), schema) as any;
+        COND.set(w, p!);
+    }
+    return p!;
+}
 export function npcParams(w: World): NpcParams {
     let p = PARAMS.get(w);
     if (!p) {
@@ -298,6 +309,7 @@ export class BaseNPC extends SpineEnemy {
     unk1C4 = 0; unk1C8 = 0;
     /** unk1CC / unk1D0: the walk animation slowing to a stop (frames, rate) */
     unk1CC = 0; unk1D0 = 0;
+    /** mDummyConnectActor: set by the event scripts (evConnectDummyNpc), which the sim doesn't run */
     dummyConnect: LiveActor | null = null;
     unk1D8 = 0; unk1D9 = 0; unk1DA = 0; unk1DC = 0;
     talkForbid = 120; walkForbid = 0; damageParticleForbid = 0;
@@ -1287,7 +1299,7 @@ export class BaseNPC extends SpineEnemy {
             && this.actorType !== T.NPC_PEACH && this.isNerveMaybeDontMovement() && !this.checkLiveFlag(LF_N.SINK_BOTTOM)) {
             // standing still out of the camera's sight: it doesn't move at all
             const M = this.manager as NPCManagerLike | null;
-            const far = M && M.farClip !== undefined ? M.farClip : 15000;   // (gpConductor's mEnemyFarClip without a manager)
+            const far = M && M.farClip !== undefined ? M.farClip : condParams(w).mEnemyFarClip;   // (gpConductor's mEnemyFarClip without a manager)
             const cam = w.clipCamera;
             if (cam) {
                 // the angle from gpCamera's eye (unk124) to its target (unk148): the view's forward

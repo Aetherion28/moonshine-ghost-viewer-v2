@@ -994,7 +994,13 @@ export class PlayerMario extends TMarioSim {
             if (dist > b) can = false;
             if (this.pos.y < fadd(100, a.pos.y)) can = false;
             if (can) {
-                // (climbing poles and trees (BAR_HANG) isn't simulated: he bumps off them)
+                this.dropObject();
+                this.holder = a as TakeActor;
+                this.mVel.y = 0; this.mForwardVel = 0;
+                this.changePlayerStatus(S.BAR_HANG, 0, false);
+                a.receiveMessage(this, MSG.ATTACH);
+                this.mHolderHeightDiff = fsub(this.pos.y, a.pos.y);
+                return;
             }
         }
         const r = (a as any).getRadiusAtY ? (a as any).getRadiusAtY(this.pos.y) : a.damageRadius;

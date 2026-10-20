@@ -3,9 +3,9 @@
 // far clip from npcFarClip.prm). The model swaps (straw, goop, the jellyfish's textures) and the
 // parts' models are the viewer's.
 
-import { World, Stream, EnemyManager, AnmData, LF } from '../engine.js';
+import { World, Stream, EnemyManager, LiveManager, AnmData, LF } from '../engine.js';
 import { register } from '../scene.js';
-import { BaseNPC, npcParams } from './base.js';
+import { BaseNPC, npcParams, condParams } from './base.js';
 import { AT } from '../actortypes.js';
 
 /** Each manager class: its model file, the folder it's loaded from (createModelDataArrayBase) and where its animations are (createAnmData). */
@@ -73,4 +73,12 @@ const NPCS: [string, number][] = [
 ];
 for (const [cls, type] of NPCS) register(cls, (w, n) => new BaseNPC(w, type, n));
 for (const k of Object.keys(MANAGERS)) register(k, (w, n) => new NPCManager(w, k, n));
-// TODO: TBoardNpcManager (a TLiveManager: boardNpc.bmd) and TMareJellyFishManager
+
+/** TBoardNpcManager: the signboards' manager (a TLiveManager), boardNpc.bmd from its folder, clipped as the enemies are */
+export class BoardNpcManager extends LiveManager {
+    load(s: Stream) { super.load(s); this.createModelData(); }
+    createModelData() { this.createModelDataArray(['boardNpc.bmd']); }
+    clipActors() { this.clipActorsAux(condParams(this.world).mEnemyFarClip, 200); }
+}
+register('BoardNpcManager', (w, n) => new BoardNpcManager(w, n));
+// TMareJellyFishManager draws Noki Bay's jellyfish (a TObjManager whose perform does nothing): TODO with Noki Bay

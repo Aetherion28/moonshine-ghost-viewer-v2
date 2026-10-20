@@ -1,7 +1,6 @@
-// Player/MarioSpecial.cpp: hanging from ledges and roofs (fence ceilings), climbing fences, being
-// carried, and specMain. Bars (trees), wires and pulling need a holder he grabs through
-// checkCollision / considerTake, which a simulated Mario doesn't run: they're kept as the
-// let-go branches only.
+// Player/MarioSpecial.cpp: climbing bars (poles, trees, the fluff), hanging from ledges and roofs
+// (fence ceilings), climbing fences, being carried, and specMain. Wires and pulling are kept as
+// the let-go branches only.
 
 import { fr, s16, JMASSin, JMASCos, matan, IConverge, V3, mtxMultVec } from '../math.js';
 import { HitActor, HF, MSG } from '../engine.js';
@@ -17,10 +16,104 @@ export abstract class MarioSpecial extends MarioSwim {
     /** gpCamera->unk258 (the camera's yaw). Approximated: a simulated Mario has no camera of his own. */
     cameraYaw() { return this.mFaceAngle.y; }
 
-    // ---------------------------------------------------------------- bars (trees): only the let-go branch
-    barWait() { if (!this.holder) return this.changePlayerStatus(S.LAND_SAFE_DOWN, 0, false); return 0; }
-    barClimb() { if (!this.holder) return this.changePlayerStatus(S.LAND_SAFE_DOWN, 0, false); return 0; }
-    barHang() { if (!this.holder) return this.changePlayerStatus(S.LAND_SAFE_DOWN, 0, false); return 0; }
+    // ---------------------------------------------------------------- bars (poles, trees, the fluff)
+    /** the most a bar lets him climb (bananas 500; the goal flag by map) */
+    private barClamp() {
+        const h = this.holder!;
+        let max = -1;
+        if (h.isActorType(AT.BANANA_TREE)) max = 500;
+        if (h.isActorType(AT.MONTE_GOAL_FLAG)) { const m = this.world.map; max = m === 8 || m === 9 ? 750 : m === 4 ? 2500 : -1; }
+        if (max >= 0 && this.mHolderHeightDiff > max) { this.mHolderHeightDiff = max; this.pos.y = fr(h.pos.y + this.mHolderHeightDiff); }
+    }
+    /** wall jumping off backwards (A) */
+    private barKick() {
+        this.pos.x = fr(this.pos.x - fr(200 * JMASSin(this.mFaceAngle.y)));
+        this.pos.z = fr(this.pos.z - fr(200 * JMASCos(this.mFaceAngle.y)));
+        this.mFaceAngle.y = s16(this.mFaceAngle.y + 0x8000);
+        return this.changePlayerStatus(S.WALL_JUMP, 0, false);
+    }
+    /** barProcess (MarioPhysics.cpp): onto the bar unless a wall's in the way, under the roof, landing on the ground */
+    barProcess() {
+        const h = this.holder!;
+        let result = 0;
+        const p = new V3(h.pos.x, this.pos.y, h.pos.z);
+        const w1 = this.checkWallPlane(p, 60, 43), w2 = this.checkWallPlane(p, 30, 24);
+        if ((!w1 || w1.isMarioThrough()) && (!w2 || w2.isMarioThrough())) this.pos.set(h.pos.x, fr(h.pos.y + this.mHolderHeightDiff), h.pos.z);
+        else this.pos.set(p);
+        const [ceil] = this.checkRoof(this.pos.x, fr(this.pos.y + 80), this.pos.z);
+        if (this.pos.y > fr(ceil - 160)) this.pos.y = fr(ceil - 160);
+        const [floor] = this.checkGroundPlane(this.pos.x, this.pos.y, this.pos.z);
+        if (this.pos.y < floor) { this.pos.y = floor; this.changePlayerStatus(S.WAIT, 0, false); result = 1; }
+        this.setPlayerVelocity(0);
+        this.mFaceAngle.x = 0;
+        this.mModelFaceAngle = this.mFaceAngle.y;
+        return result;
+    }
+    barWait() {
+        const h = this.holder;
+        if (!h) return this.changePlayerStatus(S.LAND_SAFE_DOWN, 0, false);
+        if (this.mInput & 2) return this.barKick();
+        this.pos.set(h.pos.x, fr(h.pos.y + this.mHolderHeightDiff), h.pos.z);
+        const C = this.unk108;
+        if ((this.mInput & 0x8000) || this.mHolderHeightDiff <= 100) {
+            this.setPlayerVelocity(-2);
+            this.pos.x = fr(this.pos.x - fr(200 * JMASSin(this.mFaceAngle.y)));
+            this.pos.z = fr(this.pos.z - fr(200 * JMASCos(this.mFaceAngle.y)));
+            return this.changePlayerStatus(S.LAND_SAFE_DOWN, 0, false);
+        }
+        if (C.mStickV > 16) return this.changePlayerStatus(S.BAR_CLIMB, 0, false);
+        if (C.mStickV < -16) {
+            this.mVel.y = fr(this.mVel.y + fr(C.mStickV / 512));
+            this.pos.y = fr(this.pos.y + this.mVel.y);
+            this.mHolderHeightDiff = fr(this.pos.y - h.pos.y);
+            this.effect('treeSlip');   // (treeSlipEffect, MSD_SE_MA_SLIP_TREE)
+        }
+        if (h.isActorType(AT.ELASTIC_CODE)) {
+            if (C.mStickV <= 0) { this.pos.y = fr(this.pos.y - 2); this.mHolderHeightDiff = fr(this.pos.y - h.pos.y); }
+            if (this.pos.y < fr(h.pos.y + 200)) { this.pos.y = fr(h.pos.y + 200); this.mHolderHeightDiff = fr(this.pos.y - h.pos.y); }
+        }
+        this.barClamp();
+        this.mFaceAngle.y = s16(this.mFaceAngle.y + s16(Math.trunc(fr(C.mStickH * this.mBarParams.mRotateSp))));
+        this.mFaceAngle.x = 0;
+        this.mModelFaceAngle = this.mFaceAngle.y;
+        if (this.barProcess() === 0) {
+            if (C.mStickH === 0) this.setAnimation(A.TREE_WAIT, 1);
+            if (C.mStickH > 0) this.setAnimation(A.TREE_MOVE_R, 1);
+            if (C.mStickH < 0) this.setAnimation(A.TREE_MOVE_L, 1);
+        }
+        return 0;
+    }
+    barClimb() {
+        const h = this.holder;
+        if (!h) return this.changePlayerStatus(S.LAND_SAFE_DOWN, 0, false);
+        if (this.mInput & 2) return this.barKick();
+        this.pos.set(h.pos.x, fr(h.pos.y + this.mHolderHeightDiff), h.pos.z);
+        const C = this.unk108;
+        if (C.mStickV < 8) return this.changePlayerStatus(S.BAR_WAIT, 0, false);
+        this.mVel.y = 0;
+        this.pos.y = fr(this.pos.y + fr(C.mStickV * this.mBarParams.mClimbSp));
+        this.mHolderHeightDiff = fr(this.pos.y - h.pos.y);
+        if (this.pos.y > fr(h.pos.y + h.damageHeight)) {
+            this.setPlayerVelocity(0);
+            this.changePlayerStatus(S.JUMP, 0, false);
+            this.unk78 &= ~0x100;
+        }
+        if (this.barProcess() === 0) this.setAnimation(A.TREE_CLIMB, fr(C.mStickV * this.mBarParams.mClimbAnmRate + 1));
+        this.barClamp();
+        return 0;
+    }
+    barHang() {
+        if (this.mStatusTimer === 0) this.mStatusTimer += 1;   // (rumbleStart)
+        if (!this.holder) return this.changePlayerStatus(S.LAND_SAFE_DOWN, 0, false);
+        this.mVel.y = 0;
+        if (this.barProcess() === 0) {
+            this.setAnimation(A.TREE_CATCH, 1);
+            if (this.isLast1AnimeFrame()) this.changePlayerStatus(S.BAR_WAIT, 0, false);
+        }
+        this.mFaceAngle.x = 0;
+        this.mModelFaceAngle = this.mFaceAngle.y;
+        return 0;
+    }
 
     // ---------------------------------------------------------------- roofs
     hangingCheckRoof(p: V3) {
