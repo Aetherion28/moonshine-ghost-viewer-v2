@@ -23,6 +23,8 @@ import { installMapWires } from './mapwire.js';
 export type Maker = (w: World, name: string) => NameRef;
 export const CLASSES = new Map<string, Maker>();
 export function register(type: string, make: Maker) { CLASSES.set(type, make); }
+/** Classes whose scene.bin children are their own entries (TNameRefPtrAryT), not a group's members. */
+const PTR_ARY = new Set(['StageEnemyInfoHeader']);
 
 export interface StageFiles extends Files {
     /** common.szs (/common/...) */
@@ -81,6 +83,14 @@ export class Stage {
         else w.mario = new MarioProxy(w);
         // scene.bin
         installMapWires(w);
+        // tables.bin (before scene.bin, its object in the game objects): of it, the stage's enemy table
+        const tb = files.scene('map/tables.bin');
+        if (tb) {
+            let troot: SceneNode | null = null;
+            try { troot = parseSceneBin(tb); } catch { }
+            const find = (n: SceneNode) => { if (PTR_ARY.has(n.type)) this.walk(n, false); else for (const c of n.children || []) find(c); };
+            if (troot) find(troot);
+        }
         this.walk(root, false);
         for (const o of this.objects) o.loadAfter();
         for (const gw of w.graphs.values()) { gw.initGoalIndex(new V3()); gw.attachToGround(w); }
@@ -92,6 +102,20 @@ export class Stage {
     private walk(n: SceneNode, common: boolean, group = -1) {
         const w = this.world;
         let o: NameRef | null = null;
+        if (n.children && PTR_ARY.has(n.type) && !common) {
+            // a TNameRefPtrAryT made by its class (the stage's enemy table): its children are its entries
+            const make = CLASSES.get(n.type);
+            if (make) {
+                o = make(w, n.name); o.name = n.name; w.register(o); this.objects.push(o); this.nodeOf.set(o, n);
+                const list = (o as any).list as NameRef[];
+                for (const c of n.children) {
+                    const mk = CLASSES.get(c.type); if (!mk) continue;
+                    const e = mk(w, c.name); e.name = c.name; list.push(e);
+                    try { e.load(new Stream(c.data)); } catch (err) { console.warn('[game] load', c.type, c.name, err); }
+                }
+                return;
+            }
+        }
         if (n.children) {
             // groups: an IdxGroup's children are its group's members
             const gi = n.type === 'IdxGroup' && n.groupIndex !== undefined ? n.groupIndex : group;

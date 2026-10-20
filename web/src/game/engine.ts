@@ -1388,7 +1388,10 @@ export class Conductor {
         r.resetToPosition(p);
         return r;
     }
+    /** genEnemyFromPollution (enemies/enemytable.ts sets it when the stage has a TStageEnemyInfoTable) */
+    performHead: ((cue: number) => void) | null = null;
     perform(cue: number) {
+        if (this.performHead) this.performHead(cue);
         for (let i = 1; i >= 0; --i) {
             for (const m of this.liveManagers) if ((i !== 0) === m.hasMapCollision()) m.testPerform(cue);
             for (const a of this.aloneActors) if ((i !== 0) === a.hasMapCollision()) a.testPerform(cue);
