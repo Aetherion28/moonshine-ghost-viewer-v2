@@ -97,6 +97,10 @@ interface Task { x: number; z: number; size: number; y: number; }
 export class Layer {
     type = 0; flags = 0; minX = 0; maxX = 0; minZ = 0; maxZ = 0; minY = 0; maxY = 0;
     unk48 = 0; spreadTimer = 0; threshold = 0; changeDelta = 8; changeThreshold = 0;
+    /** mCounter: TPollutionCounterLayer::registerLayer sets it to -1 (u32) until the first count */
+    mCounter = 0xFFFFFFFF;
+    /** TPollutionCounterLayer::mIsLayerEnabled (onLayer / offLayer) */
+    counterOn = true;
     effectTimer = 0; unkA8 = 0;
     pos = new Pos(this);
     /** mPollutionMap: the texture's texels (GX I8 tiles). */
@@ -231,16 +235,19 @@ export class Layer {
     // ---------------------------------------------------------------- the frame's GPU pass
     /** drawPollutionLayer: residue under the threshold fades by the step (UNK7: above it grows; decaying: all fades). */
     private fade() {
+        // (returns the texels left above 0: the pass's count)
         const M = this.map, n = M.length;
+        let z = 0;
         if (this.type === POLLUTION_TYPE.UNK7) {
             const th = this.changeThreshold, st = (this.flags & FLAG_DECAY) ? 2 : this.changeDelta;
-            for (let k = 0; k < n; k++) { const c = M[k]; if (th > c) continue; const v = c + st; M[k] = v > 255 ? 255 : v; }
+            for (let k = 0; k < n; k++) { const c = M[k]; if (th > c) { if (c) z++; continue; } const v = c + st; M[k] = v > 255 ? 255 : v; z++; }
         } else if (this.flags & FLAG_DECAY) {
-            for (let k = 0; k < n; k++) { const v = M[k] - 2; M[k] = v < 0 ? 0 : v; }
+            for (let k = 0; k < n; k++) { const v = M[k] - 2; if (v > 0) { M[k] = v; z++; } else M[k] = 0; }
         } else {
             const th = this.changeThreshold, st = this.changeDelta;
-            for (let k = 0; k < n; k++) { const c = M[k]; if (th > c) { const v = c - st; M[k] = v < 0 ? 0 : v; } }
+            for (let k = 0; k < n; k++) { const c = M[k]; if (th > c) { const v = c - st; if (v > 0) { M[k] = v; z++; } else M[k] = 0; } else z++; }
         }
+        return z;
     }
     /** drawTexStamp / doTask: each stamp a quad of its shape, where the depth map is within unk48 of the stamp's. */
     private stamps() {
@@ -269,8 +276,17 @@ export class Layer {
             }
         }
     }
+    /**
+     * TPollutionCounterLayer::countTexDegree (the layer's pass, once a frame in the draw lists). Off
+     * (offLayer): nothing's drawn, and the pass's EFB copy (TEfbCtrlTex, clearing what it copies to
+     * black) puts back a black texture: see countPixels.
+     */
     countTexDegree() {
-        this.fade();
+        if (!this.counterOn) { this.map.fill(0); this.dirty = true; return; }
+        // drawPollutionLayer: the faded texture, drawn 1:1 into the EFB, counted (GXReadPixMetric's
+        // clr_pixels_in: the pixels past the alpha test GREATER 0, i.e. the texels the fade leaves
+        // above 0) before the frame's stamps go on
+        this.mCounter = pixMetric(this.fade(), 2);
         for (const t of this.modelTasks) drawModelStamp(this, t);
         this.stamps();
         if (this.modelTasks.length) this.cleanProhibitArea();
@@ -278,7 +294,8 @@ export class Layer {
     }
     /** cleanProhibitArea: after model stamps, texels whose height map is over 200 (no ground) go clean. */
     cleanProhibitArea() { const d = this.pos.depth, M = this.map; for (let k = 0; k < M.length; k++) if (d[k] > 200) M[k] = 0; }
-    degree() { let n = 0; for (const v of this.map) if (v > this.threshold) n++; return n; }
+    /** TPollutionLayer::getPollutionDegree: the counter (the last pass's GPU count; -1 before the first). */
+    degree() { return this.mCounter; }
 }
 
 // ---------------------------------------------------------------- model stamps
@@ -559,6 +576,182 @@ function shadePixel(mat: SMat, g: SGroup, i0: number, i1: number, i2: number, b0
     return src;
 }
 
+// ---------------------------------------------------------------- the GPU counts (PollutionCount.cpp)
+// How much goop is left is measured on the GPU. Each frame's draw lists (MarDirectorInitECT.cpp
+// initECTGft) run, before the scene, one counting pass per counter: TPollutionCounterBase::setCallback
+// puts a draw sync token after the draw, and drawSyncCallback (the token's interrupt) reads the PE
+// performance counters, GXReadPixMetric's 5th, clr_pixels_in (pixels into the blender, i.e. past the
+// alpha test), cleared by GXClearPixMetric just before the draw, and stores it less 4 x the draw's
+// triangle count (mPolygonCount: 2 for a layer's quad; SMS_CountPolygonNumInShape for an object) as
+// a u32 (the compares are unsigned: cmplw). The counter's then read by the next frame's movement.
+//  - layers (PerformList "PollutionCountLayer", graffitiGroup's CUE_SEMITRANSPARENT_PRIO_2 | layer i):
+//    viewport and ortho 0..w x 0..h (texture size), drawTex: the texture as a w x h quad, 1:1, NEAR,
+//    after the fade TEV (initGXforPollutionLayer); alpha test GREATER 0. Every texel is one pixel, so
+//    the count is the texels the fade leaves above 0 (not above the layer's threshold).
+//  - objects (PerformList "PollutionCountObj", CUE_UNK1000000: TPollutionCounterObj::countObjDegree,
+//    each TPollutionObj registerPollutionObj'd, up to 30): viewport and ortho 0..512 x 0..512,
+//    PNMTX0 = initCountObjDegree: x / 32 - min.x / 32, z / 32 - min.z / 32 (the joint's box min; y
+//    dropped), the joint's shapes from the layer model's raw positions and UV0, sampling the layer's
+//    texture (I8, NEAR, CLAMP) as it was left by the last layer pass; alpha test TEXA GREATER 0, cull
+//    none, no z. Counted: covered pixels whose texel is above 0.
+// The PE counter's unit: Dolphin (GFX PerfQueriesEnable, which SMS's game INI sets) counts the
+// passing samples and returns them / 4 (PerfQuery::GetQueryResult); that's modelled here. Real
+// hardware counts 2x2 quads with some per-triangle overhead (what the - 4 x triangles takes off);
+// not modelled: unknown exactly.
+/**
+ * Which PE counter to model: 'pixels' (default): a counter in pixels whose per-triangle overhead is
+ * exactly what the game takes off (the counter is the passing pixels); 'dolphin': Dolphin's, passing
+ * pixels / 4 with no per-triangle overhead, so the counter is pixels / 4 - 4 x triangles (wrapping to
+ * ~4e9 below 16 x triangles pixels). Real hardware's isn't known here; 'dolphin' frees Noki Bay
+ * episode 1's first cliff block on the first frame, which the game doesn't, so 'pixels' is the default.
+ */
+export const pixMetricModel = { mode: 'pixels' as 'dolphin' | 'pixels' };
+/** drawSyncCallback: the PE count less 4 x the triangles (mPolygonCount), as a u32. */
+export function pixMetric(pixels: number, tris: number) {
+    if (pixMetricModel.mode === 'pixels') return pixels >>> 0;
+    return ((pixels >> 2) - tris * 4) >>> 0;
+}
+
+/** One TPollutionObj's shapes for the count: screen positions in 28.4 fixed point (Dolphin's rasteriser's, -9), UVs. */
+interface CountMesh { X: Int32Array; Y: Int32Array; U: Float32Array; V: Float32Array; SX: Float32Array; SY: Float32Array; idx: Uint32Array; tris: number; }
+/** registerPollutionObj's object: its layer, joint (in the layer model), box min, and counter. */
+export interface CountObj { layer: Layer; jointIndex: number; min: number[]; mCounter: number; }
+
+/** The layer model's shapes by joint (INF1: a shape's material's joint), with raw positions and UV0. */
+/** a shape's matrix group: raw positions, UV0, triangles, and SMS_CountPolygonNumInShape's count */
+interface MeshPart { pos: Float32Array; uv: Float32Array | null; idx: Uint32Array; polys: number; }
+const jointShapeCache = new Map<Uint8Array, Map<number, MeshPart[]>>();
+function jointShapes(b: Uint8Array) {
+    let r = jointShapeCache.get(b);
+    if (r) return r;
+    r = new Map();
+    try {
+        const bmd = BMD.parse(new ArrayBufferSlice(b.buffer as ArrayBuffer, b.byteOffset, b.byteLength));
+        const hv = bmd.inf1.hierarchyData.createDataView();
+        const shapeJoint: number[] = [];
+        const stack: number[] = [];
+        let lastJoint = -1;
+        for (let o = 0; o + 4 <= hv.byteLength; o += 4) {
+            const type = hv.getUint16(o), value = hv.getUint16(o + 2);
+            if (type === 0) break;
+            if (type === 1) { stack.push(lastJoint >= 0 ? lastJoint : stack.length ? stack[stack.length - 1] : -1); lastJoint = -1; }
+            else if (type === 2) { stack.pop(); lastJoint = -1; }
+            else if (type === 0x10) lastJoint = value;
+            else if (type === 0x11) lastJoint = -1;
+            else if (type === 0x12) shapeJoint[value] = lastJoint >= 0 ? lastJoint : stack.length ? stack[stack.length - 1] : -1;
+        }
+        bmd.shp1.shapes.forEach((sh, si) => {
+            const j = shapeJoint[si];
+            if (j === undefined || j < 0) return;
+            for (const mg of sh.mtxGroups) {
+                const lvd = mg.loadedVertexData, n = lvd.totalVertexCount, lay = sh.loadedVertexLayout;
+                const p4 = readAttr(lay, lvd.vertexBuffers, VertexAttributeInput.POS, n, 4)!;
+                const pos = new Float32Array(n * 3);
+                for (let i = 0; i < n; i++) { pos[i * 3] = p4[i * 4]; pos[i * 3 + 1] = p4[i * 4 + 1]; pos[i * 3 + 2] = p4[i * 4 + 2]; }
+                const ib = lay.indexFormat === GfxFormat.U32_R ? new Uint32Array(lvd.indexData as ArrayBuffer) : new Uint16Array(lvd.indexData as ArrayBuffer);
+                const base = lvd.vertexId - n, idx = new Uint32Array(lvd.totalIndexCount);
+                for (let i = 0; i < idx.length; i++) idx[i] = ib[i] - base;
+                let L = r!.get(j);
+                if (!L) r!.set(j, L = []);
+                // SMS_CountPolygonNumInShape: n - 2 for each strip / fan, up to the first other command
+                let polys = 0;
+                for (const d of lvd.drawCalls || []) { if (d.primType !== 0x98 && d.primType !== 0xA0) break; polys += d.vertexCount - 2; }
+                L.push({ pos, uv: readAttr(lay, lvd.vertexBuffers, VertexAttributeInput.TEX01, n, 2), idx, polys });
+            }
+        });
+    } catch (e) { console.warn('[game] pollution obj shapes', e); }
+    jointShapeCache.set(b, r);
+    return r;
+}
+/** Dolphin's SW rasteriser's iround (Rasterizer.cpp) */
+const iround = (x: number) => { const t = Math.trunc(x); return x - t >= 0.5 ? t + 1 : t; };
+/** initCountObjDegree's matrix, the 512 x 512 ortho and viewport, in f32: the object's mesh on screen. */
+function countMesh(o: CountObj, shapes: MeshPart[]): CountMesh {
+    const sc = fr(0.03125), tx = fr(-o.min[0] / 32), tz = fr(-o.min[2] / 32), inv256 = fr(1 / 256);
+    let nv = 0, ni = 0, polys = 0;
+    for (const s of shapes) { nv += s.pos.length / 3; ni += s.idx.length; polys += s.polys; }
+    const X = new Int32Array(nv), Y = new Int32Array(nv), SX = new Float32Array(nv), SY = new Float32Array(nv), U = new Float32Array(nv), V = new Float32Array(nv), idx = new Uint32Array(ni);
+    let v0 = 0, i0 = 0;
+    for (const s of shapes) {
+        const n = s.pos.length / 3;
+        for (let i = 0; i < n; i++) {
+            const px = fr(fr(sc * s.pos[i * 3]) + tx), py = fr(fr(sc * s.pos[i * 3 + 2]) + tz);
+            // C_MTXOrtho(0, 512, 0, 512): ndc x = x / 256 - 1, y = 1 - y / 256; viewport 512 x 512 at 0
+            // (xOrig 256 + 342, wd 256; yOrig 256 + 342, ht -256; less the scissor offset 342)
+            const nx = fr(fr(px * inv256) - 1), ny = fr(1 - fr(py * inv256));
+            const sx = fr(fr(fr(nx * 256) + 598) - 342), sy = fr(fr(fr(ny * -256) + 598) - 342);
+            SX[v0 + i] = sx; SY[v0 + i] = sy;
+            X[v0 + i] = iround(fr(16 * sx)) - 9; Y[v0 + i] = iround(fr(16 * sy)) - 9;
+            U[v0 + i] = s.uv ? s.uv[i * 2] : 0; V[v0 + i] = s.uv ? s.uv[i * 2 + 1] : 0;
+        }
+        for (let k = 0; k < s.idx.length; k++) idx[i0 + k] = s.idx[k] + v0;
+        v0 += n; i0 += s.idx.length;
+    }
+    return { X, Y, SX, SY, U, V, idx, tris: polys };
+}
+/**
+ * One triangle rasterised as Dolphin's software renderer does (Rasterizer.cpp DrawTriangleFrontFace,
+ * "adjusted to match hardware output"): 28.4 fixed point vertices less 9/16, half-space edges with
+ * the top-left fill convention, pixel (x, y) tested at (x, y) << 4; a back face's v1 and v2 swapped
+ * (cull none). Calls px for each covered pixel inside 0..W x 0..H.
+ */
+function rasterCount(m: CountMesh, a: number, b: number, c: number, W: number, H: number, px: (x: number, y: number, s: number, t: number) => void) {
+    let X1 = m.X[a], Y1 = m.Y[a], X2 = m.X[b], Y2 = m.Y[b], X3 = m.X[c], Y3 = m.Y[c];
+    // the clipper's facing (screen space, y down): swap so the edge functions are positive inside
+    if ((X2 - X1) * (Y3 - Y1) - (Y2 - Y1) * (X3 - X1) > 0) { let t = X2; X2 = X3; X3 = t; t = Y2; Y2 = Y3; Y3 = t; const u = b; b = c; c = u; }
+    const DX12 = X1 - X2, DX23 = X2 - X3, DX31 = X3 - X1, DY12 = Y1 - Y2, DY23 = Y2 - Y3, DY31 = Y3 - Y1;
+    let minx = (Math.min(X1, X2, X3) + 0xF) >> 4, maxx = (Math.max(X1, X2, X3) + 0xF) >> 4;
+    let miny = (Math.min(Y1, Y2, Y3) + 0xF) >> 4, maxy = (Math.max(Y1, Y2, Y3) + 0xF) >> 4;
+    minx = Math.max(minx, 0); maxx = Math.min(maxx, W); miny = Math.max(miny, 0); maxy = Math.min(maxy, H);
+    if (minx >= maxx || miny >= maxy) return;
+    let C1 = DY12 * X1 - DX12 * Y1, C2 = DY23 * X2 - DX23 * Y2, C3 = DY31 * X3 - DX31 * Y3;
+    if (DY12 < 0 || (DY12 === 0 && DX12 > 0)) C1++;
+    if (DY23 < 0 || (DY23 === 0 && DX23 > 0)) C2++;
+    if (DY31 < 0 || (DY31 === 0 && DX31 > 0)) C3++;
+    // the attributes' plane, at the pixel's (x, y) + 0.495 (SlopeContext's adjust)
+    const sx0 = m.SX[a], sy0 = m.SY[a], dx10 = fr(m.SX[b] - sx0), dx20 = fr(m.SX[c] - sx0), dy10 = fr(m.SY[b] - sy0), dy20 = fr(m.SY[c] - sy0);
+    const det = dx10 * dy20 - dx20 * dy10;
+    if (det === 0) return;
+    for (let y = miny; y < maxy; y++) {
+        const y0 = y << 4;
+        for (let x = minx; x < maxx; x++) {
+            const x0 = x << 4;
+            if (C1 + DX12 * y0 - DY12 * x0 > 0 && C2 + DX23 * y0 - DY23 * x0 > 0 && C3 + DX31 * y0 - DY31 * x0 > 0) {
+                const ex = x + 0.495 - sx0, ey = y + 0.495 - sy0;
+                // barycentric weights of b and c at the sample
+                const wb = (ex * dy20 - ey * dx20) / det, wc = (ey * dx10 - ex * dy10) / det;
+                px(x, y, m.U[a] + wb * (m.U[b] - m.U[a]) + wc * (m.U[c] - m.U[a]), m.V[a] + wb * (m.V[b] - m.V[a]) + wc * (m.V[c] - m.V[a]));
+            }
+        }
+    }
+}
+
+const meshCache = new WeakMap<CountObj, CountMesh>();
+/**
+ * TPollutionCounterObj::draw + drawSyncCallback for one object: its triangles over the 512 x 512
+ * pass, each covered pixel's texel (NEAR: floor(s x w), CLAMP) of the layer's texture tested > 0.
+ */
+export function countObjDegree(o: CountObj, files: Files): number {
+    const L = o.layer, P = L.pos, M = L.map;
+    let m = meshCache.get(o);
+    if (!m) {
+        const b = files.scene(`map/pollution/${L.name}.bmd`);
+        m = countMesh(o, b ? jointShapes(b).get(o.jointIndex) || [] : []);
+        meshCache.set(o, m);
+    }
+    const W = P.w, H = P.h;
+    let n = 0;
+    const px = (_x: number, _y: number, s: number, t: number) => {
+        let u = Math.floor(s * W), v = Math.floor(t * H);
+        u = u < 0 ? 0 : u >= W ? W - 1 : u; v = v < 0 ? 0 : v >= H ? H - 1 : v;
+        if (M[P.index(u, v)]) n++;
+    };
+    for (let k = 0; k + 2 < m.idx.length; k += 3) rasterCount(m, m.idx[k], m.idx[k + 1], m.idx[k + 2], 512, 512, px);
+    return pixMetric(n, m.tris);
+}
+/** TMapEventSink::mCleanedDegree (u32 static, 10; mapevent.ts's sinkStatics) */
+export const sinkCleaned = { mCleanedDegree: 10 };
+
 /** TPollutionManager ("落書き管理") */
 export class Pollution {
     layers: Layer[] = [];
@@ -631,11 +824,24 @@ export class Pollution {
     }
     isPolluted(x: number, y: number, z: number) { for (const L of this.layers) if (L.isPolluted(x, y, z)) return true; return false; }
     getPollutionType(x: number, y: number, z: number) { for (const L of this.layers) if (L.isInArea(x, y, z)) return L.type; return POLLUTION_TYPE.UNK10; }
-    getPollutionDegree() { let n = 0; for (const L of this.layers) n += L.degree(); return n; }
+    /** getPollutionDegree: the layers' counters summed (u32) */
+    getPollutionDegree() { let n = 0; for (const L of this.layers) n = (n + L.degree()) >>> 0; return n; }
+    /** cleanedAll: under TMapEventSink::mCleanedDegree (unsigned) */
+    cleanedAll() { return this.getPollutionDegree() < sinkCleaned.mCleanedDegree; }
+    /** TPollutionCounterLayer::onLayer / offLayer (offLayer zeroes its counter) */
+    onLayer(i: number) { const L = this.layers[i]; if (L) L.counterOn = true; }
+    offLayer(i: number) { const L = this.layers[i]; if (L) { L.counterOn = false; L.mCounter = 0; } }
+    /** TPollutionCounterObj (init(30)): the objects counted each frame */
+    private counterObjs: CountObj[] = [];
+    /** registerPollutionObj: counted from the next frame's pass; its counter -1 till then */
+    registerPollutionObj(o: CountObj) { if (this.counterObjs.length >= 30) return; this.counterObjs.push(o); o.mCounter = 0xFFFFFFFF; }
     /** The graffiti group's movement: each layer's action. */
     move(mario: { x: number, y: number, z: number }) { for (const L of this.layers) L.action(mario); }
     /** The frame's draw: fades, stamps, then the queues empty (resetTask). */
     draw() {
+        // PerformList PollutionCountObj (the objects, over the textures as the last frame left them),
+        // then PollutionCountLayer (each layer's fade, count, stamps)
+        for (const o of this.counterObjs) o.mCounter = countObjDegree(o, this.files);
         for (const L of this.layers) L.countTexDegree();
         for (const L of this.layers) { for (const q of L.tasks) q.length = 0; L.modelTasks.length = 0; }
         this.modelTaskNum = 0;

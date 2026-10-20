@@ -35,8 +35,8 @@
 // RNG: none of these call rand() (no MapEvent*.cpp / Map.cpp function is in the retail callers list).
 //
 // Not here: particles, rumble, camera shakes, the BGM (setBossLivesFlag, setTrackVolume), the demo
-// cameras' own motion (told as 'demo:<name>' effects), the goop counters' GPU pixel counts (see
-// PollutionObj), the pollution depth maps (updateDepthMap), Bianco's mirror terrain (鏡内地形).
+// cameras' own motion (told as 'demo:<name>' effects), the pollution depth maps (updateDepthMap),
+// Bianco's mirror terrain (鏡内地形).
 
 import { fr, V3, Mtx, mtx } from './math.js';
 import { World, NameRef, Stream, HitActor, LiveActor, LF, MSG, CUE_MOVE } from './engine.js';
@@ -44,7 +44,7 @@ import { register } from './scene.js';
 import { SE } from './soundids.js';
 import './sound.js';
 import { Skeleton } from './skeleton.js';
-import { FLAG_DECAY, Layer } from './pollution.js';
+import { FLAG_DECAY, Layer, sinkCleaned } from './pollution.js';
 import { MSF } from './flags.js';
 import { ObjCollision, KIND_WARP, KIND_MOVE } from './mapobj/objcol.js';
 import { MapObjBase, mapObjGlobals, STATE_NORMAL } from './mapobj/base.js';
@@ -177,21 +177,16 @@ export function newAndInitBuildingCollision(w: World, kind: number, i: number, o
 /**
  * TPollutionObj: a goop layer model's child joint's box on the layer (getLayer(l)->getObj(i)). The
  * game's mCounter is the GPU's count of its still-polluted pixels (TPollutionCounterObj, drawn each
- * frame); TODO: here it's the count of its layer texels still polluted (map > threshold), so
- * isCleaned's threshold (TMapEventSink::mCleanedDegree) is compared with a different unit.
+ * frame): pollution.ts countObjDegree, once registerPollutionObj'd (TMapEventSinkInPollution::loadAfter).
  */
 export class PollutionObj {
     dead = false;
     minS = 0; maxS = 0; minT = 0; maxT = 0;
-    constructor(public layer: Layer, min: number[], max: number[]) {
+    /** the GPU count (pollution.ts countObjDegree), each frame once registerPollutionObj'd; else 0 */
+    mCounter = 0;
+    constructor(public layer: Layer, public jointIndex: number, public min: number[], max: number[]) {
         this.minS = layer.texS(min[0]); this.maxS = layer.texS(max[0]);
         this.minT = layer.texT(min[2]); this.maxT = layer.texT(max[2]);
-    }
-    get mCounter() {
-        const L = this.layer;
-        let n = 0;
-        for (let t = this.minT; t < this.maxT; t++) for (let s = this.minS; s < this.maxS; s++) if (L.pos.inArea(s, t) && L.map[L.pos.index(s, t)] > L.threshold) n++;
-        return n;
     }
     isCleaned() { return this.mCounter < sinkStatics.mCleanedDegree; }
     kill() { this.dead = true; }
@@ -207,7 +202,7 @@ export function getPollutionObj(w: World, l: number, i: number): PollutionObj | 
     let objs = pollutionObjs.get(L);
     if (!objs) {
         const jm = new MapJointModel(w.files.scene(`map/pollution/${L.name}.bmd`));
-        objs = jm.children.map((c) => new PollutionObj(L, c.min, c.max));
+        objs = jm.children.map((c) => new PollutionObj(L, c.index, c.min, c.max));
         pollutionObjs.set(L, objs);
     }
     return objs[i] || null;
@@ -240,7 +235,7 @@ export abstract class MapEvent extends NameRef {
 
 // ================================================================ TMapEventSink
 /** TMapEventSink::mCleanedDegree (static; every constructor sets it back to 10) */
-export const sinkStatics = { mCleanedDegree: 10 };
+export const sinkStatics = sinkCleaned;
 
 export class MapEventSink extends MapEvent {
     mBuildingNum = 0; unk24 = 0; mRaisingBuildingIdx = -1;
@@ -342,7 +337,10 @@ export class MapEventSinkInPollution extends MapEventSink {
         return false;
     }
     initBuriedBuilding() { for (let i = 0; i < this.mBuildingNum; ++i) if (this.getPollutionObj(i)?.isCleaned()) this.makeBuildingRecovered(i); }
-    // loadAfter: gpPollution->getCounterObj().registerPollutionObj(each building's goop object): see PollutionObj
+    loadAfter() {
+        super.loadAfter();
+        for (let i = 0; i < this.mBuildingNum; ++i) { const o = this.getPollutionObj(i); if (o) this.world.pollution?.registerPollutionObj(o); }
+    }
 }
 
 export class MapEventSinkInPollutionReset extends MapEventSinkInPollution {
@@ -572,9 +570,10 @@ export class DolpicEventRiccoMammaGate extends MapEvent {
         this.unk38 = 720; this.unk3C = 120; this.unk40 = 120;
         this.unk34 = fr(1 / ((this.unk38 - this.unk3C) - this.unk40));
         if (this.unk30) {
+            const w0 = this.world;
             this.unk28!.setUp();
             this.unk18 = 0;
-            // TODO: gpPollution->getCounterLayer().offLayer(0 / 1): the goop counters aren't simulated
+            w0.pollution?.offLayer(this.unk2C === MSF.RICCO_UNLOCKABLE ? 0 : 1);
         }
     }
     load(s: Stream) {
@@ -624,11 +623,11 @@ export class MareWallRock extends LiveActor {
         const w = this.world;
         switch (this.unkF4) {
             case 0: {
-                // TODO: TPollutionLayer::getPollutionDegree is the GPU's polluted-pixel count; the layer's polluted texels here
+                // TPollutionLayer::getPollutionDegree: the layer pass's GPU count (pollution.ts)
                 const L = w.pollution?.layers[this.unk108];
                 if (L && L.degree() < MareWallRock.mCleanedDegree) {
                     this.appear();
-                    // (gpPollution->offLayer(unk108): its counter)
+                    w.pollution?.offLayer(this.unk108);
                 }
                 break;
             }
