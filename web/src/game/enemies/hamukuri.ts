@@ -24,6 +24,7 @@
 // the plain ハムクリ's releaseCap / setAfterDeadEffect keep their stubs (it never gets one).
 
 import { fr, V3, MsMtxSetRotRPH, mtx, mtxMultVec, Mtx, MsSin, MsCos, MsClamp, MsGetRotFromZaxis, MsRandF, JMASSin, s16 } from '../math.js';
+import { frsqrte } from '../math.js';
 import { World, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, HitActor, LiveActor, TakeActor, SpineEnemy, AnmData, LiveManager, CUE_MOVE, CUE_CALC_ANIM, ANM_BCK, ANM_FRAME_RATE, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
@@ -50,6 +51,14 @@ let mSearchActSw = true;
 const BCK_APPEAR = 0, BCK_CRASH = 1, BCK_DOWN = 2, BCK_JITABATA = 3, BCK_KYORO = 4, BCK_LAND = 5, BCK_RETURN = 6, BCK_ROLL = 7,
     BCK_RUN = 8, BCK_SET = 9, BCK_TURN_DOWN = 10, BCK_TURN_END = 11, BCK_TURN_START = 12, BCK_WAIT = 13, BCK_WALK = 14;
 void BCK_APPEAR; void BCK_RETURN;
+
+/** TNerveHaneHamuKuriMoveOnGraph's distances: (x² + y²) + z² unfused, then TUtil<f32>::sqrt (0 for s <= 0) */
+function hhkDist(d: V3) {
+    const s = fr(fr(fr(d.x * d.x) + fr(d.y * d.y)) + fr(d.z * d.z));
+    if (s <= 0) return 0;
+    const e = fr(frsqrte(s)), ee = fr(e * e);
+    return fr(s * fr(fr(0.5 * e) * fr(3 - s * ee)));
+}
 
 export class HamuKuriManager extends SmallEnemyManager {
     /** unk60: the map object type they go for (ACTOR_TYPE_FOOTBALL) */
@@ -660,8 +669,9 @@ HaneNerves.moveOnGraph = nerve<HaneHamuKuri>('TNerveHaneHamuKuriMoveOnGraph', (s
         if (t.prev >= 0) {
             const curPos = t.graph!.point(t.prev);
             const prevPos = t.graph!.point(t.cur);
-            const distToCur = V3.sub(curPos, self.pos).length();
-            const distToPrev = V3.sub(prevPos, self.pos).length();
+            // (each distance as the DOL has it: unfused squares, then TUtil<f32>::sqrt's single-precision frsqrte step)
+            const distToCur = hhkDist(V3.sub(curPos, self.pos));
+            const distToPrev = hhkDist(V3.sub(prevPos, self.pos));
             self.unk230 = fr(curPos.y + fr(fr(distToCur * fr(prevPos.y - curPos.y)) / fr(distToCur + distToPrev)));
             self.walkBehavior(2, 1);
         }
