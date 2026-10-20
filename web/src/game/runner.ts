@@ -44,6 +44,7 @@ import './enemies/gesso.js';
 import './enemies/mamegesso.js';
 import './enemies/tobipuku.js';
 import './enemies/riccohook.js';
+import './enemies/bossgesso.js';
 import { mapObjWorldHooks } from './mapobj/index.js';
 import './player/emario.js';
 import { setMarioArchive } from './player/base.js';
