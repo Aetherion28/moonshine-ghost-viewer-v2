@@ -385,6 +385,16 @@ register('MapObjElasticCode', (w, n) => new MapObjElasticCode(w, n));
 register('MapObjGrowTree', (w, n) => new MapObjGrowTree(w, n));
 register('WireBell', (w, n) => new WireBell(w, n));
 register('Puncher', (w, n) => new MapObjPuncher(w, n));
+/**
+ * TMarineSnow (マリンスノー, Map/MarineSnow.cpp; scene class MarineSnow: Noki Bay's deep water and
+ * Gooper Blooper's arena): an actor that every CUE_CALC_ANIM moves to the camera's place and emits
+ * the marine snow particle there. Drawing only, no rand(): minimal here (its position isn't moved,
+ * the sim has no camera).
+ */
+export class MarineSnow extends Actor {
+    constructor(_w: World, name = 'マリンスノー') { super(name); }
+}
+register('MarineSnow', (w, n) => new MarineSnow(w, n));
 register('MareFall', (w, n) => new MareFall(w, n));
 register('MareCork', (w, n) => new MareCork(w, n));
 register('MareEventPoint', (w, n) => new MareEventPoint(w, n));

@@ -1,7 +1,10 @@
 // The secret courses' nail (MoveBG/MapObjEx.cpp's TMapObjNail): ground-pounded, it sinks 50 units
 // into the floor, three times, and its hidden object (a coin) comes out on the third. The courses'
 // other objects are lifts and blocks named for their looks, registered in railblock.ts. Also
-// TJointCoin (CoinFish: the coin fish of Noki Bay and the secret stages; SandBird's base).
+// TJointCoin (CoinFish: the coin fish of Noki Bay and the secret stages; SandBird's base), and
+// TMapObjSteam (水蒸気, scene class MapObjSteam, model no_data: the steam of a secret course): a
+// THideObjBase that only emits its steam particle each control (emitAndRotateScale(0x15C): not
+// here), so its loadAfter's hidden object (by its event ID) is all it does for the sim.
 
 import { mat4 } from 'gl-matrix';
 import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH } from '../math.js';
@@ -41,6 +44,12 @@ export class MapObjNail extends HideObjBase {
     }
 }
 
+export class MapObjSteam extends HideObjBase {
+    constructor(w: World, name = '水蒸気') { super(w, name); }
+    /** control: only emitAndRotateScale(0x15C, 1, &mPosition), not TMapObjBase's touchActor */
+    control() { }
+}
+register('MapObjSteam', (w, n) => new MapObjSteam(w, n));
 register('MapObjNail', (w, n) => new MapObjNail(w, n));
 
 

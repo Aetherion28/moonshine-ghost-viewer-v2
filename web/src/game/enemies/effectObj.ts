@@ -6,9 +6,16 @@
 // sprayed): the viewer reads that from fireScale(). The manager (エフェクト炎マネージャー) is one of
 // the conductor's other objects and performs every fire, then its own five spare ones (made but
 // never loaded or placed: they never burn).
+// Also TSimpleEffect's two fountains, TEffectPinnaFunsui (ピンナ噴水エフェクト, scene class
+// EffectPinnaFunsui) and TEffectBiancoFunsui (ビアンコ噴水エフェクト, EffectBiancoFunsui): plain
+// actors the conductor performs as other objects (registerOtherObj at loadAfter) that on every
+// CUE_CALC_ANIM emit their spray particle at their place and rotation (0x1A8 / 0x1A9, bound to
+// their matrix) and start the arched-fountain sound. No hit actor, no state, no rand().
+//
+// Not here: the fountains' particles (drawn by the viewer from the actor's place, if at all).
 
 import { V3 } from '../math.js';
-import { World, NameRef, HitActor, HF, HC, MSG, Stream, Actor, CUE_MOVE } from '../engine.js';
+import { World, NameRef, HitActor, HF, HC, MSG, Stream, Actor, CUE_MOVE, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SE } from '../sound.js';
 import { register } from '../scene.js';
@@ -100,5 +107,18 @@ export class EffectObjManager extends NameRef {
     addListEffectObj(o: EffectObjBase) { this.list.push(o); ++this.unk10; }
 }
 
+// ---------------------------------------------------------------- TSimpleEffect
+/** TSimpleEffect: perform's CUE_CALC_ANIM emits the effect (the particle, bound to its matrix, and the sound). */
+export class SimpleEffect extends Actor {
+    constructor(public world: World, name: string, public particle: number) { super(name); }
+    /** loadAfter: SMS_LoadParticle, then gpConductor->registerOtherObj(this) */
+    loadAfter() { this.world.conductor.others.push(this); }
+    perform(cue: number) { if (cue & CUE_CALC_ANIM) this.emitEffect(); }
+    /** emitEffect: (MsMtxSetXYZRPH, emitAndBindToMtxPtr(particle): drawing) and SE_EV_ARCHED_FOUNTAIN */
+    emitEffect() { this.world.sound(SE.EV_ARCHED_FOUNTAIN, this.pos); }
+}
+
+register('EffectPinnaFunsui', (w, n) => new SimpleEffect(w, n, 0x1A8));
+register('EffectBiancoFunsui', (w, n) => new SimpleEffect(w, n, 0x1A9));
 register('EffectObjManager', (w, n) => new EffectObjManager(w, n));
 register('EffectFire', (w, n) => new EffectObjBase(w, n));

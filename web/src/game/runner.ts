@@ -68,6 +68,7 @@ import './enemies/coasterkiller.js';
 import './enemies/limitkoopa.js';
 import './enemies/poihana.js';
 import './enemies/fruitsboat.js';
+import './enemies/typical.js';
 import './enemies/bosshanachan.js';
 import { mapObjWorldHooks } from './mapobj/index.js';
 import './player/emario.js';

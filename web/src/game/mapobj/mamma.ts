@@ -22,8 +22,9 @@
 //
 // Not here: particles (told as world effects), rumble, BGM changes, the help balloons, the demo
 // cameras' callbacks (they are told as 'demoCamera' events), gpTargetArrow, the beam cone the
-// mirrors draw, TMirrorModelObj / TMirrorActor (mirror drawing), TMammaMirrorMapOperator (it
-// only shows / hides the in-mirror map's joints for drawing), the Shine stone's own models are
+// mirrors draw, TMirrorModelObj / TMirrorActor (mirror drawing), TMammaMirrorMapOperator's work (it
+// only shows / hides the in-mirror map's joint 2 for drawing, by the camera's distance to the
+// mirror in use: registered as a plain object, MammaMirrorMapOperator below), the Shine stone's own models are
 // kept (their BCKs set) but not drawn by the viewer.
 
 import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH } from '../math.js';
@@ -733,6 +734,16 @@ export class SandEgg extends MapObjBase {
 
 UNIQUE_MAKERS.set('SandLeaf', (w) => new SandLeaf(w));
 UNIQUE_MAKERS.set('SandBomb', (w) => new SandBomb(w));
+/**
+ * TMammaMirrorMapOperator (鏡内地形操作, scene class MirrorMapOperator): a TViewObj whose perform
+ * (CUE_CALC_ANIM) only shows or hides 鏡内地形's joint 2 (SMS_ShowJoint) by the game camera's
+ * distance to it and to the mirror the mirror model manager is using. Drawing only, no rand():
+ * minimal here (its scene.bin data, an actor's, is read and kept).
+ */
+export class MammaMirrorMapOperator extends Actor {
+    constructor(_w: World, name = '鏡内地形操作') { super(name); }
+}
+register('MirrorMapOperator', (w, n) => new MammaMirrorMapOperator(w, n));
 register('SandLeafBase', (w, n) => new SandLeafBase(w, n));
 register('SandBombBase', (w, n) => new SandBombBase(w, n));
 register('SandBomb', (w, n) => new SandBomb(w, n));

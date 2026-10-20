@@ -5,10 +5,12 @@
 // times they give their Shine and then ring on their own every 6-11 minutes), the Monte fence
 // broken by being thrown into it, the Mare gate (gone until Noki Bay's open), the airport's turbo
 // nozzle doors (dashed into, both halves break: in the plaza it plays its break BCK) and the demo
-// cannon (the one firing Mario to Pinna Park).
+// cannon (the one firing Mario to Pinna Park). Also TMapObjSmoke (黒煙, scene class MapObjSmoke, the
+// MapSmoke model: the black smoke over the plaza in the first episodes): a THideObjBase that, once
+// sprayed, gives its hidden object (appearObj 100 above it) and goes (makeObjDead).
 //
 // Not here: particles, rumble, camera shake, the KColor fade (drawing only: unk138's alpha is kept),
-// TMapObjSmoke (not registered by any name), the demo cannon's shared parts (its dome and the flying
+// the smoke's particle (emitAndRotateScale(0x152) each control), the demo cannon's shared parts (its dome and the flying
 // Mario: TSharedParts) and the voice; TFlagManager's save flags (world fields, unset: none set yet).
 
 import { fr, V3, mtx, MsSin, MsAngleDiff, rand } from '../math.js';
@@ -18,6 +20,7 @@ import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { MapObjBase, mapObjGlobals } from './base.js';
+import { HideObjBase } from './hide.js';
 import type { ItemManager } from './item.js';
 import { MTXConcat, MTXRotAxisRad, normalize, marioStatus } from './lib.js';
 
@@ -262,6 +265,15 @@ export class TurboNozzleDoor extends MapObjBase {
     }
 }
 
+// ---------------------------------------------------------------- TMapObjSmoke
+export class MapObjSmoke extends HideObjBase {
+    constructor(w: World, name = '黒煙') { super(w, name); }
+    touchWater(_a: HitActor) { this.appearObj(100); this.makeObjDead(); return 1; }
+    /** control: only emitAndRotateScale(0x152, 1, &mPosition) (the smoke particle: drawing), not TMapObjBase's touchActor */
+    control() { }
+}
+
+register('MapObjSmoke', (w, n) => new MapObjSmoke(w, n));
 register('MonumentShine', (w, n) => new MonumentShine(w, n));
 register('BellDolpicTV', (w, n) => new BellDolpic(w, n, 1));
 register('BellDolpicPolice', (w, n) => new BellDolpic(w, n, 0));

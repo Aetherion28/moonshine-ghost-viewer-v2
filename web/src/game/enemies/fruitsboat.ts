@@ -256,11 +256,13 @@ FruitsBoatNerves.bckTrace = nerve<FruitsBoat>('TNerveFruitsBoatBckTrace', (spine
     return false;
 });
 
+// (the retail names: FruitsBoatB / C / D and FruitsBoatManagerB / C / D, managers of types 1-3;
+// the decomp's MarNameRefGen_Enemy.cpp spells them G / P / Y)
 register('FruitsBoat', (w, n) => new FruitsBoat(w, n));
-register('FruitsBoatG', (w, n) => new FruitsBoat(w, n));
-register('FruitsBoatP', (w, n) => new FruitsBoat(w, n));
-register('FruitsBoatY', (w, n) => new FruitsBoat(w, n));
+register('FruitsBoatB', (w, n) => new FruitsBoat(w, n));
+register('FruitsBoatC', (w, n) => new FruitsBoat(w, n));
+register('FruitsBoatD', (w, n) => new FruitsBoat(w, n));
 register('FruitsBoatManager', (w, n) => new FruitsBoatManager(w, 0, n));
-register('FruitsBoatGManager', (w, n) => new FruitsBoatManager(w, 1, n));
-register('FruitsBoatPManager', (w, n) => new FruitsBoatManager(w, 2, n));
-register('FruitsBoatYManager', (w, n) => new FruitsBoatManager(w, 3, n));
+register('FruitsBoatManagerB', (w, n) => new FruitsBoatManager(w, 1, n));
+register('FruitsBoatManagerC', (w, n) => new FruitsBoatManager(w, 2, n));
+register('FruitsBoatManagerD', (w, n) => new FruitsBoatManager(w, 3, n));

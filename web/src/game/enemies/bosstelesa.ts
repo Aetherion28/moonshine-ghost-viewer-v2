@@ -19,9 +19,11 @@
 //
 // The roulettes and the slot are map objects (TRoulette / TTelesaSlot, ported in mapobj/sirena.ts):
 // found at loadAfter by actor type in gpMapObjManager and used through RouletteLike / SlotLike below.
-// When the slot object has no moveStart (sirena.ts made it a plain TSlotDrum), installTelesaSlot puts
-// TTelesaSlot's overrides on that instance (initMapObj's values, moveObject, calcRootMatrix,
-// touchWater). Without the roulettes King Boo does nothing.
+// The slot is scene class TelesaSlot (srotRulet): TelesaSlot below, a TSlotDrum whose initMapObj
+// runs TSlotDrum's and then installTelesaSlot (TTelesaSlot's values, its three rand()s for
+// the drums' faces, and its moveObject / calcRootMatrix / touchWater overrides). For a slot made
+// some other way (a plain TSlotDrum), installTelesaSlot still puts them on at King Boo's
+// loadAfter. Without the roulettes King Boo does nothing.
 //
 // Not here: particles (a few told as 'btelesa:*' effects), the bas animation sounds, BCK motion
 // blending (unk168 is kept), the TEV colour packets (unk348 / unk34C kept for the viewer), the camera
@@ -37,6 +39,7 @@ import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { mapObjGlobals, newAndRegisterObj } from '../mapobj/base.js';
+import { SlotDrum } from '../mapobj/sirena.js';
 import { normalize, sendToMario } from '../mapobj/lib.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, walkerParams } from './walker.js';
@@ -169,9 +172,9 @@ function tsMoveObject(s: SlotLike) {
 }
 /**
  * TTelesaSlot's overrides on a slot drum object: what its constructor and initMapObj set (after
- * TSlotDrum::initMapObj), and its moveObject / calcRootMatrix / touchWater.
- * TODO: initMapObj's two rand() calls (randomizing the drums) run here at King Boo's loadAfter, not
- * at the slot's load: a replayed RNG tape is off by that much if the game's order matters.
+ * TSlotDrum::initMapObj), and its moveObject / calcRootMatrix / touchWater. TelesaSlot calls it
+ * from its initMapObj (so initMapObj's three rand()s, one a drum, come at the slot's load, as in
+ * the game); an object it was already put on (moveStart set) is left as it is.
  */
 export function installTelesaSlot(o: any): SlotLike {
     const s = o as SlotLike;
@@ -1133,6 +1136,19 @@ BubbleNerves.split = nerve<Bubble>('TNerveBubbleSplit', (spine: BS) => {
     return false;
 });
 
+/**
+ * TTelesaSlot (btelesaSlot; scene class TelesaSlot, the srotRulet model): the slot on King Boo's
+ * belly. initMapObj: TSlotDrum::initMapObj (its own initNeonMatColor does nothing: the neons'
+ * colours are only drawing), then TTelesaSlot's values and drum faces (installTelesaSlot).
+ * TODO: its TMapCollisionMove (unk1DC, entryObjCollision / calcObjCollision) isn't ported.
+ */
+export class TelesaSlot extends SlotDrum {
+    constructor(w: World, name = 'btelesaSlot') { super(w, name); }
+    initMapObj() { super.initMapObj(); installTelesaSlot(this); }
+    initNeonMatColor() { }
+}
+
+register('TelesaSlot', (w, n) => new TelesaSlot(w, n));
 register('BossTelesaManager', (w, n) => new BossTelesaManager(w, n));
 register('BossTelesa', (w, n) => new BossTelesa(w, n));
 register('BubbleManager', (w, n) => new BubbleManager(w, n));

@@ -3,7 +3,7 @@
 // far clip from npcFarClip.prm). The model swaps (straw, goop, the jellyfish's textures) and the
 // parts' models are the viewer's.
 
-import { World, Stream, EnemyManager, LiveManager, AnmData, LF } from '../engine.js';
+import { World, Stream, EnemyManager, LiveManager, ObjManager, AnmData, LF } from '../engine.js';
 import { register } from '../scene.js';
 import { BaseNPC, npcParams, condParams } from './base.js';
 import { AT } from '../actortypes.js';
@@ -81,4 +81,17 @@ export class BoardNpcManager extends LiveManager {
     clipActors() { this.clipActorsAux(condParams(this.world).mEnemyFarClip, 200); }
 }
 register('BoardNpcManager', (w, n) => new BoardNpcManager(w, n));
-// TMareJellyFishManager draws Noki Bay's jellyfish (a TObjManager whose perform does nothing): TODO with Noki Bay
+/**
+ * TMareJellyFishManager (マーレクラゲマネージャー, scene class MareJellyFish; gpMareJellyFishManager):
+ * Noki Bay's jellyfish models for the jellyfish Mares' parts (TNpcParts::addJellyFishParts picks one
+ * with MsRandF() * the model count: base.ts rolls it). A TObjManager, not in the conductor: its perform
+ * does nothing. Minimal here: its models (jellyFish_A..F.bmd from its folder) for the viewer; the
+ * real-texture swap createModelData does after is drawing only.
+ */
+export class MareJellyFishManager extends ObjManager {
+    constructor(w: World, name = '?') { super(w, name); (w as any).mareJellyFishManager = this; }
+    load(s: Stream) { super.load(s); this.createModelData(); }
+    createModelData() { this.createModelDataArray(['A', 'B', 'C', 'D', 'E', 'F'].map((c) => `jellyFish_${c}.bmd`)); }
+    perform(_cue: number) { }
+}
+register('MareJellyFish', (w, n) => new MareJellyFishManager(w, n));

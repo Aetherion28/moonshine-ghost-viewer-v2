@@ -5,8 +5,12 @@
 // TMapObjSwitch (gpMapObjSwitch, Pinna Park / Sirena's blue switch): ground-pounded, it presses and
 // every THideObjInfo of the stage (registered as each loads) throws out its coin, which lasts the
 // switch's time; Mario's sounds for the timer and the switch's demo camera aren't here.
+// TMapObjStartDemo (デモ開始オブジェ, scene class MapObjStartDemo, the StartDemo model: a 100 x 100
+// cylinder): touched by Mario, TMarDirector::fireStreamingMovie(its movie number) (mapevent.ts:
+// the movie's stage change, once).
 
 import { MSF } from '../flags.js';
+import '../mapevent.js';
 import { fr, V3 } from '../math.js';
 import { World, Stream, HitActor, HF, MSG, LF, ANM_BCK, ANM_FRAME_RATE, shineIDofExStage } from '../engine.js';
 import { register } from '../scene.js';
@@ -338,6 +342,14 @@ export class MapObjBillboard extends HideObjBase {
     }
 }
 
+export class MapObjStartDemo extends MapObjBase {
+    unk138 = 0;
+    constructor(w: World, name = 'デモ開始オブジェ') { super(w, name); }
+    touchPlayer(_a: HitActor) { this.world.fireStreamingMovie(this.unk138 & 0xFF); }
+    load(s: Stream) { super.load(s); this.unk138 = s.s32(); }
+}
+
+register('MapObjStartDemo', (w, n) => new MapObjStartDemo(w, n));
 register('Billboard', (w, n) => new MapObjBillboard(w, n));
 register('Door', (w, n) => new Door(w, n));
 register('Manhole', (w, n) => new Manhole(w, n));

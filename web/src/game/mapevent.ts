@@ -429,6 +429,47 @@ export class MapEventSinkBianco extends MapEventSinkInPollutionReset {
     }
 }
 
+/**
+ * TAirportEventSink (イベント（地形沈む空港）, MoveBG/MapObjAirport.cpp): the Airstrip's sunk ground,
+ * up once the gatekeeper (ゲートキーパー（ビアンコ）) is dead: watch starts the slope-up camera and
+ * goop layer 0's decay; control (720 ticks; the ground, 200 down, rises while 60 < ticks left < 240) turns
+ * layer 0's counter off 300 ticks in (and shakes the camera); finishControl stamps the cleaned
+ * building's goop object onto layer 0 (pushJointObjStampTask(0, 0): drawn black, i.e. cleaned;
+ * not drawn here, but the layer's counter is off, which clears the whole layer anyway: see
+ * pollution.ts countTexDegree), makes the graffiti Shine appear with its camera, and turns the
+ * counter off again. Only building 0 is watched (TMapEventSinkInPollution's goop watch isn't used).
+ */
+export class AirportEventSink extends MapEventSinkInPollutionReset {
+    unk64 = 0; unk68 = 360;
+    unk6C: LiveActor | null = null;
+    constructor(w: World, name = 'イベント（地形沈む空港）') { super(w, name); }
+    finishControl() {
+        // (gpPollution->getCounterLayer().pushJointObjStampTask(0, 0, getPollutionObj(mRaisingBuildingIdx)))
+        itemManager(this.world)?.makeShineAppearWithDemoOffset('シャイン（落書き用）', '落書きシャインカメラ', 0, 0, 0);
+        this.world.pollution?.offLayer(0);
+        super.finishControl();
+    }
+    control() {
+        if (this.unk4C === this.unk40 - 300) this.world.pollution?.offLayer(0);
+        // (unk4C > unk48: gpCameraShake->keepShake(CAM_SHAKE_MODE_UNK5, 0.1))
+        return super.control();
+    }
+    watch() {
+        if (!this.mIsBuildingRecovered[0] && this.unk6C && this.unk6C.checkLiveFlag(LF.DEAD)) {
+            this.mRaisingBuildingIdx = 0;
+            demoCamera(this.world, '空港坂上げカメラ', this.unk6C.pos);
+            startDecay(this.world, 0);
+            return true;
+        }
+        return false;
+    }
+    loadAfter() {
+        super.loadAfter();
+        this.unk6C = this.world.search('ゲートキーパー（ビアンコ）') as LiveActor | null;
+        this.unk40 = 720; this.unk44 = 480; this.unk48 = 60; this.unk38 = 200;
+    }
+}
+
 /** 建物沈む（影マリオ）: buildings Shadow Mario's chase raises (raiseBuilding), with a placed object riding each. */
 export class MapEventSinkShadowMario extends MapEventSink {
     unk64: (any | null)[] = [];
@@ -951,6 +992,10 @@ declare module './engine.js' {
         setNextStage(stage: number, actor: any): void;
         /** DIRECTOR_FLAG_*_STAGE_TRANSITION_PENDING: a stage change asked for */
         stageTransitionPending?: boolean;
+        /** TMarDirector::fireStreamingMovie */
+        fireStreamingMovie(id: number): void;
+        /** DIRECTOR_FLAG_MOVIE_PENDING */
+        moviePending?: boolean;
     }
 }
 /**
@@ -971,11 +1016,30 @@ World.prototype.setNextStage = function (this: World, stage: number, actor: any)
     } else demoCamera(this, next === 6 ? 'camera_sirena_gate_in' : 'camera_monte_gate_in', null);
 };
 
+/**
+ * TMarDirector::fireStreamingMovie (MarDirectorEvent.cpp): once (DIRECTOR_FLAG_MOVIE_PENDING), the
+ * movie's stage change (setNextStage) and SMSGetApplication()->setMovie (told as a 'streamingMovie'
+ * event); movie 0 (the Bowser boat) also sets its two flags.
+ */
+World.prototype.fireStreamingMovie = function (this: World, id: number) {
+    id &= 0xFF;
+    if (this.moviePending) return;
+    this.moviePending = true;
+    const next: Record<number, number> = { 0: 0x1, 10: 0x3B, 7: 0xE06, 8: 0xE07, 11: 0x3C, 2: 0x101 };
+    this.setNextStage(next[id] ?? 0xF, null);
+    if (id === 0) {
+        this.flags.setBool(true, MSF.BOWSER_BOAT_CUTSCENE_TRIGGERED);
+        this.flags.setBool(true, MSF.PEACH_KIDNAP_FMV_WATCHED_SINCE_RESET);
+    }
+    this.events.push({ t: this.tickCount, kind: 'streamingMovie', data: { id } });
+};
+
 // ---------------------------------------------------------------- registry
 register('MapEventSinkInPollution', (w, n) => new MapEventSinkInPollution(w, n));
 register('MapEventSinkInPollutionReset', (w, n) => new MapEventSinkInPollutionReset(w, n));
 register('MapEventSinkShadowMario', (w, n) => new MapEventSinkShadowMario(w, n));
 register('MapEventSirenaSink', (w, n) => new MapEventSirenaSink(w, n));
+register('AirportEventSink', (w, n) => new AirportEventSink(w, n));
 register('MapEventSinkBianco', (w, n) => new MapEventSinkBianco(w, n));
 register('DolpicEventBiancoGate', (w, n) => new DolpicEventBiancoGate(w, n));
 register('DolpicEventRiccoGate', (w, n) => new DolpicEventRiccoMammaGate(w, n));
