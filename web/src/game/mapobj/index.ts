@@ -22,6 +22,7 @@ export * from './monte.js';
 export * from './railblock.js';
 export * from './item2.js';
 export * from './barrel.js';
+export * from './ricco.js';
 
 /**
  * The item hooks the enemies call through World (World.newAndRegisterCoin / makeCoinAppear /

@@ -452,8 +452,8 @@ export class WoodBox extends BreakHideObj {
         this.killNearWoodBox(-50, -50); this.killNearWoodBox(50, -50);
         this.killNearWoodBox(-50, 50); this.killNearWoodBox(50, 50);
     }
-    // loadAfter's checkOnManhole: a box on a manhole (Delfino Plaza's) rides it.
-    // TODO: TManhole isn't ported.
+    /** a box on a manhole (Delfino Plaza's) seals it */
+    loadAfter() { super.loadAfter(); this.checkOnManhole(); }
 }
 
 // ---------------------------------------------------------------- registry

@@ -498,6 +498,13 @@ export class MapObjBase extends LiveActor {
     marioHipAttack() { const m = this.world.mario; return m.groundPlane.actor === this && m.hipDrop && m.pos.y + m.vel.y < m.groundHeight; }
     /** particles and other effects the game shows: told to the viewer */
     emit(kind: string, p: V3 = this.pos) { this.world.effect(kind, p); }
+    /** checkOnManhole (MapObjLib.cpp): on a manhole, that manhole is sealed while this is there */
+    checkOnManhole() {
+        const [h, d] = this.world.checkGround(this.pos.x, fr(this.pos.y + 20), this.pos.z);
+        this.groundHeight = h; this.groundPlane = d;
+        const a = d.actor as any;
+        if (a && a.isActorType && a.isActorType(AT.MANHOLE) && a.makeManholeUnuseful) a.makeManholeUnuseful(this);
+    }
 }
 
 // ---------------------------------------------------------------- managers

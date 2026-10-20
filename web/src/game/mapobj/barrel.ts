@@ -85,7 +85,7 @@ export class WoodBarrel extends MapObjGeneral {
         this.groundHeight = h; this.groundPlane = d;
         this.pos.y = h;
         this.initialPos.set(this.pos);
-        // TODO: checkOnManhole (TManhole isn't ported)
+        this.checkOnManhole();
     }
     load(s: Stream) { super.load(s); }
 }

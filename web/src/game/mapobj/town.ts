@@ -4,12 +4,15 @@
 // its particle emitted each frame, told as an effect with its rate, size and colour).
 
 import { fr, V3 } from '../math.js';
-import { World, Stream, HitActor, HF, MSG, ANM_BCK } from '../engine.js';
+import { World, Stream, HitActor, HF, MSG, LF, ANM_BCK, ANM_FRAME_RATE } from '../engine.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
-import { MapObjBase } from './base.js';
-import { marioHipDropping, marioSpeedY, marioGroundLevel } from './lib.js';
+import { MapObjBase, MOF, STATE_NORMAL } from './base.js';
+import { MapObjGeneral } from './general.js';
+import { ObjCollision, KIND_WARP } from './objcol.js';
+import { JMASCos, s16 } from '../math.js';
+import { marioHipDropping, marioSpeedY, marioGroundLevel, marioStatus, marioTouchGround4cm } from './lib.js';
 
 export class MapObjChangeStage extends MapObjBase {
     unk138 = 0;
@@ -100,6 +103,121 @@ export class RedCoinSwitch extends MapObjBase {
     }
 }
 
+// ---------------------------------------------------------------- TManhole
+/**
+ * A manhole: Mario standing on it presses it down a little (it bobs back up when he's off), a
+ * hip drop from above or a jump from below flips it open (its BCK to frame 79, then on round
+ * to its end). Something put on it (a box or barrel: makeManholeUnuseful) seals it with
+ * manholeRoof.col until that's gone.
+ */
+export class Manhole extends MapObjGeneral {
+    static mDownHeight = 12; static mDownSpeed = fr(1.5); static mVibrationSpeed = fr(0.05);
+    static mVibrationEndHeight = fr(0.001); static mVibrationDecreaseRate = fr(0.07);
+    /** unk148 the bob's phase, unk14C its height, unk150 opened from below, unk151 its rest collision's up, unk152 pressed, unk154 what's on it, unk158 the roof */
+    unk148 = 0; unk14C = 0; unk150 = 0; unk151 = 1; unk152 = 0;
+    unk154: MapObjBase | null = null; unk158: ObjCollision | null = null;
+    constructor(w: World, name = 'マンホール') { super(w, name); }
+    private fc() { return this.mactor ? this.mactor.getFrameCtrl(ANM_BCK) : null; }
+    private open() {
+        const fc = this.fc();
+        if (fc) { fc.rate = ANM_FRAME_RATE; fc.frame = fr(fc.frame + ANM_FRAME_RATE); }
+        this.world.sound(SE.OBJ_MANHOLE_OPEN, this.pos);
+        this.offMapObjFlag(MOF.NO_ANIMATIONS);
+    }
+    touchPlayer(_a: HitActor) {
+        const w = this.world, m = w.mario;
+        this.state = STATE_NORMAL;
+        if (!this.animationFinished()) { this.pos.y = this.initialPos.y; return; }
+        if (marioStatus(w) === 0x8008A9 && m.pos.y < this.pos.y) { this.open(); return; }
+        if (m.pos.y < this.pos.y && marioSpeedY(w) > 0) {
+            this.open();
+            const a = this.colMgr && this.colMgr.getActiveCollision();
+            if (a) a.setAllBGType(0x400);
+            this.unk150 = 1;
+            return;
+        }
+        if (marioTouchGround4cm(w)) {
+            if (this.unk151) { this.setUpMapCollision(1); this.unk151 = 0; }
+            if (!this.unk152) { this.unk152 = 1; w.sound(SE.OBJ_MANHOLE_DOWN, this.pos); }
+            if (this.pos.y > fr(this.initialPos.y - Manhole.mDownHeight)) this.pos.y = fr(this.pos.y - Manhole.mDownSpeed);
+            else this.pos.y = fr(this.initialPos.y - Manhole.mDownHeight);
+            this.unk148 = 1;
+            this.unk14C = fr(this.initialPos.y - this.pos.y);
+            this.offMapObjFlag(MOF.NO_ANIMATIONS);
+            return;
+        }
+        if (this.unk152) { this.unk152 = 0; w.sound(SE.OBJ_MANHOLE_UP, this.pos); }
+        this.appeared();
+    }
+    animationFinished() {
+        const fc = this.fc();
+        if (!fc || fc.rate === 0) return true;
+        const next = fr(fc.frame + fc.rate);
+        if (fc.frame < 79 && next >= 79) {
+            fc.frame = 79; fc.rate = 0;
+            this.calcRootMatrix();
+            this.onMapObjFlag(MOF.NO_ANIMATIONS);
+            return true;
+        }
+        if (fc.frame < fc.end && next >= fc.end) {
+            fc.frame = 0; fc.rate = 0;
+            this.calcRootMatrix();
+            this.onMapObjFlag(MOF.NO_ANIMATIONS);
+            return true;
+        }
+        return false;
+    }
+    appeared() {
+        const on = this.unk154;
+        if (on) {
+            if (!on.checkLiveFlag(LF.DEAD)) return;
+            if (this.unk158) this.unk158.remove();
+            this.unk154 = null;
+        }
+        if (this.unk150 && marioSpeedY(this.world) <= 0) {
+            const a = this.colMgr && this.colMgr.getActiveCollision();
+            if (a) a.setAllBGType(0x107);   // (BG_TYPE_GROUND_POUND_TO_PASS_THROUGH)
+            this.unk150 = 0;
+        }
+        if (this.animationFinished()) {
+            if (this.unk152 === 1 && this.collisions.length === 0) { this.unk152 = 0; this.world.sound(SE.OBJ_MANHOLE_UP, this.pos); }
+            if (this.unk14C > Manhole.mVibrationEndHeight) {
+                this.pos.y = fr(fr(this.unk14C * JMASCos(s16(Math.trunc(fr(this.unk148 * 32768))))) + this.initialPos.y);
+                this.unk148 = fr(this.unk148 + Manhole.mVibrationSpeed);
+                if (this.unk148 >= 2) this.unk148 = fr(this.unk148 - 2);
+                this.unk14C = fr(this.unk14C - Manhole.mVibrationDecreaseRate);
+                return;
+            }
+            if (!this.unk151) { this.setUpMapCollision(0); this.unk151 = 1; }
+            this.onMapObjFlag(MOF.NO_ANIMATIONS);
+            this.pos.y = this.initialPos.y;
+        }
+    }
+    calc() {
+        const fc = this.fc();
+        if (!fc) return;
+        const next = fr(fc.frame + fc.rate);
+        if ((fc.frame <= 45 && 45 < next) || (fc.frame <= 125 && 125 < next)) this.world.sound(SE.OBJ_MANHOLE_CLOSE, this.pos);
+    }
+    // setGroundCollision: with a hatched Yoshi over it, only moved (TODO: Yoshi isn't simulated, so always TMapObjBase's)
+    makeManholeUnuseful(o: MapObjBase) {
+        if (this.unk154) return;
+        this.unk154 = o;
+        if (this.unk158) this.unk158.setUpMtx(this.rootMtx());
+    }
+    loadAfter() {
+        super.loadAfter();
+        const fc = this.fc();
+        if (fc) fc.rate = 0;
+    }
+    initMapObj() {
+        super.initMapObj();
+        this.unk158 = new ObjCollision(this.world, KIND_WARP, this);
+        this.unk158.init('/mapObj/manholeRoof.col', 0);
+    }
+}
+
+register('Manhole', (w, n) => new Manhole(w, n));
 register('RedCoinSwitch', (w, n) => new RedCoinSwitch(w, n));
 register('MapObjChangeStage', (w, n) => new MapObjChangeStage(w, n));
 register('MapObjChangeStageHipDrop', (w, n) => new MapObjChangeStageHipDrop(w, n));
