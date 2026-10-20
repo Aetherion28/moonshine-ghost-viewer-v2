@@ -22,6 +22,7 @@ import './enemies/yumbo.js';
 import './enemies/kukku.js';
 import './enemies/kazekun.js';
 import './enemies/generator.js';
+import './enemies/enemytable.js';
 import './enemies/launcher.js';
 import './enemies/popo.js';
 import './enemies/namekuri.js';
