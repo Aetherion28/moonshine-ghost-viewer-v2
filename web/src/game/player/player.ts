@@ -18,6 +18,7 @@ import { TMarioSim, j3dTRMtx } from './tmario.js';
 import { S, A, MF, ControllerWork, bg, marioBckInfo } from './base.js';
 import { ANIME_DATA } from './tables.js';
 import { SE } from '../soundids.js';
+import { EmitInfo, emitInfo } from '../water.js';
 import { MarioGamePad, PadStatus, MEANING, PAD_FLAG } from './pad.js';
 import * as P from './params.js';
 import { Params } from '../engine.js';
@@ -473,8 +474,28 @@ export class PlayerMario extends TMarioSim {
         }
         this.unk374 = 0; this.unk378 = 0; this.mSinkTimer = 0;
     }
-    /** TMario::checkWet: the drops off him after the water (effects only) */
-    checkWet() { if (this.mWetWaterParticleTimer > 0) this.mWetWaterParticleTimer -= 1; }
+    /**
+     * TMario::checkWet: for 120 ticks after he leaves the water, a drop of water every 8th
+     * (WetWaterEmit.prm) falls off him at his feet with 0.3 of his speed. They're FLUDD's kind of
+     * water: landed, they wet the ground (a dive onto them slides wet) and clean goop.
+     */
+    private wetEmit: EmitInfo | null = null;
+    checkWet() {
+        if (!this.isMario() || this.onYoshi()) return;
+        if (this.mWetWaterParticleTimer <= 0) return;
+        this.mWetWaterParticleTimer -= 1;
+        const [, floor] = this.checkGroundPlane(this.pos.x, fadd(this.pos.y, 320), this.pos.z);
+        if (floor.isWaterSurface()) return;
+        if (this.mFloorPosition.z > this.pos.y) return;
+        if (this.checkStatusType(0x200)) return;
+        if (this.mWetWaterParticleTimer & 7) return;
+        const W = this.world.water;
+        if (!W) return;
+        const I = this.wetEmit || (this.wetEmit = emitInfo('/Mario/WetWaterEmit.prm', this.world.files));
+        I.pos = [this.pos.x, fadd(this.pos.y, 5), this.pos.z];
+        I.v = [fmul(this.mVel.x, fr(0.3)), fmul(this.mVel.y, fr(0.3)), fmul(this.mVel.z, fr(0.3))];
+        W.emitRequest(I);
+    }
     /** TMario::gunExec */
     gunExec() {
         const x = this.mGamePad.checkFrameMeaning(MEANING.X);
