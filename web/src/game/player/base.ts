@@ -15,6 +15,7 @@ import type { mat4 } from 'gl-matrix';
 import * as P from './params.js';
 import { S, MF, A, ANIME_DATA, ANIME_FILES } from './tables.js';
 import { AT } from '../actortypes.js';
+import type { Yoshi } from './yoshi.js';
 
 export { S, MF, A };
 export type Bg = BGCheckData;
@@ -136,6 +137,9 @@ export function wallRecord(x: number, y: number, z: number, r: number, max: numb
     return { center: [x, y, z], radius: r, maxResults: max, flags, results: [] };
 }
 
+/** TMario::setAnimation on Yoshi: Mario's BCK for each of Yoshi's (0..24; past it yo_wait) */
+const YOSHI_RIDER_ANIM = [0xB6, 0xB6, 0xC4, 0xB9, 0xBA, 0xB6, 0xC2, 0xC1, 0xC0, 0xBE, 0xBB, 0xBD, 0xBC, 0xB6, 0xBF, 0xB8, 0xB8, 0xB8, 0xC6, 0xC5, 0xB6, 0xB6, 0xB6, 0xB6, 0xB7];
+
 export abstract class MarioBase extends TakeActor {
     world: World;
     // ---- 0x74.. (Mario.hpp's field order)
@@ -179,6 +183,8 @@ export abstract class MarioBase extends TakeActor {
     unk530 = new Int16Array(60); unk534 = 0; unk536 = 0; unk538 = 0; unk53A = 0; unk53B = 0;
     unk55C = 0;
     mHeldObject: any = null;
+    /** mYoshi (0x3F0): the player's TYoshi (initValues); null for the others (TEnemyMario) */
+    mYoshi: Yoshi | null = null;
     /** mHolder (TTakeActor::mHolder) is `holder` */
     // ---- parameters
     mDeParams; mBodyAngleParamsFree; mBodyAngleParamsWaterGun; mAttackParamsFencePunch; mAttackParamsKickRoof;
@@ -265,8 +271,8 @@ export abstract class MarioBase extends TakeActor {
     isOnWire() { return !!this.holder && this.holder.actorType === AT.MAP_WIRE_ACTOR; }
     isTaken() { return this.mStatus === S.TAKEN; }
     getDmgMapCode(i: number) { return this.mDmgMapParams[i >= 0 && i <= 9 ? i : 0]; }
-    /** no Yoshi */
-    onYoshi() { return false; }
+    /** TMario::onYoshi: riding him (TYoshi::STATE_MOUNTED) */
+    onYoshi() { return !!this.mYoshi && this.mYoshi.mState === 8; }
     /** isMario: the player (gpMarioOriginal) */
     isMario() { return false; }
 
@@ -283,11 +289,27 @@ export abstract class MarioBase extends TakeActor {
     isLast1AnimeFrame() { const f = this.getMotionFrameCtrl(); return f.frame >= f.end - 1; }
     isAnimeLoopOrStop() { return (this.getMotionFrameCtrl().state & 3) !== 0; }
     getWallAngle() { return matan(this.mWallPlane!.n[2], this.mWallPlane!.n[0]); }
-    /** setAnimation (no Yoshi): the BCK, its loop mode, and its rate (half the asked: per movement tick). */
+    /**
+     * setAnimation: the BCK, its loop mode, and its rate (half the asked: per movement tick). On
+     * Yoshi the animation is his BCK's rider counterpart (mAnimationId then a BCK index: yo_*),
+     * whatever was asked (ANIM_LOST makes him slide_end).
+     */
     setAnimation(id: number, rate: number) {
+        const Y = this.onYoshi() ? this.mYoshi! : null;
+        if (Y) {
+            if (id === A.LOST) Y.changeAnimation(0x12);
+            // (the DOL's jump table, 0x803B6630: the decomp's case labels are off)
+            const k = Y.curBck();
+            id = k >= 0 && k <= 24 ? YOSHI_RIDER_ANIM[k] : 0xB6;
+            const G = (this as any).mWaterGun;
+            let check = false;
+            if (this.checkFlag(MF.HAS_FLUDD) && G && (G.canSpray ? G.canSpray() : false)) check = true;
+            if (this.mStatus === S.READ_BILLBOARD) check = true;
+            if (check) id = 0xB8;
+        }
         if (id !== this.mAnimationId) {
             this.mAnimationId = id;
-            const bck = ANIME_DATA[id][0];
+            const bck = Y ? id : ANIME_DATA[id][0];
             this.mModel.changeAnm(0, bck);
             this.mModel.blendRatio = 0;
             this.getMotionFrameCtrl().attr = marioBckInfo(bck)[1];

@@ -39,7 +39,9 @@ export abstract class MarioWait extends MarioJump {
     stopCommon(anim: number, onEnd: number) {
         this.waitProcess();
         this.setAnimation(anim, 1);
-        if (this.isLast1AnimeFrame()) this.changePlayerStatus(onEnd, 0, false);
+        // on Yoshi, his animation's end (curAnmEndsNext) ends it too
+        if (this.onYoshi() && this.mYoshi!.curAnmEndsNext()) this.changePlayerStatus(onEnd, 0, false);
+        else if (this.isLast1AnimeFrame()) this.changePlayerStatus(onEnd, 0, false);
     }
     changeMontemanWaitingAnim() { if (this.mStatus !== S.WAIT) return; this.mStatusState |= 2; }
     waiting() {

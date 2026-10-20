@@ -57,7 +57,7 @@ export abstract class MarioRun extends MarioPhysics {
                         if (hi < rate) mix = 1;
                         if (lo <= rate && rate <= hi) mix = fr((rate - lo) / (hi - lo));
                         this.unk414.z = fr(1 - mix);
-                        this.mModel.blendRatio = this.unk414.z;
+                        this.mModel.blendRatio = this.onYoshi() ? 0 : this.unk414.z;
                         loop = false;
                     }
                     break;

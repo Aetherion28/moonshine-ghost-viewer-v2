@@ -8,7 +8,7 @@
 // Yoshi's egg wants one fruit (shown in its bubble); fed that one it hatches Yoshi. It needs the
 // save's flag (Yoshi freed in Pianta Village, Shine 0x21): the save starts empty here (as for the
 // coins, see item.ts), so outside the egg event it is gone from the stage, as the game does then.
-// TODO: TYoshi isn't simulated: the hatch is told as a 'yoshiHatch' event.
+// The hatch is the player's TYoshi's (player/yoshi.ts appearFromEgg), a 'yoshiHatch' event without one.
 
 import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, MsRandF, matan, MsMtxSetXYZRPH, sqDist } from '../math.js';
@@ -510,8 +510,12 @@ export class EggYoshi extends MapObjGeneral {
             case 0xB:
                 if (this.animIsFinished()) {
                     this.startAnim(3);
-                    // SMS_GetYoshi()->appearFromEgg(pos, rot.y, this): Yoshi isn't simulated
-                    this.world.events.push({ t: this.world.tickCount, kind: 'yoshiHatch', data: { p: this.pos.clone(), yaw: this.rot.y, fruit: this.unk14C } });
+                    // SMS_GetYoshi()->appearFromEgg(pos, rot.y, this) (the player's TYoshi, player/yoshi.ts; with no
+                    // simulated player it is only told as a 'yoshiHatch' event)
+                    const Y = (this.world.mario as any).mYoshi;
+                    if (Y && typeof Y.appearFromEgg === 'function') {
+                        if (!Y.isHatched()) { Y.appearFromEgg(this.pos.clone(), this.rot.y, this); Y.setEggYoshiPtr(this); }
+                    } else this.world.events.push({ t: this.world.tickCount, kind: 'yoshiHatch', data: { p: this.pos.clone(), yaw: this.rot.y, fruit: this.unk14C } });
                     this.state = 0xC;
                 }
                 break;
@@ -545,8 +549,9 @@ export class EggYoshi extends MapObjGeneral {
     }
     load(s: Stream) {
         MapObjBase.prototype.load.call(this, s);
-        // the save's flags: none set (see the file's head)
-        const shadowMarioEvent = false, yoshiUnlocked = false, shine21 = false;
+        // the save's flags (world.flags: what the stage being loaded implies, flags.ts)
+        const F = this.world.flags;
+        const shadowMarioEvent = F.getFlag(MSF.SHADOW_MARIO_EVENT) === 1, yoshiUnlocked = F.getBool(MSF.YOSHI_UNLOCKED), shine21 = F.getShineFlag(0x21);
         if (this.individualName === 'eggYoshiEvent') {
             if (shadowMarioEvent) this.state = 0xE; else { this.makeObjDead(); return; }
         } else if (this.world.map === 1) { if (!yoshiUnlocked) { this.makeObjDead(); return; } }

@@ -27,6 +27,8 @@ import type { StickCamera, SimCamera } from '../camera/types.js';
 import { fr, fmul, fadd, fsub, fdiv, fmadd, MsSqrtf, sqrtf, s16f, u8f } from './fmath.js';
 import { TWaterGun, marioGunExec } from './watergun.js';
 import { makePlayerCamera, PolarSubCamera } from '../camera/index.js';
+import { Yoshi } from './yoshi.js';
+import { wallRecord } from './base.js';
 
 const T = AT as Record<string, number>;
 const types = (...names: string[]) => new Set(names.map((n) => T[n]).filter((v) => v !== undefined));
@@ -148,7 +150,14 @@ export class PlayerMario extends TMarioSim {
             this.mDeParams.mTrampleRadius, this.mDeParams.mAttackHeight, this.mDeParams.mDamageRadius, this.mDeParams.mDamageHeight);
         this.mCoinCount = 0;
         this.unk55C = 50;
+        // mYoshi = new TYoshi; mYoshi->init(this) (after the water gun's, before TMarioEffect)
+        this.unk3E8 = 4; this.unk3EC = 0;
+        try { this.mYoshi = new Yoshi(this as any); } catch (e) { console.warn('[player] yoshi', e); this.mYoshi = null; }
     }
+    /** (SMS_GetYoshi() as other modules ask for it: enemies/egggen.ts, fruitsboat.ts) */
+    get yoshi() { return this.mYoshi; }
+    /** unk3E8 / unk3EC: FLUDD's second nozzle and fill rate when he got on Yoshi */
+    unk3E8 = 4; unk3EC = 0;
     initModel() {
         this.initJointIds();
         this.mModel.changeAnm(0, 0x3e);
@@ -184,6 +193,7 @@ export class PlayerMario extends TMarioSim {
     }
     loadAfter() {
         if (this.checkFlag(MF.HAS_FLUDD) && this.mWaterGun && this.mWaterGun.initInLoadAfter) this.mWaterGun.initInLoadAfter();
+        if (this.mYoshi) this.mYoshi.initInLoadAfter();
         try {
             const c = playerHooks.makeCamera ? playerHooks.makeCamera(this.world, this) : makePlayerCamera(this.world, this as any);
             this.simCamera = c; this.camera = c; this.cameraApprox = false;
@@ -326,7 +336,7 @@ export class PlayerMario extends TMarioSim {
         const hpBefore = this.mHealth;
         super.thinkSituation();
         // the player's part of it: a stage change plane (isUnk300: a warp; the segment ends there)
-        if (bg.isUnk300(this.mGroundPlane)) { this.world.setNextStage?.(this.mGroundPlane.data, null); this.offUnk114(2); this.offUnk114(0x400); }
+        if (bg.isUnk300(this.mGroundPlane)) { if (this.onYoshi()) this.getOffYoshi(false); this.world.setNextStage?.(this.mGroundPlane.data, null); this.offUnk114(2); this.offUnk114(0x400); }
         void hpBefore;
         // FLUDD's water on the ground under him: TModelWaterManager::askHitWaterParticleOnGround
         // (super's offFlag(RECENTLY_LEFT_WATER) came just before, as in the game)
@@ -505,8 +515,39 @@ export class PlayerMario extends TMarioSim {
     thinkSound() { }
     /** TMario::thinkTorocco */
     thinkTorocco() { }
-    checkYoshiGetOff() { }
-    thinkYoshiHeadCollision() { }
+    /** TMario::getOffYoshi: knocked off (fly: status 0x89C) or jumping off (X: a back jump of mGetOffYoshiY) */
+    getOffYoshi(fly: boolean) {
+        this.mInput &= ~0x8000;
+        if (fly) { this.changePlayerStatus(0x89C, 0, false); this.mYoshi!.getOff(true); }
+        else { this.changePlayerStatus(S.BACK_JUMP, 0, false); this.mVel.y = this.mJumpParams.mGetOffYoshiY; this.mYoshi!.getOff(false); }
+        this.setAnimation(A.JUMP, 1);
+        this.unk78 &= ~0x100;
+        this.pos.y = fadd(this.pos.y, 100);
+        this.mForwardVel = -8;
+        const G = this.mWaterGun;
+        if (G) { G.changeNozzle(NOZZLE.Hover, true); this.normalizeNozzle(); G.resetWaterToFull(); }
+        this.event('yoshiOff', { fly });
+    }
+    checkYoshiGetOff() { if (this.onYoshi() && this.mGamePad.checkFrameMeaning(MEANING.X)) this.getOffYoshi(false); }
+    /** TMario::thinkYoshiHeadCollision: Yoshi's head (mHeadFront ahead) kept out of the walls, Mario pushed back (at most 50) */
+    thinkYoshiHeadCollision() {
+        if (!this.onYoshi()) return;
+        const Y = this.mYoshiParams, front = Y.mHeadFront;
+        const hx = fmadd(front, JMASSin(this.mFaceAngle.y), this.pos.x), hz = fmadd(front, JMASCos(this.mFaceAngle.y), this.pos.z);
+        const r = wallRecord(hx, fadd(this.pos.y, 100), hz, Y.mHeadRadius, 4, 0);
+        if (this.isTouchedWallsAndMoveXZ(r)) {
+            let dx = fsub(r.center[0], hx), dz = fsub(r.center[2], hz);
+            const f4 = sqrtf(fadd(fmul(dx, dx), fmul(dz, dz)));
+            let f2 = f4;
+            if (f4 > 0) {
+                const k = fdiv(1, f4);
+                dx = fmul(dx, k); dz = fmul(dz, k);
+                if (50 < f4) f2 = 50;
+                dx = fmul(dx, f2); dz = fmul(dz, f2);
+                this.pos.x = fadd(this.pos.x, dx); this.pos.z = fadd(this.pos.z, dz);
+            }
+        }
+    }
 
     // ---------------------------------------------------------------- MarioJump.cpp: the rocket and hover nozzles
     hoverHeight() { const W = this.mWaterGun && this.mWaterGun.mWatergunParams; return W ? (W.mHHoverHeight ?? W.mHoverHeight ?? 160) : 160; }
@@ -697,6 +738,7 @@ export class PlayerMario extends TMarioSim {
             this.mHealth = 0;
             this.lostLives.push(this.world.tickCount);
             this.event('loser');
+            if (this.mYoshi) this.mYoshi.kill();
             if (this.checkStatusType(S.FLAG_SWIMMING)) { this.changePlayerStatus(this.mAir < 1 ? S.SWIM_DOWN : S.SWIM_P_DOWN, 0, true); return; }
             this.changePlayerStatus(this.mStatus === S.ELECTRIC_DAMAGE ? S.ELEC_DOWN : S.DOWN_LOSER, 0, true);
         }
@@ -729,6 +771,7 @@ export class PlayerMario extends TMarioSim {
         if (this.isInvincible()) return;
         if (this.checkFlag(MF.GAME_OVER)) return;
         if (this.mHealth === 0) return;
+        if (this.onYoshi()) { this.getOffYoshi(true); return; }   // (MSD_SE_YV_DAMAGE)
         const air = this.checkStatusType(S.FLAG_JUMPING) ? 1 : 0;
         const from = hit || this.mFloorHitActor;
         if (downType === 3) {
@@ -1091,6 +1134,33 @@ export class PlayerMario extends TMarioSim {
     private static readonly COL_TAKE = types('FRUIT_COCONUT', 'FRUIT_PAPAYA', 'FRUIT_PINE', 'FRUIT_BANANA', 'RED_PEPPER');
     checkCollision() {
         if (this.checkStatusType(S.FLAG_UNK1000)) return;
+        // a free Yoshi (STATE_UNMOUNTED / hatching): landed on from above (within 180) he's ridden, else kept 80 away
+        const Y = this.mYoshi;
+        if (Y && (Y.mState === 6 || Y.mState === 2)) {
+            const yt = Y.getTranslation();
+            if (yt.y <= this.pos.y && this.pos.y < fadd(100, yt.y)) {
+                const dz = fsub(yt.z, this.pos.z), dx = fsub(yt.x, this.pos.x);
+                const dist = sqrtf(fadd(fmul(dx, dx), fmul(dz, dz)));
+                if (this.checkStatusType(S.FLAG_JUMPING) && !this.mHeldObject && this.mVel.y < 0 && yt.y < this.pos.y && this.mStatus !== 0x89C
+                    && this.mStatus !== S.THROWN_DOWN && this.mStatus !== S.BACK_JUMP && dist < 180) {
+                    this.pos.set(Y.getTranslation());
+                    this.mFaceAngle.y = Y.mEggRotSpeed;
+                    this.mModelFaceAngle = this.mFaceAngle.y;
+                    const G = this.mWaterGun;
+                    if (this.checkFlag(MF.HAS_FLUDD) && G) {
+                        this.unk3E8 = G.mSecondNozzle;
+                        this.unk3EC = fr(G.mCurrentWater / G.getCurrentNozzle().P.mAmountMax);
+                    }
+                    Y.ride();
+                    this.onFlag(MF.HAS_FLUDD);
+                    if (this.checkFlag(MF.HAS_FLUDD) && G) G.changeNozzle(NOZZLE.Yoshi, true);
+                    this.changePlayerStatus(S.WAIT, 0, false);
+                    this.event('yoshiRide', {});
+                    return;
+                }
+                this.keepDistance(yt, 80, 0);
+            }
+        }
         const P = PlayerMario;
         for (const a of this.collisions.slice()) {
             if (a.isHitCategory(HC.NPC)) { this.hitNpc(a); continue; }
@@ -1264,12 +1334,17 @@ export class PlayerMario extends TMarioSim {
             this.playerControl();
             this.setPositions();
             if (this.mWaterGun) this.mWaterGun.perform(CUE_MOVE);
+            if (this.mYoshi) this.mYoshi.movement();
         }
         if (this.mFreezeTimer <= 0) {
             this.calcAnim();
+            if (this.mYoshi) this.mYoshi.marioCalcAnim(this.unk414.z);
             const G = this.mWaterGun;
             if (G) { if (G.calcAnimFromMario) G.calcAnimFromMario(); }
+            if (this.mYoshi) this.mYoshi.calcAnim();
         }
+        // CUE_ENTRY (the frame's draw): mYoshi->entry() when he's drawn (VISIBLE, not MARIO_FLAG_UNK4), else unless ridden
+        if (this.mYoshi && ((this.checkUnk114(2) && !this.checkFlag(0x4)) || !this.onYoshi())) this.mYoshi.entry();
         this.justEnteredWater = !wasIn && this.checkFlag(MF.IN_ANY_WATER);
         this.present = this.checkUnk114(2);
         // the HUD's view of him: health and air when they change (World.playerLog)

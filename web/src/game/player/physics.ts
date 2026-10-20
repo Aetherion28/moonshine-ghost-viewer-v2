@@ -188,6 +188,7 @@ export abstract class MarioPhysics extends MarioMove {
             if (this.isFallCancel()) this.mVel.y = fr(this.mVel.y * 0.75);
             else if ((this.mStatus === S.LEFT_ROTATE_JUMP || this.mStatus === S.RIGHT_ROTATE_JUMP) && this.mVel.y < 0) this.mVel.y = fr(this.mVel.y - this.mJumpParams.mSpinJumpGravity);
             else this.mVel.y = fr(this.mVel.y - this.mJumpParams.mGravity);
+            if (this.onYoshi()) this.mYoshi!.thinkHoldOut();
         }
         if (this.mVel.y < -75) this.mVel.y = -75;
     }

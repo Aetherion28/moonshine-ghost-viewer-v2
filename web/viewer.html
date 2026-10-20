@@ -5450,14 +5450,24 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     const k = YOSHI_NAMES.indexOf(name);
     return k >= 0 ? k : YOSHI_NAMES.indexOf('yoshi_wait');
   }
+  // The input replay's own Yoshi (SimRunner.history.yoshiAt: the sim's TYoshi), where the replay has
+  // run: ridden or free (hatched by the egg, waiting by it), his BCK, frame, walk blend and juice.
+  function simYoshiAt(d, t) { const H = replayOf(d); return H && H.yoshiAt ? H.yoshiAt(t) : undefined; }
   function poseYoshi(g, s, time) {
-    const d = g.data, colour = d.yoshi ? d.yoshi[s.i] : 0;
-    if (!colour || s.gap || !g.visible) { if (g.yoshiNode) g.yoshiNode.root.visible = false; return; }
+    const d = g.data, sim = simYoshiAt(d, time);
+    const colour = sim !== undefined ? (sim ? sim.type + 1 : 0) : d.yoshi ? d.yoshi[s.i] : 0;
+    if (!colour || (s.gap && !sim) || !g.visible) { if (g.yoshiNode) g.yoshiNode.root.visible = false; return; }
     const Y = yoshiFor(g, colour);
     if (!Y) return;
     Y.root.visible = true;
+    // free (not ridden): placed in the world, under the marker (Mario) it hangs from
+    if (sim && !sim.mounted) {
+      const my = (s.yaw / 32768) * Math.PI, dx = sim.x - s.x, dy = sim.y - s.y, dz = sim.z - s.z, c = Math.cos(-my), sn = Math.sin(-my);
+      Y.root.position.set(dx * c + dz * sn, dy, -dx * sn + dz * c);
+      Y.root.rotation.set(0, (sim.yaw / 32768) * Math.PI - my, 0);
+    } else { Y.root.position.set(0, 0, 0); Y.root.rotation.set(0, 0, 0); }
     if (camera.position.distanceToSquared(g.marker.position) > 12000 * 12000) return;
-    const ob = typeof ghostYoshiAt === 'function' ? ghostYoshiAt(d, time) : null;
+    const ob = sim ? { anim: sim.anim, frame: sim.frame, blend: sim.blend } : typeof ghostYoshiAt === 'function' ? ghostYoshiAt(d, time) : null;
     let anim, frame;
     if (ob) { anim = YOSHI_ANIMS['yoshi#' + ob.anim]; frame = ob.frame; }
     else {

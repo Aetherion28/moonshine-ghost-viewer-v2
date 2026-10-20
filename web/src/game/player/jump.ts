@@ -49,7 +49,11 @@ export abstract class MarioJump extends MarioRun {
             const d = s16(this.mIntendedYaw - this.mFaceAngle.y);
             if (this.mStatus === S.ROCKET && this.checkFlag(MF.HAS_FLUDD) && this.gunCanSpray()) mag = fmul(2.5, this.mIntendedMag);
             if (this.mStatus === S.WALL_JUMP && this.mVel.y > 0 && (d < -0x4000 || d > 0x4000)) mag = 0;
-            this.mForwardVel = fmadd(this.getJumpAccelControl(), fmul(mag, JMASCos(d)), this.mForwardVel);
+            // Yoshi's flutter (mFlutterState 1): mYoshiParams' hold-out controls, forward or back
+            let acc: number;
+            if (this.onYoshi() && this.mYoshi!.mFlutterState === 1) acc = d > -0x4000 && d < 0x4000 ? this.mYoshiParams.mHoldOutAccCtrlF : this.mYoshiParams.mHoldOutAccCtrlB;
+            else acc = this.getJumpAccelControl();
+            this.mForwardVel = fmadd(acc, fmul(mag, JMASCos(d)), this.mForwardVel);
             side = fmul(fmul(mag, JMASSin(d)), this.getJumpSlideControl());
         }
         if (this.mForwardVel > 32) this.mForwardVel = fsub(this.mForwardVel, fr(0.2));

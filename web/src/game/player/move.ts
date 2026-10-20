@@ -15,7 +15,11 @@ export { MsSqrtf };
 
 export abstract class MarioMove extends MarioBase {
     getJumpAccelControl() { return this.mStatus === S.WIRE_JUMP ? this.mWireParams.mWireJumpAccelControl : this.mJumpParams.mJumpAccelControl; }
-    getJumpSlideControl() { return this.mStatus === S.WIRE_JUMP ? this.mWireParams.mWireJumpSlideControl : this.mJumpParams.mJumpSlideControl; }
+    getJumpSlideControl() {
+        if (this.mStatus === S.WIRE_JUMP) return this.mWireParams.mWireJumpSlideControl;
+        if (this.onYoshi() && this.mYoshi!.mFlutterState === 1) return this.mYoshiParams.mHoldOutSldCtrl;
+        return this.mJumpParams.mJumpSlideControl;
+    }
     /** canSquat: FLUDD's nozzle out and R held (no FLUDD here) */
     canSquat() { return false; }
     /** mWaterGun->mWatergunParams.mHoverHeight (no water gun: 0) */
@@ -244,6 +248,13 @@ export abstract class MarioMove extends MarioBase {
             this.mVel.y = fr(this.mVel.y * sc); this.mForwardVel = fr(this.mForwardVel * sc);
             this.mSinkTimer = fr(this.mSinkTimer - k * (G.mSinkTime * G.mSinkRecover));
             if (this.mSinkTimer < 0) this.mSinkTimer = 0;
+        }
+        // on Yoshi: mJumpYoshiMult, and the flutter made ready (TYoshi::thinkHoldOut)
+        if (this.onYoshi()) {
+            const Y = this.mYoshi!;
+            this.mVel.y = fr(this.mVel.y * this.mYoshiParams.mJumpYoshiMult);
+            Y.mFlutterState = 0;
+            Y.mFlutterTimer = Y.mMaxFlutterTimer;
         }
         this.unk104 = this.pos.y;
         if (next & 0x2000000) this.unk78 |= 0x100; else this.unk78 &= ~0x100;
@@ -494,6 +505,7 @@ export abstract class MarioMove extends MarioBase {
         const [dy, d] = this.checkGround(this.pos.x, fr(this.pos.y - this.mVel.y), this.pos.z);
         if (d.isDeathPlane() && dy > this.pos.y) {
             this.onFlag(MF.GAME_OVER); this.mHealth = 0;
+            if (this.mYoshi) this.mYoshi.kill();
             this.changePlayerStatus(S.FALL_DEAD, 0, true);
             return;
         }
@@ -528,6 +540,12 @@ export abstract class MarioMove extends MarioBase {
         }
         if (isIn && this.pos.y < this.mFloorPosition.z) {
             if (this.mFloorPosition.z > this.pos.y + this.mRunParams.mSwimDepth) {
+                // deep water: Yoshi goes (TYoshi::disappear), FLUDD back to the hover nozzle
+                if (this.onYoshi()) {
+                    this.mYoshi!.disappear();
+                    const G = (this as any).mWaterGun;
+                    if (G) { G.changeNozzle(4, true); (this as any).normalizeNozzle?.(); }
+                }
                 const id = this.mStatus & 0x1FF;
                 let can = true;
                 if (this.checkStatusType(0x2000)) can = false;

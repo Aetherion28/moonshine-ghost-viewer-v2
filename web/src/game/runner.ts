@@ -72,6 +72,7 @@ import './enemies/bosshanachan.js';
 import { mapObjWorldHooks } from './mapobj/index.js';
 import './player/emario.js';
 import { setMarioArchive } from './player/base.js';
+import { setYoshiArchive } from './player/yoshi.js';
 import { PlayerMario, introTiming } from './player/player.js';
 import type { PadStatus } from './player/pad.js';
 import { NO_PAD } from './player/pad.js';
@@ -111,6 +112,8 @@ export class DiscCommon {
         try { if (fs.has('data/scenecmn.bin')) c.scenecmn = new Uint8Array(await fs.read('data/scenecmn.bin')); } catch { }
         // Mario's archive (the simulated Marios' animations and params: Shadow Mario)
         try { const m = parse(await fs.read('data/mario.szs')); setMarioArchive((p) => m.files.get(p.toLowerCase()) || null); } catch (e) { console.warn('[game] mario.szs', e); }
+        // Yoshi's (TYoshi: his model's joints and animations)
+        try { if (fs.has('data/yoshi.szs')) setYoshiArchive(parse(await fs.read('data/yoshi.szs'))); } catch (e) { console.warn('[game] yoshi.szs', e); }
         return c;
     }
     stageFiles(scene: FileMap): StageFiles {
@@ -252,6 +255,12 @@ export class ReplayHistory {
     private emitted = -1;
     /** the voice lines the simulated Mario asked for (TMario::startVoice), at their tick's ghost QF, in order */
     voices: { qf: number; id: number; ifNoVoice?: boolean; unlessId?: number; stop?: boolean }[] = [];
+    /**
+     * The sim's Yoshi each frame (player/yoshi.ts viewState): his TYoshi state (-1: an egg, not drawn),
+     * place, facing (s16), BCK (yoshi.szs's index) and frame, the walk blend's weight and his juice
+     * (mType: the body colour, bodyColor[mType]).
+     */
+    yState: number[] = []; yPos: number[] = []; yYaw: number[] = []; yBck: number[] = []; yFrame: number[] = []; yBlend: number[] = []; yType: number[] = [];
     constructor(public ghost: any, public from: number) { }
     get last() { return this.qf.length ? this.qf[this.qf.length - 1] : -1; }
     push(qf: number, P: PlayerMario) {
@@ -260,6 +269,9 @@ export class ReplayHistory {
         const f = P.fludd;
         this.fludd.push(f ? (f.nozzle & 7) | (f.spraying ? 0x10 : 0) : -1);
         this.slip.push(P.slipFx); P.slipFx = 0;
+        const Y = P.mYoshi ? P.mYoshi.viewState() : null;
+        this.yState.push(Y ? Y.state : -1); this.yPos.push(Y ? Y.x : 0, Y ? Y.y : 0, Y ? Y.z : 0); this.yYaw.push(Y ? Y.yaw : 0);
+        this.yBck.push(Y ? Y.bck : -1); this.yFrame.push(Y ? Y.frame : 0); this.yBlend.push(Y ? Y.blend : 0); this.yType.push(Y ? Y.type : 0);
         const W = P.world.water, tot = W ? W.emitted : 0;
         const made = this.emitted < 0 || tot < this.emitted ? 0 : tot - this.emitted;
         this.emitted = tot; this.emit.push(made);
@@ -302,7 +314,21 @@ export class ReplayHistory {
             const d = ((((this.phase[j] - phase) + 2048) % 4096) + 4096) % 4096 - 2048;
             phase = (((phase + d * f) % 4096) + 4096) % 4096;
         }
-        return { id: this.anim[i], yoshi: 0, phase };
+        // on Yoshi his animation is a BCK index (TMario::setAnimation's yo_*): the ghost's yoshi field (colour 1-4)
+        const yoshi = this.yState.length > i && this.yState[i] === 8 ? this.yType[i] + 1 : 0;
+        return { id: this.anim[i], yoshi, phase };
+    }
+    /** the sim's Yoshi at t (null: an egg / not hatched; undefined: outside what the replay ran) */
+    yoshiAt(t: number) {
+        const i = this.index(t);
+        if (i < 0) return undefined;
+        if (this.yState[i] < 0) return null;
+        const j = Math.min(i + 1, this.qf.length - 1), f = j > i && this.yState[j] >= 0 ? (t - this.qf[i]) / (this.qf[j] - this.qf[i]) : 0;
+        const P = this.yPos, dy = (((this.yYaw[j] - this.yYaw[i]) + 32768) & 0xffff) - 32768;
+        let frame = this.yFrame[i];
+        if (j > i && this.yBck[j] === this.yBck[i] && this.yFrame[j] >= frame) frame += (this.yFrame[j] - frame) * f;
+        return { state: this.yState[i], mounted: this.yState[i] === 8, x: P[i * 3] + (P[j * 3] - P[i * 3]) * f, y: P[i * 3 + 1] + (P[j * 3 + 1] - P[i * 3 + 1]) * f, z: P[i * 3 + 2] + (P[j * 3 + 2] - P[i * 3 + 2]) * f,
+            yaw: this.yYaw[i] + dy * f, anim: this.yBck[i], frame, blend: this.yBlend[i], type: this.yType[i] };
     }
     emitAt(t: number) {
         const i = this.index(t);
