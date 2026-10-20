@@ -7,6 +7,17 @@ Live at https://aetherion28.github.io/moonshine-ghost-viewer-v2/. It needs your 
 game: nothing is loaded or drawn until a disc image (`.iso` / `.gcm`) or an extracted game folder is
 given, and there is no fallback to the viewer's own models.
 
+## Legal
+
+This project does not host, contain or distribute any copyrighted Nintendo assets or binaries.
+All game data is read in the browser from the user's own copy of the game, and nothing is uploaded.
+The replay logic is an independent reimplementation written for interoperability and research.
+*Super Mario Sunshine* and Mario are trademarks of Nintendo; this is a fan project, not affiliated with or endorsed by Nintendo.
+
+Copyright claims go to aetherion28+legal@gmail.com and are reviewed.
+Invalid claims, including ones filed with the hosting provider, will be contested with a counter-notice under 17 U.S.C. § 512(g).
+See the full [legal notice](https://aetherion28.github.io/moonshine-ghost-viewer-v2/legal.html).
+
 ## How it works
 
 v2 is v1's viewer (`web/viewer.html`, with v1's scripts in `web/legacy/`) with the game's renderer
