@@ -323,3 +323,6 @@ export class MapObjGeneral extends MapObjBase {
 export { STATE_DEAD };
 
 register('MapObjGeneral', (w, n) => new MapObjGeneral(w, n));
+// (MarNameRefGen_MapObj.cpp: these are plain TMapObjGenerals too)
+register('GlassBreak', (w, n) => new MapObjGeneral(w, n));
+register('PanelBreak', (w, n) => new MapObjGeneral(w, n));

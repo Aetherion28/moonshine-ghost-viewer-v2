@@ -23,7 +23,7 @@ import { PolluteModelManager } from './igaiga.js';
 import { msVecNormalize, force25 } from '../camera/lib.js';
 import { frsqrte } from '../math.js';
 import { MsMtxSetRotX, MsMtxSetRotY, MTXConcat } from '../mapobj/lib.js';
-import type { WallCheck } from '../collision.js';
+import type { WallCheck, BGCheckData } from '../collision.js';
 import { mapObjGlobals } from '../mapobj/base.js';
 
 /** TGessoSaveLoadParams */
@@ -414,7 +414,7 @@ export class EnemyAttachment extends SpineEnemy {
         this.vel.set(0, fr(-0.3), 0);
         this.rebirth();
     }
-    behaveToHitWall() { this.rebirth(); }
+    behaveToHitWall(_d?: BGCheckData) { this.rebirth(); }
     forceKill() {
         if (!this.groundPlane.isPool() && this.world.isInArea(this.pos.x, this.pos.z)) return;
         this.kill();
@@ -438,7 +438,7 @@ export class EnemyAttachment extends SpineEnemy {
         if (fr(n.y + this.vel.y) <= this.groundHeight) this.behaveToHitGround();
         else this.onLiveFlag(LF.AIRBORNE);
         const r: WallCheck = { center: [n.x, fr(n.y + this.headHeight), n.z], radius: fr(2 * this.bodyRadius), maxResults: 1, flags: 0, results: [] };
-        if (this.world.isTouchedWallsAndMoveXZ(r)) { n.x = r.center[0]; n.z = r.center[2]; this.behaveToHitWall(); }
+        if (this.world.isTouchedWallsAndMoveXZ(r)) { n.x = r.center[0]; n.z = r.center[2]; this.behaveToHitWall(r.results[0]); }
         this.pos.set(n);
         this.posDelta.zero();
         this.setBehavior();

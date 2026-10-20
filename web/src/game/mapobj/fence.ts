@@ -2,16 +2,19 @@
 // revolving fence's frame and its panel that Mario flips over by ground-pounding (standing:
 // it turns about Y, lying: it rolls), and the rail fence that slides along its rail when
 // ground-pounded, stops at the rail's end and falls away to come back at its start.
-// TFenceWater / TFenceWaterH (spray-turned fences, not in Bianco Hills) aren't ported.
+// TFenceWater / TFenceWaterH (Pinna Park's spray-turned fences): sprayed, the fence turns 90
+// degrees (the vertical one about Y, the lying one about Z, with its other collision while it
+// moves), waits mTurnedWaitTime and turns back; a TMapObjMessenger 500 along its edge (the
+// vertical one's) or under it (the lying one's) is what the water hits.
 
-import { fr, V3, MsWrap } from '../math.js';
-import { World, Stream, HitActor, GraphTracer, MSG, ANM_BCK } from '../engine.js';
+import { fr, V3, mtx, MsWrap, MsSin, MsCos } from '../math.js';
+import { World, Stream, HitActor, GraphTracer, MSG, HF, ANM_BCK } from '../engine.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { MapObjBase, MOF, STATE_NORMAL, OBJ_MAKERS, newAndRegisterObj } from './base.js';
 import { ObjCollisionManager } from './objcol.js';
-import { MsMtxSetRotY, setRootMtx } from './lib.js';
+import { MsMtxSetRotY, MTXConcat, setRootMtx, MapObjMessenger } from './lib.js';
 import './item.js';   // (its OBJ_MAKERS.unique first: wrapped below)
 
 export class Fence extends MapObjBase {
@@ -232,6 +235,81 @@ export class RailFence extends Fence {
     }
 }
 
+export const FW = { STATE_UNK2: 2, STATE_UNK3: 3, STATE_UNK4: 4 };
+export class FenceWater extends Fence {
+    static mWaterAccel = fr(2.1); static mBackSpeed = 3; static mTurnedWaitTime = 600;
+    /** its turning speed, its turn */
+    unk13C = 0; unk140 = 0;
+    unk144: MapObjMessenger | null = null;
+    constructor(w: World, name = '水回転フェンス（垂直）') { super(w, name); }
+    receiveMessage(_s: HitActor, msg: number): boolean {
+        if (!this.isState(FW.STATE_UNK3) && msg === MSG.SPRAYED_BY_WATER) {
+            this.unk13C = FenceWater.mWaterAccel;
+            if (this.unk13C > 0) this.changeStatusToGo();
+            return true;
+        }
+        return false;
+    }
+    changeStatusToGo() { this.world.sound(SE.OBJ_WATER_FENCE_FW, this.pos); this.state = FW.STATE_UNK2; }
+    changeStatusToWait() { this.unk140 = 0; this.unk13C = 0; this.state = STATE_NORMAL; }
+    controlRotation() {
+        switch (this.state) {
+            case STATE_NORMAL: break;
+            case FW.STATE_UNK2:
+                this.unk140 = fr(this.unk140 - this.unk13C);
+                if (this.unk140 <= -90) { this.unk140 = -90; this.unk13C = 0; this.state = FW.STATE_UNK3; this.stateTimer = FenceWater.mTurnedWaitTime; }
+                break;
+            case FW.STATE_UNK3:
+                if (!this.isStateTimerEngaged()) { this.world.sound(SE.OBJ_WATER_FENCE_REV, this.pos); this.unk13C = FenceWater.mBackSpeed; this.state = FW.STATE_UNK4; }
+                break;
+            case FW.STATE_UNK4:
+                this.unk140 = fr(this.unk140 + this.unk13C);
+                if (this.unk140 >= 0) this.changeStatusToWait();
+                break;
+        }
+    }
+    control() {
+        MapObjBase.prototype.control.call(this);
+        this.controlRotation();
+        this.rot.y = MsWrap(fr(this.unk140 + this.initialRot.y), 0, 360);
+        const m = this.unk144!;
+        m.pos.x = fr(this.pos.x + fr(500 * MsCos(this.rot.y)));
+        m.pos.z = fr(this.pos.z - fr(500 * MsSin(this.rot.y)));
+    }
+    /** TMapObjBase's (the table's collisions) */
+    initMapCollisionData() { MapObjBase.prototype.initMapCollisionData.call(this); }
+    initMapObj() {
+        super.initMapObj();
+        const m = this.unk144 = new MapObjMessenger('地形オブジェメッセンジャー');
+        m.owner = this;
+        m.initHitActor(this.actorType, 1, 0, 0, 0, 100, 300);
+        m.offHitFilter(HF.NO_COLLISION);
+        m.pos.set(this.pos.x, fr(this.pos.y - 150), this.pos.z);
+        this.world.addToGroup('オブジェクトグループ', m);
+    }
+}
+export class FenceWaterH extends FenceWater {
+    constructor(w: World, name = '水回転フェンス（水平）') { super(w, name); }
+    control() {
+        MapObjBase.prototype.control.call(this);
+        this.controlRotation();
+        this.rot.z = MsWrap(fr(this.unk140 + this.initialRot.z), 0, 360);
+        // TPosition3f::setEular(0, y, 0) x setEular(0, 0, z), at the position: getModel()->setAnmMtx(0, ...)
+        const y = fr(0.017453294 * this.rot.y), z = fr(0.017453294 * this.rot.z);
+        const sy = fr(Math.sin(y)), cy = fr(Math.cos(y)), sz = fr(Math.sin(z)), cz = fr(Math.cos(z));
+        const ry = mtx(); ry[0] = cy; ry[2] = sy; ry[8] = -sy; ry[10] = cy;
+        const rz = mtx(); rz[0] = cz; rz[1] = -sz; rz[4] = sz; rz[5] = cz;
+        MTXConcat(ry, rz, ry);
+        ry[3] = this.pos.x; ry[7] = this.pos.y; ry[11] = this.pos.z;
+        setRootMtx(this, ry);
+        const m = this.unk144!;
+        m.pos.x = this.pos.x;
+        m.pos.y = fr(this.pos.y - 150);
+    }
+    changeStatusToGo() { super.changeStatusToGo(); this.setUpMapCollision(1); }
+    changeStatusToWait() { super.changeStatusToWait(); this.setUpMapCollision(0); }
+}
+
 // the revolving fence's panel, made by name
 const prevUnique = OBJ_MAKERS.unique;
 OBJ_MAKERS.unique = (w, name) => {
@@ -243,3 +321,5 @@ register('Fence', (w, n) => new Fence(w, n));
 register('FenceRevolve', (w, n) => new RevolvingFenceOuter(w, n));
 register('FenceInner', (w, n) => new RevolvingFenceInner(w, n));
 register('RailFence', (w, n) => new RailFence(w, n));
+register('FenceWaterH', (w, n) => new FenceWaterH(w, n));
+register('FenceWaterV', (w, n) => new FenceWater(w, n));

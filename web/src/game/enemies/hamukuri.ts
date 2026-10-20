@@ -8,20 +8,28 @@
 // Thrown out of a launcher (THamuKuriLauncher, or the CommonLauncher in Bianco Hills) it plays
 // its "set" animation and lands. Its animations are the shared /scene/hamukurianm ones.
 //
-// Not here: the variants in the same file (はねハムクリ, ドロハネクリ, だんごハムクリ and the boss,
+// THaneHamuKuri / THaneHamuKuri2 (はねハムクリ, the winged ones, /scene/hanekuri: below the launcher):
+// flying on a sine bob over the ground; see their own comment.
+//
+// TDoroHaneKuri (ドロハネクリ, the goop-winged one of Pinna Park): a はねハムクリ that steals Mario's
+// cap; see its own comment.
+//
+// Not here: the variants in the same file (だんごハムクリ and the boss,
 // ヤキグリ, どろハムクリ — none in Bianco Hills) and the cap stealing only どろハムクリ does
 // (makeCapFly / selectCapHolder: Mario's cap isn't simulated); football chasing
 // (setSearchHamuKuri) needs the map objects' footballs, which aren't simulated either (no
 // footballs: the manager's list is empty, as in a stage without them).
 
-import { fr, V3, MsMtxSetRotRPH, mtx, mtxMultVec, Mtx } from '../math.js';
-import { World, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, HitActor, LiveActor, AnmData, LiveManager, CUE_MOVE, CUE_CALC_ANIM, ANM_BCK, PSchema } from '../engine.js';
+import { fr, V3, MsMtxSetRotRPH, mtx, mtxMultVec, Mtx, MsSin, MsClamp, MsGetRotFromZaxis } from '../math.js';
+import { World, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, HitActor, LiveActor, AnmData, LiveManager, CUE_MOVE, CUE_CALC_ANIM, ANM_BCK, ANM_FRAME_RATE, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
-import { SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH } from './smallEnemy.js';
+import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH } from './smallEnemy.js';
 import { WalkerEnemy, WalkerNerves, walkerParams } from './walker.js';
 import { Launcher, LauncherManager } from './launcher.js';
 import { resetSRTV } from './generator.js';
 import { register } from '../scene.js';
+import { newAndRegisterObj } from '../mapobj/base.js';
+import { isHideObj } from '../mapobj/fruit.js';
 
 /** THamuKuriSaveLoadParams */
 const HAMU_PARAMS = {
@@ -427,8 +435,352 @@ export class HamuKuriLauncherManager extends LauncherManager {
     createModelData() { this.createModelDataArray(['default.bmd']); }
 }
 
+// ---------------------------------------------------------------- THaneHamuKuri / THaneHamuKuri2
+// The winged goop Goombas (はねハムクリ). THaneHamuKuri flies over the ground at
+// mSLFlyBaseHeight, bobbing mSLFlyBaseAmplitude on a sine wave of mSLFlyBaseFrequency ticks
+// (unk230: the ground height it follows, eased over 120 ticks; unk234: its height over it;
+// unk210: the bob). Above its goal while attacking, it rises (TNerveDoroHanePrepareAttack) and
+// drops on it (unk21C: diving), squashing on landing; then it floats back up (UpWait). Water
+// sends it rolling like a ハムクリ; it never lies kicking on its back.
+// THaneHamuKuri2 (はねハムクリ2) only flies its graph (TNerveHaneHamuKuriMoveOnGraph): its base
+// height is the line between the graph's two nodes it is between; it doesn't touch the map
+// (LIVE_FLAG_UNK10: no bind), ignores water and can't be killed by it (isHitValid: anything).
+// Not here: the dive's landing particle, rumble and sound; the attack sound.
+
+/** THaneHamuKuriSaveLoadParams */
+const HANE_PARAMS = {
+    ...HAMU_PARAMS,
+    mSLNormalJumpVy: ['f', 8], mSLAttackJumpVy: ['f', 4], mSLFlyBaseHeight: ['f', 100], mSLFlyBaseAmplitude: ['f', 50], mSLFlyBaseFrequency: ['f', 100],
+} satisfies PSchema;
+
+// hanekuri_bastable order
+const HANE_BCK_CRASH = 0, HANE_BCK_DOWN = 1, HANE_BCK_ROLL = 2, HANE_BCK_WAIT = 3;
+
+export class HaneHamuKuriManager extends HamuKuriManager {
+    constructor(w: World, name = 'はねハムクリマネージャー') { super(w, name); }
+    load(s: Stream) {
+        this.saveParams = walkerParams('/enemy/hanehamukuri.prm', this.world.files, HANE_PARAMS);
+        SmallEnemyManager.prototype.load.call(this, s);
+    }
+    createModelData() { this.createModelDataArray(['hanekuri.bmd']); }
+    /** createAnmData: TObjManager's (its own folder's, /scene/hanekuri) */
+    getMActorAnmData() { if (!this.anmData) this.anmData = new AnmData(this.folder(), this.world.files); return this.anmData; }
+    createEnemyInstance() { return new HaneHamuKuri(this.world); }
+}
+
+export class HaneHamuKuri extends HamuKuri {
+    /** mBoundFly (a static, never set: false) */
+    static mBoundFly = false;
+    unk20C = 0; unk210 = 0; unk214 = 0; unk218 = 0; unk21C = 0;
+    unk220 = new V3();
+    unk230 = 0; unk234 = 0;
+    get unk22C(): any { return this.getSaveParam(); }
+    constructor(w: World, name = 'はねハムクリ') { super(w, name); }
+    init(m: any) {
+        super.init(m);
+        this.spine!.initWith(WalkerNerves.graphWander);
+        this.actorType = AT.HANE_HAMU_KURI;
+        this.unk188 = 0;
+    }
+    moveObject() { WalkerEnemy.prototype.moveObject.call(this); }
+    reset() {
+        WalkerEnemy.prototype.reset.call(this);
+        this.headHeight = 200;
+        const [h, d] = this.world.checkGround(this.pos.x, this.pos.y + this.headHeight, this.pos.z);
+        this.groundPlane = d;
+        this.unk230 = this.groundHeight = h;
+        this.resetFlyParam();
+    }
+    walkBehavior(kind: number, k: number) {
+        const P = this.unk22C, c0 = this.spine!.current;
+        const flyBaseHeight = P.mSLFlyBaseHeight;
+        if (HaneHamuKuri.mBoundFly) {
+            if (!this.isAirborne()) {
+                const vy = kind === 2 ? P.mSLAttackJumpVy : P.mSLNormalJumpVy;
+                this.pos.y = fr(this.pos.y + 10);
+                this.onLiveFlag(LF.AIRBORNE);
+                this.vel.set(0, vy, 0);
+            }
+        } else {
+            if (!this.unk21C) {
+                // TODO: abs() of a float (whether it's the int abs is unchecked)
+                if (this.unk214 === 0 && Math.abs(fr(this.unk230 - this.groundHeight)) > 5) {
+                    this.unk214 = fr(fr(this.groundHeight - this.unk230) / 120);
+                    if (this.unk214 > 10) this.unk214 = 10;
+                    if (this.unk214 < -10) this.unk214 = -10;
+                }
+                if (this.unk214 > 0) { this.unk230 = fr(this.unk230 + this.unk214); if (this.unk230 > this.groundHeight) this.unk214 = 0; }
+                if (this.unk214 < 0) {
+                    this.unk230 = fr(this.unk230 + this.unk214);
+                    if (this.unk230 < this.groundHeight) { this.unk214 = 0; this.unk230 = fr(1 + this.groundHeight); }
+                }
+            }
+            const freq = P.mSLFlyBaseFrequency, amp = P.mSLFlyBaseAmplitude;
+            if (c0 === WalkerNerves.graphWander || c0 === WalkerNerves.attack || c0 === HaneNerves.doroHanePrepareAttack) {
+                if (!this.unk21C) {
+                    this.unk20C = fr(this.unk20C + 1);
+                    if (this.unk20C > freq) this.unk20C = 0;
+                    if (this.unk234 < flyBaseHeight) this.unk234 = fr(this.unk234 + 1);
+                    if (this.unk234 > flyBaseHeight) this.unk234 = fr(this.unk234 - 1);
+                }
+                const c = this.spine!.current;
+                if (c === WalkerNerves.attack || c === WalkerNerves.graphWander) {
+                    if (this.unk21C) {
+                        const [h, d] = this.world.checkGround(this.pos.x, this.pos.y + 2 * this.headHeight, this.pos.z);
+                        this.groundPlane = d; this.groundHeight = h;
+                        if (fr(fr(this.unk230 + this.unk234) + this.unk210) > this.groundHeight) {
+                            this.unk234 = fr(this.unk234 - 15);
+                            kind = 3;
+                            this.unk230 = this.groundHeight;
+                            this.unk210 = 0; this.unk214 = 0; this.unk20C = 0;
+                            const bs = this.bodyScale;
+                            if (fr(this.unk234 + this.unk210) > 200) this.scale.y = MsClamp(fr(1.1 * this.scale.y), 0, fr(1.3 * bs));
+                            else this.scale.y = MsClamp(fr(0.8 * this.scale.x), fr(0.5 * bs), fr(1.3 * bs));
+                        } else {
+                            this.unk21C = 0; this.unk214 = 0; this.unk210 = 0; this.unk234 = 0; this.unk20C = 0;
+                            // (PARTICLE_MS_HIPDROP_C, rumble, MSD_SE_MA_HIP_ATTACK)
+                            this.setGoalPath(new PathNode(this.world.mario));
+                            this.spine!.pushNerve(HaneNerves.upWait);
+                        }
+                    } else if (this.isReachedToGoal() && this.unk234 > fr(flyBaseHeight - 10)) {
+                        this.unk21C = 1;
+                        this.spine!.pushNerve(HaneNerves.doroHanePrepareAttack);
+                    }
+                }
+            } else if (this.unk234 > 0) this.unk234 = fr(this.unk234 - 1);
+            if (!this.unk21C) this.unk210 = fr(amp * MsSin(fr(fr(this.unk20C * 360) / freq)));
+            this.pos.y = fr(fr(this.unk230 + this.unk234) + this.unk210);
+        }
+        if (this.spine!.current === HaneNerves.upWait && this.unk234 < flyBaseHeight) this.unk234 = fr(this.unk234 + 1);
+        const diff = V3.sub(this.pos, this.unk220);
+        if (this.spine!.current === HaneNerves.upWait) this.rot.x = fr(this.rot.x * 0.8);
+        this.rot.z = MsGetRotFromZaxis(diff).z;
+        if (!this.unk21C && !this.isBckAnm(4)) WalkerEnemy.prototype.walkBehavior.call(this, kind, k);
+        this.unk220.set(this.pos);
+        this.unk218 = this.rot.y;
+        if (this.unk21C && this.pos.y < this.groundHeight) this.pos.y = this.groundHeight;
+    }
+    bind() {
+        if (this.checkLiveFlag(LF.UNK10)) return;
+        const n = this.pos.clone();
+        n.y = fr(n.y - fr(this.unk234 + this.unk210));
+        n.add(this.posDelta).add(this.vel).fround();
+        this.vel.y = fr(this.vel.y - this.getGravityY());
+        if (this.vel.y < -40) this.vel.y = -40;
+        if (this.unk214 === 0) {
+            const [h, d] = this.world.checkGround(n.x, n.y + this.headHeight + 200, n.z);
+            this.groundPlane = d; this.groundHeight = fr(h + 1);
+        }
+        if (n.y <= this.groundHeight + 0.05) { this.offLiveFlag(LF.AIRBORNE); this.vel.set(0, 0, 0); }
+        else this.onLiveFlag(LF.AIRBORNE);
+        this.posDelta.set(V3.sub(n, this.pos));
+        this.posDelta.y = fr(this.posDelta.y + fr(this.unk234 + this.unk210));
+    }
+    isReachedToGoal() { const t = V3.sub(this.goal104.point(), this.pos); t.y = 0; return t.squared() < 100; }
+    attackToMario() { this.sendAttackMsgToMario(); /* (MSD_SE_EN_HANEKURI_ATTACK) */ }
+    setMActorAndKeeper() { this.mactor = this.createMActorByName('hanekuri.bmd'); }
+    setWaitAnm() { this.setBckAnm(HANE_BCK_WAIT); }
+    setWalkAnm() { this.setBckAnm(HANE_BCK_WAIT); }
+    setRunAnm() { this.setBckAnm(HANE_BCK_WAIT); }
+    setRollAnm() { this.setBckAnm(HANE_BCK_ROLL); }
+    behaveToWater(_a: HitActor) { this.forceRoll(this.world.mario.pos.clone(), true); }
+    setCrashAnm() { this.setBckAnm(HANE_BCK_CRASH); }
+    setDeadAnm() { if (this.unk198) this.releaseCap(); this.setBckAnm(HANE_BCK_DOWN); }
+    setBehavior() { }
+    setGenerateAnm() { }
+    isCollidMove(a: HitActor): boolean { return SmallEnemy.prototype.isCollidMove.call(this, a); }
+    isHitValid(_m: number) { return !this.checkLiveFlag(LF.HIDDEN); }
+    canDoJitabata() { return false; }
+    resetFlyParam() { this.unk214 = 0; this.unk210 = 0; this.unk234 = 0; this.unk20C = 0; this.unk21C = 0; }
+}
+
+export class HaneHamuKuri2 extends HaneHamuKuri {
+    constructor(w: World, name = 'はねハムクリ2') { super(w, name); }
+    reset() {
+        WalkerEnemy.prototype.reset.call(this);
+        this.headHeight = 200;
+        const [h, d] = this.world.checkGround(this.pos.x, this.pos.y + this.headHeight, this.pos.z);
+        this.groundPlane = d;
+        this.unk230 = this.groundHeight = h;
+        this.resetFlyParam();
+        this.onLiveFlag(LF.UNK10);
+        this.unk230 = this.pos.y;
+        this.spine!.initWith(HaneNerves.moveOnGraph);
+    }
+    behaveToWater(_a: HitActor) { }
+    forceKill() { }
+    isHitValid(_m: number) { return true; }
+    sendAttackMsgToMario() { SmallEnemy.prototype.sendAttackMsgToMario.call(this); }
+    walkBehavior(kind: number, k: number) {
+        const P = this.unk22C;
+        const freq = P.mSLFlyBaseFrequency, amp = P.mSLFlyBaseAmplitude;
+        this.unk20C = fr(this.unk20C + 1);
+        if (this.unk20C > freq) this.unk20C = 0;
+        const flyBaseHeight = P.mSLFlyBaseHeight;
+        if (this.unk234 < flyBaseHeight) this.unk234 = fr(this.unk234 + 1);
+        if (this.unk234 > flyBaseHeight) this.unk234 = fr(this.unk234 - 1);
+        this.unk210 = fr(MsSin(fr(fr(this.unk20C * 360) / freq)) * amp);
+        this.pos.y = fr(fr(this.unk230 + this.unk234) + this.unk210);
+        this.turnSpeed = P.mSLTurnSpeedLow;
+        this.marchSpeed = P.mSLMarchSpeedLow;
+        if (!this.isBckAnm(4)) WalkerEnemy.prototype.walkBehavior.call(this, kind, k);
+    }
+    isReachedToGoal() { const t = V3.sub(this.goal104.point(), this.pos); t.y = 0; return t.squared() < 20; }
+}
+
+type HS = Spine<HaneHamuKuri>;
+export const HaneNerves: Record<string, any> = {};
+HaneNerves.upWait = nerve<HaneHamuKuri>('TNerveHaneHamuKuriUpWait', (spine: HS) => {
+    const self = spine.body;
+    if (spine.time < 1) { self.setWaitAnm(); self.setGoalPath(new PathNode(self.world.mario)); }
+    const bs = self.bodyScale;
+    self.scale.x = self.scale.z = MsClamp(fr(self.scale.x * 0.9), bs, fr(bs * 2));
+    self.scale.y = MsClamp(fr(self.scale.y * 1.3), 0, bs);
+    if (spine.time > 400) return true;
+    self.unk234 = fr(self.unk234 + 1);
+    self.walkBehavior(3, 0.5);
+    return false;
+});
+HaneNerves.moveOnGraph = nerve<HaneHamuKuri>('TNerveHaneHamuKuriMoveOnGraph', (spine: HS) => {
+    const self = spine.body, t = self.tracer;
+    const nodeNum = () => (t.graph ? t.graph.nodes.length : 0);
+    if (spine.time === 0) {
+        self.setWalkAnm();
+        self.initialGraphNode();
+        if (nodeNum() === 1) self.setGoalPath(new PathNode(self.world.mario));
+    }
+    if (nodeNum() === 1) self.walkBehavior(3, 0.5);
+    else {
+        if (self.isReachedToGoal()) self.goToRandomNextGraphNode();
+        if (t.prev >= 0) {
+            const curPos = t.graph!.point(t.prev);
+            const prevPos = t.graph!.point(t.cur);
+            const distToCur = V3.sub(curPos, self.pos).length();
+            const distToPrev = V3.sub(prevPos, self.pos).length();
+            self.unk230 = fr(curPos.y + fr(fr(distToCur * fr(prevPos.y - curPos.y)) / fr(distToCur + distToPrev)));
+            self.walkBehavior(2, 1);
+        }
+    }
+    return false;
+});
+/** TNerveDoroHanePrepareAttack (ドロハネクリ's, which the はねハムクリ uses too): rise 50 ticks, then drop */
+HaneNerves.doroHanePrepareAttack = nerve<HaneHamuKuri>('TNerveDoroHanePrepareAttack', (spine: HS) => {
+    const self = spine.body;
+    if (spine.time < 50) self.unk234 = fr(self.unk234 + 4);
+    else self.unk234 = fr(self.unk234 - 15);
+    if (spine.time > 100) return true;
+    self.walkBehavior(0, 0.5);
+    return false;
+});
+void HANE_BCK_CRASH;
+
+// ---------------------------------------------------------------- TDoroHaneKuri
+// The goop-winged Goomba (ドロハネクリ, /scene/hanekuri's dorohane.bmd): a はねハムクリ that, hitting
+// Mario while he wears his cap, takes it (onHaveCap: unk198, its moustache TDoroHige then shows
+// the cap) and rises up to 800 over the ground with it (TNerveDoroHaneRise) — no longer chasing him
+// (isFindMario) — until it loses it (releaseCap, on dying). Sprayed it drops to the ground and
+// spins for 300 ticks (TNerveDoroHaneHitWater). Pushed by a map object while attacking, it is
+// thrown back 5 times its step.
+// Not here: the moustache / cap model (TDoroHige, a TSharedParts: drawing), the particle and the
+// attack sound. Mario's cap isn't simulated: he is taken as wearing it unless one of these holds it.
+
+export class DoroHaneKuriManager extends HaneHamuKuriManager {
+    constructor(w: World, name = 'ドロハネクリマネージャー') { super(w, name); }
+    load(s: Stream) {
+        this.saveParams = walkerParams('/enemy/dorohanekuri.prm', this.world.files, HANE_PARAMS);
+        SmallEnemyManager.prototype.load.call(this, s);
+    }
+    loadAfter() {
+        super.loadAfter();
+        newAndRegisterObj(this.world, 'mario_cap');
+    }
+    createModelData() { this.createModelDataArray(['dorohane.bmd']); }
+    createEnemyInstance() { return new DoroHaneKuri(this.world); }
+    /** (gpMarioOriginal->isWearingCap: the cap isn't simulated; worn unless one of these has it) */
+    isMarioWearingCap() { return !(this.objs as DoroHaneKuri[]).some((o) => o.unk198); }
+}
+
+export class DoroHaneKuri extends HaneHamuKuri {
+    constructor(w: World, name = 'ドロハネクリ') { super(w, name); this.unk1AC = 5; }
+    get unk238(): any { return this.getSaveParam(); }
+    init(m: any) {
+        super.init(m);
+        this.spine!.initWith(WalkerNerves.graphWander);
+        this.actorType = AT.DORO_HANE_KURI;
+        this.unk188 = 0;
+        // (instance 0: TDoroHaneKuriManager::createHige, the moustache model: drawing)
+    }
+    reset() {
+        this.unk18C = 5;
+        super.reset();
+        this.unk198 = false;
+        this.onLiveFlag(LF.FORCE_SHADOW);
+    }
+    attackToMario() {
+        const mgr = this.manager as DoroHaneKuriManager;
+        if (!mgr.isMarioWearingCap()) { this.world.mario.receiveMessage(this, MSG.ATTACK); return; }
+        if (this.world.mario.receiveMessage(this, MSG.ATTACK)) {
+            this.spine!.pushNerve(DoroNerves.rise);
+            this.unk198 = true;   // onHaveCap (and the moustache's owner)
+            // (unk200: joint unk1AC's place, for the particle)
+        }
+    }
+    setMActorAndKeeper() { this.mactor = this.createMActorByName('dorohane.bmd'); }
+    behaveToWater(_a: HitActor) {
+        this.unk21C = 1;
+        if (this.spine!.current !== DoroNerves.hitWater) this.spine!.pushNerve(DoroNerves.hitWater);
+    }
+    setBehavior() { if (this.spine!.current === SmallEnemyNerves.die) this.releaseCap(); }
+    isCollidMove(a: HitActor): boolean {
+        if (a.getHitCategory() === (HC.MAP_OBJECT | 0)) {
+            if (isHideObj(a)) return false;
+            if (this.spine!.current === WalkerNerves.attack) {
+                this.pos.x = fr(this.pos.x + fr(this.posDelta.x * -5));
+                this.pos.z = fr(this.pos.z + fr(this.posDelta.z * -5));
+            }
+        }
+        return true;
+    }
+}
+
+type DS = Spine<DoroHaneKuri>;
+export const DoroNerves: Record<string, any> = {};
+/** TNerveDoroHaneRise: up with the cap (to 800 over the ground), springing back into shape */
+DoroNerves.rise = nerve<DoroHaneKuri>('TNerveDoroHaneRise', (spine: DS) => {
+    const self = spine.body;
+    if (self.pos.y < fr(self.groundHeight + 800)) self.unk234 = fr(self.unk234 + MsClamp(fr(self.spine!.time * 0.01), fr(0.01), 5));
+    const bs = self.bodyScale;
+    self.scale.x = self.scale.z = MsClamp(fr(self.scale.x * 0.9), bs, fr(bs * 2));
+    self.scale.y = MsClamp(fr(self.scale.y * 1.3), 0, bs);
+    if (!self.unk198) { spine.pushAfterCurrent(WalkerNerves.graphWander); return true; }
+    self.rot.x = fr(self.rot.x * 0.9);
+    self.pos.y = fr(self.unk230 + self.unk234);
+    self.walkToCurPathNode(0, 2, 0);
+    return false;
+});
+/** TNerveDoroHaneHitWater: sprayed: down to the ground, spinning (its animation at 1.5 times) for 300 ticks */
+DoroNerves.hitWater = nerve<DoroHaneKuri>('TNerveDoroHaneHitWater', (spine: DS) => {
+    const self = spine.body;
+    if (spine.time === 0) {
+        self.setGoalPath(new PathNode(null, self.world.mario.pos.clone()));
+        self.mactor!.setFrameRate(fr(ANM_FRAME_RATE * 1.5), ANM_BCK);
+    }
+    if (self.pos.y > fr(self.groundHeight + 50)) self.unk234 = fr(self.unk234 - 4);
+    self.unk210 = 0; self.unk214 = 0; self.unk20C = 0;
+    self.unk230 = self.groundHeight;
+    if (spine.time > 300) { self.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK); return true; }
+    self.rot.y = fr(self.rot.y + 10);
+    if (!self.isBckAnm(4)) WalkerEnemy.prototype.walkBehavior.call(self, 0, 0.5);
+    return false;
+});
+
 register('HamuKuriManager', (w, n) => new HamuKuriManager(w, n));
 register('HamuKuri', (w, n) => new HamuKuri(w, n));
 register('HamukuriLauncher', (w, n) => new HamuKuriLauncher(w, n));
 register('HamukuriLauncherManager', (w, n) => new HamuKuriLauncherManager(w, n));
+register('HaneHamuKuriManager', (w, n) => new HaneHamuKuriManager(w, n));
+register('HaneHamuKuri', (w, n) => new HaneHamuKuri(w, n));
+register('HaneHamuKuri2', (w, n) => new HaneHamuKuri2(w, n));
+register('DoroHaneKuriManager', (w, n) => new DoroHaneKuriManager(w, n));
+register('DoroHaneKuri', (w, n) => new DoroHaneKuri(w, n));
 export type { LiveManager };
