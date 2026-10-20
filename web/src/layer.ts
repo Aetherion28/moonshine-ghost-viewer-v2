@@ -208,8 +208,11 @@ export class GameLayer {
     private files = new Map<string, RARC.RARCFile>();
     public onStatus: (text: string) => void = () => { };
     public onError: (e: any) => void = (e) => console.error(e);
-    /** The game's interlaced copy filter (copyfilter.ts); false: the progressive picture. */
-    public copyFilter = true;
+    /**
+     * The game's interlaced (480i) copy filter (copyfilter.ts). Off by default: most runners play
+     * in progressive scan (480p), where the game's filter is no blur.
+     */
+    public copyFilter = false;
     /** A frame has been drawn for the current scene. */
     public drawn = false;
     /** The stage's game code (the enemies...), run alongside the ghost. */
