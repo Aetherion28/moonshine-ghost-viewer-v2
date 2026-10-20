@@ -1,31 +1,28 @@
-// MoveBG/MapObjEx.cpp: TMapObjNail (Pinna Park's / Sirena's nails: ground-pound one three times,
-// mDownHeight each time with 120 frames between, and what's hidden in it comes out on the third)
-// and TJointCoin (the coin fish of Noki Bay / the secret stages: a model whose joints named
-// "coin" / "redcoin" / "bluecoin" each carry a coin, swimming along CoinFishRail.bmd's animated
-// root; SandBird's the same over SandBirdRail.bmd).
-//
-// Not here: TMapObjSteam (the steam particle only), sounds beyond the nail's impact.
+// The secret courses' nail (MoveBG/MapObjEx.cpp's TMapObjNail): ground-pounded, it sinks 50 units
+// into the floor, three times, and its hidden object (a coin) comes out on the third. The courses'
+// other objects are lifts and blocks named for their looks, registered in railblock.ts. Also
+// TJointCoin (CoinFish: the coin fish of Noki Bay and the secret stages; SandBird's base).
 
 import { mat4 } from 'gl-matrix';
 import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH } from '../math.js';
 import { World, HitActor, MActor, LF, HF, MSG, ANM_BCK, ANM_FRAME_RATE } from '../engine.js';
-import { AT } from '../actortypes.js';
-import { register } from '../scene.js';
-import { SE } from '../soundids.js';
-import '../sound.js';
 import { Skeleton } from '../skeleton.js';
-import { MapObjBase, MOF, mapObjGlobals, newAndRegisterObj } from './base.js';
-import { HideObjBase } from './hide.js';
+import { MOF, newAndRegisterObj } from './base.js';
 import { setRootMtx } from './lib.js';
-import type { ItemManager } from './item.js';
+import '../sound.js';
+import { AT } from '../actortypes.js';
+import { SE } from '../soundids.js';
+import { register } from '../scene.js';
+import { MapObjBase, mapObjGlobals } from './base.js';
+import { HideObjBase } from './hide.js';
+import { ItemManager } from './item.js';
 
-// ---------------------------------------------------------------- TMapObjNail
 export class MapObjNail extends HideObjBase {
     static mDownHeight = 50;
-    /** how many times it's been hit */
+    /** unk150 times hit */
     unk150 = 0;
     constructor(w: World, name = 'くぎ') { super(w, name); }
-    receiveMessage(_sender: HitActor, msg: number): boolean {
+    receiveMessage(sender: HitActor, msg: number): boolean {
         if (msg === MSG.HIP_DROP && !this.isStateTimerEngaged() && this.unk150 < 3) {
             this.pos.y = fr(this.pos.y - MapObjNail.mDownHeight);
             this.removeMapCollision();
@@ -35,10 +32,7 @@ export class MapObjNail extends HideObjBase {
             ++this.unk150;
             if (this.unk150 === 3 && this.hidden) {
                 let o: MapObjBase | null = this.hidden;
-                if (o.isActorType(AT.COIN)) {
-                    const im = mapObjGlobals(this.world).itemManager as ItemManager | null;
-                    o = im ? im.makeObjAppear(AT.COIN) : null;
-                }
+                if (o.isActorType(AT.COIN)) { const im = mapObjGlobals(this.world).itemManager as ItemManager | null; o = im ? im.makeObjAppear(AT.COIN) : null; }
                 if (o) this.throwObjToFront(o, 200, this.appearSpeed, this.appearYSpeed);
             }
             return true;
@@ -46,6 +40,9 @@ export class MapObjNail extends HideObjBase {
         return false;
     }
 }
+
+register('MapObjNail', (w, n) => new MapObjNail(w, n));
+
 
 // ---------------------------------------------------------------- TJointCoin
 /** a gl-matrix joint matrix as a row-major 3x4 */
@@ -144,5 +141,4 @@ export class JointCoin extends MapObjBase {
     }
 }
 
-register('MapObjNail', (w, n) => new MapObjNail(w, n));
 register('CoinFish', (w, n) => new JointCoin(w, n));

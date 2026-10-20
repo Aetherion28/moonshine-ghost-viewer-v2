@@ -7,7 +7,7 @@
 // switch's time; Mario's sounds for the timer and the switch's demo camera aren't here.
 
 import { fr, V3 } from '../math.js';
-import { World, Stream, HitActor, HF, MSG, LF, ANM_BCK, ANM_FRAME_RATE } from '../engine.js';
+import { World, Stream, HitActor, HF, MSG, LF, ANM_BCK, ANM_FRAME_RATE, shineIDofExStage } from '../engine.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
@@ -106,8 +106,8 @@ export class RedCoinSwitch extends MapObjBase {
         super.load(s);
         const t = s.u32() | 0;
         this.unk138 = t <= 0 ? 1200 : t * 10;
-        // TODO: in a secret stage whose Shine isn't got yet it's gone (SMS_getShineIDofExStage and the
-        // Shine flags: not in the sim)
+        // a secret stage whose Shine isn't got yet has no red coins
+        if (shineIDofExStage(this.world.map) !== 0xFF && !this.world.exShineGot) this.makeObjDead();
     }
 }
 

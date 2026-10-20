@@ -348,7 +348,7 @@ export class SimRunner {
             if (replay) {
                 const ss: { qf: number; anim: number; phase: number }[] = [];
                 for (let i = seg.firstSample; i < seg.firstSample + seg.sampleCount; i++) { const q = g.qf[i] - q0; if (q > 0) ss.push({ qf: q, anim: g.anim[i], phase: g.phase[i] }); }
-                intro = introTiming(ss);
+                intro = introTiming(ss, I, q0, seg.endQf - g.header.startQf);
             }
             // MSL rand()'s state at the stage's start (srand(OSGetTick()) at boot, then everything before
             // it): the ghost's RNG tape SEED for this segment when it has one, else 0

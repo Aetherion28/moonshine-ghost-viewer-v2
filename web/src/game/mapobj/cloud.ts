@@ -1,10 +1,8 @@
 // Things that ride a rail (MoveBG/MapObjRailBlock.cpp's TRailMapObj) and the clouds Mario can
 // ride (MoveBG/MapObjCloud.cpp's TRideCloud): a cloud waits for him to stand on it, then follows
 // its rail; it sinks a little under him, swells while sprayed, and lets him jump up through it.
-// A node flagged 0x1000 makes it blink out and come back at its start.
-//
-// TODO: spline rails (graph names starting "S_": TSplineRail / traceSpline) aren't ported; the
-// rail is followed node to node.
+// A node flagged 0x1000 makes it blink out and come back at its start. On a spline rail (a graph
+// named "S_...") it slides along the curve, turned to face its way.
 
 import { fr, V3, JMAHermiteInterpolation, MsClamp } from '../math.js';
 import { World, Stream, Actor, HitActor, GraphTracer, GraphWeb, HF, CUE_ENTRY, CUE_CALC_VIEW } from '../engine.js';
@@ -42,7 +40,7 @@ export class RailMapObj extends MapObjBase {
         t.graph = g;
         if (g && !g.isDummy()) {
             t.setTo(g.findNearestNodeIndex(this.pos, -1));
-            // (a spline rail would put it on the rail's first point and move on: not ported)
+            if (g.spline) { this.pos.set(t.current()); this.moveToShortestNext(); }
             if (this.node().flags & 0x80) this.onRailFlag(2);
             this.resetStep(this.unk144);
         }
@@ -54,6 +52,15 @@ export class RailMapObj extends MapObjBase {
     moveToNextNode(sp: number) {
         const t = this.tracer!;
         if (!t.graph || t.graph.isDummy()) return false;
+        if (t.graph.spline) {
+            const result = t.traceSpline(t.calcSplineSpeed(sp));
+            const [p, r] = t.graph.spline.getPosAndRot(t.unk14);
+            this.posDelta.add(p.sub(this.pos));
+            this.rot.set(r);
+            if (result) this.readRailFlag();
+            if (this.unk13C > 0) --this.unk13C;
+            return result;
+        }
         const target = t.graph.point(t.cur);
         const d = V3.sub(target, this.pos);
         if (d.squared() < sp * sp * 2 || this.unk13C === 0) {

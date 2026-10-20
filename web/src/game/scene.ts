@@ -54,6 +54,7 @@ export class Stage {
         const w = this.world;
         w.files = files;
         w.map = map; w.stage = stage;
+        w.exShineGot = !!(intro && intro.exShineGot);
         w.groups = GROUP_NAMES.map(() => []);
         // the map's collision (TMap: the grid size from the scene's Map object, filled from map.col)
         const sb = files.scene('map/scene.bin');
@@ -84,6 +85,7 @@ export class Stage {
         for (const o of this.objects) o.loadAfter();
         for (const gw of w.graphs.values()) { gw.initGoalIndex(new V3()); gw.attachToGround(w); }
         w.conductor.init();
+        if (this.player && intro) this.leadFrame();
         if (this.player && intro) { this.director = new PlayerDirector(this.player, map, !!files.scene('map/camera/startcamera.bck'), intro); this.player.driftFrom = Math.max(intro.demoEndTick, (intro.firstSample ?? 0) - 1); }
     }
 
@@ -113,6 +115,19 @@ export class Stage {
         try { o.load(new Stream(n.data)); }
         catch (e) { console.warn('[game] load', n.type, n.name, e); }
         if (group >= 0 && o instanceof HitActor) (w.groups[group] = w.groups[group] || []).push(o);
+    }
+
+    /**
+     * The frame the stage's objects run before the ghost's QF 0 (Mario not yet in it). Found from
+     * the ghosts, not the decomp: with it the Ricco 4 secret's rolling sticks and the Sirena 4
+     * secret's blocks line up with the recorded run (sync 232 -> 2428 and 260 -> 1240 QF), and the
+     * main-stage ghosts are unchanged. Its source in the game (the director's first frame before
+     * Moonshine starts counting, most likely) isn't pinned down.
+     */
+    private leadFrame() {
+        const w = this.world;
+        for (let t = 0; t < 4; t++) { w.col.clearMove(); w.conductor.perform(CUE_MOVE); }
+        w.conductor.perform(CUE_CALC_ANIM);
     }
 
     // ---------------------------------------------------------------- running

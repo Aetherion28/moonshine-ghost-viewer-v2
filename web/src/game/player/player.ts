@@ -11,7 +11,7 @@
 // groundPlane, isJumping, hipDrop, marioFlags...) is here too, so they work on either.
 
 import { V3, s16, JMASSin, JMASCos, matan, IConverge } from '../math.js';
-import { HitActor, TakeActor, LiveActor, MSG, HC, LF, Stream, CUE_MOVE, World, calcKeyCode } from '../engine.js';
+import { HitActor, TakeActor, LiveActor, MSG, HC, LF, Stream, CUE_MOVE, World, calcKeyCode, shineIDofExStage } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { POLLUTION_TYPE } from '../pollution.js';
 import { TMarioSim, j3dTRMtx } from './tmario.js';
@@ -1295,6 +1295,8 @@ export interface IntroTiming {
     demoEndTick: number;
     /** the ghost's first sample after the opening (its drift is checked from there) */
     firstSample?: number;
+    /** a secret stage's Shine was got before the run (the ghost saw FLUDD on Mario): its red coin switch is there and he keeps FLUDD */
+    exShineGot?: boolean;
 }
 
 /**
@@ -1324,6 +1326,7 @@ export class PlayerDirector {
                 default: m.mWaterGun.changeNozzle(NOZZLE.Spray, true); break;
             }
         }
+        if (shineIDofExStage(this.map) !== 0xFF && !m.world.exShineGot) m.offFlag(MF.HAS_FLUDD);
     }
     private enter(next: number, tick: number) {
         const prev = this.state;
@@ -1373,8 +1376,22 @@ export class PlayerDirector {
  * rolling start: the APPEAR animation's frame, 0.5 a tick from the tick after setMario), else
  * six ticks before the first of them (as the rolling-start ghosts have it).
  */
-export function introTiming(samples: { qf: number; anim: number; phase: number }[]): IntroTiming {
-    return { demoEndTick: introDemoEnd(samples), firstSample: samples.length ? samples[0].qf : 0 };
+export function introTiming(samples: { qf: number; anim: number; phase: number }[], inputs: any = null, q0 = 0, q1 = Infinity): IntroTiming {
+    return { demoEndTick: introDemoEnd(samples), firstSample: samples.length ? samples[0].qf : 0, exShineGot: sawFludd(inputs, q0, q1) };
+}
+/**
+ * The ghost saw FLUDD on Mario in the segment (its V6+ FLUDD observations: a mode other than 0,
+ * not Yoshi's pose): in a secret stage, its Shine was got before (else he goes in without him).
+ */
+export function sawFludd(I: any, q0: number, q1: number) {
+    if (!I || !I.fluddMode || !I.hasFludd) return false;
+    for (let i = 0; i < I.count; i++) {
+        const q = I.qf[i];
+        if (q < q0 || q > q1) continue;
+        const m = I.fluddMode[i];
+        if (m && !(m & 0x80)) return true;
+    }
+    return false;
 }
 export function introDemoEnd(samples: { qf: number; anim: number; phase: number }[]): number {
     const ap = samples.filter((s) => s.anim === A.DEMO_GATE_OUT_APPEAR || s.anim === A.DEMO_GATE_OUT_APPEAR_GET).slice(0, 12);
