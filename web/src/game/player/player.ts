@@ -11,7 +11,7 @@
 // groundPlane, isJumping, hipDrop, marioFlags...) is here too, so they work on either.
 
 import { V3, s16, JMASSin, JMASCos, matan, IConverge } from '../math.js';
-import { HitActor, TakeActor, LiveActor, MSG, HC, LF, Stream, CUE_MOVE, World, calcKeyCode, shineIDofExStage } from '../engine.js';
+import { HitActor, TakeActor, LiveActor, MSG, HC, LF, Stream, CUE_MOVE, World, calcKeyCode, shineIDofExStage, FC_PINGPONG_LOOP } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { POLLUTION_TYPE } from '../pollution.js';
 import { TMarioSim, j3dTRMtx } from './tmario.js';
@@ -152,6 +152,7 @@ export class PlayerMario extends TMarioSim {
         this.initJointIds();
         this.mModel.changeAnm(0, 0x3e);
         this.mModel.changeAnm(1, 0x41);
+        this.mModel.upperCalc = 1; this.mModel.upperJoint = this.mJointIdChest;   // setInfo[1]: { mJointIdChest, 2, 1, .., 1 }
         this.mModel.fc[1].rate = 0;
         this.setAnimation(A.WAIT, 1);
         j3dTRMtx(this.mModel.baseTR, this.mFaceAngle.x, this.mModelFaceAngle, this.mFaceAngle.z, this.pos.x, this.pos.y, this.pos.z);
@@ -546,6 +547,31 @@ export class PlayerMario extends TMarioSim {
         if (this.mStatus === S.TOROCCO) { this.mUpperState = UPPER.HOLDING_PUMP; this.mPumpCooldown = 0; return; }
         if (this.mStatus === S.SQUAT && this.mUpperState === UPPER.IDLE) { this.mUpperState = UPPER.HOLDING_PUMP; this.mPumpCooldown = 0; return; }
         if (this.checkFlag(MF.FLUDD_EMITTING)) { this.mUpperState = UPPER.PUMPING; this.mPumpCooldown = 0; return; }
+    }
+    /**
+     * TMario::addUpper: pumping (or holding the pump) puts the chest down on the animation's upper-body
+     * BCK (gMarioAnimeData.unk2: the pump), holding an object on 0x4b, idle takes it off; pumping
+     * ping-pongs it (its rate the R analog's only with the tank empty: else init's 1).
+     */
+    addUpper() {
+        const fc = this.mModel.fc[1];
+        if (this.mUpperState === UPPER.FIXED_ANIMATION) return;
+        switch (this.mUpperState) {
+            case UPPER.PUMPING: case UPPER.HOLDING_PUMP:
+                if (this.onYoshi()) { this.mModel.upperCalc = -1; return; }
+                if (ANIME_DATA[this.mAnimationId][1] !== 0xC8) { this.mModel.upperCalc = 1; this.mModel.changeAnm(1, ANIME_DATA[this.mAnimationId][1]); }
+                break;
+            case UPPER.HOLDING_OBJECT: this.mModel.upperCalc = 1; this.mModel.changeAnm(1, 0x4b); break;
+            case UPPER.IDLE: this.mModel.upperCalc = -1; break;
+        }
+        if (this.mUpperState === UPPER.PUMPING) {
+            fc.attr = FC_PINGPONG_LOOP;
+            this.mPumpAnmRate = fmul(this.mGamePad.mCompSPos[3], this.mUpperBodyParams.mPumpAnmSpeed);
+            if (this.mWaterGun && this.mWaterGun.mCurrentWater <= 0) {
+                // (the pumping sounds at frames 8 and 13: the audio side's)
+                fc.rate = fc.rate >= 0 ? this.mPumpAnmRate : -this.mPumpAnmRate;
+            }
+        }
     }
     checkPumpEnable() {
         const G = this.mWaterGun;

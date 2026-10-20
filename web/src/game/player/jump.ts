@@ -78,10 +78,16 @@ export abstract class MarioJump extends MarioRun {
             case 0: this.setAnimation(anim, 1); break;
             case 1: {
                 if (this.mGroundPlane.actor) (this.mGroundPlane.actor as HitActor).receiveMessage(this, MSG.TRAMPLE);
-                if (this.askStrongGroundTouch() && this.checkFlag(MF.ON_SAND)) return this.changePlayerStatus(S.FOOT_DOWN, 0, false);
-                // (the hard landing with FLUDD on: not his)
+                let trampled = false;
+                if (this.askStrongGroundTouch()) {
+                    if (this.checkFlag(MF.ON_SAND)) return this.changePlayerStatus(S.FOOT_DOWN, 0, false);
+                    // (the hard landing with FLUDD on, BROAD_JUMP_SLIP: its status change isn't simulated here, only its line)
+                    if (this.checkFlag(MF.HAS_FLUDD) && this.fluddNozzle() !== 2) { trampled = true; this.startVoice(0x789E); }
+                }
                 this.unk2A8.y = this.pos.y;
                 this.changePlayerStatus(onGround, 0, false);
+                // stopVoice: a plain landing cuts his line short
+                if (!trampled) this.startVoice(-1, { stop: true });
                 break;
             }
             case 2:

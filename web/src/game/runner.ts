@@ -240,8 +240,13 @@ export class ReplayHistory {
     qf: number[] = []; pos: number[] = []; yaw: number[] = []; anim: number[] = []; phase: number[] = [];
     /** FLUDD: -1 none, else its nozzle (| 0x10 while it sprays) */
     fludd: number[] = [];
+    /** frontSlipEffect's emitters this frame: 0 none, 1 watslide a/b/c, 2 slip smoke, 3 slide sand */
+    slip: number[] = [];
+    /** the drops FLUDD's water manager made this frame (what the nozzle mist and spray follow) */
+    emit: number[] = [];
+    private emitted = -1;
     /** the voice lines the simulated Mario asked for (TMario::startVoice), at their tick's ghost QF, in order */
-    voices: { qf: number; id: number; ifNoVoice?: boolean; unlessId?: number }[] = [];
+    voices: { qf: number; id: number; ifNoVoice?: boolean; unlessId?: number; stop?: boolean }[] = [];
     constructor(public ghost: any, public from: number) { }
     get last() { return this.qf.length ? this.qf[this.qf.length - 1] : -1; }
     push(qf: number, P: PlayerMario) {
@@ -249,9 +254,14 @@ export class ReplayHistory {
         this.anim.push(P.mAnimationId); this.phase.push(Math.round(P.phase * 4096) & 4095);
         const f = P.fludd;
         this.fludd.push(f ? (f.nozzle & 7) | (f.spraying ? 0x10 : 0) : -1);
+        this.slip.push(P.slipFx); P.slipFx = 0;
+        const W = P.world.water, tot = W ? W.emitted : 0;
+        const made = this.emitted < 0 || tot < this.emitted ? 0 : tot - this.emitted;
+        this.emitted = tot; this.emit.push(made);
+        if (!made && this.fludd[this.fludd.length - 1] > 0) this.fludd[this.fludd.length - 1] &= ~0x10;   // (no water came out: not spraying, whatever the trigger)
         // the frame's voice lines: tick k of the world's count was QF qf - (now - k)
         const now = P.world.tickCount;
-        for (const v of P.voiceLog) this.voices.push({ qf: qf - (now - v.tick), id: v.id, ifNoVoice: v.ifNoVoice, unlessId: v.unlessId });
+        for (const v of P.voiceLog) this.voices.push({ qf: qf - (now - v.tick), id: v.id, ifNoVoice: v.ifNoVoice, unlessId: v.unlessId, stop: v.stop });
         P.voiceLog.length = 0;
     }
     /** the voice lines from just after t0 to t */
@@ -288,6 +298,14 @@ export class ReplayHistory {
             phase = (((phase + d * f) % 4096) + 4096) % 4096;
         }
         return { id: this.anim[i], yoshi: 0, phase };
+    }
+    emitAt(t: number) {
+        const i = this.index(t);
+        return i < 0 ? undefined : this.emit[i];
+    }
+    slipAt(t: number) {
+        const i = this.index(t);
+        return i < 0 ? undefined : this.slip[i];
     }
     fluddAt(t: number) {
         const i = this.index(t);

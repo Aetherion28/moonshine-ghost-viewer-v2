@@ -174,8 +174,11 @@ export abstract class TMarioSim extends MarioSpecial {
         // MTXConcat(m, unk318, m): a translation in the base's frame
         m[3] += m[1] * ty; m[7] += m[5] * ty; m[11] += m[9] * ty;
     }
+    /** TMario::addUpper (calcAnim, before the body's): the upper body's motion set by mUpperState (PlayerMario's) */
+    addUpper() {}
     /** calcAnim's body: calcBaseMtx into the model's base TR, then M3UModelMario::perform(CALC_ANIM) (frames, then the joints). */
     calcAnim() {
+        this.addUpper();
         this.calcBaseMtx(this.mModel.baseTR);
         this.mModel.update();
         this.mModel.calc();

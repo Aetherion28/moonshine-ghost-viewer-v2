@@ -354,7 +354,7 @@ export abstract class MarioRun extends MarioPhysics {
         if (this.mInput & 0x8000) { this.mVel.y = 20; this.changePlayerStatus(S.JUMP_CATCH, 1, false); return; }
         switch (this.walkProcess()) {
             case 0: this.changePlayerStatus(onFall, 0, false); return;
-            case 1: this.setAnimation(anim, 1); this.onUnk114(8); return;
+            case 1: this.setAnimation(anim, 1); this.onUnk114(8); this.frontSlipEffect(); return;
             case 2:
                 if (this.onYoshi()) { this.setPlayerVelocity(0); return; }
                 if (this.isSlipStart()) {
@@ -372,6 +372,11 @@ export abstract class MarioRun extends MarioPhysics {
                 this.onUnk114(8);
                 return;
         }
+    }
+    /** MarioParticle.cpp frontSlipEffect: only which emitters it picks (the viewer draws them) */
+    frontSlipEffect() {
+        if (bg.isWetGround(this.mGroundPlane) || (this.mStatus === S.CATCH && this.mStatusState === 1)) { this.slipFx = 1; return; }
+        if (!(this.pos.y < this.mFloorPosition.z)) this.slipFx = this.checkFlag(MF.ON_SAND) ? 3 : 2;
     }
     slipForeCommon(a0: number, a1: number, a2: number, a3: number) {
         if (this.mStatusTimer > 20 && this.canSlipJump()) { if (this.mInput & 2) return this.changePlayerJumping(a1, 0); }

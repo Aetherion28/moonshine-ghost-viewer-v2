@@ -83,6 +83,8 @@ export class MarioModel {
     anm = [-1, -1];
     /** unk24[1].unk3 (0xff / -1: no upper-body animation) */
     upperCalc = -1;
+    /** unk24[1].unk0: the joint the upper-body motion set starts at (jnt_chest) */
+    upperJoint = -1;
     blendRatio = 0;
     baseTR: Mtx = mtx();
     private joints: mat4[] | null = null;
@@ -101,14 +103,17 @@ export class MarioModel {
     }
     /** Each joint's matrix in its parent's (for the viewer's joint callback: a model rigged like Mario's). */
     locals: mat4[] = [];
-    /** J3DModel::calc: every joint's world matrix (the body's BCK only: the motion blend isn't applied). */
+    /** J3DModel::calc: every joint's world matrix: the body's BCK, the chest down the upper body's while unk24[1].unk3 isn't 0xff (the motion blend isn't applied). */
     calc(): mat4[] | null {
-        const key = this.anm[0] + '|' + this.fc[0].frame + '|' + Array.from(this.baseTR).join(',');
+        const up = this.upperCalc !== -1 && this.upperJoint >= 0 && this.anm[1] >= 0;
+        const key = this.anm[0] + '|' + this.fc[0].frame + '|' + (up ? this.anm[1] + '@' + this.fc[1].frame : '-') + '|' + Array.from(this.baseTR).join(',');
         if (!this.joints || key !== this.jointsKey) {
             const sk = Skeleton.of(marioFile('bmd/ma_mdl1.bmd'));
             if (!sk) return null;
             const b = this.anm[0] >= 0 ? marioFile(`bck/ma_${ANIME_FILES[this.anm[0]]}.bck`) : null;
-            this.joints = jointMatricesBlend(sk, { anm: b ? parseBCK(b) : null, frame: this.fc[0].frame }, null, 0, false, this.baseTR, [1, 1, 1], this.joints || [], this.locals);
+            const ub = up ? marioFile(`bck/ma_${ANIME_FILES[this.anm[1]]}.bck`) : null;
+            const upper = up ? { joint: this.upperJoint, anm: { anm: ub ? parseBCK(ub) : null, frame: this.fc[1].frame } } : null;
+            this.joints = jointMatricesBlend(sk, { anm: b ? parseBCK(b) : null, frame: this.fc[0].frame }, null, 0, false, this.baseTR, [1, 1, 1], this.joints || [], this.locals, undefined, upper);
             this.jointsKey = key;
         }
         return this.joints;
@@ -147,6 +152,8 @@ export abstract class MarioBase extends TakeActor {
     unk104 = 0;
     unk108 = new ControllerWork(); unk10C = 0; unk110 = 0;
     unk114 = 0; mFlag = 0; mPrevFlag = 0;
+    /** viewer only (not game state): the last frontSlipEffect's choice since the history read it: 0 none, 1 watslide, 2 slip smoke, 3 sand */
+    slipFx = 0;
     mHealth = 8; mHotTimer = 0; mHotTimerMax = 0; unk122 = 0;
     mAir = 0; mMaxAir = 0; mDirty = 0; mOilBrake = 1; mDirtyTimer = 0; unk140 = 0;
     mInvincibilityFrames = 0; mFreezeTimer = 0; mFreezeImmunityTimer = 0;
@@ -307,13 +314,15 @@ export abstract class MarioBase extends TakeActor {
      * (its tired and older-take variants, the lines said only into silence) is the viewer's audio
      * side, which hears these from the replay; the sim keeps only what the game's own code reads back.
      */
-    voiceLog: { tick: number; id: number; ifNoVoice?: boolean; unlessId?: number }[] = [];
-    startVoice(id: number, opt: { ifNoVoice?: boolean; unlessId?: number } = {}) {
-        if (this.onYoshi()) return 0;
+    voiceLog: { tick: number; id: number; ifNoVoice?: boolean; unlessId?: number; stop?: boolean }[] = [];
+    startVoice(id: number, opt: { ifNoVoice?: boolean; unlessId?: number; stop?: boolean } = {}) {
+        if (this.onYoshi() && !opt.stop) return 0;
         this.voiceLog.push({ tick: this.world.tickCount, id: id >>> 0 === 0xFFFFFFFE ? -2 : id, ...opt });
         return 1;
     }
     /** TMario::startVoiceIfNoVoice: only when no voice of his is playing (the audio side decides) */
+    /** FLUDD's nozzle (TWaterGun::mCurrentNozzle), -1 without him */
+    fluddNozzle(): number { const g = (this as any).mWaterGun; return g ? g.mCurrentNozzle : -1; }
     startVoiceIfNoVoice(id: number) { return this.startVoice(id, { ifNoVoice: true }); }
     /**
      * gpMSound->checkMarioVoicePlaying(0), which loserDown waits on: the sim doesn't play the voice,

@@ -60,6 +60,15 @@ export class Water {
     /** juice (unk5D5F: 0 water, 1-3 Yoshi's juices) */
     juice = 0;
     diving = false;
+    /** viewer only (not game state): gpSplashManager->newSplash's calls, at their tick (the last 80 ticks kept) */
+    /** viewer only (not game state): drops made so far (emitRequest) */
+    emitted = 0;
+    splashLog: { x: number; y: number; z: number; tick: number }[] = [];
+    private splash(x: number, y: number, z: number) {
+        const L = this.splashLog;
+        while (L.length && L[0].tick < this.tick - 80) L.shift();
+        L.push({ x, y, z, tick: this.tick });
+    }
     constructor(public w: World, files: Files) {
         for (let i = 0; i < SLOT_NUM; i++) { this.pos.push(new V3()); this.vel.push(new V3()); this.hit.push(null); this.plane.push(null); }
         this.types = WTP_NAMES.map((n) => new Params(`/Mario/${n}.prm`, files).read(WTP));
@@ -93,6 +102,7 @@ export class Water {
         let left = e.num;
         if (left === 0) return 0;
         while (left > 0) { if (this.count >= SLOT_NUM) break; this.makeEmit(e); --left; this.count++; }
+        this.emitted += e.num - left;
         return (e.num - left) & 0xFF;
     }
 
@@ -122,7 +132,7 @@ export class Water {
             const h = this.hit[i];
             if (h) {
                 if (this.tell(h, i)) {
-                    if (MsRandF() < K[8]) { /* gpSplashManager->newSplash */ }
+                    if (MsRandF() < K[8]) this.splash(P.x, P.y, P.z);
                     this.life[i] = 0;
                     continue;
                 }
@@ -167,7 +177,7 @@ export class Water {
                     const st = this.flag[i] & 0xF;
                     if (st === 3) { this.life[i] = 0; continue; }
                     if (st === 1) {
-                        MsRandF();   // a splash (unk5D88[9])
+                        if (MsRandF() < K[9]) this.splash(P.x, P.y, P.z);
                         this.size[i] = fr(this.size[i] * T.mMagnify);
                         if (MsRandF() < K[0]) this.flag[i] = (this.flag[i] & ~0xF) | 2;
                         else { this.life[i] = 0; continue; }
@@ -186,7 +196,7 @@ export class Water {
                 const d = fr(wall.d + (P.x * wall.n[0] + P.y * wall.n[1] + P.z * wall.n[2]));
                 P.x = fr(P.x - wall.n[0] * d); P.y = fr(P.y - wall.n[1] * d); P.z = fr(P.z - wall.n[2] * d);
                 if ((this.flag[i] & 0xF) === 1) {
-                    MsRandF();   // a splash (unk5D88[10])
+                    if (MsRandF() < K[10]) this.splash(fr(P.x + wall.n[0] * this.size[i]), fr(P.y + wall.n[1] * this.size[i]), fr(P.z + wall.n[2] * this.size[i]));
                     this.size[i] = fr(this.size[i] * T.mMagnify);
                     if (MsRandF() < K[2]) this.flag[i] = (this.flag[i] & ~0xF) | 3;
                     else { this.life[i] = 0; continue; }

@@ -5835,7 +5835,7 @@ void main() {
   if (dot(vUv, vUv) > 1.0) discard;
   gl_FragColor = vec4(vec3(60.0, 70.0, 120.0) / 255.0, 80.0 / 255.0);
 }`,
-    transparent: true, depthWrite: false, depthTest: true,
+    transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,   // (quads wound either way)
     stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilZPass: THREE.ReplaceStencilOp,
   });
   function quadMesh(max, mat, worldSpace) {
@@ -6432,12 +6432,71 @@ void main() {
     }
     return { f, nm, hasFludd };
   }
+  // The simulated stage's water (src/game/water.ts, TModelWaterManager) as the game draws it, in
+  // place of the ghost-driven guess above: drops in flight (state 1, calcDrawVtx: once their life is
+  // under mAlive - 1), wet spots on the ground (2, water_shadow_yuka at calcVMMtxGround: centre 2 up
+  // the plane's normal, scale size x life / 256) and on walls (3, water_shadow_kabe, calcVMMtxWall),
+  // and the splashes newSplash made. False when the stage isn't simulated for this ghost.
+  function simSpray(g) {
+    const H = replayOf(g.data), st = H && replayLayer && replayLayer.sim ? replayLayer.sim.stage : null, W = st && st.world && st.world.water;
+    if (!W) return false;
+    const L = g.water.userData.list;
+    L.drops.length = 0; L.splashes.length = 0;
+    const sp = g.puddles, pa = sp.geometry.attributes.position.array, ua = sp.geometry.attributes.uv.array;
+    let ns = 0;
+    for (let i = 0; i < W.count; i++) {
+      const fl = W.flag[i] & 0xF, P = W.pos[i], T = W.types[W.type[i]];
+      if (fl === 1) {
+        if (W.life[i] < T.mAlive - 1) L.drops.push({ x: P.x, y: P.y, z: P.z, vx: W.vel[i].x, vy: W.vel[i].y, vz: W.vel[i].z, size: W.size[i], ext: T.mExtension });
+        continue;
+      }
+      if ((fl !== 2 && fl !== 3) || ns >= WATER_SPOTS || !W.plane[i]) continue;
+      const n = W.plane[i].n, f = W.size[i] * W.life[i] / 256;
+      if (f <= 0) continue;
+      if (fl === 2) {
+        // calcVMMtxGround: the model's x / z across the plane, y along its normal (the same quad as the guess's)
+        const r = 11.76 * f;
+        if (r < 0.5) continue;
+        const c = [P.x + n[0] * 2, P.y + n[1] * 2, P.z + n[2] * 2];
+        // (the game's own columns: model x -> (ny, -nx, 0), model z -> (0, -nz, ny))
+        const ux = [n[1], -n[0], 0], vx = [0, -n[2], n[1]];
+        [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b], q) => {
+          const o = (ns * 4 + q) * 3;
+          pa[o] = c[0] + (ux[0] * a + vx[0] * b) * r; pa[o + 1] = c[1] + (ux[1] * a + vx[1] * b) * r; pa[o + 2] = c[2] + (ux[2] * a + vx[2] * b) * r;
+          ua[(ns * 4 + q) * 2] = a; ua[(ns * 4 + q) * 2 + 1] = b;
+        });
+      } else {
+        // calcVMMtxWall: x across the wall, y straight up (unscaled by the normal), from 2 out of it
+        let ux = [-n[2], 0, n[0]];
+        const ul = Math.hypot(ux[0], ux[2]) || 1; ux = ux.map((x) => x / ul);
+        const hx = 8.5 * f, hy = (7.29 + 14.1) / 2 * f, cy = (7.29 - 14.1) / 2 * f;
+        const c = [P.x + n[0] * 2, P.y + cy, P.z + n[2] * 2];
+        [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b], q) => {
+          const o = (ns * 4 + q) * 3;
+          pa[o] = c[0] + ux[0] * a * hx; pa[o + 1] = c[1] + b * hy; pa[o + 2] = c[2] + ux[2] * a * hx;
+          ua[(ns * 4 + q) * 2] = a; ua[(ns * 4 + q) * 2 + 1] = b;
+        });
+      }
+      ns++;
+    }
+    for (const k of W.splashLog) {
+      const b = (W.tick - k.tick) / QF_PER_FRAME;
+      if (b >= 0 && b < SPLASH.life) L.splashes.push({ p: [k.x, k.y, k.z], b, key: k.tick * 7 + (k.x | 0) });
+    }
+    sp.geometry.setDrawRange(0, ns * 6);
+    if (ns) waterUpload(sp.geometry, ns, [['position', 12], ['uv', 8]]);
+    sp.visible = ns > 0;
+    g.water.visible = L.drops.length > 0 || L.splashes.length > 0;
+    g.sprayMemo = null;
+    return true;
+  }
   function applyFludd(g, s) {
     const { f } = poseFluddAt(g, t, g.pumpFrame);
     // Yoshi's juice (V7) flies with the same water drops while it's in the air.
     let juice = false;
     if (f && f.yoshi) for (let k = 0; k < 40 && !juice; k++) juice = !!yoshiJuice(g.data, t - k * QF_PER_FRAME);
     const fluddOn = f ? f.present || juice : inferFludd(g, t);
+    if (g.visible && simSpray(g)) return f;   // the simulated stage: its own water manager's particles
     if (!g.visible || s.gap || !fluddOn) { g.water.visible = false; g.puddles.visible = false; return f; }   // no FLUDD, no spray
     updateSpray(g, s);
     return f;
@@ -6596,8 +6655,13 @@ void main() {
   function jpaSlide(g, e) {
     const C = g.jpaSlide || (g.jpaSlide = new Map()), key = (mapGroup && mapGroup.uuid) + (activeCol() ? ':col' : '');
     if (C.mapId !== key) { C.clear(); C.mapId = key; }
+    const d = g.data, q = e * QF_PER_FRAME;
+    // The simulated stage: the sim's own frontSlipEffect (TMario::slippingBasic, on the ground only),
+    // 1 watslide, 2 slip smoke, 3 sand (not drawn), 0 none. Not cached: the history grows.
+    const H = replayOf(d), v = H && H.slipAt ? H.slipAt(q) : undefined;
+    if (v !== undefined) return v === 1 ? 'wet' : v === 2 ? 'dry' : null;
     if (C.has(e)) return C.get(e);
-    const d = g.data, q = e * QF_PER_FRAME, s = ghostSampleAt(d, q), sgd = shineDemo(g);
+    const s = ghostSampleAt(d, q), sgd = shineDemo(g);
     let k = null;
     // In the Shine get demo Mario poses (TMario::winDemo) whatever the ghost recorded.
     if (!s.gap && !d.yoshi[s.i] && SLIDE_ANIMS.has(d.anim[s.i]) && !(sgd && q >= sgd.q && q < sgd.until)) {
@@ -6613,7 +6677,7 @@ void main() {
         break;
       }
     }
-    C.set(e, k);
+    if (!H) C.set(e, k);   // (with the replay not yet there, asked again once it is)
     return k;
   }
   // Yoshi spitting juice (V7 records only that he does): a stream from his mouth the way Mario
@@ -6627,14 +6691,16 @@ void main() {
   // The nozzle emitters putting out water at frame e: [[x, y, z], dir] each, or null.
   function jpaJets(g, e) {
     const C = g.jpaJets || (g.jpaJets = new Map());
-    if (C.has(e)) return C.get(e);
+    if (C.has(e) && !replayOf(g.data)) return C.get(e);
     if (C.size > 20000) C.clear();
     const d = g.data, q = e * QF_PER_FRAME, fe = ghostFluddAt(d, q) || fluddGuessAt(g, q), sgd = shineDemo(g);
     let out = null;
     if (fe && fe.present && fe.nozzle !== 2 && !(sgd && q >= sgd.q && q < sgd.until)) {
-      const bursts = burstFrames(g);
+      const bursts = burstFrames(g), H = replayOf(d), made = H && H.emitAt ? H.emitAt(q) : undefined;
       let n = 0, jets = [0];
-      if (bursts.includes(e)) n = BOMB.num;
+      // the simulated stage: as many as its water manager made this frame (none in a dive or slide)
+      if (made !== undefined) { n = made; if (n && fe.spraying && fe.power) jets = nozzleEmit(fe.nozzle, fe.power).jets; }
+      else if (bursts.includes(e)) n = BOMB.num;
       else if (fe.spraying && fe.power && !fe.burst && !bursts.some((b) => e > b && e <= b + 2)) {
         const K = nozzleEmit(fe.nozzle, fe.power);
         n = Math.floor((e + 1) * K.num + 1e-6) - Math.floor(e * K.num + 1e-6);
@@ -6646,7 +6712,7 @@ void main() {
         out = jets.map((off) => [[se.x + fe.offset[0] + side[0] * off, se.y + fe.offset[1], se.z + fe.offset[2] + side[2] * off], dir]);
       }
     }
-    C.set(e, out);
+    if (!replayOf(d)) C.set(e, out);
     return out;
   }
   // A nozzle emitter's matrix: x along the water (getEmitPosDirSpeed), y the emit joint's own,
@@ -7492,6 +7558,8 @@ void main() {
       setText($('discInfo'), discLabel ? discLabel + ' · loading the stage…' : 'none loaded');
       return;
     }
+    // (the simulated stage catches up with t over several drawn frames: its water is read each one)
+    ghosts.forEach((g) => { if (g.visible && g.water && g.marker.parent) simSpray(g); });
     renderer.render(scene, camera);
     drawWater();
     drawJpa();
@@ -8383,7 +8451,7 @@ void main() {
     if (t0 < 0 || t <= t0 || t - t0 > 60) return out;
     const H = replayOf(d);
     // the simulated Mario's own voice lines (TMario::startVoice, where the game says them)
-    if (H && H.voicesIn) return H.voicesIn(t0, t).map((v) => ({ t: v.qf, voice: v.id, ifNoVoice: v.ifNoVoice, unlessId: v.unlessId }));
+    if (H && H.voicesIn) return H.voicesIn(t0, t).map((v) => ({ t: v.qf, voice: v.id, ifNoVoice: v.ifNoVoice, unlessId: v.unlessId, stop: v.stop }));
     if (H) {
       const q = H.qf, n = q.length;
       for (let i = Math.max(1, H.index(t0) + 1); i > 0 && i < n && q[i] <= t; i++) {
