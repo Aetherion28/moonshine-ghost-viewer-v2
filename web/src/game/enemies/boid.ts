@@ -6,7 +6,9 @@
 // its item: a coin (A), its event's item (B) or a 1-Up (C).
 
 import { fr, V3, MsRandF, MsAngleDiff, MsGetRotFromZaxisY, MsMtxSetRotRPH, mtx, Mtx } from '../math.js';
-import { World, SpineEnemy, EnemyManager, LiveManager, LiveActor, PathNode, GraphTracer, GraphWeb, LF, HF, MSG, nerve, Stream, MActor, CUE_CALC_ANIM, HitActor, TakeActor } from '../engine.js';
+import { World, SpineEnemy, EnemyManager, LiveManager, LiveActor, PathNode, GraphTracer, GraphWeb, LF, HF, MSG, nerve, Stream, MActor, CUE_CALC_ANIM, CUE_MOVE, HitActor, TakeActor } from '../engine.js';
+import { newAndRegisterObjByEventID } from '../mapobj/item.js';
+import { mapObjGlobals } from '../mapobj/base.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { jnormalize, setLength, ItemRef, itemByEventID, itemByName, appearItem } from './animal.js';
@@ -286,6 +288,67 @@ export class ButterfloidManager extends EnemyManager {
     createModelData() { this.createModelDataArray(BUTTERFLY_MODELS); }
 }
 
+// ---------------------------------------------------------------- fish (Animal/fishoid.cpp)
+const FISH_MODELS = ['fishA.bmd', 'fishB.bmd', 'fishC.bmd', 'fishD.bmd'];
+
+/** TFish: no collision of its own */
+export class Fish extends RealoidActor {
+    initRealoid() { this.hitFilter |= HF.NO_COLLISION; }
+}
+
+/** TFishoid: a school of fish kept under the sea's surface (y 0); the last one may be an item (a coin, a 1-up...) swimming with them */
+export class Fishoid extends Realoid {
+    unk15C: any = null;
+    constructor(w: World, public type: number, name = '') { super(w, name); }
+    perform(cue: number) {
+        super.perform(cue);
+        for (const b of this.leader.boids.slice(0, this.leader.num)) if (b.pos.y > 0) b.pos.y = 0;
+        if (this.unk15C && (cue & CUE_MOVE)) this.unk15C.pos.set(this.leader.boids[this.leader.num - 1].pos);
+    }
+    init(m: LiveManager | null) {
+        this.manager = m;
+        if (m) m.manageActor(this);
+        this.spine!.initWith(waitForever);
+        this.initHitActor(0, 1, 0, 0, 0, 0, 0);
+        this.onHitFilter(HF.NO_COLLISION);
+    }
+    initBoids() {
+        if (this.unk15C) {
+            const r = this.getRealoid(this.leader.num - 1);
+            r.onFlag(RF_UNK2);
+            this.unk15C.makeObjAppeared();
+            this.unk15C.pos.set(r.pos);
+        }
+    }
+    load(s: Stream) {
+        this.loadDefault(s, FISH_MODELS[this.type], 0);
+        this.loadItem(s);
+        const L = this.leader;
+        L.baseSpeed = 4; L.neighborRadius = 200; L.yawSpeed = 1; L.pitchSpeed = 0.5; L.maxPitch = 5; L.alignmentStrength = 0.5;
+        L.fleeTarget = new PathNode(this.world.mario);
+        L.fleeRadius = 400; L.fleeStrength = 3;
+        L.flags |= 2;
+        for (let i = 0; i < L.num; i++) { const a = this.actors[i]; if (a.mactor) a.mactor.setBck('fish_swim'); }
+        this.initBoids();
+    }
+    loadItem(s: Stream) {
+        const id = s.u32();
+        let o = newAndRegisterObjByEventID(this.world, id, '');
+        if (o && o.isActorType(AT.COIN)) { const im = mapObjGlobals(this.world).itemManager; o = im ? im.newAndRegisterCoinReal() : null; }
+        this.unk15C = o;
+    }
+    createRealoidActor(m: MActor | null) { return new Fish(this.world, m); }
+}
+
+export class FishoidManager extends EnemyManager {
+    createModelData() { this.createModelDataArray(FISH_MODELS); }
+}
+
+register('FishoidManager', (w, n) => new FishoidManager(w, n));
+register('FishoidA', (w, n) => new Fishoid(w, 0, n));
+register('FishoidB', (w, n) => new Fishoid(w, 1, n));
+register('FishoidC', (w, n) => new Fishoid(w, 2, n));
+register('FishoidD', (w, n) => new Fishoid(w, 3, n));
 register('ButterflyManager', (w, n) => new ButterfloidManager(w, n));
 register('Butterfly', (w, n) => new Butterfloid(w, 0, n));
 register('ButterflyB', (w, n) => new Butterfloid(w, 1, n));
