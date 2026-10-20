@@ -176,6 +176,12 @@ export interface ReplaySync {
     camera: string;
     /** QF Mario lost a life (the run continues) */
     lostLives: number[];
+    /**
+     * Ghost QF of the segment's first input record when it came after the first frame Mario had
+     * control (controlQf: Moonshine before 2026-10 began the records a frame late), else -1; the
+     * unrecorded frames are replayed neutral, so a stick held then (the C-stick, say) is lost.
+     */
+    lateInputsQf: number; controlQf: number;
 }
 
 /** The ghost's controller record of a frame (its QF is the frame's last tick), as the PADStatus the game read. */
@@ -340,8 +346,8 @@ export class SimRunner {
                     cam = 'recorded';
                 }
                 this.history = new ReplayHistory(g, q0 + Math.max(0, P.driftFrom));
-                this.sync = { replay: true, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: cam, lostLives: P.lostLives };
-            } else this.sync = { replay: false, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: '', lostLives: [] };
+                this.sync = { replay: true, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: cam, lostLives: P.lostLives, lateInputsQf: -1, controlQf: -1 };
+            } else this.sync = { replay: false, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: '', lostLives: [], lateInputsQf: -1, controlQf: -1 };
             this.rng = g.rng ? new RngReplay(g.rng, segI, q0, () => q0 + st0.qf) : null;
         }
         const st = this.stage!;
@@ -356,6 +362,15 @@ export class SimRunner {
             if (st.player && this.sync) {
                 const d = st.player.drift, S = this.sync;
                 S.firstDriftQf = d.firstQf >= 0 ? q0 + d.firstQf : -1; S.driftErr = d.firstErr; S.maxErr = d.maxErr; S.frames = d.frames; S.exactFrames = d.synced;
+                // the first frame with a controllable tick (GAME_INPUT from the tick after gameTick) has
+                // no record: the inputs were recorded from a later frame
+                const D = st.director;
+                if (D && D.gameTick >= 0 && S.controlQf < 0) {
+                    const first = Math.ceil((D.gameTick + 1) / 4) * 4;
+                    S.controlQf = q0 + first;
+                    let rec = -1; for (let i = 0; i < I.count; i++) { const q = I.qf[i] - q0; if (q >= first && (rec < 0 || q < rec)) rec = q; }
+                    if (rec > first) { S.lateInputsQf = q0 + rec; console.warn(`[player] the ghost's inputs start at stage QF ${rec}, ${(rec - first) / 4} frame(s) after Mario got control (QF ${first}): those frames replay neutral`); }
+                }
             }
             if (performance.now() - t0 > budgetMs) return false;
         }

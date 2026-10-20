@@ -387,7 +387,8 @@ export class PolarSubCamera implements SimCamera {
         this.inb.init(this.mPosition, this.mTarget, mario.pos);
         this.calcMatrices();
         this.calcExternalData_();
-        if (!this.bckExists('startcamera')) this.calcInHouseNo_(true);
+        // (unk2B0->isFileExist("startcamera"): the stage's /scene/map/camera/startcamera.bck)
+        if (!this.bckExists('startcamera') && !this.world.files.scene('map/camera/startcamera.bck')) this.calcInHouseNo_(true);
     }
 
     // ------------------------------------------------------------ perform (CUE_MOVE)

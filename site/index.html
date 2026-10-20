@@ -8484,6 +8484,9 @@ void main() {
       if (S && S.replay) {
         s = S.firstDriftQf < 0 ? 'in sync' : `drifted at ${ghostFormatTime(S.firstDriftQf)}s (by ${S.driftErr < 10 ? S.driftErr.toFixed(1) : Math.round(S.driftErr)} units)`;
         if (S.camera === 'approx') s += ' · camera approximate';
+        // Moonshine before 2026-10 began the input records a frame after Mario got control: that
+        // frame (a C-stick flick there turns the camera) is replayed neutral
+        if (S.lateInputsQf >= 0) s += ` · inputs recorded from ${ghostFormatTime(S.lateInputsQf)}s, control from ${ghostFormatTime(S.controlQf)}s`;
         const L = S.lostLives.length;
         if (L) s += L > 1 ? ` · lost ${L} lives` : ' · lost a life';
         if (R.history && R.history.last < t - 8) s += ' · catching up…';

@@ -28,8 +28,9 @@ export class CStick {
         const clamp = main ? 54 : 42;
         this.mPosX = fdiv(x, clamp);
         this.mPosY = fdiv(y, clamp);
-        // fmuls, fmadds: one rounding for the sum of squares (-fp_contract on)
-        this.mValue = fr(Math.sqrt(fr(this.mPosX * this.mPosX + this.mPosY * this.mPosY)));
+        // fmuls, fmuls, fadds: three roundings for the sum of squares (no fmadds here), then the
+        // MSL sqrtf (correctly rounded for every sum a clamped stick can give)
+        this.mValue = fr(Math.sqrt(fr(fr(this.mPosX * this.mPosX) + fr(this.mPosY * this.mPosY))));
         if (this.mValue > 1) {
             this.mPosX = fdiv(this.mPosX, this.mValue);
             this.mPosY = fdiv(this.mPosY, this.mValue);
@@ -148,8 +149,8 @@ export class MarioGamePad {
         if (0 < this.mNeutralKeyTimer) {
             const frame = (0x3d - this.mNeutralKeyTimer) << 16 >> 16;
             scaled = true;
-            // CLBCalcRatio<s16>(0x28, 0x3c, frame): (frame - 0x28) / (0x3c - 0x28)
-            scale = frame <= 0x28 ? 0 : fr((frame - 0x28) / (0x3c - 0x28));
+            // CLBCalcRatio<s16>(0x28, 0x3c, frame): (f32)(frame - 0x28) * (1.0f / 20)
+            scale = frame <= 0x28 ? 0 : fr((frame - 0x28) * fr(1 / (0x3c - 0x28)));
         }
         const C = this.mCompSPos;
         if (scaled) { C[0] = fr(scale * this.mMainStick.mPosX); C[1] = fr(scale * this.mMainStick.mPosY); }
