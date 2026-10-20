@@ -501,6 +501,8 @@ export class SunshineRenderer implements Viewer.SceneGfx {
     public renderInstListMain = new GfxRenderInstList();
     public renderInstListInd = new GfxRenderInstList();
     public modelInstances: J3DModelInstanceSimple[] = [];
+    /** map/map/map.bmd's instance (layer.ts moves its joints with the stage's game code) */
+    public mapInstance: J3DModelInstanceSimple | null = null;
     public destroyables: Destroyable[] = [];
     public modelCache = new Map<RARC.RARCFile, J3DModelData>();
     public effectsCache = new Map<RARC.RARCFile, JPA.JPACData>();
@@ -698,8 +700,10 @@ export class SunshineSceneDesc implements Viewer.SceneDesc {
             if (sky !== null)
                 renderer.modelInstances.push(sky);
             const map = SunshineSceneDesc.createSunshineSceneForBasename(device, cache, SMSPass.MAIN, rarc, 'map/map/map', false);
-            if (map !== null)
+            if (map !== null) {
                 renderer.modelInstances.push(map);
+                renderer.mapInstance = map;
+            }
             const sea = SunshineSceneDesc.createSunshineSceneForBasename(device, cache, SMSPass.MAIN, rarc, 'map/map/sea', false);
             if (sea !== null)
                 renderer.modelInstances.push(sea);

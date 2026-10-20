@@ -34,6 +34,7 @@ import { Mtx } from './game/math.js';
 import { ModelGate } from './game/mapobj/modelgate.js';
 import { ShiningStone } from './game/mapobj/mamma.js';
 import { BathWaterManager } from './game/bathwater.js';
+import { mapJoints, MapJointModel } from './game/mapevent.js';
 import { calcANK1JointAnimationTransform } from '../noclip/Common/JSYSTEM/J3D/J3DGraphAnimator.js';
 import { JointTransformInfo } from '../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
 import { V1Data } from './v1data/index.js';
@@ -548,6 +549,7 @@ export class GameLayer {
         const list = st ? [...this.sim!.drawables(), ...this.simModelDrawables(st)] : [];
         if (st) this.syncGoop(st);
         else if (this.goop) for (const g of this.goop.insts) if (g) g.visible = false;
+        this.syncMapJoints(st);
         // the viewer's stand-ins
         this.simPlaces.clear();
         for (const d of list) this.simPlaces.add(d.type + '|' + d.place.map((v) => v.toFixed(1)).join(','));
@@ -756,6 +758,43 @@ export class GameLayer {
             idx.push(0, 1 + ((k + 1) % N), 1 + k);
         }
         return { positions, index: Uint32Array.from(idx) };
+    }
+
+    /** the map model's moved joints: the sim's MapJointModel it follows, and the version last applied */
+    private mapMoved: { inst: J3DModelInstanceSimple; jm: MapJointModel | null; version: number; shapes: number[][] } | null = null;
+    /**
+     * map/map/map.bmd drawn with the stage's game code's joints (TJointModel / TJointObj, mapevent.ts's
+     * MapJointModel): each joint's local matrix from its J3DTransformInfo (the J3DModel::calc the map
+     * events trigger after setTransformInfo), and the shapes of a killed / asleep joint hidden
+     * (TJointObj::kill / sleep set J3DShpFlag_Visible, i.e. hidden, on the shapes of the joint's own
+     * mesh: getShapeInOneJoint walks J3DJoint::getMesh, the materials placed under that joint).
+     * Without a simulated stage: the model's own joints and every shape shown.
+     */
+    private syncMapJoints(st: any) {
+        const inst = this.renderer ? this.renderer.mapInstance : null;
+        if (!inst) { this.mapMoved = null; return; }
+        if (!this.mapMoved || this.mapMoved.inst !== inst) {
+            const md = inst.modelData, shapes: number[][] = [];
+            md.shapeData.forEach((sd, i) => {
+                const j = md.materialJointIndices[sd.shape.materialIndex];
+                if (j === undefined) return;
+                (shapes[j] || (shapes[j] = [])).push(i);
+            });
+            this.mapMoved = { inst, jm: null, version: -1, shapes };
+        }
+        const mm = this.mapMoved;
+        const jm = st && st.world ? mapJoints(st.world) : null;
+        if (jm === mm.jm && (!jm || jm.version === mm.version)) return;
+        mm.jm = jm; mm.version = jm ? jm.version : -1;
+        if (!jm || !jm.joints.length) {
+            inst.jointMatrixCalcCallback = null;
+            for (const l of mm.shapes) if (l) for (const i of l) inst.setShapeVisible(i, true);
+            return;
+        }
+        // (the local matrices once per change; the callback replaces the model's rest pose)
+        const locals = jm.joints.map((_, j) => jm.jointLocal(j));
+        inst.jointMatrixCalcCallback = (dst: mat4, _md: any, j: number) => { const L = locals[j]; if (L) mat4.copy(dst, L); };
+        mm.shapes.forEach((l, j) => { if (l) { const v = jm.shownJoint(j); for (const i of l) inst.setShapeVisible(i, v); } });
     }
 
     /**
