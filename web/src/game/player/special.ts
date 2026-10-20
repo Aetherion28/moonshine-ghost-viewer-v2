@@ -1,12 +1,12 @@
 // Player/MarioSpecial.cpp: climbing bars (poles, trees, the fluff), hanging from ledges and roofs
-// (fence ceilings), climbing fences, being carried, and specMain. Wires and pulling are kept as
+// (fence ceilings), climbing fences, being carried, pulling, and specMain. Wires are kept as
 // the let-go branches only.
 
-import { fr, s16, JMASSin, JMASCos, matan, IConverge, V3, mtxMultVec } from '../math.js';
+import { fr, s16, JMASSin, JMASCos, matan, IConverge, V3, Mtx, mtxMultVec } from '../math.js';
 import { HitActor, HF, MSG } from '../engine.js';
 import { WallCheck } from '../collision.js';
 import { MarioSwim } from './swim.js';
-import { S, A, bg, Bg, wallRecord } from './base.js';
+import { S, A, MF, bg, Bg, wallRecord, ControllerWork } from './base.js';
 import { MsSqrtf } from './move.js';
 import { AT } from '../actortypes.js';
 
@@ -495,8 +495,64 @@ export abstract class MarioSpecial extends MarioSwim {
         return 0;
     }
 
-    // ---------------------------------------------------------------- wires and pulling: not reachable (see the top)
+    // ---------------------------------------------------------------- wires: not reachable (see the top)
     wireStub() { if (!this.holder) return this.changePlayerStatus(S.LANDING, 0, false); return 0; }
+
+    // ---------------------------------------------------------------- pulling (a tentacle, the beak, a Fire Chomp's tail)
+    /** getCurrentPullParams: [rate V, rate H] by what he holds (the oil rates while oil-pulling) */
+    getCurrentPullParams(): [number, number] | null {
+        const h = this.mHeldObject;
+        if (!h) return null;
+        let P: any = null;
+        if (h.isActorType(AT.BOSS_UNK8)) P = this.mPullParamsBGBeak;
+        else if (h.isActorType(AT.BOSS_GESSO_TENTACLE)) P = this.mPullParamsBGTentacle;
+        else if (h.isActorType(AT.BOSS_UNKD)) P = this.mPullParamsBGFireWanWanBossTail;
+        else if (h.isActorType(AT.FIRE_WANWAN_TAIL_HIT)) P = this.mPullParamsFireWanWanTail;
+        if (!P) return null;
+        return this.mStatus === S.PULLING ? [P.mPullRateV, P.mPullRateH] : [P.mOilPullRateV, P.mOilPullRateH];
+    }
+    pulling() {
+        const h = this.mHeldObject as any;
+        if (!h) return this.changePlayerStatus(S.LANDING, 0, false);
+        if (this.mInput & 4) { h.receiveMessage(this, MSG.DETACH); this.mHeldObject = null; return this.changePlayerStatus(S.LANDING, 0, false); }
+        if (!(this.unk108.mInput & ControllerWork.B)) { h.receiveMessage(this, MSG.DETACH); this.mHeldObject = null; return this.changePlayerStatus(S.PULL_END, 0, false); }
+        if (this.mInput & 2) { this.setAnimation(A.HOLD_TO_HANG, 1); return this.changePlayerJumping(S.PULL_JUMP, 0); }
+        if (this.mStatus === S.OIL_PULLING && !this.checkFlag(MF.DIRTY)) this.changePlayerStatus(S.PULLING, 0, false);
+        const m = h.getTakingMtx() as Mtx | null;
+        if (m) { this.mFaceAngle.y = matan(-m[10], -m[2]); this.mModelFaceAngle = this.mFaceAngle.y; }
+        const pos = this.pos.clone();
+        const back = s16(this.mFaceAngle.y + 0x8000), diff = s16(back - this.mIntendedYaw);
+        let c = JMASCos(diff);
+        if (c < 0) c = 0;
+        let sn = JMASSin(diff);
+        c = fr(c * this.mIntendedMag); sn = fr(sn * this.mIntendedMag);
+        const r = this.getCurrentPullParams();
+        const rv = r ? r[0] : 0, rh = r ? r[1] : 0;
+        pos.x = fr(pos.x + fr(fr(rv * fr(c * JMASSin(back))) - fr(rh * fr(sn * JMASCos(back)))));
+        pos.z = fr(pos.z + fr(fr(rv * fr(c * JMASCos(back))) + fr(rh * fr(sn * JMASSin(back)))));
+        if (h.moveRequest && h.moveRequest(pos) === true) this.pos.set(pos);
+        this.stopProcess();
+        const rate = this.mStatus === S.OIL_PULLING ? 5 : 1;
+        switch (this.mAnimationId) {
+            case A.HOLD: case A.HANG_TO_HOLD:
+                if (this.isLast1AnimeFrame()) this.setAnimation(A.HOLD_WAIT, 1);
+                break;
+            default: {
+                const d = (h.isActorType(AT.BOSS_GESSO_TENTACLE) || h.isActorType(AT.BOSS_UNK8)) ? V3.sub(pos, this.mPrevPosition) : V3.sub(this.pos, this.mPrevPosition);
+                const len = fr(d.length());
+                if (len < 1) this.setAnimation(A.HOLD_WAIT, rate);
+                else {
+                    const ad = s16(matan(d.z, d.x) - this.mFaceAngle.y);
+                    if (ad >= -0x2000 && ad <= 0x2000) this.setAnimation(A.HOLD_DRAG, rate);
+                    if (ad <= -0x6000 || ad >= 0x6000) this.setAnimation(A.HOLD_BACK, rate);
+                    if (ad > -0x6000 && ad < -0x2000) this.setAnimation(A.HOLD_MOVE_R, rate);
+                    if (ad > 0x2000 && ad < 0x6000) this.setAnimation(A.HOLD_MOVE_L, rate);
+                }
+                break;
+            }
+        }
+        return 0;
+    }
 
     specMain() {
         let result = 0;
@@ -525,8 +581,8 @@ export abstract class MarioSpecial extends MarioSwim {
             case S.WIRE_WAIT: case S.WIRE_S_WAIT: case S.WIRE_WAIT_TO_S_WAIT_L: case S.WIRE_WAIT_TO_S_WAIT_R:
             case S.WIRE_WAIT_TO_HANG: case S.WIRE_S_WAIT_TO_HANG: case S.WIRE_RETURN: case S.WIRE_HANGING:
             case S.WIRE_ROLLING: case S.WIRE_S_WAIT_TO_WAIT_R: case S.WIRE_S_WAIT_TO_WAIT_L:
-            case S.PULLING: case S.OIL_PULLING:
                 result = this.wireStub(); break;
+            case S.PULLING: case S.OIL_PULLING: result = this.pulling(); break;
             case S.FENCE_CATCH: result = this.fenceCatch(); break;
             case S.FENCE_JUMP_CATCH: result = this.fenceJumpCatch(); break;
             case 0x30000569: case S.FENCE_MOVE: result = this.fenceMove(); break;

@@ -394,6 +394,16 @@ export abstract class MarioJump extends MarioRun {
         return 0;
     }
     fallDead() { this.jumpProcess(0); return 0; }
+    /** pullJumping: a hop while holding on, landing back into PULLING */
+    pullJumping() {
+        if (this.mAnimationId === A.HOLD_TO_HANG && this.isLast1AnimeFrame()) this.setAnimation(A.HOLD_HANG, 1);
+        this.mForwardVel = 0; this.mIntendedMag = 0;
+        this.jumpingBasic(S.PULLING, this.mAnimationId, 3);
+        if (this.mStatus === S.PULLING) this.setAnimation(A.HANG_TO_HOLD, 1);
+        const p = this.pos.clone(), h = this.mHeldObject as any;
+        if (h && h.moveRequest && h.moveRequest(p) === true) this.pos.set(p);
+        return 0;
+    }
     jumpMain() {
         this.checkJumpingThrowStart();
         switch (this.mStatus) {
@@ -427,7 +437,8 @@ export abstract class MarioJump extends MarioRun {
             case S.HIP_DROP: return this.hipAttacking();
             case S.FALL_DEAD: return this.fallDead();
             case S.ROCKET: return this.rocketing();
-            // (surfing, rocket, pulling, diving: not his)
+            case S.PULL_JUMP: return this.pullJumping();
+            // (surfing, diving: not his)
         }
         return 0;
     }

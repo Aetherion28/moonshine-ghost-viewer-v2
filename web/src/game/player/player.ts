@@ -1013,8 +1013,11 @@ export class PlayerMario extends TMarioSim {
         if (e.doKeepDistance && e.doKeepDistance()) this.keepDistanceA(a);
     }
     hitNoKeepPull(a: HitActor) {
-        // (pulling a tail / tentacle: the pulling statuses aren't simulated)
-        this.hitNormal(a);
+        if (this.mStatus !== S.PULLING && this.mStatus !== S.PULL_JUMP && this.canTake(a) && a.receiveMessage(this, MSG.TAKE)) {
+            this.changePlayerStatus(S.PULLING, 0, false);
+            this.setAnimation(A.HOLD, 1);
+            this.mHeldObject = a as TakeActor;
+        } else this.hitNormal(a);
     }
     private static readonly COL_NORMAL = types('HINOKURI2', 'BOSS_EEL', 'BOSS_TELESA', 'BATHTUB_KILLER', 'ENEMY_UNK1', 'HAMU_KURI', 'NAME_KURI', 'PAKKUN', 'ELEC_NOKONOKO',
         'TELESA', 'POPO', 'HANE_HAMU_KURI', 'DANGO_HAMU_KURI', 'FIRE_HAMU_KURI', 'PUKU_PUKU', 'DORO_HAMU_KURI', 'IGAIGA', 'GOROGORO', 'HANA_SAMBO', 'SAMBO_HEAD',
