@@ -23,6 +23,12 @@ export * from './railblock.js';
 export * from './item2.js';
 export * from './barrel.js';
 export * from './ricco.js';
+// the shared blocks, Noki Bay's and Corona Mountain's
+export * from './block.js';
+export * from './ex.js';
+export * from './mare.js';
+export * from './corona.js';
+export * from './bathtub.js';
 
 /**
  * The item hooks the enemies call through World (World.newAndRegisterCoin / makeCoinAppear /

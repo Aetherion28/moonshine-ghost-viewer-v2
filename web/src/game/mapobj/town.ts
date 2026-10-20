@@ -2,13 +2,19 @@
 // takes Mario to another stage: told as a 'nextStage' event with the stage's number),
 // TMapObjChangeStageHipDrop (ground-pounding it does) and TMapObjWaterSpray (a fountain's spray:
 // its particle emitted each frame, told as an effect with its rate, size and colour).
+// TMapObjSwitch (gpMapObjSwitch, Pinna Park / Sirena's blue switch): ground-pounded, it presses and
+// every THideObjInfo of the stage (registered as each loads) throws out its coin, which lasts the
+// switch's time; Mario's sounds for the timer and the switch's demo camera aren't here.
 
 import { fr, V3 } from '../math.js';
 import { World, Stream, HitActor, HF, MSG, LF, ANM_BCK, ANM_FRAME_RATE } from '../engine.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
-import { MapObjBase, MOF, STATE_NORMAL } from './base.js';
+import { Actor } from '../engine.js';
+import { AT } from '../actortypes.js';
+import { MapObjBase, MOF, STATE_NORMAL, mapObjGlobals, getActorTypeByEventID } from './base.js';
+import type { Coin, ItemManager } from './item.js';
 import { MapObjGeneral } from './general.js';
 import { ObjCollision, KIND_WARP } from './objcol.js';
 import { JMASCos, s16 } from '../math.js';
@@ -100,6 +106,64 @@ export class RedCoinSwitch extends MapObjBase {
         this.unk138 = t <= 0 ? 1200 : t * 10;
         // TODO: in a secret stage whose Shine isn't got yet it's gone (SMS_getShineIDofExStage and the
         // Shine flags: not in the sim)
+    }
+}
+
+// ---------------------------------------------------------------- TMapObjSwitch / THideObjInfo
+const SWITCHES = new WeakMap<World, MapObjSwitch>();
+/** gpMapObjSwitch */
+export const mapObjSwitch = (w: World) => SWITCHES.get(w) || null;
+
+/** THideObjInfo: a point the switch throws an item out of (scene.bin's actor plus loadHideObjInfo) */
+export class HideObjInfo extends Actor {
+    /** unk44 the item's actor type, unk48 its speed, unk4C its Y speed */
+    unk44 = 0; unk48 = 0; unk4C = 0;
+    constructor(public world: World, name = 'オブジェ出現情報') { super(name); }
+    load(s: Stream) {
+        super.load(s);
+        const [ev, sp, ys] = MapObjBase.loadHideObjInfo(s);
+        this.unk48 = sp; this.unk4C = ys;
+        this.unk44 = getActorTypeByEventID(ev);
+        const sw = mapObjSwitch(this.world);
+        if (sw) sw.registerObjInfo(this);
+    }
+    action(t: number) {
+        const im = mapObjGlobals(this.world).itemManager as ItemManager | null;
+        const o = im ? im.makeObjAppearAt(this.pos.x, this.pos.y, this.pos.z, this.unk44, true) : null;
+        if (!o) return;
+        MapObjBase.throwObjFromPointWithRot(o, this.pos, this.rot, this.unk48, this.unk4C);
+        if (o.isActorType(AT.COIN)) (o as Coin).unk14C = t;
+    }
+}
+
+export class MapObjSwitch extends MapObjBase {
+    /** unk138 the capacity, unk13C how many, unk140 the time (frames), unk148 its colour */
+    unk138 = 0; unk13C = 0; unk140 = 0;
+    unk144: HideObjInfo[] = [];
+    unk148 = { r: 0xFF, g: 0xFF, b: 0xFF, a: 0xFF };
+    constructor(w: World, name = 'オブジェスイッチ') { super(w, name); SWITCHES.set(w, this); }
+    control() { super.control(); /* (SMSGetMSound()->playTimer while the timer runs) */ }
+    receiveMessage(_s: HitActor, msg: number) {
+        if (msg === MSG.HIP_DROP) {
+            this.startBck('objswitch');
+            this.world.sound(SE.OBJ_AP_BUTTON, this.pos);
+            this.removeMapCollision();
+            for (let i = 0; i < this.unk13C; i++) this.unk144[i].action(this.unk140);
+            // TODO: fireStartDemoCamera("オブジェスイッチ用カメラ"): the demo camera isn't driven from here
+            this.stateTimer = this.unk140;
+            this.onHitFilter(HF.NO_COLLISION);
+            return true;
+        }
+        return false;
+    }
+    registerObjInfo(info: HideObjInfo) { if (this.unk13C < this.unk138) { this.unk144[this.unk13C] = info; this.unk13C++; } }
+    load(s: Stream) {
+        super.load(s);
+        const t = s.s32();
+        this.unk140 = t <= 0 ? 1200 : t * 10;
+        const r = s.s32(), g = s.s32(), b = s.s32();
+        this.unk148 = { r: r & 0xFF, g: g & 0xFF, b: b & 0xFF, a: this.unk148.a };
+        this.unk138 = 100;
     }
 }
 
@@ -222,3 +286,5 @@ register('RedCoinSwitch', (w, n) => new RedCoinSwitch(w, n));
 register('MapObjChangeStage', (w, n) => new MapObjChangeStage(w, n));
 register('MapObjChangeStageHipDrop', (w, n) => new MapObjChangeStageHipDrop(w, n));
 register('MapObjWaterSpray', (w, n) => new MapObjWaterSpray(w, n));
+register('MapObjSwitch', (w, n) => new MapObjSwitch(w, n));
+register('HideObjInfo', (w, n) => new HideObjInfo(w, n));
