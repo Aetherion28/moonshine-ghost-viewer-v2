@@ -26,7 +26,7 @@ import { marioHipDropping, marioSpeedY, marioGroundLevel, marioStatus, marioTouc
 export class MapObjChangeStage extends MapObjBase {
     unk138 = 0;
     constructor(w: World, name = 'ステージ切替オブジェ') { super(w, name); }
-    protected setNextStage() { this.world.events.push({ t: this.world.tickCount, kind: 'nextStage', data: { stage: this.unk138, p: this.pos.clone(), name: this.name } }); }
+    protected setNextStage() { this.world.setNextStage?.(this.unk138, null); this.world.events.push({ t: this.world.tickCount, kind: 'nextStage', data: { stage: this.unk138, p: this.pos.clone(), name: this.name } }); }
     touchPlayer(_a: HitActor) {
         this.setNextStage();
         this.onHitFilter(HF.NO_COLLISION);

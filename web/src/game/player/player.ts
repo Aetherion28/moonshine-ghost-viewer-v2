@@ -326,7 +326,7 @@ export class PlayerMario extends TMarioSim {
         const hpBefore = this.mHealth;
         super.thinkSituation();
         // the player's part of it: a stage change plane (isUnk300: a warp; the segment ends there)
-        if (bg.isUnk300(this.mGroundPlane)) { this.offUnk114(2); this.offUnk114(0x400); }
+        if (bg.isUnk300(this.mGroundPlane)) { this.world.setNextStage?.(this.mGroundPlane.data, null); this.offUnk114(2); this.offUnk114(0x400); }
         void hpBefore;
         // FLUDD's water on the ground under him: TModelWaterManager::askHitWaterParticleOnGround
         // (super's offFlag(RECENTLY_LEFT_WATER) came just before, as in the game)

@@ -33,8 +33,7 @@
 // The animation moves on in the move ticks (MActor::calcAnm in TBossEel::perform's CUE_MOVE).
 //
 // Not here: particles, camera shakes, rumble, the BGM, the anm sounds (bas), the eyes' blend
-// (drawing only), the 20 heart coins' items (gpItemManager->newAndRegisterCoinReal: the sim's
-// coin hook returns null), the screen texture / indirect lighting, Mario's pad lock
+// (drawing only), the screen texture / indirect lighting, Mario's pad lock
 // (onNeutralMarioKey) and the head map collisions (mUseMapCollision is false; meoto_out_loop's
 // one-off setUpTrans). Balloons and demo cameras are 'balloon:<id>' / 'demo:<name>' effects.
 
@@ -563,11 +562,17 @@ export class BossEelHeartCoin {
     active = false;
     position = new V3();
     model: PartModel;
+    /** mCoins */
+    coins: any[] = [];
     constructor(public owner: BossEel) {
         this.model = new PartModel(owner, 'meoto_heartcoin.bmd', () => this.active);
         owner.world.extras.push(this.model);
-        // TODO: its 20 coins (newAndRegisterCoinReal, killed until generate, then on joints 2..21)
+        // its 20 gold coins: gpItemManager->newAndRegisterCoinReal(), killed until generate
+        const im = mapObjGlobals(owner.world).itemManager as any;
+        for (let i = 0; i < 20 && im; ++i) { const c = im.newAndRegisterCoinReal(); c.kill(); this.coins.push(c); }
     }
+    /** getMActor()->getModel()->getAnmMtx(j): the heart's joint j (its BCK at the frame, on its baseTR) */
+    private coinMtx(j: number) { const m = this.model.mactor; return m ? m.anmMtx(j, this.model.baseTR, this.model.scale) : null; }
     perform(cue: number) {
         if (!this.active) return;
         const o = this.owner, a = o.mactor!;
@@ -580,8 +585,19 @@ export class BossEelHeartCoin {
             this.model.pos.set(this.position);
             this.model.mactor?.frameUpdate();
         }
+        // the coins ride the heart's joints 2..21
+        const all = (cue & CUE_CALC_ANIM) && this.model.mactor ? this.model.mactor.anmMtxAll(this.model.baseTR, this.model.scale) : null;
+        if (all) for (let i = 0; i < this.coins.length; ++i) { const m = all[i + 2]; if (m) this.coins[i].pos.set(m[12], m[13], m[14]); }
     }
-    generate(p: V3) { this.position.set(p); this.active = true; }
+    generate(p: V3) {
+        this.position.set(p); this.active = true;
+        for (const c of this.coins) {
+            c.appear();
+            c.onMapObjFlag(0x10000000);
+            const m = this.coinMtx(0);
+            if (m) c.pos.set(m[12], m[13], m[14]);
+        }
+    }
 }
 
 /** TBossEelCollision: a cylinder on one of the eel's matrices that pushes Mario up (and lets it eat him). */

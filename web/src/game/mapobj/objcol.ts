@@ -125,6 +125,17 @@ export class ObjCollision {
             else this.update();
         } else this.flags &= ~COL_NEEDS_SETUP;
     }
+    /** setUpTrans: the warp's check data moved to t and into the grid; the others' matrix set to t, then setUp */
+    setUpTrans(t: V3) {
+        if (this.kind === KIND_WARP) {
+            if (!(this.flags & COL_NEEDS_SETUP)) return;
+            this.flags &= ~COL_NEEDS_SETUP;
+            this.updateTrans(t);
+            return;
+        }
+        MsMtxSetTRS(this.unk20, t.x, t.y, t.z, 0, 0, 0, 1, 1, 1);
+        this.setUp();
+    }
     remove() {
         if (this.kind === KIND_STATIC) return;
         if (this.kind === KIND_WARP) {
