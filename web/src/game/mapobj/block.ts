@@ -7,6 +7,7 @@
 //
 // Not here: particles (told as effects), the ice's effect texture matrix (calc: drawing only), rumble.
 
+import { MSF } from '../flags.js';
 import { fr, V3 } from '../math.js';
 import { World, HitActor, HF, MSG, LF } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -133,7 +134,7 @@ export class SuperHipDropBlock extends BreakHideObj {
         if (msg === MSG.SUPER_HIP_DROP) {
             this.kill();
             // TFlagManager MSF_PIANTA_PIPE_SLAB_DESTROYED
-            if (this.mMonteBlockBroken) (this.world as any).piantaPipeSlabDestroyed = true;
+            if (this.mMonteBlockBroken) this.world.flags.setBool(true, MSF.PIANTA_PIPE_SLAB_DESTROYED);
             this.world.sound(SE.OBJ_SUPERBLOCK_BREAK, this.pos);
             return true;
         }

@@ -22,6 +22,7 @@
 // Not here: the particles and sound gate checks, the animation sounds (.bas), Bowser Jr.'s
 // light type, and the flag manager's life count (see appearShineKiller).
 
+import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, Quat, MsMtxSetRotRPH, MsMtxSetXYZRPH, MsRandF, matan } from '../math.js';
 import { World, Stream, HitActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, LF, HF, MSG, ANM_BCK, CUE_MOVE, CUE_CALC_ANIM, nerve, Nerve, readParams, SPINE_PARAMS, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -517,8 +518,8 @@ export class KoopaJrSubmarine extends SpineEnemy {
     appearShineKiller(_n: number) {
         const g = (this.world.mario as any).mWaterGun;
         const km = this.mKoopaJr && this.mKoopaJr.mKillerManager;
-        // TODO: TFlagManager's MSF_LIFE_COUNT isn't kept by the sim: taken as unchanged (world.marioLives when someone provides it).
-        const lives = (this.world as any).marioLives;
+        // TFlagManager's MSF_LIFE_COUNT (TODO: the sim never changes it: no 1-up / death counting yet)
+        const lives = this.world.flags.getFlag(MSF.LIFE_COUNT);
         let p: number;
         if (!g || g.mCurrentWater === 0) p = 0.5;
         else if (lives === undefined || !km || lives === km.mInitialLifeCount) p = 0.5;

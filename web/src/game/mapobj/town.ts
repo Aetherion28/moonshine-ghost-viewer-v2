@@ -6,6 +6,7 @@
 // every THideObjInfo of the stage (registered as each loads) throws out its coin, which lasts the
 // switch's time; Mario's sounds for the timer and the switch's demo camera aren't here.
 
+import { MSF } from '../flags.js';
 import { fr, V3 } from '../math.js';
 import { World, Stream, HitActor, HF, MSG, LF, ANM_BCK, ANM_FRAME_RATE, shineIDofExStage } from '../engine.js';
 import { register } from '../scene.js';
@@ -92,7 +93,7 @@ export class RedCoinSwitch extends MapObjBase {
                 if (this.mactor && this.mactor.curAnmEndsNext(ANM_BCK)) {
                     this.stateTimer = 120; this.state = 3;
                     // TFlagManager MSF_RED_COIN_SWITCH_PRESSED
-                    (this.world as any).redCoinSwitchPressed = true;
+                    this.world.flags.setBool(true, MSF.RED_COIN_SWITCH_PRESSED);
                 }
                 break;
             case 3: if (!this.isStateTimerEngaged()) this.state = 4; break;

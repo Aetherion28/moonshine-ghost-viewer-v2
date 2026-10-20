@@ -23,8 +23,7 @@ import { MTXConcat, MTXRotAxisRad, normalize, marioStatus } from './lib.js';
 
 const EPSILON = fr(3.81469727e-06);
 const UP = new V3(0, 1, 0);
-/** TFlagManager's save flags (not kept by the sim: a world field, unset by default) */
-const saveFlag = (w: World, name: string) => !!(w as any)[name];
+import { MSF } from '../flags.js';
 const itemManager = (w: World) => mapObjGlobals(w).itemManager as ItemManager | null;
 /** SMS_IsMarioStatusThrownDown: MARIO_STATUS_THROWN_DOWN (0x208B8; the ghost's proxy never is) */
 const marioThrownDown = (w: World) => marioStatus(w) === 0x208B8;
@@ -52,7 +51,7 @@ export class MonumentShine extends MapObjBase {
     constructor(w: World, name = 'モニュメントシャイン') { super(w, name); }
     initMapObj() {
         super.initMapObj();
-        if (saveFlag(this.world, 'shineShineGate')) { this.unk138a = 0; this.unk13C = 0; this.unk149 = 1; }
+        if (this.world.flags.getBool(MSF.SHINE_SHINE_GATE)) { this.unk138a = 0; this.unk13C = 0; this.unk149 = 1; }
         else { this.unk138a = 100; this.unk13C = 1000; this.unk149 = 0; }
         this.offHitFilter(HF.NO_COLLISION);
     }
@@ -135,7 +134,7 @@ export class BellDolpic extends MapObjBase {
     initMapObj() {
         super.initMapObj();
         const w = this.world;
-        if ((this.unk13C === 0 && saveFlag(w, 'shineRightBell')) || (this.unk13C === 1 && saveFlag(w, 'shineLeftBell'))) { this.unk138a = 0; this.unk154 = 0; }
+        if ((this.unk13C === 0 && w.flags.getBool(MSF.SHINE_RIGHT_BELL)) || (this.unk13C === 1 && w.flags.getBool(MSF.SHINE_LEFT_BELL))) { this.unk138a = 0; this.unk154 = 0; }
         else { this.unk138a = 100; this.unk154 = 1000; }
         this.offHitFilter(HF.NO_COLLISION);
     }
@@ -208,8 +207,8 @@ export class MareGate extends MapObjBase {
     control() { super.control(); this.world.sound(SE.OBJ_MAHRE_GATE_LIGHT, this.pos); }
     loadAfter() {
         super.loadAfter();
-        // TODO: MSF_NOKI_AVAILABLE is a save flag the sim doesn't know: unset unless a world field says so
-        if (!saveFlag(this.world, 'nokiAvailable')) this.makeObjDead();
+        // MSF_NOKI_AVAILABLE: set by setupObjects in Delfino's scenarios 2 / 8 with >= 20 Shines (flags.ts)
+        if (!this.world.flags.getBool(MSF.NOKI_AVAILABLE)) this.makeObjDead();
     }
 }
 

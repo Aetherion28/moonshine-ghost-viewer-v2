@@ -19,8 +19,7 @@ import { MTXConcat, getWaterPos } from './lib.js';
 const gateMActorNames = ['05_gate01', '05_gate02rico', '05_gate03manma', '05_gate04monte', '05_gate05mare'];
 const gateNames = ['Gate', 'GateToRicco', 'GateToMamma', 'GateToMonte', 'GateToMare'];
 export const GATE_STATE = { UNK0: 0, UNK1: 1, UNK2: 2 };
-/** TFlagManager's save flags (not kept by the sim: a world field, unset by default) */
-const saveFlag = (w: World, name: string) => !!(w as any)[name];
+import { MSF } from '../flags.js';
 const s16 = (v: number) => (v << 16) >> 16;
 
 export class ModelGate extends TakeActor {
@@ -78,9 +77,9 @@ export class ModelGate extends TakeActor {
         // (the particles it loads: not here)
         let opened = false;
         switch (this.unk71) {
-            case 0: opened = saveFlag(w, 'MSF_M_PAINTED_ON_STATUE'); break;
-            case 1: opened = saveFlag(w, 'MSF_M_PAINTED_ON_BOATHOUSE'); break;
-            case 2: case 3: case 4: opened = saveFlag(w, 'MSF_M_PAINTED_ON_LIGHTHOUSE'); break;   // (the game's: three on the same flag)
+            case 0: opened = w.flags.getBool(MSF.M_PAINTED_ON_STATUE); break;
+            case 1: opened = w.flags.getBool(MSF.M_PAINTED_ON_BOATHOUSE); break;
+            case 2: case 3: case 4: opened = w.flags.getBool(MSF.M_PAINTED_ON_LIGHTHOUSE); break;   // (the game's: three on the same flag)
         }
         if (opened) { this.unk70 |= 1; this.offHitFilter(HF.NO_COLLISION); }
         else { this.unk70 &= ~1; this.unk70 |= 2; this.onHitFilter(HF.NO_COLLISION); }

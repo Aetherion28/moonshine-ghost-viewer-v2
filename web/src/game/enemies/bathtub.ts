@@ -23,6 +23,7 @@
 // smoke and fly sound, the particles of the items, the anm sounds; the life count (TFlagManager's
 // MSF_LIFE_COUNT: not kept here, so it is taken as never changing).
 
+import { MSF } from '../flags.js';
 import { fr, V3, Quat, mtx, MsSin, MsCos, MsRandF, MsMtxSetRotRPH, matan } from '../math.js';
 import { World, Stream, HitActor, SpineEnemy, EnemyManager, LF, HF, MSG, ANM_BCK, ANM_BTP, ANM_FRAME_RATE, MActor, nerve, Spine, PSchema, Params, SPINE_PARAMS } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -315,8 +316,8 @@ export class BathtubKiller extends SmallEnemy {
     generateItemBathtubKiller() {
         if (this.mKillerType !== KILLER_SHINE) return;
         const mgr = this.manager as BathtubKillerManager, im = mapObjGlobals(this.world).itemManager as any;
-        // TODO: MSF_LIFE_COUNT isn't kept: the lives are taken as the count at the stage's start.
-        const lives = mgr.mInitialLifeCount;
+        // TFlagManager's MSF_LIFE_COUNT (TODO: the sim never changes it: no 1-up / death counting yet)
+        const lives = this.world.flags.getFlag(MSF.LIFE_COUNT);
         const wg = (this.world.mario as any).mWaterGun;
         let item: any = null;
         const p = this.pos;
@@ -565,8 +566,7 @@ export class BathtubKillerManager extends SmallEnemyManager {
         super.loadAfter();
         newAndRegisterObj(this.world, 'mushroom1up');
         newAndRegisterObj(this.world, 'mushroom1up');
-        // TODO: TFlagManager's MSF_LIFE_COUNT (not kept here)
-        this.mInitialLifeCount = 0;
+        this.mInitialLifeCount = this.world.flags.getFlag(MSF.LIFE_COUNT);
         this.mMushroom = null;
         this.mFinalMushroomRequested = 0; this.mEarlyMushroomRequests = 0;
     }
