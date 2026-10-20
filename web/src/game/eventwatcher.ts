@@ -25,11 +25,10 @@
 // game's does, so the scripts take the same paths and the same number of steps.
 //
 // Not simulated, so the scripts see the game's values for "not now":
-// - TMarDirector's talk mode (unk124 1 / 2) and TTalk2D2's window: isTalkModeNow follows
-//   world.talkMode, which nothing sets; getTalkNPC is the director's unkA0 (only the script's own
-//   __forceStartTalk sets it); getTalkMode / getTalkSelectedValue are the closed window's 0. A
-//   script that waits for a talk waits for good (sirena0's manta, which needs the talk to
-//   モンテＡ, never appears: TODO, the talk system);
+// - with the ghost's own Mario (no input-driven player) TMarDirector's talk mode: world.talkMode
+//   stays off, getTalkNPC is the scripts' own __forceStartTalk's, the window a closed one's 0 (with
+//   the player, talk.ts runs the talk: isTalkModeNow, getTalkNPC, setTalkMsgID, getTalkMode,
+//   getTalkSelectedValue and forceCloseTalk are its director's and window's);
 // - the director's demo mode (isDemoMode: world.demoMode, which nothing sets; fireStartDemoCamera is
 //   a 'demo:<name>' effect);
 // - the timers: the director's stopwatch (unkE8: OSStopwatch, wall-clock time stopped during talks
@@ -154,7 +153,8 @@ export class EventGroup extends NameRef {
         return c;
     }
     perform(cue: number) {
-        if (cue & CUE_MOVE) this.dir.stopwatchTicks++;
+        // (the stopwatch stops during a talk: OSStopStopwatch at its start, talk.ts)
+        if ((cue & CUE_MOVE) && !(this.world.talk && !this.world.talk.stopwatchOn)) this.dir.stopwatchTicks++;
         for (const w of this.watchers) w.testPerform(cue);
     }
     /** the frame's 2D part (the console's timer) */
@@ -216,6 +216,9 @@ const noop = (want: number, what?: (it: EvInterp, a: SpcSlice[]) => void): Ev =>
 const marioAny = (it: EvInterp) => W(it).mario as any;
 const marioAngleY = (it: EvInterp) => { const m = marioAny(it); return m.mFaceAngle ? m.mFaceAngle.y | 0 : (m.faceAngle | 0); };
 const talkModeNow = (w: World) => !!w.talkMode;
+/** TMarDirector::getTalkingNPC (unkA0): the talk director's (talk.ts) when the player runs, else the scripts' own */
+const talkingNPC = (it: EvInterp) => { const T = W(it).talk; return T ? T.unkA0 : D(it).talkingNPC; };
+const forceStartTalk = (it: EvInterp, npc: NameRef | null) => { const T = W(it).talk; if (T) T.forceStartTalk(npc); else { D(it).talkingNPC = npc; D(it).unk126 = 1; } };
 const demoModeNow = (w: World) => !!w.demoMode;
 /**
  * gpItemManager / gpMapObjManager: found by what they do (mapobj/base.ts' mapObjGlobals can't be
@@ -278,13 +281,17 @@ const EV: Record<string, Ev> = {
         for (let i = 0; i < n; i++) it.pop();
         it.pushInt(count);
     },
-    getTalkNPC: (it, n) => { args(it, 0, n); it.pushInt(G(it).handles.get(D(it).talkingNPC)); },
-    getTalkNPCName: (it, n) => { args(it, 0, n); const npc = D(it).talkingNPC; it.pushStr(npc ? npc.name : ''); },
-    // TTalk2D2::setMessageID: the window's text (presentation; the talk isn't simulated)
-    setTalkMsgID: noop(2),
-    // TTalk2D2::getTalkMode / getSelectedValue: a closed window's
-    getTalkMode: (it, n) => { args(it, 0, n); it.pushInt(0); },
-    getTalkSelectedValue: (it, n) => { args(it, 0, n); it.pushInt(0); },
+    getTalkNPC: (it, n) => { args(it, 0, n); it.pushInt(G(it).handles.get(talkingNPC(it))); },
+    getTalkNPCName: (it, n) => { args(it, 0, n); const npc = talkingNPC(it); it.pushStr(npc ? npc.name : ''); },
+    // TTalk2D2::setMessageID(id, flags) (talk.ts; without the player's talk director, nothing)
+    setTalkMsgID: (it, n) => {
+        args(it, 2, n); const flags = it.pop().getDataInt(), id = it.pop().getDataInt();
+        const T = W(it).talk; if (T) T.talk.setMessageID(id, flags);
+        it.pushVoid();
+    },
+    // TTalk2D2::getTalkMode / getSelectedValue (a closed window's 0 without the talk director)
+    getTalkMode: (it, n) => { args(it, 0, n); const T = W(it).talk; it.pushInt(T ? T.talk.getTalkMode() | 0 : 0); },
+    getTalkSelectedValue: (it, n) => { args(it, 0, n); const T = W(it).talk; it.pushInt(T ? T.talk.getSelectedValue() : 0); },
     setValue2TalkVariable: noop(2),
     isTalkModeNow: (it, n) => { args(it, 0, n); it.pushBool(talkModeNow(W(it))); },
     setFlagNPCCanTaken: (it, n) => { args(it, 2, n); const on = it.pop().getDataInt(); onLive(search(it, it.pop().getDataString()), LF.UNK100000, !!on); it.pushVoid(); },
@@ -340,7 +347,7 @@ const EV: Record<string, Ev> = {
     startOpenModelGate: noop(1, (it, a) => call(getNameRefPtr(it, a[0]), 'startOpen')),
     isMapEventFinishedAll: (it, n) => { args(it, 1, n); it.pushBool(!!call(getNameRefPtr(it, it.pop()), 'isFinishedAll')); },
     raiseBuilding: noop(1, (it, a) => call(search(it, 'イベント（カゲマリオゲート）'), 'raiseBuilding', a[0].getDataInt())),
-    forceCloseTalk: noop(0),
+    forceCloseTalk: noop(0, (it) => { const T = W(it).talk; if (T) T.talk.forceCloseTalk(); }),
     insertTimer: (it, n) => {
         args(it, 2, n); const t = it.pop().getDataInt(), k = it.pop().getDataInt();
         if (k === 1) D(it).startAppearTimer(0, t); else if (k === 2) D(it).startAppearTimer(1, t); else D(it).startDisappearTimer();
@@ -517,7 +524,7 @@ const NPC: Record<string, Ev> = {
     __forceStartTalk: (it, n) => {
         args(it, 1, n);
         let r = 0;
-        if (canForceTalk(it)) { D(it).talkingNPC = byHandle(it, it.pop()); D(it).unk126 = 1; r = 1; }
+        if (canForceTalk(it)) { forceStartTalk(it, byHandle(it, it.pop())); r = 1; }
         else it.pop();
         it.pushInt(r);
     },
@@ -525,7 +532,7 @@ const NPC: Record<string, Ev> = {
         args(it, 1, n);
         let r = 0;
         it.pop();
-        if (canForceTalk(it)) { const d = search(it, 'ダミーＮＰＣ'); if (d) { D(it).talkingNPC = d; D(it).unk126 = 1; r = 1; } }
+        if (canForceTalk(it)) { const d = search(it, 'ダミーＮＰＣ'); if (d) { forceStartTalk(it, d); r = 1; } }
         it.pushInt(r);
     },
     connectDummyNpc: (it, n) => {

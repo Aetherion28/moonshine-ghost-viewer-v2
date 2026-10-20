@@ -1276,6 +1276,42 @@ export class PlayerMario extends TMarioSim {
         }
         return 0;
     }
+    /** TMario::readBillboard (MarioAutodemo.cpp): step back from the talking NPC, turn to it, then wait out the talk */
+    readBillboard() {
+        const T = this.world.talk;
+        const npc: any = T ? T.unkA0 : null;
+        switch (this.mStatusState) {
+            case 0: {
+                if (npc) {
+                    let dx = fsub(this.pos.x, npc.pos.x);
+                    const dz = fsub(this.pos.z, npc.pos.z);
+                    if (dx === 0 && dz === 0) dx = fadd(dx, 1);
+                    const dist = sqrtf(fmadd(dx, dx, fmul(dz, dz)));
+                    if (dist < 100) {
+                        const p = new V3(fmadd(2, fmul(50, fdiv(dx, dist)), npc.pos.x), this.mFloorPosition.y, fmadd(2, fmul(50, fdiv(dz, dist)), npc.pos.z));
+                        this.moveRequest(p);
+                    }
+                }
+                this.setAnimation(A.T_WAIT, 1);
+                this.mStatusState = 1;
+            }
+            // fallthrough
+            case 1: {
+                if (!npc) break;
+                const a = s16(this.getAttackAngle(npc));
+                const sp = this.mAutoDemoParams.mReadRotSp;
+                this.mFaceAngle.y = s16(a - IConverge(s16(a - this.mFaceAngle.y), 0, sp, sp));
+                if (a === this.mFaceAngle.y) { if (T) T.unk126 = 2; this.mStatusState = 2; }
+                break;
+            }
+            case 2:
+                if (!T || T.unk124 === 0 || T.unk124 === 5) this.changePlayerStatus(S.WAIT, 0, true);
+                break;
+        }
+        this.mFaceAngle.x = 0;
+        this.mModelFaceAngle = this.mFaceAngle.y;
+        return 0;
+    }
     demoMain() {
         switch (this.mStatus) {
             case S.WIN_DEMO: return this.winDemo();
@@ -1283,6 +1319,7 @@ export class PlayerMario extends TMarioSim {
             case S.DOWN_LOSER: return this.downLoser();
             case S.WARP_OUT: return this.warpOut();
             case S.ELECTRIC_DAMAGE: return this.electricDamage();
+            case S.READ_BILLBOARD: return this.readBillboard();
         }
         return super.demoMain();
     }
@@ -1297,7 +1334,10 @@ export class PlayerMario extends TMarioSim {
         this.unk9C = this.mFaceAngle.y;
         this.mPrevPosition.set(this.pos);
         this.offUnk114(8);
-        if (this.camera.isLButtonCamera && this.camera.isLButtonCamera()) {
+        // the director's talk start (unk124 1): Mario turns to the NPC (readBillboard)
+        const T = this.world.talk;
+        if (T && T.unk124 === 1 && this.mStatus !== S.READ_BILLBOARD) this.changePlayerStatus(S.READ_BILLBOARD, 0, false);
+        if (this.camera.isLButtonCamera && this.camera.isLButtonCamera() && !(T && T.unk124 === 1)) {
             const s = this.mStatus & 0x1FF;
             if (!(s >= (S.HANGING & 0x1FF) && (S.HANG_JUMPING & 0x1FF) >= s)) {
                 this.mFaceAngle.y = s16(this.cameraYaw() + 0x8000 - (this.camera.offsetAngleY ? this.camera.offsetAngleY() : 0));
@@ -1500,6 +1540,10 @@ export class PlayerDirector {
                 break;
             case DIR.UNK2:
                 if (!m.checkStatusType(S.FLAG_UNK1000)) this.enter(DIR.GAME, tick);
+                break;
+            // STATE_UNK4: updateGameMode (its talk part: talk.ts)
+            case DIR.GAME:
+                if (m.world.talk) m.world.talk.updateGameMode();
                 break;
         }
     }

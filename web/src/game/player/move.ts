@@ -29,7 +29,8 @@ export abstract class MarioMove extends MarioBase {
         if (this.mInvincibilityFrames > 0) return true;
         if (this.checkFlag(MF.NPC_TALKING)) return true;
         if (this.mStatus === 0x89C) return true;
-        if (this.checkStatusType(0x1000)) return true;
+        // isDemoMode3 / isDemoMode4 / isTalkModeNow
+        if (this.world.demoMode || this.world.talkMode || this.checkStatusType(0x1000)) return true;
         return false;
     }
     isWallInFront() {
@@ -513,7 +514,7 @@ export abstract class MarioMove extends MarioBase {
         if (bg.isShadow(this.mGroundPlane) && this.mFloorPosition.y + 200 > this.pos.y) { this.mLightID = this.mGroundPlane.data; if (this.mLightID === 1) this.onFlag(MF.UNK_20); }
         this.offFlag(MF.RECENTLY_LEFT_WATER);
         if (!this.checkStatusType(0x800)) this.unk2BC = this.pos.y;
-        if (this.checkStatusType(0x1000)) this.onFlag(MF.NPC_TALKING); else this.offFlag(MF.NPC_TALKING);
+        if (this.world.demoMode || this.world.talkMode || this.checkStatusType(0x1000)) this.onFlag(MF.NPC_TALKING); else this.offFlag(MF.NPC_TALKING);
     }
     thinkWaterSurface() {
         if (this.checkStatusType(0x10000)) return;

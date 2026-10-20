@@ -399,7 +399,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label><input type="checkbox" id="optPath" checked> Show full route lines</label>
       <label title="The coloured circle at each ghost's feet that tells ghosts apart"><input type="checkbox" id="optRing" checked> Show ghost circles</label>
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
-      <div class="discLine">Disc: <span class="discInfo" id="discInfo">none loaded</span></div>
+      <div class="discLine">Disc: <span class="discInfo" id="discInfo">none loaded</span> <span class="discInfo" id="padInfo" hidden></span> <span class="discInfo" id="padRec" hidden></span></div>
       <label title="The game's HUD from the disc (life meter, coins, Shines, blue and red coins, FLUDD's tank) and the stage's opening words"><input type="checkbox" id="optHud" checked disabled> Show HUD</label>
       <label title="With a ghost that recorded its controller: Mario is played by the game's own code from those inputs (the camera too), instead of following the ghost's recorded positions. Where the replay drifts from the ghost is shown here."><input type="checkbox" id="optReplay" checked disabled> Input replay <span class="discInfo" id="replayInfo"></span></label>
       <label title="Read the game from an extracted game folder instead of a disc image"><button type="button" id="pickFolder" class="linkBtn">Use an extracted game folder…</button></label>
@@ -5599,6 +5599,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   function updateSleeper() {
     const show = !!(marioModel && objSpawn && !ghosts.length && MarioRig.ready());
     if (!show) { if (sleepMario) sleepMario.visible = false; return; }
+    if (!sleepMario && liveHistory()) return;   // (made below the first time he sleeps; live play starts from there)
     if (!sleepMario) {
       sleepMario = new THREE.Group();
       const body = THREE.SkeletonUtils.clone(marioModel);
@@ -5616,8 +5617,10 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
       sleepMario.add(body);
       scene.add(sleepMario);
     }
+    if (poseLiveMario(sleepMario)) return;
     const [x, y, z, yaw] = objSpawn;
     const ck = activeCol() ? 1 : 0;
+    if (sleepMario.userData.livePosed) { sleepMario.userData.livePosed = false; sleepMario.userData.at = null; if (sleepMario.userData.zzz) sleepMario.userData.zzz.forEach((sp) => { sp.visible = true; }); }
     if (sleepMario.userData.at !== objSpawn || sleepMario.userData.col !== ck) {   // light set from the floor, once collision is in
       sleepMario.userData.at = objSpawn; sleepMario.userData.col = ck;
       // Some stages start Mario in the air (he drops in): asleep he lies on the floor below.
@@ -5638,6 +5641,183 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     Object.values(NOZZLE_PARTS).forEach((k) => { if (parts[k]) parts[k].visible = false; });
     if (parts.fludd_body) parts.fludd_body.visible = true;
     poseFludd(sleepMario.userData.rig, { spray: null, since: null, power: 0, nozzle: 'normal_wg', h: 1 });   // asleep
+  }
+
+  // ---------------------------------------------------------------- the hidden gamepad mode
+  // Not in the UI: the Konami code, Start on a connected gamepad while no ghost is loaded, or
+  // gameViewer.gamepad(true/false). While on and no ghost is loaded, the shown stage runs live
+  // (the game layer's LiveRunner: the player Mario and the sim camera) from the gamepad, one game
+  // frame per 1/29.97 s; a loaded ghost stops it and the gamepad is ignored.
+  const livePad = { on: false, id: '', index: -1, clock: 0, frames: 0, reset: 0, active: false, runner: null, rec: false, last: null };
+  const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
+  let konamiAt = 0;
+  window.addEventListener('keydown', (e) => {
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    konamiAt = k === KONAMI[konamiAt] ? konamiAt + 1 : k === KONAMI[0] ? 1 : 0;
+    if (konamiAt === KONAMI.length) { konamiAt = 0; setLivePad(!livePad.on); }
+    if (e.key === 'F9' && livePad.active) { e.preventDefault(); setLiveRec(!livePad.rec); }
+  });
+  // Recording a ghost of the live play (F9, or Select / Back on the gamepad): the stage starts
+  // over from its first frame, and stopping offers the .smsghost (ghostwrite.ts) as a download.
+  function setLiveRec(on) {
+    on = !!on && livePad.active;
+    if (on === livePad.rec) return null;
+    let out = null;
+    if (on) { livePad.rec = true; livePad.reset++; livePad.frames = 0; livePad.clock = 0; livePad.last = null; }
+    else {
+      livePad.rec = false;
+      const st = livePad.runner && livePad.runner.stage, [a, e] = objectsKey ? objectsKey.split('|').pop().split(':').map(Number) : [0, 0];
+      const id = (gameLayer && gameLayer.fs && gameLayer.fs.id) || '';
+      let buf = null;
+      try { buf = livePad.runner ? livePad.runner.takeRecording({ area: a, episode: e, region: ({ J: 0, E: 1, P: 2 })[id[3]] ?? 0 }) : null; } catch (err) { console.warn('[live] record', err); }
+      if (buf) {
+        const name = `live-${ghostRouteLabel({ area: a, episode: e, parentArea: 0xff, variant: -1 })}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.smsghost`;
+        livePad.last = { buf, name, url: URL.createObjectURL(new Blob([buf], { type: 'application/octet-stream' })), qf: st ? st.qf : 0 };
+        out = { name, size: buf.byteLength };
+      }
+    }
+    padInfoLine();
+    return out;
+  }
+  window.addEventListener('gamepadconnected', (e) => { if (livePad.on && livePad.index < 0) findPad(); });
+  window.addEventListener('gamepaddisconnected', (e) => { if (e.gamepad && e.gamepad.index === livePad.index) { livePad.index = -1; livePad.id = ''; findPad(); } });
+  const pads = () => { try { return [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); } catch { return []; } };
+  function findPad() {
+    const p = pads()[0];
+    livePad.index = p ? p.index : -1; livePad.id = p ? p.id : '';
+    padInfoLine();
+  }
+  function setLivePad(on) {
+    livePad.on = !!on;
+    if (on) { findPad(); livePad.reset++; livePad.clock = 0; livePad.frames = 0; }
+    padInfoLine();
+    return livePad.on;
+  }
+  function padInfoLine() {
+    const el = $('padInfo');
+    if (!el) return;
+    setHidden(el, !livePad.on);
+    const rl = $('padRec');
+    if (rl) {
+      const L = livePad.last, want = livePad.on && (livePad.rec || !!L) ? (livePad.rec ? 'rec' : L.url) : '';
+      if (rl.dataset.k !== want) {
+        rl.dataset.k = want; rl.textContent = '';
+        if (livePad.rec) rl.textContent = '· ● recording (F9 / Select stops)';
+        else if (L) {
+          const d = document.createElement('a'); d.href = L.url; d.download = L.name; d.textContent = 'download ghost';
+          const l = document.createElement('a'); l.href = '#'; l.textContent = 'load it'; l.onclick = (ev) => { ev.preventDefault(); loadBuffers([[L.buf.slice(0), L.name]]); };
+          rl.append('· ', d, ' · ', l);
+        }
+      }
+      setHidden(rl, !want);
+    }
+    setText(el, livePad.on ? '· gamepad: ' + (livePad.id ? livePad.id.replace(/\s*\(.*$/, '').slice(0, 40) || livePad.id.slice(0, 40) : 'searching…') + (ghosts.length ? ' (off: a ghost is loaded)' : '') : '');
+  }
+  const isGcAdapter = (p) => p.mapping !== 'standard' && /gamecube|0337|mayflash|wup-028/i.test(p.id);
+  // PADClamp (dolphin pad/Padclamp.c): ClampRegion { 30, 180, 15, 72, 40, 15, 59, 31 }
+  function clampStick(x, y, max, xy, min) {
+    const sx = x < 0 ? -1 : 1, sy = y < 0 ? -1 : 1;
+    x = Math.abs(x); y = Math.abs(y);
+    x = x <= min ? 0 : x - min; y = y <= min ? 0 : y - min;
+    if (!x && !y) return [0, 0];
+    const d = xy * y <= xy * x ? xy * x + y * (max - xy) : xy * y + x * (max - xy);
+    if (xy * max < d) { x = ((Math.trunc((xy * max * x) / d) << 24) >> 24); y = ((Math.trunc((xy * max * y) / d) << 24) >> 24); }
+    return [sx * x, sy * y];
+  }
+  const clampTrigger = (v) => (v <= 30 ? 0 : Math.min(v, 180) - 30);
+  const s8 = (v) => Math.max(-128, Math.min(127, Math.round(v)));
+  // the gamepad as the game reads it: a raw PADStatus (sticks s8 about ±100 at full tilt, as a GC
+  // controller gives; triggers u8, the digital L/R at full press), then PADClamp
+  function readLivePad() {
+    const P = { button: 0, stickX: 0, stickY: 0, substickX: 0, substickY: 0, triggerLeft: 0, triggerRight: 0, analogA: 0, analogB: 0 };
+    let p = livePad.index >= 0 ? pads().find((x) => x.index === livePad.index) : null;
+    if (!p) { findPad(); p = livePad.index >= 0 ? pads().find((x) => x.index === livePad.index) : null; }
+    if (!p) return P;
+    const B = (i) => !!(p.buttons[i] && p.buttons[i].pressed), V = (i) => (p.buttons[i] ? p.buttons[i].value || (p.buttons[i].pressed ? 1 : 0) : 0), A = (i) => p.axes[i] || 0;
+    let rx, ry, cx, cy, tl, tr, dl, dr, bits = 0;
+    if (isGcAdapter(p)) {
+      // a GameCube adapter in PC mode (Mayflash / WUP-028 as DirectInput): 1 A, 2 B, 0 X, 3 Y,
+      // 7 Z, 9 Start, 4/5 L/R digital, 12-15 D-pad; axes 0/1 the stick, 5/2 the C-stick, 3/4 L/R
+      rx = A(0) * 127; ry = -A(1) * 127; cx = A(5) * 127; cy = -A(2) * 127;
+      tl = (A(3) + 1) * 127.5; tr = (A(4) + 1) * 127.5; dl = B(4); dr = B(5);
+      if (B(1)) bits |= 0x100; if (B(2)) bits |= 0x200; if (B(0)) bits |= 0x400; if (B(3)) bits |= 0x800;
+      if (B(7)) bits |= 0x10; if (B(9)) bits |= 0x1000;
+    } else {
+      // the standard mapping (XInput-style): A→A, X→B, B→X, Y→Y, RB/LB→Z, LT/RT→L/R, Start
+      rx = A(0) * 100; ry = -A(1) * 100; cx = A(2) * 100; cy = -A(3) * 100;
+      tl = V(6) * 255; tr = V(7) * 255; dl = V(6) >= 0.95; dr = V(7) >= 0.95;
+      if (B(0)) bits |= 0x100; if (B(2)) bits |= 0x200; if (B(1)) bits |= 0x400; if (B(3)) bits |= 0x800;
+      if (B(5) || B(4)) bits |= 0x10; if (B(9)) bits |= 0x1000;
+    }
+    if (B(12)) bits |= 0x8; if (B(13)) bits |= 0x4; if (B(14)) bits |= 0x1; if (B(15)) bits |= 0x2;
+    if (dl) { bits |= 0x40; tl = 255; }
+    if (dr) { bits |= 0x20; tr = 255; }
+    [P.stickX, P.stickY] = clampStick(s8(rx), s8(ry), 72, 40, 15);
+    [P.substickX, P.substickY] = clampStick(s8(cx), s8(cy), 59, 31, 15);
+    P.triggerLeft = clampTrigger(Math.max(0, Math.min(255, Math.round(tl)))); P.triggerRight = clampTrigger(Math.max(0, Math.min(255, Math.round(tr))));
+    P.button = bits;
+    return P;
+  }
+  // Start on a gamepad while no ghost is loaded turns the mode on (polled; nothing else reads it)
+  let padStartWas = false;
+  function pollPadStart() {
+    if (livePad.on || ghosts.length || !navigator.getGamepads) return;
+    const down = pads().some((p) => p.buttons[9] && p.buttons[9].pressed);
+    if (down && !padStartWas) setLivePad(true);
+    padStartWas = down;
+  }
+  let padSelectWas = false;
+  function pollPadSelect() {
+    const p = livePad.active && livePad.index >= 0 ? pads().find((x) => x.index === livePad.index) : null;
+    const down = !!(p && !isGcAdapter(p) && p.buttons[8] && p.buttons[8].pressed);
+    if (down && !padSelectWas) setLiveRec(!livePad.rec);
+    padSelectWas = down;
+  }
+  // what the game layer runs while live (gameSimInput's stand-in), null when not live
+  function liveSimInput() {
+    if (!livePad.active || !objectsKey) return null;
+    const [a, e] = objectsKey.split('|').pop().split(':').map(Number);
+    return { t: 0, ghost: null, api: RAW, live: { area: a, episode: e, frames: livePad.frames, pad: readLivePad, reset: livePad.reset, record: livePad.rec } };
+  }
+  function liveStep(dt) {
+    const want = livePad.on && !ghosts.length && !!gameLayer && !!gameLayer.common && !splitOn() && !!objectsGroup;
+    if (livePad.active && !want) {   // (a ghost came in, or the mode went off: back to the sleeping Mario)
+      if (livePad.rec) setLiveRec(false);
+      livePad.active = false; livePad.runner = null;
+      if (gameLayer) gameLayer.setLivePlay(false);
+      livePad.reset++; livePad.frames = 0; livePad.clock = 0;
+      padInfoLine();
+    }
+    if (!want) return;
+    if (!livePad.active) { livePad.runner = gameLayer.setLivePlay(true); livePad.active = !!livePad.runner; livePad.frames = 0; livePad.clock = 0; padInfoLine(); }
+    if (!livePad.active) return;
+    // one game frame per 1/29.97 s of real time (catch-up capped at 4 frames)
+    livePad.clock = Math.min(livePad.clock + dt, 4 / 29.97);
+    while (livePad.clock >= 1 / 29.97) { livePad.clock -= 1 / 29.97; livePad.frames++; }
+    const st = livePad.runner.stage;
+    if (st && livePad.frames - st.frame > 4) livePad.frames = st.frame + 4;
+    if (gameLive) gameLayer.advanceSim(liveSimInput());
+  }
+  const liveHistory = () => (livePad.active && livePad.runner && livePad.runner.history && livePad.runner.history.last >= 0 ? livePad.runner.history : null);
+  // the live Mario on the sleeper's rig (true: posed)
+  function poseLiveMario(m) {
+    const H = liveHistory();
+    if (!H) return false;
+    const q = H.last, s = H.sampleAt(q), a = H.animAt(q);
+    if (!s || !a) return false;
+    m.userData.livePosed = true;
+    m.position.set(s.x, s.y, s.z);
+    m.rotation.set(0, (s.yaw / 32768) * Math.PI, 0);
+    gxApply(m, gxSet('player', lightSetAt(s.x, s.y, s.z)));
+    MarioRig.pose(m.userData.rig, a.id, a.yoshi, a.phase);
+    if (m.userData.zzz) m.userData.zzz.forEach((sp) => { sp.visible = false; });
+    const v = H.fluddAt(q), parts = m.userData.rig.parts;
+    if (parts.fludd_body) parts.fludd_body.visible = v >= 0;
+    const n = v & 7;
+    if (parts.nozzle_normal_wg) parts.nozzle_normal_wg.visible = v >= 0;
+    Object.entries(NOZZLE_PARTS).forEach(([k, nm]) => { if (parts[nm]) parts[nm].visible = v >= 0 && +k === n; });
+    if (v >= 0) poseFludd(m.userData.rig, { spray: v & 0x10 ? 0 : null, since: null, power: v & 0x10 ? 1 : 0, nozzle: n === 0 || n === 2 ? 'normal_wg' : (NOZZLE_PARTS[n] || 'nozzle_normal_wg').replace(/^nozzle_/, ''), h: 0 });
+    return true;
   }
 
   function setMarkerBody(group) {
@@ -7457,6 +7637,9 @@ void main() {
     } else playClock = null;
     // With no ghost loaded the stage still lives: its walkers run on their own clock.
     if (!ghosts.length && objectsGroup) { idleClock += dt * QF_PER_SECOND; updateWalkers(); }
+    pollPadStart();
+    liveStep(dt);
+    pollPadSelect();
     updateSleeper();
     if (splitOn()) renderSplit(dt, now);
     else viewStep(dt, now, true);
@@ -7554,6 +7737,14 @@ void main() {
       camera.lookAt(controls.target);
       const f = debugView.fov || 55;
       if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); }
+    }
+    // (the hidden gamepad mode: the live sim's camera)
+    const lv = livePad.active && livePad.runner ? livePad.runner.view() : null;
+    if (lv) {
+      camera.position.set(lv.pos[0], lv.pos[1], lv.pos[2]);
+      controls.target.set(lv.at[0], lv.at[1], lv.at[2]);
+      camera.lookAt(controls.target);
+      if (camera.fov !== lv.fov) { camera.fov = lv.fov; camera.updateProjectionMatrix(); }
     }
     if (mapGroup && mapGroup.userData.sky) mapGroup.userData.sky.position.copy(camera.position);
     updateTriggers();
@@ -8582,6 +8773,8 @@ void main() {
   }
   // what the game layer's sim runs from: the main ghost, its own samples (RAW) and recorded camera
   function gameSimInput() {
+    const live = liveSimInput();
+    if (live) return live;
     const main = splitOn() ? followGhost : ghosts.find((g) => g.data && g.marker && g.marker.parent);
     return main ? { t, ghost: main.data, api: { ...RAW, ghostCameraAt: typeof ghostCameraAt === 'function' ? ghostCameraAt : undefined } } : null;
   }
@@ -8693,6 +8886,7 @@ void main() {
     $('gateNote').textContent = 'This browser can\'t run the game renderer (it needs WebGL 2).';
   }
   window.gameViewer = { get layer() { return gameLayer; }, get live() { return gameLive; }, useDisc, useDiscFile,
+    gamepad: (on = !livePad.on) => setLivePad(on), record: (on = !livePad.rec) => setLiveRec(on), get lastRecording() { return livePad.last; }, get gamepadState() { return { on: livePad.on, active: livePad.active, id: livePad.id, frames: livePad.frames, pad: livePad.on ? readLivePad() : null }; },
     setView: (v) => { debugView = v; }, getView: () => ({ pos: camera.position.toArray(), at: controls.target.toArray(), fov: camera.fov, aspect: camera.aspect }),
     // the main ghost's Mario at t as drawn (the input replay's where it has run) and as recorded
     marioAt: (time = t) => { const g = ghosts.find((x) => x.data && x.marker && x.marker.parent); return g ? { drawn: ghostSampleAt(g.data, time), anim: ghostAnimAt(g.data, time), ghost: RAW.ghostSampleAt(g.data, time) } : null; } };

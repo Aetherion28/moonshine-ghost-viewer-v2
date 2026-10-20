@@ -79,6 +79,7 @@ import { NO_PAD } from './player/pad.js';
 import type { StickCamera } from './camera/types.js';
 import { matan, s16 } from './math.js';
 import './bathwater.js';
+import { writeSmsGhost, type GhostFrame } from './ghostwrite.js';
 import './mapevent.js';
 
 // enemies' coins come out of the item manager's pool (gpItemManager)
@@ -493,3 +494,72 @@ export class SimRunner {
     }
 }
 export { calcKeyCode };
+
+/**
+ * Live play (the viewer's hidden gamepad mode): the shown stage run with the player Mario from a
+ * pad read each frame, no ghost. inp.live: the route, the frames wanted since the start (the
+ * viewer's real-time clock) and the pad reader (a post-PADClamp PADStatus); reset restarts it.
+ */
+export interface LiveInput { area: number; episode: number; frames: number; pad: () => PadStatus; reset: number; record?: boolean }
+export class LiveRunner extends SimRunner {
+    private liveKey = '';
+    /** the frames recorded since the stage (re)started with record on (ghostwrite.ts), else null */
+    recording: GhostFrame[] | null = null;
+    /** the recording as a .smsghost (null: nothing recorded); recording stops */
+    takeRecording(o: { area: number; episode: number; region: number; name?: string }): ArrayBuffer | null {
+        const R = this.recording;
+        this.recording = null;
+        return R && R.length ? writeSmsGhost(R, o) : null;
+    }
+    update(sceneName: string, scene: FileMap, inp: any, budgetMs = 20): boolean {
+        const L: LiveInput | undefined = inp && inp.live;
+        if (!L) return false;
+        const key = `${sceneName}|${L.area}|${L.episode}|${L.reset}`;
+        if (this.liveKey !== key || !this.stage) {
+            if (this.liveKey === key && this.error) return false;   // (it failed: don't rebuild every frame)
+            this.liveKey = key; this.q0 = 0; this.error = null; this.sync = null; this.history = null;
+            this.recording = L.record ? [] : null;
+            // (the opening a ghost of it implies: its first sample the first frame's end, QF 4; no FLUDD
+            // observation before the stage starts, so a secret stage's Shine is not got)
+            try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, L.area, L.episode, 0, 0, introTiming([{ qf: 4, anim: 0, phase: 0 }], null, 0)); }
+            catch (e) { this.error = e; this.stage = null; console.warn('[live] stage', e); return false; }
+            if (this.stage.player) this.history = new ReplayHistory(null, 0);
+        }
+        const st = this.stage!, t0 = performance.now();
+        while (st.frame < L.frames) {
+            st.camera = null;
+            const pad = st.player ? L.pad() : null;
+            try { st.runFrame(null, pad); } catch (e) { this.error = e; console.warn('[live] frame', e); this.stage = null; return false; }
+            if (this.recording && st.player && pad) this.recording.push(liveFrame(st.qf, pad, st.player));
+            if (st.player && this.history) {
+                if (this.history.qf.length > 9000 && !this.recording) this.history = new ReplayHistory(null, st.qf - 4);   // (bounded: only the latest frames are drawn)
+                this.history.push(st.qf, st.player);
+            }
+            if (performance.now() - t0 > budgetMs) return false;
+        }
+        return true;
+    }
+    /** the sim camera's view (eye, look-at, vertical FOV) */
+    view(): { pos: number[]; at: number[]; fov: number } | null {
+        const C: any = this.player && this.player.simCamera;
+        if (!C || !C.pos || !C.at) return null;
+        return { pos: [C.pos.x, C.pos.y, C.pos.z], at: [C.at.x, C.at.y, C.at.z], fov: C.fovy || 50 };
+    }
+}
+
+/** A live frame as a ghost records it: the pad, Mario's pose and the FLUDD / Yoshi observation. */
+function liveFrame(qf: number, pad: PadStatus, P: PlayerMario): GhostFrame {
+    const obs = new Uint8Array(8);
+    const Y = P.mYoshi ? P.mYoshi.viewState() : null;
+    const onYoshi = !!Y && Y.state === 8;
+    if (onYoshi) {
+        obs[0] = 0x80; obs[1] = Y!.bck & 0xff;
+        const fr16 = Math.max(0, Math.min(0xffff, Math.round(Y!.frame * 16))); obs[2] = fr16 >> 8; obs[3] = fr16 & 0xff;
+        obs[4] = Math.max(0, Math.min(255, Math.round(Y!.blend * 255)));
+    } else if (P.fludd) {
+        const f: any = P.fludd;
+        obs[0] = 0x08 | (f.nozzle & 7) | (f.spraying ? 0x10 : 0);
+    }
+    return { qf, pad: { ...pad }, x: P.pos.x, y: P.pos.y, z: P.pos.z, yaw: P.mModelFaceAngle, anim: P.mAnimationId, phase: Math.round(P.phase * 4096) & 4095,
+        yoshi: onYoshi ? (Y!.type + 1) : 0, obs };
+}

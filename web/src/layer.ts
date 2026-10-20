@@ -27,7 +27,7 @@ import { parseStageArc, sceneForRoute } from './stagearc.js';
 import { SMSPass, SunshineRenderer, SunshineSceneDesc } from './sms_scene.js';
 import { MarioModel, YoshiModel, parseArchive, setPlayerLights } from './mario.js';
 import { swapTextures, npcDress, npcPartColours, npcGoop } from './actors.js';
-import { SimRunner, DiscCommon, SimInput, fileMap, FileMap } from './game/runner.js';
+import { SimRunner, LiveRunner, DiscCommon, SimInput, fileMap, FileMap } from './game/runner.js';
 import { CLASSES } from './game/scene.js';
 import { LiveActor, MActor } from './game/engine.js';
 import { Mtx } from './game/math.js';
@@ -253,6 +253,20 @@ export class GameLayer {
         this.fs = fs; this.stageTable = table; this.marioArc = mario; this.yoshiArc = yoshi;
         this.common = common || await DiscCommon.load(fs);
         this.sim = new SimRunner(this.common);
+        this.ghostSim = null;
+    }
+
+    /**
+     * The hidden gamepad mode: sim becomes a LiveRunner (the stage played live from a pad, no ghost)
+     * while on; off puts the ghost's SimRunner back. Returns the live runner (null when off / no disc).
+     */
+    private ghostSim: SimRunner | null = null;
+    public setLivePlay(on: boolean): LiveRunner | null {
+        if (!this.common) return null;
+        const cur = this.sim instanceof LiveRunner;
+        if (on && !cur) { this.ghostSim = this.sim; this.sim = new LiveRunner(this.common); }
+        else if (!on && cur) { this.sim = this.ghostSim || new SimRunner(this.common); this.ghostSim = null; }
+        return this.sim instanceof LiveRunner ? this.sim : null;
     }
 
     public sceneFor(area: number, episode: number) { return sceneForRoute(this.stageTable, area, episode); }

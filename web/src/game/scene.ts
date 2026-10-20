@@ -19,6 +19,7 @@ import { Pollution } from './pollution.js';
 import { CHARAS } from './charas.js';
 import { installMapWires } from './mapwire.js';
 import { installEventWatchers } from './eventwatcher.js';
+import { installTalk } from './talk.js';
 
 /** A class the game makes from scene.bin (TMarNameRefGen::getNameRef_*), by its name there. */
 export type Maker = (w: World, name: string) => NameRef;
@@ -97,6 +98,8 @@ export class Stage {
         // the event group: a TEventWatcher per .sb of /common/sp and map/sp (eventwatcher.ts)
         installEventWatchers(w, files);
         for (const o of this.objects) o.loadAfter();
+        // TMarDirector's talk mode and the message window (talk.ts): the NPCs entryNPC'd at their loadAfter
+        if (this.player) installTalk(w, this.objects, files.scene('map/message.bmg'), files.common('2d/sys_message.bmg'));
         for (const gw of w.graphs.values()) { gw.initGoalIndex(new V3()); gw.attachToGround(w); }
         w.conductor.init();
         if (this.player && intro) this.leadFrame();
@@ -205,6 +208,8 @@ export class Stage {
             if (w.water) w.water.move();
             // (sky, mirror model) the event group: the stage's scripts
             if (w.eventGroup) w.eventGroup.perform(CUE_MOVE);
+            // PerformList Console (Group 2D: the talk window), then TMarDirector::movement (movement_game)
+            if (w.talk) w.talk.tick(last, !!D && D.state === 4);
             if (last) {
                 // PerformList CalcAnim
                 this.clip();
