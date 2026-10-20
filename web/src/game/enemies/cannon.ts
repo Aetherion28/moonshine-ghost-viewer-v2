@@ -21,6 +21,7 @@
 // TFlagManager's MSF_MONTY_MOLE_DEFEATED, and the director's STATE_UNK1 checks (taken as false).
 // The Bullet Bills (killerShoot's area-5 branch) come from enemies/killer.ts's キラーマネージャー.
 
+import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, MsClamp, MsWrap, MsSin, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsMtxSetRotRPH, MsMtxSetXYZRPH, JMASSin, JMASCos, MsRandF, s16 } from '../math.js';
 import { World, Stream, HitActor, LiveActor, MActor, LF, HF, HC, MSG, ANM_BCK, ANM_BTK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, nerve, Spine, PathNode, PSchema, SpineEnemy, MoveCollision } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -642,7 +643,7 @@ CannonNerves.damageDemo = nerve<Cannon>('TNerveCannonDamageDemo', (spine: S) => 
         self.world.sound(SE.EN_CANNON_DOWN, self.pos);
         const e = self.world.conductor.makeOneEnemyAppear(self.pos, 'エフェクト爆発マネージャー', 1) as any;
         if (e && e.generate) e.generate(self.pos, new V3(2.5, 2.5, 2.5));
-        // (TFlagManager: MSF_MONTY_MOLE_DEFEATED)
+        self.world.flags.setBool(true, MSF.MONTY_MOLE_DEFEATED);
         spine.pushAfterCurrent(CannonNerves.object);
         return true;
     }

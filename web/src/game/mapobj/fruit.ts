@@ -10,6 +10,7 @@
 // coins, see item.ts), so outside the egg event it is gone from the stage, as the game does then.
 // TODO: TYoshi isn't simulated: the hatch is told as a 'yoshiHatch' event.
 
+import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, MsRandF, matan, MsMtxSetXYZRPH, sqDist } from '../math.js';
 import { World, Stream, HitActor, TakeActor, LF, HF, MSG, ANM_BCK, ANM_BTP, MActor } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -595,7 +596,7 @@ export class CoverFruit extends MapObjBase {
         if (msg === MSG.UNKB) {
             this.kill();
             // TFlagManager MSF_SIRENA_PIPE_PINEAPPLE_EATEN
-            (this.world as any).sirenaPipePineappleEaten = true;
+            this.world.flags.setBool(true, MSF.SIRENA_PIPE_PINEAPPLE_EATEN);
             return true;
         }
         return false;

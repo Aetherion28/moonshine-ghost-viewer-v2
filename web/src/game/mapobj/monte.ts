@@ -9,6 +9,7 @@
 // The ropes of the bridge and the swinging boards are GX strips the game draws itself (drawRopes,
 // drawRopeBetweenBoards, TSwingBoard::draw); they aren't drawn here.
 
+import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, MsRandF, MsMtxSetXYZRPH } from '../math.js';
 import { World, Stream, NameRef, HitActor, LF, HF, MSG } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -212,7 +213,7 @@ export class GoalFlag extends MapObjBase {
     touchActor(a: HitActor) {
         if (a.isActorType(AT.MARIO)) {
             // TFlagManager MSF_RACE_GOAL_REACHED
-            (this.world as any).raceGoalReached = true;
+            this.world.flags.setBool(true, MSF.RACE_GOAL_REACHED);
             a.receiveMessage(this, MSG.ATTACK);
         } else if (a.isActorType(AT.E_MARIO)) a.receiveMessage(this, MSG.ATTACK);
     }

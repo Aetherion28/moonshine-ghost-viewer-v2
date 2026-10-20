@@ -8527,13 +8527,32 @@ void main() {
       if (!on && sky) sky.visible = true;
     }
   }
+  // Corona's bath water as the game's sim leaves it (gameLayer.bathWaterSurface: the mesh renderer's
+  // height grid, or the cap disc with the flat renderer), in the stage water's colour (v1data/stage.ts),
+  // depth-tested against the viewer's depth-only stage like its other overlays.
+  let bathWaterMesh = null;
+  function syncBathWater() {
+    const s = gameLayer && gameLive && gameLayer.bathWaterSurface ? gameLayer.bathWaterSurface() : null;
+    if (!s) { if (bathWaterMesh) bathWaterMesh.visible = false; return; }
+    if (!bathWaterMesh) {
+      bathWaterMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.13, 0.47, 0.62), transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+      bathWaterMesh.frustumCulled = false;
+      scene.add(bathWaterMesh);
+    }
+    const g = bathWaterMesh.geometry;
+    const pa = g.getAttribute('position');
+    if (pa && pa.array.length === s.positions.length) { pa.array.set(s.positions); pa.needsUpdate = true; }
+    else g.setAttribute('position', new THREE.BufferAttribute(s.positions, 3));
+    g.setIndex(new THREE.BufferAttribute(s.index, 1));
+    bathWaterMesh.visible = true;
+  }
   function gameFrame() {
     if (!splitOn() && (layerSlot || !layerSlots[1].canvas.hidden || layerSlots[0].canvas.style.width)) layerOff(1);   // (the comparison ended)
     const want = gameWanted();
     if (want && gameLayer.scene !== want) gameLayer.loadScene(want);
     const on = !!want && gameLayer.scene === want && !!gameLayer.renderer;
     setGameLook(on);
-    if (!on) return false;
+    if (!on) { if (bathWaterMesh) bathWaterMesh.visible = false; return false; }
     scene.updateMatrixWorld();
     camera.updateMatrixWorld();
     renderer.getDrawingBufferSize(_gsz);
@@ -8547,6 +8566,7 @@ void main() {
     const marios = ghosts.filter((g) => g.marker && g.marker.parent).map((g) => ({ key: g, rig: g.marker.userData.rig, yoshi: g.yoshiNode || null }));
     if (sleepMario && sleepMario.visible) marios.push({ key: sleepMario, rig: sleepMario.userData.rig, yoshi: null });
     gameLayer.render(camera, _gsz.x, _gsz.y, objectsGroup, objectsGroup.userData.mp, marios, performance.now(), gameSimInput());
+    syncBathWater();
     replayStatus();
     return true;
   }

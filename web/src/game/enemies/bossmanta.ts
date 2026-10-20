@@ -31,8 +31,8 @@
 // Not here: particles (the damage / split / death .jpa), the looped swim sounds (BS_MANTA_DRAW_LV
 // and _DRAW_DEMO, started every tick), the BGM, the shadow / EFB alpha drawing and the manta color
 // (getMantaColor, drawing only: its unk84 ramp too). Balloons and the demo camera are
-// 'balloon:<id>' / 'demo:<name>' effects. The sim keeps no TFlagManager: MSF_MANTA_SPAWNED is read
-// through world.flagBool when a stage gives one, else taken as set from the first tick (TODO).
+// 'balloon:<id>' / 'demo:<name>' effects. MSF_MANTA_SPAWNED is read from world.flags (flags.ts: the
+// event script that sets it isn't run, so it is taken as set from the first tick; TODO).
 
 import { fr, V3, MsRandF } from '../math.js';
 import { World, Stream, HitActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, LF, HF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE,
@@ -518,7 +518,7 @@ export class BossMantaManager extends EnemyManager {
             m.initNthGeneration(gen);
         }
     }
-    flagMantaSpawned() { const f = (this.world as any).flagBool; return typeof f === 'function' ? !!f.call(this.world, MSF_MANTA_SPAWNED) : true; }
+    flagMantaSpawned() { return this.world.flags.getBool(MSF_MANTA_SPAWNED); }
     /** TMantaBattleState::update */
     updateBattle() {
         switch (this.battleState) {

@@ -7,6 +7,7 @@
 // animations once at the end). Drawing is the viewer's: this only works out where everything is,
 // which animation it plays at which frame, and what's visible.
 
+import { FlagManager } from './flags.js';
 import { SplineRail } from './spline.js';
 import { psVecMag } from './camera/lib.js';
 import { rngCtx, fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsIsInSight, matan, MsRandF, sqDist, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, SMSCalcJumpVelocityY } from './math.js';
@@ -525,6 +526,8 @@ export class World {
     map = 0; stage = 0;
     /** TFlagManager's Shine flag of this secret stage's Shine (SMS_getShineIDofExStage): got before the run */
     exShineGot = false;
+    /** TFlagManager (flags.ts): set up for the stage by Stage's constructor (setupStage) */
+    flags = new FlagManager();
     demoMode = false; talkMode = false;
     /** Per-frame hooks: things the viewer wants told (an enemy's coin, a Shine). */
     events: { t: number; kind: string; data: any }[] = [];

@@ -23,6 +23,7 @@
 // shells' joints rolling on top of the playing BCK (the viewer's joint locals replace the
 // animated ones) and TMerrygoround::draw (it draws nothing itself: its model is still drawn here).
 
+import { MSF } from '../flags.js';
 import { mat4 } from 'gl-matrix';
 import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH, MsRandF } from '../math.js';
 import { World, Stream, HitActor, LF, HF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, MActor } from '../engine.js';
@@ -447,10 +448,9 @@ export class BalloonKoopaJr extends MapObjGeneral {
     kill() {
         super.kill();
         this.emit('balloonKoopaJr', this.unk148); this.emit('balloonKoopaJrA', this.unk148); this.emit('balloonKoopaJrB', this.unk148);
-        // TFlagManager::incFlag(MSF_BALLOON_COUNT, 1): a world field (the sim keeps no save flags)
-        const w = this.world as any;
-        w.balloonCount = (w.balloonCount | 0) + 1;
-        this.world.events.push({ t: this.world.tickCount, kind: 'incFlag', data: { flag: 'MSF_BALLOON_COUNT', value: w.balloonCount } });
+        // TFlagManager::incFlag(MSF_BALLOON_COUNT, 1)
+        this.world.flags.incFlag(MSF.BALLOON_COUNT, 1);
+        this.world.events.push({ t: this.world.tickCount, kind: 'incFlag', data: { flag: 'MSF_BALLOON_COUNT', value: this.world.flags.getFlag(MSF.BALLOON_COUNT) } });
         this.world.sound(SE.BS_BSPAKU_SLAP, this.pos);
     }
     /** TMapObjBase's load (not TMapObjGeneral's), then the "center" joint's place */

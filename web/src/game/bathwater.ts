@@ -437,6 +437,12 @@ export class BathWaterManager extends NameRef {
         if (!this.unk24 || !(r instanceof MeshRenderer) || r.unk800AC < 1) return null;
         return { n: r.unk800AC, cell: r.unk80080.x, origin: r.origin, heights: r.unk20 };
     }
+    /** For the viewer, with the flat renderer: the water's cap disc (its centre and radius, TBathtubData::getThing / the cap's radius), null before the tub's set up. */
+    getCapDisc(): { center: V3; radius: number } | null {
+        if (!this.unk24) return null;
+        const D = this.unk24.getBathtubData();
+        return { center: D.getThing(), radius: capRadius(D) };
+    }
     /** throwMario: Mario thrown onto the rim (4150 out, 120 up, if he's within 4500 of the centre), else straight up at speed */
     throwMario(speed: number) {
         const D = this.unk24!.getBathtubData(), m = this.world.mario as any;

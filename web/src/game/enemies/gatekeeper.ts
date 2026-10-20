@@ -363,17 +363,6 @@ GKNerves.launchName = nerve<GateKeeper>('TNerveBGKLaunchName', (spine: S) => {
     return false;
 });
 
-/**
- * TMapEventSinkBianco (イベント（地形沈むビアンコ）): Bianco Hills 1's slope (building 0, up once
- * the gatekeeper's dead) and building 1 (up once its goop is cleaned). The Petey heads only ask
- * isBuried(1). TODO: the pollution objects (TPollutionObj::isCleaned) aren't simulated, so
- * building 1 stays buried.
- */
-class MapEventSinkBianco extends NameRef {
-    recovered = [false, false];
-    isBuried(i: number) { return !this.recovered[i]; }
-}
-
 register('GateKeeperManager', (w, n) => new GateKeeperManager(w, n));
 register('GateKeeper', (w, n) => new GateKeeper(w, n));
-register('MapEventSinkBianco', (_w, n) => new MapEventSinkBianco(n));
+// (MapEventSinkBianco: the real one is mapevent.ts's)

@@ -24,6 +24,7 @@
 // stop, the balloon messages (startTinKoopaMessage: the console's), the animation sounds (.bas),
 // the skin deform, the light type and TTinKoopaMtxCalc (an empty blend calc).
 
+import { MSF } from '../flags.js';
 import { fr, V3 } from '../math.js';
 import { World, Stream, HitActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, MActor, AnmData, MoveCollision, LF, HF, MSG, ANM_BCK, CUE_MOVE, CUE_CALC_ANIM, nerve, Spine, FrameCtrl, readParams, SPINE_PARAMS, PSchema, GraphWeb } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -481,7 +482,8 @@ TinKoopaNerves.wait = nerve<TinKoopa>('TNerveTinKoopaWait', (spine: S) => {
         self.mTimers[TIMER_DEFEAT_WAIT] = self.getSaveParam2().mSLDefeatWaitTime;
     }
     if (self.mBreakCount === 4 && self.mTimers[TIMER_DEFEAT_WAIT] <= 0) {
-        // TFlagManager MSF_MECHA_BOWSER_DEFEATED (not kept by the sim: told to the viewer, once)
+        // TFlagManager MSF_MECHA_BOWSER_DEFEATED (also told to the viewer, once)
+        self.world.flags.setBool(true, MSF.MECHA_BOWSER_DEFEATED);
         if (!self.defeatFlagSet) { self.defeatFlagSet = true; self.world.events.push({ t: self.world.tickCount, kind: 'flag', data: { name: 'MSF_MECHA_BOWSER_DEFEATED' } }); }
     }
     return false;

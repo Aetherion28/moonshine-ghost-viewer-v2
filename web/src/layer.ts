@@ -29,7 +29,11 @@ import { MarioModel, YoshiModel, parseArchive, setPlayerLights } from './mario.j
 import { swapTextures, npcDress, npcPartColours, npcGoop } from './actors.js';
 import { SimRunner, DiscCommon, SimInput, fileMap, FileMap } from './game/runner.js';
 import { CLASSES } from './game/scene.js';
-import { LiveActor } from './game/engine.js';
+import { LiveActor, MActor } from './game/engine.js';
+import { Mtx } from './game/math.js';
+import { ModelGate } from './game/mapobj/modelgate.js';
+import { ShiningStone } from './game/mapobj/mamma.js';
+import { BathWaterManager } from './game/bathwater.js';
 import { calcANK1JointAnimationTransform } from '../noclip/Common/JSYSTEM/J3D/J3DGraphAnimator.js';
 import { JointTransformInfo } from '../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
 import { V1Data } from './v1data/index.js';
@@ -541,7 +545,7 @@ export class GameLayer {
             this.sim!.update(this.scene, this.simFiles, inp!);
         }
         const st = on ? this.sim!.stage : null;
-        const list = st ? this.sim!.drawables() : [];
+        const list = st ? [...this.sim!.drawables(), ...this.simModelDrawables(st)] : [];
         if (st) this.syncGoop(st);
         else if (this.goop) for (const g of this.goop.insts) if (g) g.visible = false;
         // the viewer's stand-ins
@@ -680,6 +684,78 @@ export class GameLayer {
             r!.modelInstances.push(...made);
         }
         for (const [a, m] of this.simMirrors) if (!seen.has(a)) { m.inst.visible = false; const ps = (m as any).parts; if (ps) for (const p of ps) p.inst.visible = false; }
+    }
+
+    /**
+     * The game objects that keep their MActors themselves (not a LiveActor's mactor): each model
+     * as a stand-in drawable for syncSim (its mactor, base matrix, scale and whether it's drawn),
+     * made once per model so its mirror stays.
+     *  - TModelGate ("JellyGate"): unk78 on its actor matrix, drawn while open (unk70 bit 0: perform returns before unk78->perform otherwise)
+     *  - TShiningStone: the four coloured stones (unk68) and the stone (unk6C), on its base matrix, always performed
+     */
+    private simModelProxies = new WeakMap<MActor, LiveActor>();
+    private simModelDrawables(st: any): { a: LiveActor; type: string; place: [number, number, number] }[] {
+        const out: { a: LiveActor; type: string; place: [number, number, number] }[] = [];
+        const add = (o: any, m: MActor | null, base: Mtx, drawn: () => boolean) => {
+            if (!m) return;
+            let p = this.simModelProxies.get(m);
+            if (!p) {
+                p = { mactor: m, baseTR: base, scale: o.scale, drawn } as any as LiveActor;
+                this.simModelProxies.set(m, p);
+            }
+            const n = st.nodeOf.get(o);
+            out.push({ a: p, type: n ? n.type : '', place: [o.pos.x, o.pos.y, o.pos.z] });
+        };
+        for (const o of st.objects) {
+            if (o instanceof ModelGate) add(o, o.unk78, o.baseTR, () => !!(o.unk70 & 1));
+            else if (o instanceof ShiningStone) {
+                for (const m of o.unk68) add(o, m, o.baseMtx, () => true);
+                add(o, o.unk6C, o.baseMtx, () => true);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Corona's bath water surface for the viewer to draw (it draws the water): the mesh renderer's
+     * height grid (BathWaterManager.getHeightMap) as triangles over its cell centres, the cells at
+     * the far plane (no water over them) left out; with the flat renderer, the water's cap disc.
+     * null without the bath water (or before the tub's set up).
+     */
+    public bathWaterSurface(): { positions: Float32Array; index: Uint32Array } | null {
+        const st: any = this.live && this.sim ? this.sim.stage : null;
+        if (!st) return null;
+        const bw = st.objects.find((o: any) => o instanceof BathWaterManager) as BathWaterManager | undefined;
+        if (!bw) return null;
+        const hm = bw.getHeightMap();
+        if (hm) {
+            const { n, cell, origin, heights } = hm;
+            const positions = new Float32Array(n * n * 3);
+            let far = Infinity;
+            for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) far = Math.min(far, heights[i * 128 + j]);
+            for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+                const k = (i * n + j) * 3;
+                positions[k] = origin.x + (i + 0.5) * cell; positions[k + 1] = heights[i * 128 + j] + origin.y; positions[k + 2] = origin.z + (j + 0.5) * cell;
+            }
+            const idx: number[] = [];
+            const wet = (i: number, j: number) => heights[i * 128 + j] > far;
+            for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < n; j++) {
+                if (!wet(i, j) || !wet(i + 1, j) || !wet(i, j + 1) || !wet(i + 1, j + 1)) continue;
+                const a = i * n + j, b = (i + 1) * n + j, c = i * n + j + 1, d = (i + 1) * n + j + 1;
+                idx.push(a, c, b, b, c, d);
+            }
+            return { positions, index: Uint32Array.from(idx) };
+        }
+        const cap = bw.getCapDisc();
+        if (!cap) return null;
+        const N = 48, positions = new Float32Array((N + 1) * 3), idx: number[] = [];
+        positions.set([cap.center.x, cap.center.y, cap.center.z]);
+        for (let k = 0; k < N; k++) {
+            const t = (k / N) * Math.PI * 2;
+            positions.set([cap.center.x + Math.cos(t) * cap.radius, cap.center.y, cap.center.z + Math.sin(t) * cap.radius], (k + 1) * 3);
+            idx.push(0, 1 + ((k + 1) % N), 1 + k);
+        }
+        return { positions, index: Uint32Array.from(idx) };
     }
 
     /**

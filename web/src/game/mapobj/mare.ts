@@ -351,7 +351,7 @@ export class MareCork extends MapObjBase {
 /** TMareEventDepressWall (Map/MapEventMare.cpp): what the point starts. */
 interface DepressWallLike { startEvent(): boolean; }
 export class MareEventPoint extends HitActor {
-    /** unk68 the wall event. TODO: set by MapEventMare.cpp's TMareEventDepressWall, which isn't in the sim. */
+    /** unk68 the wall event: set by mapevent.ts's TMareEventDepressWall (init*Event's setActor) */
     unk68: DepressWallLike | null = null;
     constructor(public world: World, name = 'イベントポイント') { super(name); }
     receiveMessage(sender: HitActor, msg: number): boolean {
