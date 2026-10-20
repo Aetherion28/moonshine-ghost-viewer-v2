@@ -139,7 +139,7 @@ export function msVecNormalize(v: Vec, out: Vec) {
 }
 const f64 = new Float64Array(1), i64 = new BigUint64Array(f64.buffer);
 /** Dolphin's Force25Bit: the multiplier's mantissa rounded to 24 fraction bits */
-function force25(d: number) { f64[0] = d; const b = i64[0]; i64[0] = (b & 0xFFFFFFFFF8000000n) + (b & 0x8000000n); return f64[0]; }
+export function force25(d: number) { f64[0] = d; const b = i64[0]; i64[0] = (b & 0xFFFFFFFFF8000000n) + (b & 0x8000000n); return f64[0]; }
 
 /** TVec3::normalize (JGeometry: setLength(one)) as the camera uses it for unk25C: a plain normalize */
 export function vnormalize(v: Vec) {
