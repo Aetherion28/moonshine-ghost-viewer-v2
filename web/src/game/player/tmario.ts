@@ -6,6 +6,7 @@ import { fr, s16, JMASSin, JMASCos, mtx, Mtx, V3 } from '../math.js';
 import { HitActor, MSG } from '../engine.js';
 import { MarioSpecial } from './special.js';
 import { S, A, MF } from './base.js';
+import { SE } from '../soundids.js';
 
 /** J3DGetTranslateRotateMtx (s16 angles: x, then y, then z, then the translation). */
 export function j3dTRMtx(m: Mtx, rx: number, ry: number, rz: number, tx: number, ty: number, tz: number) {

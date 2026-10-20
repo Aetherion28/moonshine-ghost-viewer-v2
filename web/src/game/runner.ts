@@ -32,6 +32,7 @@ import './enemies/boid.js';
 import './enemies/bird.js';
 import './enemies/beehive.js';
 import './enemies/hamukuri.js';
+import './enemies/hauntleg.js';
 import './enemies/wiretrap.js';
 import './enemies/seal.js';
 import './enemies/effectObj.js';

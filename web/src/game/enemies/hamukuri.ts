@@ -14,21 +14,25 @@
 // TDoroHaneKuri (ドロハネクリ, the goop-winged one of Pinna Park): a はねハムクリ that steals Mario's
 // cap; see its own comment.
 //
-// Not here: the variants in the same file (だんごハムクリ and the boss,
-// ヤキグリ, どろハムクリ — none in Bianco Hills) and the cap stealing only どろハムクリ does
-// (makeCapFly / selectCapHolder: Mario's cap isn't simulated); football chasing
+// TDangoHamuKuri / TBossDangoHamuKuri (だんごハムクリ, Gelato's stacks), TFireHamuKuri (ヤキグリ) and
+// TDoroHamuKuri (どろハムクリ, the cap stealer): see their own comments below.
+//
+// Not here: football chasing
 // (setSearchHamuKuri) needs the map objects' footballs, which aren't simulated either (no
-// footballs: the manager's list is empty, as in a stage without them).
+// footballs: the manager's list is empty, as in a stage without them). Mario's cap is only
+// simulated for どろハムクリ (selectCapHolder / makeCapFly, its own releaseCap / setAfterDeadEffect);
+// the plain ハムクリ's releaseCap / setAfterDeadEffect keep their stubs (it never gets one).
 
-import { fr, V3, MsMtxSetRotRPH, mtx, mtxMultVec, Mtx, MsSin, MsClamp, MsGetRotFromZaxis } from '../math.js';
-import { World, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, HitActor, LiveActor, AnmData, LiveManager, CUE_MOVE, CUE_CALC_ANIM, ANM_BCK, ANM_FRAME_RATE, PSchema } from '../engine.js';
+import { fr, V3, MsMtxSetRotRPH, mtx, mtxMultVec, Mtx, MsSin, MsCos, MsClamp, MsGetRotFromZaxis, MsRandF, JMASSin, s16 } from '../math.js';
+import { World, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, HitActor, LiveActor, TakeActor, SpineEnemy, AnmData, LiveManager, CUE_MOVE, CUE_CALC_ANIM, ANM_BCK, ANM_FRAME_RATE, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
-import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH } from './smallEnemy.js';
+import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, WalkerNerves, walkerParams } from './walker.js';
 import { Launcher, LauncherManager } from './launcher.js';
 import { resetSRTV } from './generator.js';
 import { register } from '../scene.js';
-import { newAndRegisterObj } from '../mapobj/base.js';
+import { newAndRegisterObj, mapObjGlobals } from '../mapobj/base.js';
+import { MTXConcat } from '../mapobj/lib.js';
 import { isHideObj } from '../mapobj/fruit.js';
 
 /** THamuKuriSaveLoadParams */
@@ -183,6 +187,7 @@ export class HamuKuri extends WalkerEnemy {
         if (this.vel.y < 0) this.forceRoll(this.world.mario.pos.clone(), true);
     }
     canDoJitabata() { return !this.isAirborne(); }
+    onHaveCap() { this.unk198 = true; }
     isFindMario(k: number) {
         this.unk1A2 = false;
         if (this.unk198) return false;
@@ -783,4 +788,580 @@ register('HaneHamuKuri', (w, n) => new HaneHamuKuri(w, n));
 register('HaneHamuKuri2', (w, n) => new HaneHamuKuri2(w, n));
 register('DoroHaneKuriManager', (w, n) => new DoroHaneKuriManager(w, n));
 register('DoroHaneKuri', (w, n) => new DoroHaneKuri(w, n));
+
+// ---------------------------------------------------------------- Mario's cap (どろハムクリ)
+/** TMsRange<s32>::rand */
+const rangeI = (lo: number, hi: number) => lo + Math.trunc(fr((hi - lo) * MsRandF()));
+/** gpItemManager */
+const itemManager = (w: World) => mapObjGlobals(w).itemManager as { makeObjAppearAt(x: number, y: number, z: number, t: number, onGround: boolean): any; objs: HitActor[] } | null;
+/**
+ * gpMarioOriginal->isWearingCap. TODO: Mario's cap isn't simulated on his side; he is taken as
+ * wearing it while no mario_cap item is out (knocked off, flying or held: it's alive until he
+ * touches it again, TItem::taken).
+ */
+function isMarioWearingCap(w: World) {
+    const im = itemManager(w);
+    return !im || !im.objs.some((o) => o.isActorType(AT.MARIO_CAP) && !(o as LiveActor).checkLiveFlag(LF.DEAD));
+}
+/** THamuKuri::selectCapHolder (only どろハムクリ's attackToMario calls it): hitting Mario knocks his cap off to one of them */
+function selectCapHolder(self: HamuKuri) {
+    if (!isMarioWearingCap(self.world)) { self.sendAttackMsgToMario(); return; }
+    self.sendAttackMsgToMario();
+    if (self.hmgr.unk70 === null) {
+        const im = itemManager(self.world);
+        const obj = im ? im.makeObjAppearAt(self.pos.x, self.pos.y, self.pos.z, AT.MARIO_CAP, false) : null;
+        if (obj) { self.offLiveFlag(LF.CLIPPED_OUT); makeCapFly(self, obj); }
+    }
+}
+/**
+ * THamuKuri::makeCapFly: a clipped-out one of the manager (getHolder), or this one, takes the cap
+ * 100 above a point behind it and jumps (mCapSpeed) to the node 2-3 random steps along its graph.
+ */
+function makeCapFly(self: HamuKuri, cap: LiveActor) {
+    const p = self.pos.clone();
+    p.x = fr(p.x + fr(-self.vel.x * 20));
+    p.z = fr(p.z + fr(-self.vel.z * 20));
+    let holder = self.hmgr.getHolder(self.instanceIndex) as HamuKuri | null;
+    if (!holder) {
+        const g = self.groundPlane;
+        if (!g.isIllegal() && !g.isPool() && !g.isWaterSurface()) holder = self;
+        else { cap.pos.set(self.world.mario.pos); cap.vel.set(0, 10, 0); cap.offLiveFlag(LF.UNK10); return; }
+    }
+    holder.pos.set(p);
+    holder.pos.y = fr(holder.pos.y + 100);
+    cap.pos.y = holder.pos.y;
+    if (cap.receiveMessage(holder, MSG.TAKE)) {
+        holder.reset();
+        holder.onHaveCap();
+        holder.held = cap as TakeActor;
+        holder.onLiveFlag(LF.HIDDEN); holder.offLiveFlag(LF.DEAD); holder.offLiveFlag(LF.CLIPPED_OUT);
+        holder.onHitFilter(HF.NO_COLLISION);
+        self.hmgr.unk70 = holder;
+        const t = self.tracer;
+        let cur = t.cur, prev = -1;
+        const count = rangeI(2, 3);
+        for (let i = 0; i < count; ++i) { const next = t.graph!.getRandomNextIndex(cur, prev, -1); prev = cur; cur = next; }
+        if (cur < 0) cur = 0;
+        const goal = t.graph!.point(cur).clone();
+        const v = self.calcVelocityToJumpToY(goal, mCapSpeed, holder.getGravityY());
+        holder.onLiveFlag(LF.AIRBORNE);
+        holder.vel.set(v);
+    } else holder.onLiveFlag(LF.DEAD);
+}
+
+// ---------------------------------------------------------------- TDangoHamuKuri / TBossDangoHamuKuri
+// The Dango stacks (だんごハムクリ, Gelato Beach): a ボスだんごハムクリ (the bottom one, from scene.bin)
+// that, on generating (setGenerateAnm), pulls mSLNumArray だんごハムクリ out of だんごハムクリマネージャー
+// (generateBody) and stacks them: each one is held (HIT_MESSAGE_TAKE) by the one below it (mPrev;
+// mNext the one above), and drawn at its holder's joint unk1AC (getTakingMtx, turned with the
+// boss), swinging round on a circle (swingBody: unk20C, wider while the boss attacks). Only the
+// stack's top one can be stomped (isHitValid); sprayed, the top one falls off (and goes its own
+// way on the graph), the bottom one jumps, the others spin round once (unk230 / unk210). The
+// body ones only move while the boss is there and not generating; the boss dying kills them all
+// (forceKill). The managers share ハムクリマネージャー's model when there is one, and never clip.
+// Not here: the water hit particle and sounds (the turn sound).
+
+export class DangoHamuKuriManager extends HamuKuriManager {
+    constructor(w: World, name = 'だんごハムクリマネージャー') { super(w, name); }
+    load(s: Stream) {
+        this.saveParams = walkerParams('/enemy/dangohamukuri.prm', this.world.files, HAMU_PARAMS);
+        SmallEnemyManager.prototype.load.call(this, s);
+    }
+    /** createModelDataArray: ハムクリマネージャー's models when it is there */
+    createModelDataArray(entries: string[]) {
+        const m = this.world.conductor.getManagerByName('ハムクリマネージャー');
+        if (m) this.modelFiles = m.modelFiles;
+        else super.createModelDataArray(entries);
+    }
+    createEnemyInstance() { return new DangoHamuKuri(this.world); }
+    /** clipEnemies: none */
+    clipActors() { }
+}
+
+export class BossDangoHamuKuriManager extends DangoHamuKuriManager {
+    constructor(w: World, name = 'ボスだんごハムクリマネージャー') {
+        super(w, name);
+        mSearchActSw = false;
+    }
+    load(s: Stream) {
+        this.saveParams = walkerParams('/enemy/bossdangohamukuri.prm', this.world.files, { ...HAMU_PARAMS, mSLNumArray: ['i', 3] } satisfies PSchema);
+        SmallEnemyManager.prototype.load.call(this, s);
+    }
+    createEnemyInstance() { return new BossDangoHamuKuri(this.world); }
+}
+
+/** J3D's column-major joint matrix as a game Mtx */
+const m4ToMtx = (j: ArrayLike<number>): Mtx => Float64Array.from([j[0], j[4], j[8], j[12], j[1], j[5], j[9], j[13], j[2], j[6], j[10], j[14]]);
+
+export class DangoHamuKuri extends HamuKuri {
+    /** mAttackSw (a static, never set: false) */
+    static mAttackSw = false;
+    /** unk20C: the swing's phase (0..1) */
+    unk20C = 0;
+    /** unk210 / unk214: its turn (yaw, roll) on its holder */
+    unk210 = 0; unk214 = 0;
+    unk218 = 0;
+    /** unk21C / unk220 / unk224: the swing's offset */
+    unk21C = 0; unk220 = 0; unk224 = 0;
+    mNext: DangoHamuKuri | null = null;
+    mPrev: DangoHamuKuri | null = null;
+    /** unk230: spinning round once */
+    unk230 = false;
+    mBoss: BossDangoHamuKuri | null = null;
+    constructor(w: World, name = 'だんごハムクリ') { super(w, name); }
+    init(m: any) {
+        super.init(m);
+        this.spine!.initWith(DangoNerves.wait);
+        this.actorType = AT.DANGO_HAMU_KURI;
+    }
+    /** setMActorAndKeeper: the manager's (maybe ハムクリマネージャー's) default.bmd */
+    setMActorAndKeeper() { this.mactor = this.createMActor(0); }
+    perform(cue: number) { if (this.mBoss && !this.mBoss.isNowGenerate()) super.perform(cue); }
+    changeByJuice() { return this.mPrev === null ? SmallEnemy.prototype.changeByJuice.call(this) : false; }
+    moveObject() {
+        super.moveObject();
+        this.swingBody();
+        if (this.mBoss && !this.mBoss.checkLiveFlag(LF.CLIPPED_OUT)) this.offLiveFlag(LF.CLIPPED_OUT);
+    }
+    updateAnmSound() {
+        super.updateAnmSound();
+        if (this.mBoss) this.offLiveFlag(LF.CLIPPED_OUT);
+    }
+    isCollidMove(a: HitActor): boolean { return SmallEnemy.prototype.isCollidMove.call(this, a); }
+    attackToMario() {
+        if (this.mPrev !== null || this.pos.y + 20 > this.world.mario.pos.y) super.attackToMario();
+        else if (this.mBoss && this.mBoss.isNowAttack()) this.sendAttackMsgToMario();
+    }
+    /** getTakingMtx: joint unk1AC's place (40 higher on the boss), turned with the boss */
+    getTakingMtx(): Mtx {
+        const j = this.mactor ? this.mactor.anmMtx(this.unk1AC, this.baseTR, this.scale) : null;
+        const t = j ? m4ToMtx(j) : this.baseTR;
+        const k = (this.mBoss as DangoHamuKuri | null) === this ? 40 : 0;
+        const pos = mtx();
+        pos[3] = t[3]; pos[7] = fr(t[7] + k); pos[11] = t[11];
+        const r = mtx();
+        MsMtxSetRotRPH(r, 0, this.mBoss ? this.mBoss.rot.y : 0, 0);
+        MTXConcat(pos, r, this.unk1B0);
+        return this.unk1B0;
+    }
+    setRunAnm() { this.setBckAnm(this.mNext === null ? BCK_RUN : BCK_WALK); }
+    calcRootMatrix() {
+        if (this.holder && this.holder.held === this) {
+            const m = this.holder.getTakingMtx();
+            if (m) {
+                if (this.unk230) {
+                    this.unk210 = fr(this.unk210 + 40);
+                    if (this.unk210 > 360) { this.unk210 = -rangeRand(10, 20); this.unk230 = false; }
+                }
+                const h = this.holder as unknown as DangoHamuKuri;
+                if (h.unk230) this.unk210 = -h.unk210;
+                m[3] = fr(m[3] + this.unk21C); m[7] = fr(m[7] + this.unk220); m[11] = fr(m[11] + this.unk224);
+                const r = mtx();
+                MsMtxSetRotRPH(r, 0, this.unk210, this.unk214);
+                MTXConcat(m, r, m);
+                this.baseTR.set(m);
+                this.pos.set(m[3], m[7], m[11]);
+                return;
+            }
+        }
+        SpineEnemy.prototype.calcRootMatrix.call(this);
+    }
+    reset() {
+        super.reset();
+        this.mPrev = null; this.mNext = null; this.mBoss = null;
+        this.unk20C = rangeRand(0, 1);
+        // (mMActor->calc)
+    }
+    receiveMessage(sender: HitActor, msg: number): boolean {
+        if (msg === MSG.TAKE && this.holder === null && (this.mBoss as DangoHamuKuri | null) !== this) {
+            this.onHitFilter(HF.NO_COLLISION);
+            this.holder = sender as TakeActor;
+            this.behaveToTaken(sender);
+            return true;
+        }
+        if ((msg === MSG.PUT || msg === MSG.THROWN) && this.holder === sender) {
+            this.holder = null; this.behaveToRelease(); this.offHitFilter(HF.NO_COLLISION); return true;
+        }
+        if (msg === MSG.TRAMPLE || msg === MSG.HIP_DROP || msg === MSG.SUPER_HIP_DROP || msg === MSG.UNKB) {
+            if (this.isHitValid(msg)) { this.unk184 = 0; this.kill(); }
+            return true;
+        }
+        if (msg === MSG.UNKD) { this.hitPoints = 0; this.onLiveFlag(LF.DEAD); this.onHitFilter(HF.NO_COLLISION); }
+        if (msg === MSG.SPRAYED_BY_WATER) {
+            this.world.effect('enemyWaterHit', sender.pos);
+            if (this.sprayCooldown === 0) {
+                this.sprayCooldown = 1;
+                if (!this.changeByJuice()) { this.decHpByWater(sender); this.behaveToWater(sender); }
+            }
+            return true;
+        }
+        return false;
+    }
+    isHitValid(_m: number) { return !(this.mPrev !== null || this.mNext !== null); }
+    forceKill() {
+        if (this.mPrev === null) SmallEnemy.prototype.forceKill.call(this);
+        if (this.mBoss === null) return;
+        if (this.mBoss.isDead() && this.spine!.current !== SmallEnemyNerves.die) {
+            this.spine!.reset(); this.spine!.setNext(SmallEnemyNerves.die); this.spine!.pushAfterCurrent(this.spine!.default);
+            this.onLiveFlag(LF.UNK20000);
+        }
+    }
+    nerveInit() { }
+    behaveToWater(a: HitActor) {
+        if (!this.mNext) {
+            if (!this.mPrev) super.behaveToWater(a);
+            else if (this.sprayCooldown <= 1 && this.receiveMessage(this.mPrev, MSG.PUT)) {
+                // the top one falls off
+                this.holder = null;
+                this.mPrev.held = null;
+                this.mPrev.mNext = null;
+                this.mPrev.sprayCooldown = 1;
+                this.mPrev = null; this.mNext = null;
+                this.spine!.setNext(WalkerNerves.graphWander);
+                this.unk210 = 0; this.unk214 = 0;
+                const d = V3.sub(this.pos, this.world.mario.pos).normalize();
+                d.x = fr(d.x * 5); d.y = 1; d.z = fr(d.z * 5);
+                this.vel.set(d);
+                this.pos.y = fr(this.pos.y + 20);
+                this.onLiveFlag(LF.AIRBORNE);
+                this.unk230 = false;
+            }
+        } else if (this.mPrev === null) {
+            if (!this.isAirborne()) {
+                this.pos.y = fr(this.pos.y + 10);
+                this.onLiveFlag(LF.AIRBORNE);
+                this.vel.set(0, 2, 0);
+                this.spine!.pushNerve(SmallEnemyNerves.hitWaterJump);
+            }
+        } else if (!this.mPrev.unk230) {
+            this.unk230 = true;
+            this.unk210 = 1;
+            // (MSD_SE_EN_DANGOKURI_TURN)
+        }
+    }
+    swingBody() {
+        if (this.unk20C > 1) this.unk20C = fr(this.unk20C - 1);
+        this.unk20C = fr(this.unk20C + fr(0.01));
+        let k = 10;
+        const boss = this.mBoss!;
+        if (boss.isNowAttack()) {
+            if (DangoHamuKuri.mAttackSw) {
+                if (this.mPrev !== null) {
+                    if (this.mPrev === boss) { this.rot.set(boss.rot); this.unk210 = fr(this.unk210 + 10); }
+                    if (this.mPrev.mPrev === boss) {
+                        this.unk218 = fr(this.unk218 + 1000);
+                        this.unk214 = fr(fr(JMASSin(s16(this.unk218)) * 30) + 90);
+                    }
+                }
+                // (else if (mPrev && mPrev->mPrev == mBoss) unk214 = 0: unreachable)
+            }
+            k = 16;
+        }
+        this.unk21C = fr(k * MsCos(fr(this.unk20C * 360)));
+        this.unk224 = fr(k * MsSin(fr(this.unk20C * 360)));
+    }
+}
+
+export class BossDangoHamuKuri extends DangoHamuKuri {
+    /** unk238: bodies stacked so far */
+    unk238 = 0;
+    get unk23C(): any { return this.getSaveParam(); }
+    constructor(w: World, name = 'ボスだんごハムクリ') { super(w, name); }
+    init(m: any) {
+        super.init(m);
+        this.spine!.initWith(WalkerNerves.generate);
+        this.mBoss = this;
+    }
+    perform(cue: number) { HamuKuri.prototype.perform.call(this, cue); }
+    reset() {
+        super.reset();
+        this.mBoss = this;
+        this.unk238 = 0;
+    }
+    changeByJuice() { return false; }
+    isFindMario(_k: number) { return false; }
+    isDead() { const c = this.spine!.current; return c === SmallEnemyNerves.die || c === HamuNerves.wallDie; }
+    setGenerateAnm() {
+        this.setBckAnm(BCK_SET);
+        const n = this.unk23C.mSLNumArray;
+        for (let i = 0; i < n; ++i) this.generateBody();
+    }
+    moveObject() { super.moveObject(); }
+    genEventCoin() {
+        if (!this.coin) return;
+        const c = this.world.makeCoinAppear(this.coin);
+        if (c) { c.pos.set(this.pos); c.vel.set(0, 20, 0); c.offLiveFlag(LF.UNK10); --this.unk18C; }
+    }
+    /** generateBody: one more だんごハムクリ on top of the stack */
+    generateBody() {
+        const num = this.unk23C.mSLNumArray;
+        if (this.unk238 >= num) return;
+        const h = this.world.conductor.makeOneEnemyAppear(this.pos, 'だんごハムクリマネージャー', 0) as DangoHamuKuri | null;
+        let cur: DangoHamuKuri = this;
+        if (!h) return;
+        h.reset();
+        h.spine!.reset();
+        h.spine!.setNext(DangoNerves.wait);
+        h.pos.set(0, 0, 0);
+        h.tracer.graph = this.tracer.graph;
+        ++this.unk238;
+        for (let i = 0; i < num; ++i) {
+            if (!cur.mNext) {
+                cur.mNext = h;
+                h.mPrev = cur;
+                if (h.receiveMessage(cur, MSG.TAKE)) cur.held = h;
+                h.mBoss = this;
+                break;
+            }
+            cur = cur.mNext;
+        }
+        h.offHitFilter(HF.NO_COLLISION);
+    }
+    isNowAttack() { return this.spine!.current === WalkerNerves.attack; }
+    isNowGenerate() { return this.spine!.current === WalkerNerves.generate; }
+}
+
+type DGS = Spine<DangoHamuKuri>;
+export const DangoNerves: Record<string, any> = {};
+/** TNerveDangoHamuKuriWait: its wait animation from a random frame (set on its first two ticks) */
+DangoNerves.wait = nerve<DangoHamuKuri>('TNerveDangoHamuKuriWait', (spine: DGS) => {
+    const self = spine.body;
+    if (spine.time < 2) {
+        self.setWaitAnm();
+        const v = rangeRand(0, 30);
+        const fc = self.mactor ? self.mactor.getFrameCtrl(ANM_BCK) : null;
+        if (fc) fc.frame = v;
+    }
+    return false;
+});
+DangoNerves.attack = nerve<DangoHamuKuri>('TNerveDangoHamuKuriAttack', () => false);
+
+// ---------------------------------------------------------------- TFireHamuKuri
+// ヤキグリ (the burning Goomba of the volcano): a ハムクリ on fire (unk210) — it burns Mario
+// (HIT_MESSAGE_BURN) and can't be stomped; spraying pushes it away and takes its hit points, at 0
+// the fire goes out (dieFire) and it's a plain ハムクリ for mSLRecoverTimer ticks, then it
+// relights (TNerveFireHamuKuriRecover). unk218 eases its colours over 30 ticks.
+// Not here: the fire particles, the colours themselves (TEV registers: drawing), sounds; the lava
+// texture (H_ma_rak.bti).
+
+export class FireHamuKuriManager extends HamuKuriManager {
+    constructor(w: World, name = 'ヤキグリマネージャー') { super(w, name); }
+    load(s: Stream) {
+        this.saveParams = walkerParams('/enemy/firehamukuri.prm', this.world.files, { ...HAMU_PARAMS, mSLRecoverTimer: ['i', 500] } satisfies PSchema);
+        SmallEnemyManager.prototype.load.call(this, s);
+    }
+    createModelData() { this.createModelDataArray(['default.bmd']); }
+    createEnemyInstance() { return new FireHamuKuri(this.world); }
+    /** initSetEnemies: their TEV colour packets (drawing) */
+    initSetEnemies() { }
+}
+
+export class FireHamuKuri extends HamuKuri {
+    get unk20C(): any { return this.getSaveParam(); }
+    /** unk210: on fire */
+    unk210 = false;
+    /** unk214: ticks since the fire went out (0: burning) */
+    unk214 = 0;
+    /** unk218: the colour fade (0: burning .. 30: out) */
+    unk218 = 0;
+    constructor(w: World, name = 'ヤキグリ') { super(w, name); }
+    init(m: any) {
+        super.init(m);
+        this.spine!.initWith(WalkerNerves.generate);
+        this.actorType = AT.FIRE_HAMU_KURI;
+    }
+    behaveToWater(a: HitActor) {
+        if (this.unk210) {
+            const d = new V3(fr(this.pos.x - this.world.mario.pos.x), 0, fr(this.pos.z - this.world.mario.pos.z));
+            if (d.x === 0 && d.y === 0 && d.z === 0) d.x += 1;
+            d.normalize().scale(8).fround();
+            this.vel.set(d);
+            this.onLiveFlag(LF.AIRBORNE);
+            this.pos.y = fr(this.pos.y + 5);
+            if (this.hitPoints === 0) this.dieFire();
+            this.sprayCooldown = 20;
+            return;
+        }
+        super.behaveToWater(a);
+    }
+    reset() { super.reset(); this.recoverFire(); }
+    setMActorAndKeeper() { this.mactor = this.createMActorByName('default.bmd'); }
+    moveObject() { super.moveObject(); this.changeTevColor(); }
+    walkBehavior(kind: number, k: number) {
+        if (!this.isBckAnm(BCK_KYORO)) WalkerEnemy.prototype.walkBehavior.call(this, kind, k);
+        const t = this.unk20C.mSLRecoverTimer;
+        if (this.unk214 > 0) this.unk214 += 1;
+        if (this.unk214 === 0 && !this.unk210) this.unk210 = true;
+        if (this.unk214 > t) {
+            this.spine!.reset(); this.spine!.setNext(WalkerNerves.graphWander); this.spine!.pushNerve(FireNerves.recover);
+            this.setBckAnm(BCK_WAIT);
+        }
+    }
+    isHitValid(m: number) {
+        if (m === MSG.UNKB) return true;
+        if (this.unk210) return false;
+        return super.isHitValid(m);
+    }
+    recoverFire() { this.resetHitPoints(); this.unk150 &= ~2; this.unk150 |= 1; this.unk214 = 0; this.unk210 = false; }
+    setWalkAnm() { this.setBckAnm(BCK_WALK); }
+    genFire() { }
+    dieFire() {
+        this.unk210 = false; this.unk1A2 = true;
+        this.unk150 |= 2; this.unk150 &= ~1;
+        this.unk214 = 1;
+        // (MSD_SE_EN_MOEKURI_COOL, PARTICLE_MS_MOE_FIRE_OFF)
+    }
+    sendAttackMsgToMario() { this.world.mario.receiveMessage(this, this.unk210 ? MSG.BURN : MSG.ATTACK); }
+    /** changeTevColor: only its fade counter (the colours are drawing) */
+    changeTevColor() {
+        if (!this.unk210) { if (this.unk218 < 30) this.unk218 += 1; }
+        else if (this.unk218 > 0) this.unk218 -= 1;   // (MSD_SE_EN_MOEKURI_FLAME)
+    }
+}
+
+type FS = Spine<FireHamuKuri>;
+export const FireNerves: Record<string, any> = {};
+FireNerves.recover = nerve<FireHamuKuri>('TNerveFireHamuKuriRecover', (spine: FS) => {
+    const self = spine.body;
+    if (self.checkCurAnmEnd(ANM_BCK)) {
+        if (self.isBckAnm(BCK_RETURN)) { self.recoverFire(); return true; }
+        self.setBckAnm(BCK_RETURN);
+    }
+    return false;
+});
+
+// ---------------------------------------------------------------- TDoroHamuKuri
+// どろハムクリ (/scene/dorokuri): a ハムクリ that knocks Mario's cap off when it hits him
+// (selectCapHolder): a clipped-out one of them (or itself) takes it and jumps off with it
+// (makeCapFly); the others then go for it (TNerveDoroHamuKuriRobCap) and, jumping on the holder,
+// take it over (isCollidMove). It drops the cap where it dies (releaseCap / setAfterDeadEffect).
+// Not here: the moustache that shows the cap (TDoroHige, a TSharedParts: drawing), the particle
+// and rumble.
+
+export class DoroHamuKuriManager extends HamuKuriManager {
+    constructor(w: World, name = 'どろハムクリマネージャー') { super(w, name); }
+    load(s: Stream) {
+        this.saveParams = walkerParams('/enemy/dorohamukuri.prm', this.world.files, HAMU_PARAMS);
+        SmallEnemyManager.prototype.load.call(this, s);
+    }
+    loadAfter() {
+        super.loadAfter();
+        newAndRegisterObj(this.world, 'mario_cap');
+    }
+    createModelData() { this.createModelDataArray(['dorokuri_model.bmd']); }
+    createEnemyInstance() { return new DoroHamuKuri(this.world); }
+}
+
+export class DoroHamuKuri extends HamuKuri {
+    constructor(w: World, name = 'どろハムクリ') { super(w, name); }
+    init(m: any) {
+        super.init(m);
+        this.actorType = AT.DORO_HAMU_KURI;
+        this.spine!.initWith(WalkerNerves.generate);
+        // (instance 0: TDoroHamuKuriManager::createHige, the moustache: drawing)
+    }
+    reset() { super.reset(); this.spine!.initWith(WalkerNerves.generate); }
+    setMActorAndKeeper() { this.mactor = this.createMActorByName('dorokuri_model.bmd'); }
+    onHaveCap() { this.unk198 = true; this.hmgr.unk70 = this; }
+    attackToMario() {
+        if (this.spine!.current === HamuNerves.jitabata) {
+            if (this.pos.y + 10 > this.world.mario.pos.y) this.forceRoll(this.world.mario.pos.clone(), false);
+        } else selectCapHolder(this);
+    }
+    /** THamuKuri::releaseCap: the cap is put down where it stands, dead (setAfterDeadEffect brings it back) */
+    releaseCap() {
+        const h = this.held as LiveActor | null;
+        if (h && h.receiveMessage(this, MSG.PUT)) {
+            h.holder = null;
+            h.offLiveFlag(LF.HIDDEN);
+            h.pos.set(this.pos); h.pos.y = this.groundHeight;
+            h.offHitFilter(HF.NO_COLLISION);
+            (h as any).makeObjDead();
+            this.held = null;
+        }
+    }
+    /** THamuKuri::setAfterDeadEffect: with the cap, it appears on the ground there */
+    setAfterDeadEffect() {
+        if (this.unk198) {
+            const im = itemManager(this.world);
+            const obj = im ? im.makeObjAppearAt(this.pos.x, this.pos.y, this.pos.z, AT.MARIO_CAP, true) : null;
+            if (obj) this.unk200.set(this.pos.x, this.groundHeight, this.pos.z);
+            this.unk198 = false;
+            this.hmgr.unk70 = null;
+        }
+        this.world.effect(this.isBckAnm(BCK_CRASH) ? 'enemyDisappearW' : 'enemyDisappear', this.pos, this.scale);
+    }
+    setBehavior() {
+        const man = this.hmgr;
+        if (!this.unk198 && man.unk70) {
+            if (this.spine!.current === WalkerNerves.graphWander && !this.isAirborne()) {
+                this.spine!.pushNerve(DoroNerves.robCap);
+                this.unk1F8 = man.unk70;
+            }
+        } else super.setBehavior();
+    }
+    isCollidMove(a: HitActor): boolean {
+        if (this.unk198) return false;
+        if (a.isActorType(AT.DORO_HAMU_KURI)) {
+            const o = a as DoroHamuKuri;
+            if (o.unk198 && !o.isAirborne()) {
+                o.vel.set(0, 3, 0);
+                o.pos.y = fr(o.pos.y + 2);
+                o.onLiveFlag(LF.AIRBORNE);
+                if (!this.isAirborne()) {
+                    this.vel.set(this.calcVelocityToJumpToY(o.pos.clone(), 6, this.getGravityY()));
+                    this.pos.y = fr(this.pos.y + 2);
+                    this.onLiveFlag(LF.AIRBORNE);
+                }
+                if (!this.unk198 && this.isAirborne() && this.pos.y > o.pos.y + 10) {
+                    const cap = o.held as LiveActor | null;
+                    if (cap === null) { o.unk198 = false; o.held = null; return true; }
+                    if (cap.receiveMessage(o, MSG.PUT)) {
+                        cap.pos.set(o.pos);
+                        if (cap.receiveMessage(this, MSG.TAKE)) {
+                            o.unk198 = false; o.held = null;
+                            this.onHaveCap();
+                            this.held = cap as TakeActor;
+                            const t = o.tracer;
+                            let prev = -1, cur = t.cur;
+                            const count = rangeI(2, 3);
+                            for (let i = 0; i < count; ++i) { const next = t.graph!.getRandomNextIndex(cur, prev, -1); prev = cur; cur = next; }
+                            const goal = t.graph!.point(cur).clone();
+                            const v = this.calcVelocityToJumpToY(goal, mCapSpeed, this.getGravityY());
+                            this.onLiveFlag(LF.AIRBORNE);
+                            this.vel.set(v);
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+        return super.isCollidMove(a);
+    }
+}
+
+type DRS = Spine<DoroHamuKuri>;
+/** TNerveDoroHamuKuriRobCap: go for the one with the cap, until another has it */
+DoroNerves.robCap = nerve<DoroHamuKuri>('TNerveDoroHamuKuriRobCap', (spine: DRS) => {
+    const self = spine.body, man = self.hmgr;
+    if (spine.time === 0 || self.unk1F8 === null) {
+        self.unk1F8 = man.unk70;
+        self.setRunAnm();
+        self.setGoalPath(new PathNode(man.unk70));
+    } else if (self.unk1F8 !== man.unk70) {
+        self.setGoalPath(new PathNode(self.world.mario));
+        return true;
+    }
+    self.walkBehavior(0, 2.5);
+    return false;
+});
+
+register('DangoHamuKuriManager', (w, n) => new DangoHamuKuriManager(w, n));
+register('BossDangoHamuKuriManager', (w, n) => new BossDangoHamuKuriManager(w, n));
+register('BossDangoHamuKuri', (w, n) => new BossDangoHamuKuri(w, n));
+register('FireHamuKuriManager', (w, n) => new FireHamuKuriManager(w, n));
+register('FireHamuKuri', (w, n) => new FireHamuKuri(w, n));
+register('DoroHamuKuriManager', (w, n) => new DoroHamuKuriManager(w, n));
+register('DoroHamuKuri', (w, n) => new DoroHamuKuri(w, n));
 export type { LiveManager };
