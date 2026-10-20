@@ -5702,7 +5702,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
       const L = livePad.last, want = livePad.on && (livePad.rec || !!L) ? (livePad.rec ? 'rec' : L.url) : '';
       if (rl.dataset.k !== want) {
         rl.dataset.k = want; rl.textContent = '';
-        if (livePad.rec) rl.textContent = '· ● recording (F9 / Select stops)';
+        if (livePad.rec) { const gp = livePad.index >= 0 ? pads().find((x) => x.index === livePad.index) : null; rl.textContent = '· ● recording (F9 / ' + (gp && isGcAdapter(gp) ? 'Z' : 'Select') + ' stops)'; }
         else if (L) {
           const d = document.createElement('a'); d.href = L.url; d.download = L.name; d.textContent = 'download ghost';
           const l = document.createElement('a'); l.href = '#'; l.textContent = 'load it'; l.onclick = (ev) => { ev.preventDefault(); loadBuffers([[L.buf.slice(0), L.name]]); };
@@ -5769,7 +5769,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   let padSelectWas = false;
   function pollPadSelect() {
     const p = livePad.active && livePad.index >= 0 ? pads().find((x) => x.index === livePad.index) : null;
-    const down = !!(p && !isGcAdapter(p) && p.buttons[8] && p.buttons[8].pressed);
+    const b = p ? p.buttons[isGcAdapter(p) ? 7 : 8] : null, down = !!(b && b.pressed);   // (Z on a GameCube pad: it has no Select)
     if (down && !padSelectWas) setLiveRec(!livePad.rec);
     padSelectWas = down;
   }
@@ -8677,6 +8677,13 @@ void main() {
     }
     return out;
   }
+  // the live sim's voice lines between the last audio frame and t (as ghostMarioChanges, keyed on the history)
+  function liveMarioChanges(H, t) {
+    const t0 = voiceLast.g === H ? voiceLast.t : -1;
+    voiceLast = { g: H, t };
+    if (t0 < 0 || t <= t0 || t - t0 > 60) return [];
+    return H.voicesIn(t0, t).map((v) => ({ t: v.qf, voice: v.id, ifNoVoice: v.ifNoVoice, unlessId: v.unlessId, stop: v.stop }));
+  }
   // JALCalc::getRandom_0_1 for startMarioVoice: the ghost's RNG tape rolls at its call sites when
   // the tape has them (MSound::startMarioVoice, JP 0x8017CF44..0x8017D610), else Math.random
   const voiceRolls = new WeakMap();
@@ -8707,6 +8714,13 @@ void main() {
       if (!a.yoshi) f.mario = { x: s.x, y: s.y, z: s.z, anim: a.id, phase: a.phase / 4096 };
       f.marioChanges = ghostMarioChanges(g, d, t);
       f.marioVoice = { random: ghostVoiceRandom(d) };
+    } else if (liveHistory()) {
+      // live play: the live sim's Mario and his voice lines (TMario::startVoice), on the sim's own clock
+      const H = liveHistory(), q = H.last, s = H.sampleAt(q), a = H.animAt(q);
+      f.playing = true; f.speed = 1; f.t = q;
+      if (s && a) f.mario = { x: s.x, y: s.y, z: s.z, anim: a.id, phase: a.phase / 4096 };
+      f.marioChanges = liveMarioChanges(H, q);
+      f.marioVoice = { random: Math.random };
     }
     const st = gameLayer && gameLive && gameLayer.sim ? gameLayer.sim.stage : null;
     if (st && st.world) { f.events = st.world.events; f.eventsKey = st; f.tick = st.world.tickCount; }
