@@ -8,7 +8,7 @@
 
 import { mat4 } from 'gl-matrix';
 import { fr, V3, Mtx, mtx, MsSin, MsCos, MsRandF } from '../math.js';
-import { World, NameRef, Stream, HitActor, LiveActor, parseSceneBin, SceneNode, CUE_MOVE } from '../engine.js';
+import { World, NameRef, Stream, HitActor, LiveActor, parseSceneBin, SceneNode, CUE_MOVE, readParams } from '../engine.js';
 import { isPointInCube } from '../mapwire.js';
 import { Skeleton, jointMatrices } from '../skeleton.js';
 import type { BGCheckData } from '../collision.js';
@@ -250,6 +250,17 @@ export function marioSwimming(w: World) {
     const [h, d] = w.checkGround(m.pos.x, m.pos.y + 100, m.pos.z);
     return d.isWaterSurface() && m.pos.y < h - 20;
 }
+/** SMS_GetMarioThrowPower: Mario's mDeParams.mThrowPower (/Mario/Mario.prm; the proxy reads it too) */
+const THROW = new WeakMap<World, number>();
+export function marioThrowPower(w: World): number {
+    const m = M(w);
+    if (isTMario(m) && m.mDeParams) return m.mDeParams.mThrowPower;
+    let v = THROW.get(w);
+    if (v === undefined) { v = (readParams('/Mario/Mario.prm', w.files, { mThrowPower: ['f', 2] }) as any).mThrowPower as number; THROW.set(w, v); }
+    return v;
+}
+/** SMS_GetMarioAngleY: his mFaceAngle.y */
+export function marioAngleY(w: World): number { return (w.mario as any).faceAngle; }
 /** SMS_IsMarioStatusHipDrop */
 /** SMS_IsMarioStatusHipDrop: MARIO_STATUS_HIP_DROP (0x8008A9) */
 export function marioHipDropping(w: World) { const m = M(w); return isTMario(m) ? m.mStatus === 0x8008A9 : !!m.hipDrop; }

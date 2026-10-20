@@ -41,6 +41,7 @@ import './enemies/firewanwan.js';
 import './enemies/bosswanwan.js';
 import './enemies/egggen.js';
 import './enemies/gesso.js';
+import './enemies/mamegesso.js';
 import { mapObjWorldHooks } from './mapobj/index.js';
 import './player/emario.js';
 import { setMarioArchive } from './player/base.js';

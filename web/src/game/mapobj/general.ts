@@ -8,6 +8,7 @@ import { AT as AT_ } from '../actortypes.js';
 import type { WallCheck } from '../collision.js';
 import { MapObjBase, MOF, STATE_DEAD, STATE_NORMAL } from './base.js';
 import { register } from '../scene.js';
+import { marioThrowPower } from './lib.js';
 
 export const GS = {
     APPEARING: 0x2, BREAKING: 0x3, TOUCHING_PLAYER: 0x4, TOUCHING_WATER: 0x5, HOLDING: 0x6, SINKING: 0x7, BURIED: 0x8, RECOVERING: 0x9,
@@ -69,8 +70,7 @@ export class MapObjGeneral extends MapObjBase {
         this.groundHeight = h; this.groundPlane = d;
         this.unk138 = null;
         this.holder = null;
-        // TODO: SMS_GetMarioThrowPower isn't in the ghost; 1
-        const power = 1, a = m.faceAngle;
+        const power = marioThrowPower(this.world), a = m.faceAngle;
         this.vel.set(fr(power * (JMASSin(a) * this.phys(11)) + NORMAL_THROW_SPEED_RATE * m.vel.x), this.phys(12),
             fr(power * (JMASCos(a) * this.phys(11)) + NORMAL_THROW_SPEED_RATE * m.vel.z));
         this.offLiveFlag(LF.UNK10);
