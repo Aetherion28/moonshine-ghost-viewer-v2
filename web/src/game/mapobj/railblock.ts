@@ -168,9 +168,6 @@ export class RailBlock extends RailMapObj {
 }
 
 // ---------------------------------------------------------------- TRollBlock
-// TODO: the Ricco 4 secret's ghost lands on a rolling stick in sync only with the roll one frame (4
-// ticks) further on than this gives: either the game's objects start a frame before the ghost's
-// QF 0, or something here is a frame late. Not settled; left as the decomp has it.
 export class RollBlock extends MapObjBase {
     /** unk138 its roll (degrees), unk13C the roll per tick */
     unk138 = 0; unk13C = 0;
