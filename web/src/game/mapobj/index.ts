@@ -34,6 +34,8 @@ export * from './sirena.js';
 // Pinna Park's and Delfino Plaza's
 export * from './pinna.js';
 export * from './dolpic.js';
+// Gelato Beach's
+export * from './mamma.js';
 
 /**
  * The item hooks the enemies call through World (World.newAndRegisterCoin / makeCoinAppear /

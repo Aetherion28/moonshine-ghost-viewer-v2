@@ -1,4 +1,4 @@
-// Balls and fruit (MoveBG/MapObjBall.cpp's TMapObjBall and TResetFruit) and Yoshi's egg
+// Balls and fruit (MoveBG/MapObjBall.cpp's TMapObjBall, TResetFruit and Gelato's TBigWatermelon) and Yoshi's egg
 // (MoveBG/Item.cpp's TEggYoshi). A ball rolls (its root matrix turned by how far it rolled),
 // bounces off walls, ground and roofs, is bumped and kicked by Mario and knocked by enemies, can
 // be carried, and pushed by water. The "infinite" fruit: picked up, thrown or sprayed it starts
@@ -10,14 +10,14 @@
 // coins, see item.ts), so outside the egg event it is gone from the stage, as the game does then.
 // TODO: TYoshi isn't simulated: the hatch is told as a 'yoshiHatch' event.
 
-import { fr, V3, Mtx, mtx, MsRandF, matan, MsMtxSetXYZRPH } from '../math.js';
+import { fr, V3, Mtx, mtx, MsRandF, matan, MsMtxSetXYZRPH, sqDist } from '../math.js';
 import { World, Stream, HitActor, TakeActor, LF, HF, MSG, ANM_BCK, ANM_BTP, MActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import type { WallCheck } from '../collision.js';
-import { MapObjBase, MOF, STATE_DEAD, STATE_NORMAL, OBJ_MAKERS } from './base.js';
+import { MapObjBase, MapObjBaseManager, MOF, STATE_DEAD, STATE_NORMAL, OBJ_MAKERS, mapObjGlobals } from './base.js';
 import { MapObjGeneral, GS } from './general.js';
 import './item.js';
 import { MTXConcat, MTXRotAxisRad, setRootMtx, getWaterSpeed, getVerticalVecToTargetXZ, marioSpeedY, marioHeld } from './lib.js';
@@ -603,9 +603,145 @@ export class CoverFruit extends MapObjBase {
     loadAfter() { super.loadAfter(); if ((this.world as any).sirenaPipePineappleEaten) this.makeObjDead(); }
 }
 
+// ---------------------------------------------------------------- TBigWatermelon
+// Gelato Beach's watermelons ("WaterMelon": お化けスイカ; the big one is スイカ（大）, Shine 6's,
+// rolled to TGoalWatermelon in mamma.ts). It bursts (ten coins at most from each, a puff of
+// water) on falling in water, on falling onto something after a Pokey launched it, or when
+// Mario walks into its middle; a sand bomb base rising under it throws it up.
+// TODO: the burst's water (gpModelWaterManager->emitRequest of /watermelon.prm's TWaterEmitInfo) isn't simulated.
+export const BWS = { LAUNCHED: 0xB, LANDED: 0xC, GOAL: 0xD };
+/** SMS_GetSandRiseUpRatio: the sand's root matrix's Y scale, 0 to 1 */
+export function sandRiseUpRatio(a: any): number {
+    const m: Mtx | null = a && typeof a.rootMtx === 'function' ? a.rootMtx() : null;
+    let v = m ? m[5] : 0;
+    if (v > 1) v = 1; else if (v < 0) v = 0;
+    return v;
+}
+export class BigWatermelon extends MapObjBall {
+    unk19C = 0;
+    unk1A0 = 0;
+    constructor(w: World, name = 'お化けスイカ') { super(w, name); }
+    touchWaterSurface() {
+        this.emit('columWater');   // emitColumnWater
+        this.world.sound(SE.OBJ_DRINA_TO_WATER, this.pos);
+        this.kill();
+    }
+    rebound(p: V3) {
+        if (this.isState(BWS.LANDED)) { this.kill(); p.set(this.pos); }
+        else {
+            super.rebound(p);
+            if (this.isState(BWS.LAUNCHED)) this.state = BWS.LANDED;
+        }
+    }
+    touchActor(a: HitActor) {
+        if (this.isState(GS.APPEARING)) return;
+        if (!this.isState(STATE_NORMAL) && this.vel.y < 0) { this.kill(); return; }
+        if (a.isActorType(AT.MARIO) && fr(Math.sqrt(sqDist(this.pos, a.pos))) < fr(this.bodyRadius * 0.6)) { this.kill(); return; }
+        if (a.isActorType(AT.POI_HANA) && typeof (a as any).isMoving === 'function' && (a as any).isMoving()) {
+            if (!(Math.abs(Math.trunc(this.vel.y)) < this.ph(0xC))) return;   // abs(int)
+            this.vel.y = fr(this.vel.y + 30);
+            this.state = BWS.LAUNCHED;
+            return;
+        }
+        super.touchActor(a);
+    }
+    kill() {
+        this.emit('watermelon_bomb'); this.emit('watermelon_bomb_a'); this.emit('watermelon_bomb_b');
+        this.emit('watermelon_shrink_a'); this.emit('watermelon_shrink_b');
+        this.world.sound(SE.OBJ_WATERMELON_BLOCK, this.pos);
+        if (this.unk19C < 10) {
+            const im = mapObjGlobals(this.world).itemManager as MapObjBaseManager | null;
+            const o = im ? im.makeObjAppearAt(this.pos.x, this.pos.y, this.pos.z, AT.COIN, true) : null;
+            if (o) { o.vel.set(0, 25, 0); o.offLiveFlag(LF.UNK10); ++this.unk19C; }
+        }
+        super.kill();
+    }
+    appearing() {
+        super.appearing();
+        // calcRootMatrix(), getModel()->calc(), then the root's Y raised by the (scaled) radius
+        this.calcRootMatrix();
+        this.anmMtx0 = null;
+        const m = Float64Array.from(this.rootMtx());
+        m[7] = fr(fr(this.bodyRadius * fr(this.scale.y / this.initialScale.y)) + this.pos.y);
+        setRootMtx(this, m);
+        this.scaledBodyRadius = fr(this.scale.x * 50);
+        this.damageRadius = fr(this.scale.x * 50);
+        this.calcEntryRadius();
+        if (this.isState(STATE_NORMAL)) { this.actorType = AT.WATERMELON; this.attackRadius = fr(this.scale.x * 50); }
+        else { this.actorType = AT.WATERMELON_STATIC; this.attackRadius = 0; }
+        this.calcEntryRadius();
+    }
+    control() {
+        super.control();
+        switch (this.state) {
+            case STATE_NORMAL: {
+                if (this.checkLiveFlag(LF.UNK10)) this.offLiveFlag(LF.UNK10);
+                const g = this.groundPlane.actor as any;
+                if (this.pos.y < this.groundHeight + 200 && g && g.isActorType(AT.SAND_BOMB_BASE00)) {
+                    const prev = this.unk1A0;
+                    this.unk1A0 = sandRiseUpRatio(g);
+                    if (this.unk1A0 > 0.05 && this.unk1A0 > prev) this.vel.y = fr(this.vel.y + 20);
+                }
+                break;
+            }
+            case BWS.GOAL:
+                if (!this.isStateTimerEngaged()) {
+                    this.emit('watermelon_shrink_a'); this.emit('watermelon_shrink_b');
+                    this.stateTimer = 30;
+                }
+                if (this.animIsFinished()) this.makeObjDead();
+                break;
+        }
+    }
+    /** startEvent (EventWatcher's): the big one goes to the goal with its Shine's demo; any other one leaves ten coins at Mario */
+    startEvent() {
+        const w = this.world;
+        if (this.name === 'スイカ（大）') {
+            this.pos.set(-4660, 1300, 13600);
+            this.offMapObjFlag(MOF.NO_ANIMATIONS);
+            this.onLiveFlag(LF.UNK10);
+            this.vel.zero();
+            this.onLiveFlag(LF.UNK10);
+            this.startAnim(7);
+            w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name: 'スイカゴールカメラ', p: this.pos.clone() } });
+            const im = mapObjGlobals(w).itemManager as any;
+            if (im && im.makeShineAppearWithDemoOffset) im.makeShineAppearWithDemoOffset('シャイン（お化けスイカ用）', 'スイカシャインカメラ', 0, 0, 0);
+            this.stateTimer = 380;
+            this.state = BWS.GOAL;
+        } else {
+            const im = mapObjGlobals(w).itemManager as MapObjBaseManager | null;
+            for (let i = 0; i < 10; i++) {
+                const m = w.mario.pos;
+                const it = im ? im.makeObjAppearAt(m.x, m.y, m.z, AT.COIN, true) : null;
+                if (it) {
+                    const rz = fr(20 * fr(MsRandF() - 0.5));
+                    const ry = fr(fr(20 * MsRandF()) + 20);
+                    it.vel.x = fr(20 * fr(MsRandF() - 0.5));
+                    it.vel.y = ry;
+                    it.vel.z = rz;
+                    it.offLiveFlag(LF.UNK10);
+                    (it as any).unk14C = 960;
+                }
+            }
+            this.makeObjDead();
+        }
+    }
+    checkWallCollision(p: V3) { MapObjGeneral.prototype.checkWallCollision.call(this, p); }
+    receiveMessage(a: HitActor, msg: number): boolean {
+        if (a.isActorType(AT.MARIO)) { this.boundByActor(a); return true; }
+        return super.receiveMessage(a, msg);
+    }
+    loadAfter() {
+        MapObjGeneral.prototype.loadAfter.call(this);
+        const s = this.world.search('シャイン（お化けスイカ用）') as any;
+        if (s && s.pos) s.pos.set(-4659, 460, 13620);
+    }
+}
+
 register('CoverFruit', (w, n) => new CoverFruit(w, n));
 register('RandomFruit', (w, n) => new RandomFruit(w, n));
 register('Fruit', (w, n) => new ResetFruit(w, n));
 register('ResetFruit', (w, n) => new ResetFruit(w, n));
 register('EggYoshi', (w, n) => new EggYoshi(w, n));
+register('WaterMelon', (w, n) => new BigWatermelon(w, n));
 export type { Mtx };
