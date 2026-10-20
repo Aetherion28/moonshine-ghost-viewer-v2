@@ -10,7 +10,7 @@
 // coins, see item.ts), so outside the egg event it is gone from the stage, as the game does then.
 // TODO: TYoshi isn't simulated: the hatch is told as a 'yoshiHatch' event.
 
-import { fr, V3, Mtx, mtx, MsRandF, matan } from '../math.js';
+import { fr, V3, Mtx, mtx, MsRandF, matan, MsMtxSetXYZRPH } from '../math.js';
 import { World, Stream, HitActor, TakeActor, LF, HF, MSG, ANM_BCK, ANM_BTP, MActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -23,7 +23,7 @@ import './item.js';
 import { MTXConcat, MTXRotAxisRad, setRootMtx, getWaterSpeed, getVerticalVecToTargetXZ, marioSpeedY, marioHeld } from './lib.js';
 
 const ABS = Math.abs;
-const isHideObj = (a: HitActor) => [AT.HELP_ACTOR, AT.KOOPA_JR_SIGN_M, AT.CHIP_SHINE, AT.SIGN_CIRCLE, AT.SIGN_CROSS, AT.SIGN_TRIANGLE, AT.STAR_SIGN, AT.MAP_OBJ_TREE_SCALE]
+export const isHideObj = (a: HitActor) => [AT.HELP_ACTOR, AT.KOOPA_JR_SIGN_M, AT.CHIP_SHINE, AT.SIGN_CIRCLE, AT.SIGN_CROSS, AT.SIGN_TRIANGLE, AT.STAR_SIGN, AT.MAP_OBJ_TREE_SCALE]
     .some((t) => t !== undefined && a.isActorType(t));
 const marioVel = (w: World) => { const m = w.mario as any; return typeof m.mStatus === 'number' ? m.mVel : m.vel; };
 
@@ -578,6 +578,32 @@ export class RandomFruit extends ResetFruit {
         MapObjBall.prototype.initMapObj.call(this);   // (TMapObjBall's, not TResetFruit's)
     }
 }
+// ---------------------------------------------------------------- TCoverFruit
+/** TCoverFruit: the pineapple lid on Sirena's pipe; Yoshi's tongue takes it and eating it (UNKB) clears the pipe. */
+export class CoverFruit extends MapObjBase {
+    constructor(w: World, name = 'フタのフルーツ') { super(w, name); }
+    calcRootMatrix() {
+        const t = this.holder ? this.holder.getTakingMtx() : null;
+        if (t) {
+            this.baseTR.set(t);
+            this.pos.set(t[3], t[7], t[11]);
+        } else MsMtxSetXYZRPH(this.baseTR, this.pos.x, fr(this.pos.y - this.yOffset), this.pos.z, this.rot.x, this.rot.y, this.rot.z);
+        this.anmMtx0 = null;
+    }
+    receiveMessage(sender: HitActor, msg: number): boolean {
+        if (sender.isActorType(AT.YOSHI_TONGUE) && msg === MSG.TAKE) { this.onHitFilter(HF.NO_COLLISION); this.holder = sender as TakeActor; return true; }
+        if (msg === MSG.UNKB) {
+            this.kill();
+            // TFlagManager MSF_SIRENA_PIPE_PINEAPPLE_EATEN
+            (this.world as any).sirenaPipePineappleEaten = true;
+            return true;
+        }
+        return false;
+    }
+    loadAfter() { super.loadAfter(); if ((this.world as any).sirenaPipePineappleEaten) this.makeObjDead(); }
+}
+
+register('CoverFruit', (w, n) => new CoverFruit(w, n));
 register('RandomFruit', (w, n) => new RandomFruit(w, n));
 register('Fruit', (w, n) => new ResetFruit(w, n));
 register('ResetFruit', (w, n) => new ResetFruit(w, n));

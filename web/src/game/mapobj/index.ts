@@ -31,6 +31,9 @@ export * from './corona.js';
 export * from './bathtub.js';
 // Sirena Beach's and Hotel Delfino's
 export * from './sirena.js';
+// Pinna Park's and Delfino Plaza's
+export * from './pinna.js';
+export * from './dolpic.js';
 
 /**
  * The item hooks the enemies call through World (World.newAndRegisterCoin / makeCoinAppear /

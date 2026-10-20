@@ -7,6 +7,8 @@ import { fr, V3, mtx, MsClamp, MsMtxSetRotRPH } from '../math.js';
 import { World, Stream, HitActor, LF, HF, MSG } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 import { MapObjBase, STATE_NORMAL, mapObjGlobals } from './base.js';
 import { marioHipDropping } from './lib.js';
 import { Coin, Shine, ItemManager, newAndRegisterObjByEventID, itemCounts } from './item.js';
@@ -206,6 +208,72 @@ export class WaterRecoverObj extends MapObjBase {
     }
 }
 
+// ---------------------------------------------------------------- fruit baskets
+/** TFruitHitHideObj: a fruit thrown into it gives what it hides (and the fruit is gone) */
+export class FruitHitHideObj extends HideObjBase {
+    constructor(w: World, name = '水ヒットオブジェ') { super(w, name); }
+    touchActor(a: HitActor) { if (MapObjBase.isFruit(a)) this.touchFruit(a); }
+    touchFruit(a: HitActor) {
+        if (this.hidden) { this.appearObj(50); this.emitEffect(); this.makeObjDead(); }
+        (a as MapObjBase).kill();
+    }
+}
+/** TFruitBasket: a fruit landing in it (on it upright, under its side lying down) counts; with something hidden, it comes out */
+export class FruitBasket extends FruitHitHideObj {
+    /** the fruit it wants (an actor type; 0 any) */
+    unk150 = 0;
+    constructor(w: World, name = 'バスケット') { super(w, name); }
+    loadAfter() {
+        super.loadAfter();
+        if (this.rot.x !== 0) { this.attackRadius = 400; this.attackHeight = 200; this.calcEntryRadius(); }
+    }
+    touchFruit(a: HitActor) {
+        if (Math.abs(this.rot.x) < 45) {
+            if ((a as MapObjBase).groundPlane.actor !== this) return;
+        } else {
+            const [, d] = this.world.checkRoof(a.pos.x, a.pos.y, a.pos.z);
+            if (!d || d.actor !== this) return;
+        }
+        this.countFruit(a);
+    }
+    countFruit(a: HitActor) {
+        if (this.mactor) this.mactor.setBck('basket');
+        if (this.hidden) {
+            this.appearObj(0);
+            this.world.sound(SE.IT_SOCCER_GOAL, this.pos); this.world.sound(SE.FGM_SOCCER_GOAL);
+        } else if (this.unk150 === 0) this.world.sound(SE.OBJ_BASKET_BOUND, this.pos);
+        else if (a.isActorType(this.unk150)) { this.world.sound(SE.IT_SOCCER_GOAL, this.pos); this.world.sound(SE.FGM_SOCCER_GOAL); }
+        else this.world.sound(SE.SY_NOT_COLLECT);
+        (a as any).makeObjWaitingToAppear();
+    }
+}
+/** TFruitBasketEvent (Delfino Plaza's fruit lady's basket): counts the fruit by kind */
+export class FruitBasketEvent extends FruitBasket {
+    /** banana, durian, papaya, pine, coconut */
+    unk154 = [0, 0, 0, 0, 0];
+    constructor(w: World, name = 'バスケット（イベント用）') { super(w, name); }
+    countFruit(a: HitActor) {
+        super.countFruit(a);
+        switch (a.actorType) {
+            case AT.FRUIT_BANANA: this.unk154[0]++; break;
+            case AT.FRUIT_DURIAN: this.unk154[1]++; break;
+            case AT.FRUIT_PAPAYA: this.unk154[2]++; break;
+            case AT.FRUIT_PINE: this.unk154[3]++; break;
+            case AT.FRUIT_COCONUT: this.unk154[4]++; break;
+            case AT.RED_PEPPER: break;
+            default: return;
+        }
+        (a as any).makeObjWaitingToAppear();
+        // mColCount = 0: its collisions this frame dropped (TODO: TMapObjBase::control iterates a copy, so the rest of this frame's still touch)
+        this.collisions.length = 0;
+    }
+    getFruitNum(i: number) { return this.unk154[i]; }
+    reset() { for (let i = 0; i < 5; i++) this.unk154[i] = 0; }
+}
+
+register('FruitHitHideObj', (w, n) => new FruitHitHideObj(w, n));
+register('FruitBasket', (w, n) => new FruitBasket(w, n));
+register('FruitBasketEvent', (w, n) => new FruitBasketEvent(w, n));
 register('HideObj', (w, n) => new HideObjBase(w, n));
 register('HipDropHideObj', (w, n) => new HipDropHideObj(w, n));
 register('WaterHitHideObj', (w, n) => new WaterHitHideObj(w, n));

@@ -16,6 +16,8 @@ import { AT } from '../actortypes.js';
 import { MapObjBase, MOF, STATE_NORMAL, mapObjGlobals, getActorTypeByEventID } from './base.js';
 import type { Coin, ItemManager } from './item.js';
 import { MapObjGeneral } from './general.js';
+import { HideObjBase } from './hide.js';
+import { MsWrap } from '../math.js';
 import { ObjCollision, KIND_WARP } from './objcol.js';
 import { JMASCos, s16 } from '../math.js';
 import { marioHipDropping, marioSpeedY, marioGroundLevel, marioStatus, marioTouchGround4cm, marioHeld } from './lib.js';
@@ -301,6 +303,41 @@ export class Manhole extends MapObjGeneral {
     }
 }
 
+// ---------------------------------------------------------------- TMapObjBillboard
+/** TMapObjBillboard (Delfino Plaza's signboards): touched or sprayed it swings away (anim 1 or 2 by the side hit); sprayed, it throws out what it hides. */
+export class MapObjBillboard extends HideObjBase {
+    constructor(w: World, name = '看板') { super(w, name); }
+    swing(a: HitActor) {
+        const fc = this.mactor ? this.mactor.getFrameCtrl(ANM_BCK) : null;
+        if (this.animIsFinished() || !(fc && fc.frame < 33)) {
+            // getRotYFromAxisX: atan2f(dz, dx)
+            const tmp = fr(fr(57.295776) * fr(Math.atan2(fr(a.pos.z - this.pos.z), fr(a.pos.x - this.pos.x))));
+            const angle = MsWrap(fr(this.rot.y + tmp), 0, 360);
+            if (angle < 0 || 180 < angle) this.startAnim(2);
+            else this.startAnim(1);
+            this.world.sound(SE.OBJ_BILLBOARD_MOVE, this.pos);
+        }
+    }
+    touchActor(a: HitActor) { this.swing(a); }
+    touchWater(a: HitActor) {
+        this.swing(a);
+        if (this.hidden && this.allowReveal) {
+            const rot = this.rot.clone(), pos = this.pos.clone();
+            rot.y = fr(rot.y - 90);
+            pos.y = fr(pos.y + this.yOffset);
+            let o: MapObjBase | null = this.hidden;
+            if (o.isActorType(AT.COIN)) { const im = mapObjGlobals(this.world).itemManager as ItemManager | null; o = im ? im.makeObjAppear(AT.COIN) : null; }
+            if (o) {
+                MapObjBase.throwObjFromPointWithRot(o, pos, rot, this.appearSpeed, this.appearYSpeed);
+                this.emitEffect();
+                this.allowReveal = false;
+            }
+        }
+        return 1;
+    }
+}
+
+register('Billboard', (w, n) => new MapObjBillboard(w, n));
 register('Door', (w, n) => new Door(w, n));
 register('Manhole', (w, n) => new Manhole(w, n));
 register('RedCoinSwitch', (w, n) => new RedCoinSwitch(w, n));

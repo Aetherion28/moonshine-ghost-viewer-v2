@@ -19,8 +19,7 @@
 // Not here: the particles, the damage fog, rumble, the demo cameras (tyorocam_*), the mole's and
 // barrels' anm sounds, the Mario-in-the-cannon model (hodai_mario.bmd: unk238 is never set here),
 // TFlagManager's MSF_MONTY_MOLE_DEFEATED, and the director's STATE_UNK1 checks (taken as false).
-// The Bullet Bills (TKiller, Enemy/killer.cpp) aren't ported: killerShoot's area-5 branch is here
-// but finds no キラーマネージャー.
+// The Bullet Bills (killerShoot's area-5 branch) come from enemies/killer.ts's キラーマネージャー.
 
 import { fr, V3, Mtx, mtx, MsClamp, MsWrap, MsSin, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsMtxSetRotRPH, MsMtxSetXYZRPH, JMASSin, JMASCos, MsRandF, s16 } from '../math.js';
 import { World, Stream, HitActor, LiveActor, MActor, LF, HF, HC, MSG, ANM_BCK, ANM_BTK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, nerve, Spine, PathNode, PSchema, SpineEnemy, MoveCollision } from '../engine.js';
@@ -131,7 +130,6 @@ export class Chorobei extends HitActor {
             if (a.isActorType(AT.MARIO)) this.owner.world.mario.receiveMessage(this, MSG.ATTACK);
             if (a.isActorType(AT.BOMB_HEI)) this.owner.hitHead(a as BombHei);
             if (a.isActorType(AT.ENEMY_UNK1F)) {
-                // (TKiller isn't ported)
                 const k = a as any;
                 if (!(k.isRollFly && k.isRollFly())) continue;
                 this.owner.spine!.pushNerve(CannonNerves.damage);
@@ -417,7 +415,6 @@ export class Cannon extends SmallEnemy {
     killerShoot() {
         const C = this.world.conductor;
         if (this.unk239) {
-            // TODO: TKiller (Enemy/killer.cpp) isn't ported; this finds no manager unless it is.
             const k = C.makeOneEnemyAppear(this.pos, 'キラーマネージャー', 0) as any;
             if (!k) return;
             k.reset();

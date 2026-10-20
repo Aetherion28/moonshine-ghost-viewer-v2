@@ -11,20 +11,25 @@
 // THaneHamuKuri / THaneHamuKuri2 (はねハムクリ, the winged ones, /scene/hanekuri: below the launcher):
 // flying on a sine bob over the ground; see their own comment.
 //
-// Not here: the variants in the same file (ドロハネクリ, だんごハムクリ and the boss,
+// TDoroHaneKuri (ドロハネクリ, the goop-winged one of Pinna Park): a はねハムクリ that steals Mario's
+// cap; see its own comment.
+//
+// Not here: the variants in the same file (だんごハムクリ and the boss,
 // ヤキグリ, どろハムクリ — none in Bianco Hills) and the cap stealing only どろハムクリ does
 // (makeCapFly / selectCapHolder: Mario's cap isn't simulated); football chasing
 // (setSearchHamuKuri) needs the map objects' footballs, which aren't simulated either (no
 // footballs: the manager's list is empty, as in a stage without them).
 
 import { fr, V3, MsMtxSetRotRPH, mtx, mtxMultVec, Mtx, MsSin, MsClamp, MsGetRotFromZaxis } from '../math.js';
-import { World, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, HitActor, LiveActor, AnmData, LiveManager, CUE_MOVE, CUE_CALC_ANIM, ANM_BCK, PSchema } from '../engine.js';
+import { World, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, HitActor, LiveActor, AnmData, LiveManager, CUE_MOVE, CUE_CALC_ANIM, ANM_BCK, ANM_FRAME_RATE, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH } from './smallEnemy.js';
 import { WalkerEnemy, WalkerNerves, walkerParams } from './walker.js';
 import { Launcher, LauncherManager } from './launcher.js';
 import { resetSRTV } from './generator.js';
 import { register } from '../scene.js';
+import { newAndRegisterObj } from '../mapobj/base.js';
+import { isHideObj } from '../mapobj/fruit.js';
 
 /** THamuKuriSaveLoadParams */
 const HAMU_PARAMS = {
@@ -669,6 +674,106 @@ HaneNerves.doroHanePrepareAttack = nerve<HaneHamuKuri>('TNerveDoroHanePrepareAtt
 });
 void HANE_BCK_CRASH;
 
+// ---------------------------------------------------------------- TDoroHaneKuri
+// The goop-winged Goomba (ドロハネクリ, /scene/hanekuri's dorohane.bmd): a はねハムクリ that, hitting
+// Mario while he wears his cap, takes it (onHaveCap: unk198, its moustache TDoroHige then shows
+// the cap) and rises up to 800 over the ground with it (TNerveDoroHaneRise) — no longer chasing him
+// (isFindMario) — until it loses it (releaseCap, on dying). Sprayed it drops to the ground and
+// spins for 300 ticks (TNerveDoroHaneHitWater). Pushed by a map object while attacking, it is
+// thrown back 5 times its step.
+// Not here: the moustache / cap model (TDoroHige, a TSharedParts: drawing), the particle and the
+// attack sound. Mario's cap isn't simulated: he is taken as wearing it unless one of these holds it.
+
+export class DoroHaneKuriManager extends HaneHamuKuriManager {
+    constructor(w: World, name = 'ドロハネクリマネージャー') { super(w, name); }
+    load(s: Stream) {
+        this.saveParams = walkerParams('/enemy/dorohanekuri.prm', this.world.files, HANE_PARAMS);
+        SmallEnemyManager.prototype.load.call(this, s);
+    }
+    loadAfter() {
+        super.loadAfter();
+        newAndRegisterObj(this.world, 'mario_cap');
+    }
+    createModelData() { this.createModelDataArray(['dorohane.bmd']); }
+    createEnemyInstance() { return new DoroHaneKuri(this.world); }
+    /** (gpMarioOriginal->isWearingCap: the cap isn't simulated; worn unless one of these has it) */
+    isMarioWearingCap() { return !(this.objs as DoroHaneKuri[]).some((o) => o.unk198); }
+}
+
+export class DoroHaneKuri extends HaneHamuKuri {
+    constructor(w: World, name = 'ドロハネクリ') { super(w, name); this.unk1AC = 5; }
+    get unk238(): any { return this.getSaveParam(); }
+    init(m: any) {
+        super.init(m);
+        this.spine!.initWith(WalkerNerves.graphWander);
+        this.actorType = AT.DORO_HANE_KURI;
+        this.unk188 = 0;
+        // (instance 0: TDoroHaneKuriManager::createHige, the moustache model: drawing)
+    }
+    reset() {
+        this.unk18C = 5;
+        super.reset();
+        this.unk198 = false;
+        this.onLiveFlag(LF.FORCE_SHADOW);
+    }
+    attackToMario() {
+        const mgr = this.manager as DoroHaneKuriManager;
+        if (!mgr.isMarioWearingCap()) { this.world.mario.receiveMessage(this, MSG.ATTACK); return; }
+        if (this.world.mario.receiveMessage(this, MSG.ATTACK)) {
+            this.spine!.pushNerve(DoroNerves.rise);
+            this.unk198 = true;   // onHaveCap (and the moustache's owner)
+            // (unk200: joint unk1AC's place, for the particle)
+        }
+    }
+    setMActorAndKeeper() { this.mactor = this.createMActorByName('dorohane.bmd'); }
+    behaveToWater(_a: HitActor) {
+        this.unk21C = 1;
+        if (this.spine!.current !== DoroNerves.hitWater) this.spine!.pushNerve(DoroNerves.hitWater);
+    }
+    setBehavior() { if (this.spine!.current === SmallEnemyNerves.die) this.releaseCap(); }
+    isCollidMove(a: HitActor): boolean {
+        if (a.getHitCategory() === (HC.MAP_OBJECT | 0)) {
+            if (isHideObj(a)) return false;
+            if (this.spine!.current === WalkerNerves.attack) {
+                this.pos.x = fr(this.pos.x + fr(this.posDelta.x * -5));
+                this.pos.z = fr(this.pos.z + fr(this.posDelta.z * -5));
+            }
+        }
+        return true;
+    }
+}
+
+type DS = Spine<DoroHaneKuri>;
+export const DoroNerves: Record<string, any> = {};
+/** TNerveDoroHaneRise: up with the cap (to 800 over the ground), springing back into shape */
+DoroNerves.rise = nerve<DoroHaneKuri>('TNerveDoroHaneRise', (spine: DS) => {
+    const self = spine.body;
+    if (self.pos.y < fr(self.groundHeight + 800)) self.unk234 = fr(self.unk234 + MsClamp(fr(self.spine!.time * 0.01), fr(0.01), 5));
+    const bs = self.bodyScale;
+    self.scale.x = self.scale.z = MsClamp(fr(self.scale.x * 0.9), bs, fr(bs * 2));
+    self.scale.y = MsClamp(fr(self.scale.y * 1.3), 0, bs);
+    if (!self.unk198) { spine.pushAfterCurrent(WalkerNerves.graphWander); return true; }
+    self.rot.x = fr(self.rot.x * 0.9);
+    self.pos.y = fr(self.unk230 + self.unk234);
+    self.walkToCurPathNode(0, 2, 0);
+    return false;
+});
+/** TNerveDoroHaneHitWater: sprayed: down to the ground, spinning (its animation at 1.5 times) for 300 ticks */
+DoroNerves.hitWater = nerve<DoroHaneKuri>('TNerveDoroHaneHitWater', (spine: DS) => {
+    const self = spine.body;
+    if (spine.time === 0) {
+        self.setGoalPath(new PathNode(null, self.world.mario.pos.clone()));
+        self.mactor!.setFrameRate(fr(ANM_FRAME_RATE * 1.5), ANM_BCK);
+    }
+    if (self.pos.y > fr(self.groundHeight + 50)) self.unk234 = fr(self.unk234 - 4);
+    self.unk210 = 0; self.unk214 = 0; self.unk20C = 0;
+    self.unk230 = self.groundHeight;
+    if (spine.time > 300) { self.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK); return true; }
+    self.rot.y = fr(self.rot.y + 10);
+    if (!self.isBckAnm(4)) WalkerEnemy.prototype.walkBehavior.call(self, 0, 0.5);
+    return false;
+});
+
 register('HamuKuriManager', (w, n) => new HamuKuriManager(w, n));
 register('HamuKuri', (w, n) => new HamuKuri(w, n));
 register('HamukuriLauncher', (w, n) => new HamuKuriLauncher(w, n));
@@ -676,4 +781,6 @@ register('HamukuriLauncherManager', (w, n) => new HamuKuriLauncherManager(w, n))
 register('HaneHamuKuriManager', (w, n) => new HaneHamuKuriManager(w, n));
 register('HaneHamuKuri', (w, n) => new HaneHamuKuri(w, n));
 register('HaneHamuKuri2', (w, n) => new HaneHamuKuri2(w, n));
+register('DoroHaneKuriManager', (w, n) => new DoroHaneKuriManager(w, n));
+register('DoroHaneKuri', (w, n) => new DoroHaneKuri(w, n));
 export type { LiveManager };

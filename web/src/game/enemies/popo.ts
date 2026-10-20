@@ -32,7 +32,7 @@ const mTestBodyScale = 35, mBrkFlag = 1, mColOffsetY = 20, mColMinVal = 0.6, mLe
  * direction. (Not in the ghost: made from its FLUDD record's direction and emit offset, or
  * Mario's facing without one.)
  */
-function emitMtx(w: World): Mtx {
+export function emitMtx(w: World): Mtx {
     const m = w.mario, f = m.fludd;
     const yaw = f ? f.yaw : (m.rot.y * Math.PI) / 180, pitch = f ? f.pitch : 0;
     const cp = Math.cos(pitch);
@@ -48,7 +48,7 @@ function emitMtx(w: World): Mtx {
     return r;
 }
 /** mGamePad->mCompSPos[3] (R's analog pressure, 0..255): from the ghost's spray power (not recorded itself). */
-function pumpPressure(w: World) {
+export function pumpPressure(w: World) {
     const f = w.mario.fludd;
     if (!f || !f.spraying || f.nozzle !== 0 || !w.fludd) return 0;
     const N: any = w.fludd.nozzles[0];

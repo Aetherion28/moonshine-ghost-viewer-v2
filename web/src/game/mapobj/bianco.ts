@@ -642,6 +642,8 @@ register('BiaWatermillVertical', (w, n) => new BiancoWatermillVertical(w, n));
 register('MiniWindmill', (w, n) => new BiancoMiniWindmill(w, n));
 register('BiaBell', (w, n) => new BiancoBell(w, n));
 register('BellWatermill', (w, n) => new BellWatermill(w, n));
+// (MarNameRefGen_MapObj.cpp: Delfino Plaza's weathercock, a TMapObjTurn: its initMapObj sets the Y axis for DPT_WEATHERCOCK)
+register('DolWeathercock', (w, n) => new MapObjTurn(w, n));
 register('LeafBoat', (w, n) => new LeafBoat(w, n));
 register('LeafBoatRotten', (w, n) => new LeafBoatRotten(w, n));
 register('RiccoLog', (w, n) => new WoodLog(w, n));

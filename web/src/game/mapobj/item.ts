@@ -537,5 +537,6 @@ register('CoinRed', (w, n) => new CoinRed(w, n));
 register('CoinBlue', (w, n) => new CoinBlue(w, n));
 register('Shine', (w, n) => new Shine(w, n));
 register('NozzleBox', (w, n) => new NozzleBox(w, n));
+register('ItemNozzle', (w) => new ItemNozzle(w));
 register('ItemManager', (w, n) => new ItemManager(w, n));
 export { MsWrap };

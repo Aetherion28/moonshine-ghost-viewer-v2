@@ -8,13 +8,14 @@
 // Not here: particles (told as effects), the ice's effect texture matrix (calc: drawing only), rumble.
 
 import { fr, V3 } from '../math.js';
-import { World, HitActor, HF, MSG } from '../engine.js';
+import { World, HitActor, HF, MSG, LF } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { MapObjBase, STATE_NORMAL } from './base.js';
 import { HideObjBase } from './hide.js';
+import { BreakHideObj } from './monte.js';
 
 // ---------------------------------------------------------------- TSandBlock
 const SB = { RESTORING: 2, TOUCHED: 3, FALLING: 4, GONE: 5 };
@@ -123,6 +124,32 @@ export class BrickBlock extends HideObjBase {
     }
 }
 
+// ---------------------------------------------------------------- TSuperHipDropBlock
+/** TSuperHipDropBlock: a TBreakHideObj broken only by a super hip drop (Delfino Plaza's pipe slab to Pianta Village: モンテゲートブロック). */
+export class SuperHipDropBlock extends BreakHideObj {
+    mMonteBlockBroken = false;
+    constructor(w: World, name = 'スーパーヒップドロップブロック') { super(w, name); }
+    receiveMessage(_sender: HitActor, msg: number) {
+        if (msg === MSG.SUPER_HIP_DROP) {
+            this.kill();
+            // TFlagManager MSF_PIANTA_PIPE_SLAB_DESTROYED
+            if (this.mMonteBlockBroken) (this.world as any).piantaPipeSlabDestroyed = true;
+            this.world.sound(SE.OBJ_SUPERBLOCK_BREAK, this.pos);
+            return true;
+        }
+        return false;
+    }
+    loadAfter() {
+        super.loadAfter();
+        if (this.name === 'モンテゲートブロック') {
+            this.mMonteBlockBroken = true;
+            if ((this.world as any).piantaPipeSlabDestroyed) this.makeObjDead();
+            this.onLiveFlag(LF.UNK8);
+        }
+    }
+}
+
+register('SuperHipDropBlock', (w, n) => new SuperHipDropBlock(w, n));
 register('SandBlock', (w, n) => new SandBlock(w, n));
 register('IceBlock', (w, n) => new IceBlock(w, n));
 register('BrickBlock', (w, n) => new BrickBlock(w, n));
