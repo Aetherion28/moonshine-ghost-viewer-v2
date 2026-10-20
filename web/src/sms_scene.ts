@@ -1,5 +1,6 @@
 // From noclip.website src/j3d/sms_scenes.ts (MIT, see noclip/LICENSE), trimmed for this viewer.
 
+import { CopyFilter } from './copyfilter.js';
 import * as Yaz0 from '../noclip/Common/Compression/Yaz0.js';
 import * as RARC from '../noclip/Common/JSYSTEM/JKRArchive.js';
 import * as Viewer from '../noclip/viewer.js';
@@ -513,6 +514,10 @@ export class SunshineRenderer implements Viewer.SceneGfx {
     /** Called before the models are prepared each frame (the viewer poses its ghosts there). */
     public beforePrepare: ((viewerInput: Viewer.ViewerRenderInput) => void) | null = null;
 
+    private copyFilter: CopyFilter | null = null;
+    /** The interlaced picture's vertical copy filter (off: the progressive-scan picture). */
+    public copyFilterOn = true;
+
     constructor(device: GfxDevice, public rarc: RARC.JKRArchive) {
         this.renderHelper = new GXRenderHelperGfx(device);
     }
@@ -609,6 +614,10 @@ export class SunshineRenderer implements Viewer.SceneGfx {
         }
 
         this.renderHelper.antialiasingSupport.pushPasses(builder, viewerInput, mainColorTargetID);
+        // the game's vertical copy filter on the way to the frame buffer (copyfilter.ts)
+        if (this.copyFilter === null) this.copyFilter = new CopyFilter(this.renderHelper.renderCache);
+        this.copyFilter.enabled = this.copyFilterOn;
+        this.copyFilter.pushPasses(builder, this.renderHelper, mainColorTargetID);
         builder.resolveRenderTargetToExternalTexture(mainColorTargetID, viewerInput.onscreenTexture);
 
         this.renderHelper.prepareToRender();
