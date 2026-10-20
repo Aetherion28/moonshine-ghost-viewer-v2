@@ -137,6 +137,20 @@ export function msVecNormalize(v: Vec, out: Vec) {
     out.x = fr(v.x * e); out.y = fr(v.y * e); out.z = fr(v.z * e);
     return out;
 }
+/**
+ * PSVECNormalize (the SDK's): the frsqrte estimate with one Newton step in singles
+ * (0.5 * e * (3 - s * e * e)), zero in: NaN out as on the Gekko.
+ */
+export function psVecNormalize(v: Vec, out: Vec) {
+    const xx = fr(v.x * v.x), yy = fr(v.y * v.y);
+    const s = fr(fr(v.z * v.z + xx) + yy);
+    const e = frsqrte(s);
+    const n0 = fr(e * force25(e)), n1 = fr(e * 0.5);
+    const n2 = fr(3 - n0 * s);
+    const r = fr(n2 * n1);
+    out.x = fr(v.x * r); out.y = fr(v.y * r); out.z = fr(v.z * r);
+    return out;
+}
 const f64 = new Float64Array(1), i64 = new BigUint64Array(f64.buffer);
 /** Dolphin's Force25Bit: the multiplier's mantissa rounded to 24 fraction bits */
 export function force25(d: number) { f64[0] = d; const b = i64[0]; i64[0] = (b & 0xFFFFFFFFF8000000n) + (b & 0x8000000n); return f64[0]; }
