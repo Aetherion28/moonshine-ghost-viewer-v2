@@ -20,6 +20,7 @@ export * from './fruit.js';
 // Pianta Village's
 export * from './monte.js';
 export * from './railblock.js';
+export * from './ex.js';
 export * from './item2.js';
 export * from './barrel.js';
 export * from './ricco.js';

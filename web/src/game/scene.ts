@@ -54,6 +54,7 @@ export class Stage {
         const w = this.world;
         w.files = files;
         w.map = map; w.stage = stage;
+        w.exShineGot = !!(intro && intro.exShineGot);
         w.groups = GROUP_NAMES.map(() => []);
         // the map's collision (TMap: the grid size from the scene's Map object, filled from map.col)
         const sb = files.scene('map/scene.bin');

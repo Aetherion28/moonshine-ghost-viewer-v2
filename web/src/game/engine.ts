@@ -7,6 +7,8 @@
 // animations once at the end). Drawing is the viewer's: this only works out where everything is,
 // which animation it plays at which frame, and what's visible.
 
+import { SplineRail } from './spline.js';
+import { psVecMag } from './camera/lib.js';
 import { rngCtx, fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsIsInSight, matan, MsRandF, sqDist, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, SMSCalcJumpVelocityY } from './math.js';
 import type { MarioProxy } from './mario.js';
 import type { PlayerMario } from './player/player.js';
@@ -494,6 +496,11 @@ export class Spine<T = any> {
 }
 
 // ---------------------------------------------------------------- the world (globals the game code reaches)
+/** SMS_getShineIDofExStage (System/StageUtil.cpp): the Shine of a secret stage (areas 0x15..0x34), else 0xFF */
+const EX_SHINE = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x37, 0x14, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF, 0x2B, 0x23, 0x40, 0xFF, 0xFF, 0xFF, 0x05, 0x02, 0x0D, 0xFF, 0x1F, 0x29, 0xFF];
+export function shineIDofExStage(area: number) { return area <= 0x14 || area >= 0x35 ? 0xFF : EX_SHINE[area - 0x15]; }
+
 export class World {
     col!: MapCollision;
     files!: Files;
@@ -516,6 +523,8 @@ export class World {
     moveTickCount = 0; tickCount = 0;
     /** TMarDirector state the game code asks about. */
     map = 0; stage = 0;
+    /** TFlagManager's Shine flag of this secret stage's Shine (SMS_getShineIDofExStage): got before the run */
+    exShineGot = false;
     demoMode = false; talkMode = false;
     /** Per-frame hooks: things the viewer wants told (an enemy's coin, a Shine). */
     events: { t: number; kind: string; data: any }[] = [];
@@ -754,15 +763,26 @@ export class GraphWeb {
     goalIdx = -1;
     unk4: number[] = []; unk8: number[] = [];
     dummy: boolean;
+    /** unk14: the spline a graph named "S_..." is followed along (TSplineRail) */
+    spline: SplineRail | null = null;
     constructor(rail: RailNode[], public name: string) {
         this.dummy = rail.length === 0;
         if (this.dummy) rail = [{ x: 0, y: 0, z: 0, conns: [1], flags: 0, pitch: 0, yaw: 0, roll: 0, speed: 0, periods: [1] }, { x: 0, y: 0, z: 0, conns: [0], flags: 0, pitch: 0, yaw: 0, roll: 0, speed: 0, periods: [1] }];
         this.nodes = rail.map((n) => ({ ...n, conns: n.conns.slice(), periods: n.periods.slice() }));
         this.translateNodes();
+        if (name.startsWith('S_') && !this.dummy) this.spline = new SplineRail(this);
     }
     get count() { return this.nodes.length; }
     isDummy() { return this.dummy; }
     point(i: number) { const n = this.nodes[i]; return new V3(n.x, n.y, n.z); }
+    /** the first node's two connections include the last and the last's the first (the rail loops) */
+    startIsEnd() {
+        const N = this.nodes, n = N.length, c0 = N[0].conns, c1 = N[n - 1].conns;
+        // (the game reads the first two connection slots whatever the count; an unused slot holds 0)
+        if (c0.length > 2 || ((c0[0] ?? 0) !== n - 1 && (c0[1] ?? 0) !== n - 1)) return false;
+        if (c1.length > 2 || ((c1[0] ?? 0) !== 0 && (c1[1] ?? 0) !== 0)) return false;
+        return true;
+    }
     checkFlag(i: number, f: number) { return (this.nodes[i].flags & f) !== 0; }
     private translateNodes() {
         const N = this.nodes;
@@ -889,6 +909,7 @@ export class GraphWeb {
 }
 
 export class GraphTracer {
+    /** unk14: where along the spline rail it is (its t) */
     graph: GraphWeb | null = null; cur = -1; prev = -1; unkC = 100; unk10 = 1; unk14 = 0;
     init(g: GraphWeb) { this.graph = g; }
     reset() { this.prev = -1; }
@@ -900,6 +921,31 @@ export class GraphTracer {
     setTo(i: number) { this.prev = -1; this.cur = i; this.setParamFromGraph(); }
     moveTo(i: number) { if (i < 0) return i; this.prev = this.cur; this.cur = i; this.setParamFromGraph(); return i; }
     current() { return this.graph!.point(this.cur); }
+    /** a speed in units along the chord from the previous node to the current, as a step of t */
+    calcSplineSpeed(sp: number) {
+        const g = this.graph!, S = g.spline;
+        if (!S || this.prev < 0) return fr(0.001);
+        const n = g.count, d = V3.sub(g.point(this.cur), g.point(this.prev));
+        const l = psVecMag(d);
+        let t1: number, t2: number;
+        if (S.closed && this.prev === n - 1 && this.cur === 0) { t1 = S.getNthT(0); t2 = S.getNthT(1); }
+        else if (S.closed && this.prev === 0 && this.cur === n - 1) { t1 = S.getNthT(n + 1); t2 = S.getNthT(n); }
+        else { t1 = S.getNthT(S.closed ? this.prev + 1 : this.prev); t2 = S.getNthT(S.closed ? this.cur + 1 : this.cur); }
+        return fr(fr(sp * fr(t2 - t1)) / l);
+    }
+    /** t moves on by dt (wrapped on a loop); true when it passes the current node's t */
+    traceSpline(dt: number) {
+        const g = this.graph!, S = g.spline;
+        if (!S) return false;
+        const n = g.count, t0 = this.unk14, t9 = fr(t0 + dt);
+        let t10: number;
+        if (S.closed && this.prev === n - 1 && this.cur === 0) t10 = S.getNthT(n + 1);
+        else if (S.closed && this.prev === 0 && this.cur === n - 1) t10 = S.getNthT(this.prev);
+        else t10 = S.getNthT(S.closed ? this.cur + 1 : this.cur);
+        const result = (dt >= 0 && t0 <= t10 && t10 <= t9) || (dt < 0 && t9 <= t10 && t10 <= t0);
+        this.unk14 = S.wrapT(t9);
+        return result;
+    }
 }
 
 /** TPathNode: a fixed point, or an actor (its position at the time asked). */
