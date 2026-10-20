@@ -18,6 +18,7 @@ import { Water, Fludd } from './water.js';
 import { Pollution } from './pollution.js';
 import { CHARAS } from './charas.js';
 import { installMapWires } from './mapwire.js';
+import { installEventWatchers } from './eventwatcher.js';
 
 /** A class the game makes from scene.bin (TMarNameRefGen::getNameRef_*), by its name there. */
 export type Maker = (w: World, name: string) => NameRef;
@@ -93,6 +94,8 @@ export class Stage {
             if (troot) find(troot);
         }
         this.walk(root, false);
+        // the event group: a TEventWatcher per .sb of /common/sp and map/sp (eventwatcher.ts)
+        installEventWatchers(w, files);
         for (const o of this.objects) o.loadAfter();
         for (const gw of w.graphs.values()) { gw.initGoalIndex(new V3()); gw.attachToGround(w); }
         w.conductor.init();
@@ -200,6 +203,8 @@ export class Stage {
                 this.emitWater(m);
             }
             if (w.water) w.water.move();
+            // (sky, mirror model) the event group: the stage's scripts
+            if (w.eventGroup) w.eventGroup.perform(CUE_MOVE);
             if (last) {
                 // PerformList CalcAnim
                 this.clip();
@@ -209,6 +214,8 @@ export class Stage {
         }
         // the frame's drawing: the goop's stamps
         if (w.pollution) w.pollution.draw();
+        // the console's timer (TGCConsole2: the scripts' getTime)
+        if (w.eventGroup) w.eventGroup.frame();
         this.frame++;
     }
     private emitWater(m: MarioProxy) {

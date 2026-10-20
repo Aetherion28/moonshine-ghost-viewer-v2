@@ -31,8 +31,9 @@
 // Not here: particles (the damage / split / death .jpa), the looped swim sounds (BS_MANTA_DRAW_LV
 // and _DRAW_DEMO, started every tick), the BGM, the shadow / EFB alpha drawing and the manta color
 // (getMantaColor, drawing only: its unk84 ramp too). Balloons and the demo camera are
-// 'balloon:<id>' / 'demo:<name>' effects. MSF_MANTA_SPAWNED is read from world.flags (flags.ts: the
-// event script that sets it isn't run, so it is taken as set from the first tick; TODO).
+// 'balloon:<id>' / 'demo:<name>' effects. MSF_MANTA_SPAWNED is read from world.flags: sirena0's event
+// script (map/sp/appearmanta.sb, eventwatcher.ts) sets it once Mario's talk to モンテＡ ends, which
+// needs the talk system the sim doesn't have yet (TODO), so for now the fight doesn't start.
 
 import { fr, V3, MsRandF } from '../math.js';
 import { World, Stream, HitActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, LF, HF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE,

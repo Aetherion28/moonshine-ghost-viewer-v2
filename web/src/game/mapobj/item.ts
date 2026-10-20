@@ -177,6 +177,9 @@ export class CoinEmpty extends Coin {
 export class CoinRed extends Coin {
     constructor(w: World, name = '赤コイン') { super(w, name); }
     taken(a: HitActor) {
+        // TFlagManager incFlag(MSF_RED_COIN_COUNT): the stages' red coin scripts (redcoin.sb,
+        // timerredcoin.sb: eventwatcher.ts) make the Shine appear at 8
+        this.world.flags.incFlag(0x60000, 1);
         const c = itemCounts(this.world);
         c.red++;
         this.world.sound(SE.SY_RED_COIN_GET, this.pos);

@@ -134,9 +134,8 @@ export class FlagManager {
             }
         } else if (area === 5 && scenario === 3) this.setBool(true, MSF.SUNFLOWERS_LEFT_TO_RESCUE);
         this.setBool(true, shineStage(area) + MSF.VISITED_BASE);
-        // MSF_MANTA_SPAWNED: no game code sets it; the stage's event script does (EventWatcher.cpp
-        // evSetSystemFlag), which the sim doesn't run. TODO: taken as set from the stage's start.
-        this.setBool(true, MSF.MANTA_SPAWNED);
+        // (MSF_MANTA_SPAWNED: no game code sets it; sirena0's event script appearmanta.sb does, run by
+        // eventwatcher.ts)
     }
     /** getNozzleRight(area, nozzle) */
     nozzleRight(area: number, nozzle: number) {
