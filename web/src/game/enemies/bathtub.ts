@@ -16,8 +16,8 @@
 // wall, another Bullet Bill (after noCollisionAmongKillers) or Bowser, or at the end of its life
 // it explodes (Explosion); hitting Mario from above it explodes and throws him up (mHitMario).
 //
-// The tub (mapobj/bathtub.ts) is found by name ("バスタブ"); the bath water (TBathWaterManager,
-// "バスタブの水") isn't simulated, so the binder's float_ does nothing (as the game's with none).
+// The tub (mapobj/bathtub.ts) is found by name ("バスタブ"), the bath water (TBathWaterManager,
+// "バスタブの水", bathwater.ts) too: the binder's float_ floats on its getWaterHeight.
 //
 // Not here: the noses' and bodies' TEV colours (makeNoseColor, the GXColorS10s: drawing only), the
 // smoke and fly sound, the particles of the items, the anm sounds; the life count (TFlagManager's

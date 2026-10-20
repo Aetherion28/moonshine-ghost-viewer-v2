@@ -73,6 +73,7 @@ import type { PadStatus } from './player/pad.js';
 import { NO_PAD } from './player/pad.js';
 import type { StickCamera } from './camera/types.js';
 import { matan, s16 } from './math.js';
+import './bathwater.js';
 
 // enemies' coins come out of the item manager's pool (gpItemManager)
 Object.assign(World.prototype, mapObjWorldHooks);
