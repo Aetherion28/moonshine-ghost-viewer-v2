@@ -94,8 +94,9 @@ export class SamboFlowerManager extends EnemyManager {
             if (!leaf.unk44) {
                 leaf.generate(p);
                 const P = this.saveParams;
-                const vy = rangeRand(P.mSLLeafVelocityY, 1.2 * P.mSLLeafVelocityY);
+                // (TVec3(0, y.rand(), xz.rand()): the arguments right to left, xz's roll first)
                 const vxz = rangeRand(P.mSLLeafVelocityXZ, 1.2 * P.mSLLeafVelocityXZ);
+                const vy = rangeRand(P.mSLLeafVelocityY, 1.2 * P.mSLLeafVelocityY);
                 const m = mtx(); MsMtxSetRotRPH(m, 0, rotY[i] ?? 0, 0);   // (rotY[i] past 3: the stack after it, 0 here)
                 leaf.vel38.set(mtxMultVec(m, new V3(0, vy, vxz)));
                 leaf.rot20.set(0, (rotY[i] ?? 0) - 90, 0);

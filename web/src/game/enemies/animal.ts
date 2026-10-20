@@ -186,7 +186,8 @@ export class AnimalBase extends SpineEnemy {
             fc.frame = fr(phase * fc.end);
         }
         const fc2 = this.mactor ? this.mactor.getFrameCtrl(ANM_BTP) : null;
-        if (fc2 && this.mactor!.getCurAnmIdx(ANM_BTP) >= 0) fc2.frame = fr(fc2.end * MsRandF());
+        // (no getCurAnmIdx check in the game: any model with BTPs rolls here)
+        if (fc2) fc2.frame = fr(fc2.end * MsRandF());
     }
     /** initNoLoad_: one more of the flock, scattered around this one. */
     initNoLoad(o: AnimalBase) {

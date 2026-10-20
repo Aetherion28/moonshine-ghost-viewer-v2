@@ -536,6 +536,9 @@ export class BaseNPC extends SpineEnemy {
         void b3;
         this.npcWaitIn();
         this.randomizeBckAndBtpFrame();
+        // (parts > 0: a TNpcParts; a jellyfish Mare's addJellyFishParts picks its jellyfish model
+        // with MsRandF() * gpMareJellyFishManager's model count: the viewer's, but the roll is the game's)
+        if (parts > 0 && this.isJellyFishMare()) MsRandF();
     }
     private initBaseActionFlag() {
         const pick = (t: number[]) => { if (this.unk16C > t.length - 1) this.unk16C = 0; this.actionFlag = t[this.unk16C]; };
@@ -600,9 +603,10 @@ export class BaseNPC extends SpineEnemy {
         const a = this.mactor!;
         let end = 0, fb = 0;
         const bc = a.getFrameCtrl(ANM_BCK);
-        if (bc && a.getCurAnmIdx(ANM_BCK) >= 0) { end = s16(bc.end); fb = s16(fr(end * MsRandF())); bc.frame = fb; }
+        // (the game checks only that the frame controls exist, not that an animation is set)
+        if (bc) { end = s16(bc.end); fb = s16(fr(end * MsRandF())); bc.frame = fb; }
         const tc = a.getFrameCtrl(ANM_BTP);
-        if (tc && a.getCurAnmIdx(ANM_BTP) >= 0) { const te = s16(tc.end); tc.frame = te === end ? fb : s16(fr(te * MsRandF())); }
+        if (tc) { const te = s16(tc.end); tc.frame = te === end ? fb : s16(fr(te * MsRandF())); }
     }
     private walkAnmRateChange() {
         const d = fr(Math.sqrt(fr(fr(this.posDelta.x * this.posDelta.x) + fr(this.posDelta.z * this.posDelta.z))));

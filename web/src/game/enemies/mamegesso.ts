@@ -96,7 +96,7 @@ export class MameGesso extends WalkerEnemy {
     reset() {
         super.reset();
         const M = this.M;
-        this.unk1CC = M ? rangeRandI(0, M.mSLGenerateInterval) : 0;
+        this.unk1CC = rangeRandI(0, M ? M.mSLGenerateInterval : 0);   // (the game always rolls once)
         this.unk1D0 = 0; this.unk1E8 = 0; this.unk1EC = 1;
         this.pos.set(this.unk1D4);
         this.pos.y = fr(this.pos.y + 20);

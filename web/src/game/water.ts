@@ -179,7 +179,10 @@ export class Water {
                     if (st === 1) {
                         if (MsRandF() < K[9]) this.splash(P.x, P.y, P.z);
                         this.size[i] = fr(this.size[i] * T.mMagnify);
-                        if (MsRandF() < K[0]) this.flag[i] = (this.flag[i] & ~0xF) | 2;
+                        // (gpCamera->isLButtonCameraSpecifyMode(mMode): unk5D88[1], else [0]; read before the roll)
+                        const cam = (this.w.mario as any).camera;
+                        const kStay = cam && cam.isLButtonCamera && cam.isLButtonCamera() ? K[1] : K[0];
+                        if (MsRandF() < kStay) this.flag[i] = (this.flag[i] & ~0xF) | 2;
                         else { this.life[i] = 0; continue; }
                     }
                     this.plane[i] = ground;
