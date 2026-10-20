@@ -12,7 +12,7 @@ import { fr, V3, Mtx, mtx, JMASSin, JMASCos, MsSin, MsWrap, MsMtxSetXYZRPH } fro
 import { World, Stream, HitActor, TakeActor, LF, HF, MSG, CUE_MOVE, CUE_CALC_ANIM, parseSceneBin, SceneNode } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
-import { MapObjBase, MapObjBaseManager, MOF, STATE_NORMAL, OBJ_MAKERS, mapObjGlobals, newAndRegisterObj } from './base.js';
+import { MapObjBase, MapObjBaseManager, MOF, STATE_NORMAL, OBJ_MAKERS, UNIQUE_MAKERS, mapObjGlobals, newAndRegisterObj } from './base.js';
 import { MapObjGeneral, GS } from './general.js';
 import { marioOnYoshi } from './lib.js';
 import { SE } from '../soundids.js';
@@ -509,7 +509,8 @@ OBJ_MAKERS.unique = (w, name) => {
         case 'NormalBlock': case 'JuiceBlock': case 'no_data': case 'maregate': case 'SandBirdBlock': return new MapObjBase(w, '地形オブジェ基底');
         case 'bigWindmillBlock': return new MapObjBase(w, '風車の台');
     }
-    return null;
+    const make = UNIQUE_MAKERS.get(name);
+    return make ? make(w) : null;
 };
 /** newAndRegisterObjByEventID: what a hidden object holds (coins by event id, a Shine by name: 777). */
 export function newAndRegisterObjByEventID(w: World, id: number, name: string): MapObjBase | null {
@@ -524,7 +525,8 @@ export function newAndRegisterObjByEventID(w: World, id: number, name: string): 
         case 1002: return newAndRegisterObj(w, 'FruitPapaya');
         case 1003: return newAndRegisterObj(w, 'FruitPine');
         case 1004: return newAndRegisterObj(w, 'FruitCoconut');
-        // TODO: TMushroom1up (2000, 2001): not ported
+        case 2000: return newAndRegisterObj(w, 'mushroom1up');
+        case 2001: return newAndRegisterObj(w, 'mushroom1upR');
     }
     return null;
 }

@@ -159,6 +159,7 @@ export class ObjCollision {
         this.move();
     }
     setAllBGType(t: number) { for (const d of this.checks) d.bgType = t; }
+    setAllData(v: number) { for (const d of this.checks) d.data = v; }
 }
 
 /** TMapCollisionManager */

@@ -238,7 +238,7 @@ export function marioTouchGround4cm(w: World) { return w.mario.pos.y <= marioGro
 export function marioStatus(w: World): number {
     const m = M(w);
     if (isTMario(m)) return m.mStatus;
-    if (m.hipDrop) return 0x80088A;
+    if (m.hipDrop) return 0x8008A9;   // (MARIO_STATUS_HIP_DROP)
     if (m.jumping) return 0x02000880;
     if (marioSwimming(w)) return 0x22D2;
     return 0x0C400201;
@@ -251,7 +251,8 @@ export function marioSwimming(w: World) {
     return d.isWaterSurface() && m.pos.y < h - 20;
 }
 /** SMS_IsMarioStatusHipDrop */
-export function marioHipDropping(w: World) { const m = M(w); return isTMario(m) ? (m.mStatus === 0x80088A || m.mStatus === 0x80023C) : !!m.hipDrop; }
+/** SMS_IsMarioStatusHipDrop: MARIO_STATUS_HIP_DROP (0x8008A9) */
+export function marioHipDropping(w: World) { const m = M(w); return isTMario(m) ? m.mStatus === 0x8008A9 : !!m.hipDrop; }
 /** The object Mario holds (TTakeActor::mHeldObject) */
 export function marioHeld(w: World): HitActor | null { const m = M(w); return (isTMario(m) ? m.mHeldObject : m.held) || null; }
 /**

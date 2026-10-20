@@ -8,6 +8,7 @@ import { World, Stream, HitActor, LF, HF, MSG } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { MapObjBase, STATE_NORMAL, mapObjGlobals } from './base.js';
+import { marioHipDropping } from './lib.js';
 import { Coin, Shine, ItemManager, newAndRegisterObjByEventID, itemCounts } from './item.js';
 
 export class HideObjBase extends MapObjBase {
@@ -66,7 +67,7 @@ export class WaterHitHideObj extends HideObjBase {
 /** THipDropHideObj: ground-pounded */
 export class HipDropHideObj extends HideObjBase {
     constructor(w: World, name = 'ヒップドロップオブジェ') { super(w, name); }
-    touchPlayer(_a: HitActor) { if (this.world.mario.hipDrop) { this.appearObj(0); this.makeObjDead(); } }
+    touchPlayer(_a: HitActor) { if (marioHipDropping(this.world)) { this.appearObj(0); this.makeObjDead(); } }
 }
 
 // ---------------------------------------------------------------- graffiti signs
@@ -206,6 +207,7 @@ export class WaterRecoverObj extends MapObjBase {
 }
 
 register('HideObj', (w, n) => new HideObjBase(w, n));
+register('HipDropHideObj', (w, n) => new HipDropHideObj(w, n));
 register('WaterHitHideObj', (w, n) => new WaterHitHideObj(w, n));
 register('WaterHitPictureHideObj', (w, n) => new WaterHitPictureHideObj(w, n));
 register('HideObjPictureTwin', (w, n) => new HideObjPictureTwin(w, n));

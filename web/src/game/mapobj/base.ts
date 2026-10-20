@@ -52,6 +52,8 @@ export function mapObjGlobals(w: World): MapObjGlobals {
     return g;
 }
 
+/** newUniqueObjByName's other classes, by name (each world's file adds its own). */
+export const UNIQUE_MAKERS = new Map<string, (w: World) => MapObjBase>();
 /** The objects newAndRegisterObj makes by name (newItemByName / newUniqueObjByName: item.ts fills these). */
 export const OBJ_MAKERS = {
     item: null as ((w: World, name: string) => MapObjBase | null) | null,

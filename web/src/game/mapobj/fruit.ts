@@ -568,6 +568,17 @@ OBJ_MAKERS.unique = (w, name) => {
     return prevUnique ? prevUnique(w, name) : null;
 };
 
+// ---------------------------------------------------------------- TRandomFruit (MapObjBall.cpp)
+/** One of the fruit at random: MsRandF() x 5 picks coconut, durian, papaya or pineapple (4: pineapple too). */
+export class RandomFruit extends ResetFruit {
+    constructor(w: World, name = 'ランダムフルーツ') { super(w, name); }
+    initMapObj() {
+        const n = Math.trunc(fr(MsRandF() * 5));
+        this.individualName = ['FruitCoconut', 'FruitDurian', 'FruitPapaya', 'FruitPine'][n] || 'FruitPine';
+        MapObjBall.prototype.initMapObj.call(this);   // (TMapObjBall's, not TResetFruit's)
+    }
+}
+register('RandomFruit', (w, n) => new RandomFruit(w, n));
 register('Fruit', (w, n) => new ResetFruit(w, n));
 register('ResetFruit', (w, n) => new ResetFruit(w, n));
 register('EggYoshi', (w, n) => new EggYoshi(w, n));

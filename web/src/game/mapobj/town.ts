@@ -4,7 +4,7 @@
 // its particle emitted each frame, told as an effect with its rate, size and colour).
 
 import { fr, V3 } from '../math.js';
-import { World, Stream, HitActor, HF } from '../engine.js';
+import { World, Stream, HitActor, HF, MSG, ANM_BCK } from '../engine.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
@@ -50,6 +50,57 @@ export class MapObjWaterSpray extends MapObjBase {
     }
 }
 
+// ---------------------------------------------------------------- TRedCoinSwitch
+/**
+ * Ground-pounding it starts its press, locks the pad for twice its animation plus 60 ticks
+ * (TMarioGamePad::mDisabledFrames) and puts out the eight red coins' "pressed" flag once the
+ * animation ends. The red coins (赤コイン 0..7) are hidden until then.
+ */
+export class RedCoinSwitch extends MapObjBase {
+    /** the red coins' time limit, in frames */
+    unk138 = 0;
+    constructor(w: World, name = '赤コインスイッチ') { super(w, name); }
+    receiveMessage(_s: HitActor, msg: number) {
+        if (msg === MSG.HIP_DROP) {
+            this.startBck('redcoinswitch');
+            const fc = this.mactor && this.mactor.getFrameCtrl(ANM_BCK);
+            const pad = (this.world.mario as any).mGamePad;
+            if (pad && fc) pad.invalidate(Math.trunc(fr(fr(fc.end * 2) + 60)));
+            this.world.sound(SE.OBJ_AP_BUTTON, this.pos);
+            this.removeMapCollision();
+            this.onHitFilter(HF.NO_COLLISION);
+            this.state = 2;
+            return true;
+        }
+        return false;
+    }
+    control() {
+        super.control();
+        switch (this.state) {
+            case 2:
+                if (this.mactor && this.mactor.curAnmEndsNext(ANM_BCK)) {
+                    this.stateTimer = 120; this.state = 3;
+                    // TFlagManager MSF_RED_COIN_SWITCH_PRESSED
+                    (this.world as any).redCoinSwitchPressed = true;
+                }
+                break;
+            case 3: if (!this.isStateTimerEngaged()) this.state = 4; break;
+        }
+    }
+    loadAfter() {
+        super.loadAfter();
+        for (let i = 0; i < 8; i++) { const c = this.world.search(`赤コイン ${i}`) as MapObjBase | null; if (c) c.makeObjDead(); }
+    }
+    load(s: Stream) {
+        super.load(s);
+        const t = s.u32() | 0;
+        this.unk138 = t <= 0 ? 1200 : t * 10;
+        // TODO: in a secret stage whose Shine isn't got yet it's gone (SMS_getShineIDofExStage and the
+        // Shine flags: not in the sim)
+    }
+}
+
+register('RedCoinSwitch', (w, n) => new RedCoinSwitch(w, n));
 register('MapObjChangeStage', (w, n) => new MapObjChangeStage(w, n));
 register('MapObjChangeStageHipDrop', (w, n) => new MapObjChangeStageHipDrop(w, n));
 register('MapObjWaterSpray', (w, n) => new MapObjWaterSpray(w, n));
