@@ -23,7 +23,15 @@ export interface MarioSample {
     /** what he holds (the ghost's attachment: retail actor type and name key), null for nothing or an unknown actor */
     held?: { objectId: number; nameKey: number } | null;
 }
-export interface MarioTrack { at(qf: number): MarioSample | null; }
+export interface MarioTrack {
+    at(qf: number): MarioSample | null;
+    /**
+     * The stage QF of the ghost's final sample when the recorder closed the run with a copy of the one
+     * before it (same position and animation: the timer stopped, no new state was sampled). Drift is
+     * not checked from there on.
+     */
+    closingCopyQf?: number;
+}
 
 // Mario's animations (MarioAnimation ids, as the ghost records them) that mean a status.
 const HIP_DROP = new Set([58, 60, 61]);

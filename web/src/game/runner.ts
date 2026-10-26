@@ -359,6 +359,20 @@ export function stageSeed(g: any, segment: number): number | null {
     return null;
 }
 
+/**
+ * The stage QF of a segment's final ghost sample when it is only a copy of the one before it
+ * (position, animation and phase equal): the recorder writes it as the run closes (the timer
+ * stopped), so the game was not sampled there. undefined otherwise.
+ */
+export function closingCopyQf(g: any, segment: number, q0: number): number | undefined {
+    const seg = g && g.segments && g.segments[segment];
+    if (!seg || seg.sampleCount < 2) return undefined;
+    const k = seg.firstSample + seg.sampleCount - 1;
+    for (let c = 0; c < 3; c++) if (g.pos[k * 3 + c] !== g.pos[(k - 1) * 3 + c]) return undefined;
+    if (g.anim[k] !== g.anim[k - 1] || g.phase[k] !== g.phase[k - 1]) return undefined;
+    return g.qf[k] - q0;
+}
+
 export class SimRunner {
     private rng: RngReplay | null = null;
     /** run Mario from the ghost's inputs where it has them (the viewer's "Input replay") */
@@ -379,6 +393,7 @@ export class SimRunner {
     private track(inp: SimInput): MarioTrack {
         const g = inp.ghost, A = inp.api, q0 = this.q0;
         return {
+            closingCopyQf: closingCopyQf(g, g.segIndex[A.ghostSampleAt(g, q0).i], q0),
             at: (q: number): MarioSample | null => {
                 const t = q0 + q;
                 const s = A.ghostSampleAt(g, t);

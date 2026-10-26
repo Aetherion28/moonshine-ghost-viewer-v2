@@ -1432,6 +1432,7 @@ export class PlayerMario extends TMarioSim {
         if (q <= this.driftFrom) return;
         const s = this.track!.at(q);
         if (!s) return;
+        if (this.track!.closingCopyQf !== undefined && q >= this.track!.closingCopyQf) return;
         const d = this.drift;
         const e = Math.hypot(this.pos.x - s.x, this.pos.y - s.y, this.pos.z - s.z);
         d.frames++;
