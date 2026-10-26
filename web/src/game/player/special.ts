@@ -1,7 +1,7 @@
 // Player/MarioSpecial.cpp: climbing bars (poles, trees, the fluff), hanging from ledges and roofs
 // (fence ceilings), climbing fences, being carried, pulling, the tightrope wires, and specMain.
 
-import { fr, s16, JMASSin, JMASCos, matan, IConverge, V3, Mtx, mtxMultVec, frsqrte, rand } from '../math.js';
+import { fr, s16, JMASSin, JMASCos, matan, IConverge, V3, Mtx, mtxMultVec, psMtxMultVec, frsqrte, rand } from '../math.js';
 import { HitActor, HF, MSG } from '../engine.js';
 import { WallCheck } from '../collision.js';
 import { MarioSwim } from './swim.js';
@@ -488,7 +488,7 @@ export abstract class MarioSpecial extends MarioSwim {
                     if (x < -120) x = -120; if (120 < x) x = 120;
                     if (z < -190) z = -190; if (60 < z) z = 60;
                     this.unk2F4.x = x; this.unk2F4.y = z;
-                    mtxMultVec(this.getRidingMtx(), this.unk2F4, this.pos);
+                    psMtxMultVec(this.getRidingMtx(), this.unk2F4, this.pos);
                 }
             }
         }

@@ -4,21 +4,14 @@
 // the static grid and taken out again: remove) or move (re-added to the move grid every tick it's
 // moved; TMap::perform empties that grid each tick).
 
-import { fr, V3, Mtx, mtx, MsSin, MsCos } from '../math.js';
+import { fr, V3, Mtx, mtx, MsMtxSetTRS } from '../math.js';
 import type { World, LiveActor } from '../engine.js';
 import { BGCheckData } from '../collision.js';
 
 export const KIND_STATIC = 0, KIND_MOVE = 1, KIND_WARP = 2;
 export const COL_NEEDS_SETUP = 0x1, COL_UNK4000 = 0x4000, COL_UNK8000 = 0x8000;
 
-/** MsMtxSetTRS (row-major 3x4) */
-export function MsMtxSetTRS(m: Mtx, x: number, y: number, z: number, r: number, p: number, h: number, sx: number, sy: number, sz: number) {
-    const sr = MsSin(r), sp = MsSin(p), sh = MsSin(h), cr = MsCos(r), cp = MsCos(p), ch = MsCos(h);
-    m[0] = fr(fr(ch * cp) * sx); m[4] = fr(fr(sh * cp) * sx); m[8] = fr(-sp * sx);
-    m[1] = fr(fr(sr * fr(ch * sp) - fr(sh * cr)) * sy); m[5] = fr(fr(sr * fr(sh * sp) + fr(ch * cr)) * sy); m[9] = fr(fr(cp * sr) * sy);
-    m[2] = fr(fr(cr * fr(ch * sp) + fr(sh * sr)) * sz); m[6] = fr(fr(cr * fr(sh * sp) - fr(ch * sr)) * sz); m[10] = fr(fr(cp * cr) * sz);
-    m[3] = x; m[7] = y; m[11] = z;
-}
+export { MsMtxSetTRS };
 
 interface ColFile {
     verts: number[][];

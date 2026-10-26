@@ -40,8 +40,11 @@ const sinT = sinAll.subarray(0, 4096), cosT = sinAll.subarray(1024);
 export const s16 = (v: number) => (Math.trunc(v) << 16) >> 16;
 export const JMASSin = (a: number) => sinT[(a & 0xFFFF) >>> SIN_SHIFT];
 export const JMASCos = (a: number) => cosT[(a & 0xFFFF) >>> SIN_SHIFT];
-export const MsSin = (deg: number) => JMASSin(s16(deg * (65536 / 360)));
-export const MsCos = (deg: number) => JMASCos(s16(deg * (65536 / 360)));
+/** degrees to the binary angle as the game converts them: fmuls by the f32 65536 / 360 (182.04445), fctiwz */
+const DEG_K = fr(65536 / 360);
+export const degToAngle = (deg: number) => s16(fr(DEG_K * fr(deg)));
+export const MsSin = (deg: number) => JMASSin(degToAngle(deg));
+export const MsCos = (deg: number) => JMASCos(degToAngle(deg));
 
 // ---------------------------------------------------------------- matan
 const ATN = new Uint16Array([0, 10, 20, 31, 41, 51, 61, 71, 81, 92, 102, 112, 122, 132, 143, 153, 163, 173, 183, 194, 204, 214, 224, 234,
@@ -222,21 +225,29 @@ export const FConverge = IConverge;
 /** A 3x4 matrix, row-major as the game's Mtx (m[r * 4 + c]). */
 export type Mtx = Float64Array;
 export const mtx = () => { const m = new Float64Array(12); m[0] = m[5] = m[10] = 1; return m; };
+/**
+ * MsMtxSetRotRPH (0x800C5E98): as MsMtxSetXYZRPH (fmuls products, fmsubs / fmadds for the
+ * off-diagonal terms), but with the products grouped (ch sp), (sh sp) first; no translation.
+ */
 export function MsMtxSetRotRPH(m: Mtx, r: number, p: number, h: number) {
     const sr = MsSin(r), sp = MsSin(p), sh = MsSin(h), cr = MsCos(r), cp = MsCos(p), ch = MsCos(h);
-    m[0] = ch * cp; m[4] = sh * cp; m[8] = -sp;
-    m[1] = sr * (ch * sp) - sh * cr; m[5] = sr * (sh * sp) + ch * cr; m[9] = cp * sr;
-    m[2] = cr * (ch * sp) + sh * sr; m[6] = cr * (sh * sp) - ch * sr; m[10] = cp * cr;
+    const chsp = fr(ch * sp), shsp = fr(sh * sp);
+    m[0] = fr(ch * cp); m[4] = fr(sh * cp); m[8] = -sp;
+    m[1] = fr(sr * chsp - fr(sh * cr)); m[5] = fr(sr * shsp + fr(ch * cr)); m[9] = fr(cp * sr);
+    m[2] = fr(cr * chsp + fr(sh * sr)); m[6] = fr(cr * shsp - fr(ch * sr)); m[10] = fr(cp * cr);
     m[3] = m[7] = m[11] = 0;
 }
-/** MsMtxSetXYZRPH (the s16 angles from degrees) */
+/**
+ * MsMtxSetXYZRPH (the s16 angles from degrees). Its f32 operations as the DOL has them
+ * (0x800C5DE8): the products fmuls, the off-diagonal terms fmsubs / fmadds of those.
+ */
 export function MsMtxSetXYZRPH(m: Mtx, x: number, y: number, z: number, rd: number, pd: number, hd: number) {
-    const r = s16(rd * (65536 / 360)), p = s16(pd * (65536 / 360)), h = s16(hd * (65536 / 360));
+    const r = degToAngle(rd), p = degToAngle(pd), h = degToAngle(hd);
     const sr = JMASSin(r), sp = JMASSin(p), sh = JMASSin(h), cr = JMASCos(r), cp = JMASCos(p), ch = JMASCos(h);
-    m[8] = -sp; m[0] = ch * cp; m[4] = sh * cp; m[9] = cp * sr; m[10] = cp * cr;
-    const crsh = cr * sh, srch = sr * ch, srsh = sr * sh, crch = cr * ch;
-    m[1] = srch * sp - crsh; m[6] = crsh * sp - srch; m[2] = crch * sp + srsh; m[5] = srsh * sp + crch;
-    m[3] = x; m[7] = y; m[11] = z;
+    m[8] = -sp; m[0] = fr(ch * cp); m[4] = fr(sh * cp); m[9] = fr(cp * sr); m[10] = fr(cp * cr);
+    const crsh = fr(cr * sh), srch = fr(sr * ch), srsh = fr(sr * sh), crch = fr(cr * ch);
+    m[1] = fr(srch * sp - crsh); m[6] = fr(crsh * sp - srch); m[2] = fr(crch * sp + srsh); m[5] = fr(srsh * sp + crch);
+    m[3] = fr(x); m[7] = fr(y); m[11] = fr(z);
 }
 export function mtxMultVec(m: Mtx, v: V3, out = new V3()) {
     const x = m[0] * v.x + m[1] * v.y + m[2] * v.z + m[3], y = m[4] * v.x + m[5] * v.y + m[6] * v.z + m[7], z = m[8] * v.x + m[9] * v.y + m[10] * v.z + m[11];
@@ -254,6 +265,52 @@ export function mtxInverse(m: Mtx, out: Mtx = new Float64Array(12)) {
     const tx = m[3], ty = m[7], tz = m[11];
     out[3] = -(out[0] * tx + out[1] * ty + out[2] * tz); out[7] = -(out[4] * tx + out[5] * ty + out[6] * tz); out[11] = -(out[8] * tx + out[9] * ty + out[10] * tz);
     return out;
+}
+
+/** MsMtxSetTRS (row-major 3x4) */
+export function MsMtxSetTRS(m: Mtx, x: number, y: number, z: number, r: number, p: number, h: number, sx: number, sy: number, sz: number) {
+    const sr = MsSin(r), sp = MsSin(p), sh = MsSin(h), cr = MsCos(r), cp = MsCos(p), ch = MsCos(h);
+    m[0] = fr(fr(ch * cp) * sx); m[4] = fr(fr(sh * cp) * sx); m[8] = fr(-sp * sx);
+    m[1] = fr(fr(sr * fr(ch * sp) - fr(sh * cr)) * sy); m[5] = fr(fr(sr * fr(sh * sp) + fr(ch * cr)) * sy); m[9] = fr(fr(cp * sr) * sy);
+    m[2] = fr(fr(cr * fr(ch * sp) + fr(sh * sr)) * sz); m[6] = fr(fr(cr * fr(sh * sp) - fr(ch * sr)) * sz); m[10] = fr(fr(cp * cr) * sz);
+    m[3] = x; m[7] = y; m[11] = z;
+}
+
+/**
+ * PSMTXMultVec (dolphin mtxvec.c, the paired-single code at 0x80094BF0): per row
+ * ps_mul (m0 * x, m1 * y), ps_madd (m2 * z + that, m3 * 1 + that), ps_sum0 (the two lanes added),
+ * each rounded to f32 — what MTXMultVec gives the game's matrices and vectors (f32 in, f32 out).
+ */
+export function psMtxMultVec(m: Mtx, v: V3, out = new V3()) {
+    const x = fr(v.x), y = fr(v.y), z = fr(v.z);
+    const row = (i: number) => fr(fr(m[i + 2] * z + fr(m[i] * x)) + fr(m[i + 3] + fr(m[i + 1] * y)));
+    return out.set(row(0), row(4), row(8));
+}
+/**
+ * PSMTXInverse (dolphin mtx.c, 0x800943DC): the cofactors by ps_mul / ps_msub pairs, the
+ * determinant by ps_mul, ps_madd, ps_madd, its reciprocal as fres refined once by Newton
+ * (2r - det r^2: ps_add, ps_mul, ps_nmsub), the rotation part scaled by it (ps_muls0) and the
+ * translation as -(inv . t) by ps_mul, ps_madd, ps_nmadd; every step rounded to f32. False (out
+ * untouched) when the determinant is 0, as the game's returns 0.
+ */
+export function psMtxInverse(m: Mtx, out: Mtx = new Float64Array(12)): boolean {
+    const m00 = m[0], m01 = m[1], m02 = m[2], m10 = m[4], m11 = m[5], m12 = m[6], m20 = m[8], m21 = m[9], m22 = m[10];
+    const msub = (a: number, b: number, c: number) => fr(a * b - c);
+    const c11a = msub(m01, m12, fr(m11 * m02)), c11b = msub(m02, m10, fr(m12 * m00));
+    const c13a = msub(m11, m22, fr(m21 * m12)), c13b = msub(m12, m20, fr(m22 * m10));
+    const c12a = msub(m21, m02, fr(m01 * m22)), c12b = msub(m22, m00, fr(m02 * m20));
+    const c10 = msub(m10, m21, fr(m11 * m20)), c9 = msub(m01, m20, fr(m00 * m21)), c8 = msub(m00, m11, fr(m01 * m10));
+    const det = fr(m20 * c11a + fr(m10 * c12a + fr(m00 * c13a)));
+    if (det === 0) return false;
+    const r = fres(det), r2 = fr(fr(r + r) - det * fr(r * r));
+    const i00 = fr(c13a * r2), i10 = fr(c13b * r2), i01 = fr(c12a * r2), i11 = fr(c12b * r2), i02 = fr(c11a * r2), i12 = fr(c11b * r2);
+    const i20 = fr(c10 * r2), i21 = fr(c9 * r2), i22 = fr(c8 * r2);
+    const tx = m[3], ty = m[7], tz = m[11];
+    const t = (a: number, b: number, c: number) => -fr(c * tz + fr(b * ty + fr(a * tx)));
+    out[0] = i00; out[1] = i01; out[2] = i02; out[3] = t(i00, i01, i02);
+    out[4] = i10; out[5] = i11; out[6] = i12; out[7] = t(i10, i11, i12);
+    out[8] = i20; out[9] = i21; out[10] = i22; out[11] = t(i20, i21, i22);
+    return true;
 }
 
 /** SMSCalcJumpVelocityY */

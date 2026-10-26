@@ -37,14 +37,19 @@ export function MsMtxSetRotZ(m: Mtx, deg: number) {
     m[4] = s; m[5] = c; m[6] = 0; m[7] = 0;
     m[8] = 0; m[9] = 0; m[10] = 1; m[11] = 0;
 }
-/** PSMTXConcat(a, b, out): out = a * b (out may be a or b) */
+/**
+ * PSMTXConcat(a, b, out): out = a * b (out may be a or b). The paired-single code (dolphin mtx.c):
+ * per element ps_muls0, ps_madds1, ps_madds0 (b0j a0, + b1j a1, + b2j a2, each rounded to f32),
+ * the translation column then ps_madds1 by Unit01 (+ 1 * a3).
+ */
 export function MTXConcat(a: Mtx, b: Mtx, out: Mtx) {
     const r = new Float64Array(12);
     for (let i = 0; i < 3; i++) {
+        const a0 = a[i * 4], a1 = a[i * 4 + 1], a2 = a[i * 4 + 2];
         for (let j = 0; j < 4; j++) {
-            let v = a[i * 4] * b[j] + a[i * 4 + 1] * b[4 + j] + a[i * 4 + 2] * b[8 + j];
-            if (j === 3) v += a[i * 4 + 3];
-            r[i * 4 + j] = fr(v);
+            let v = fr(fr(fr(b[j] * a0) + b[4 + j] * a1) + b[8 + j] * a2);
+            if (j === 3) v = fr(a[i * 4 + 3] + v);
+            r[i * 4 + j] = v;
         }
     }
     out.set(r);

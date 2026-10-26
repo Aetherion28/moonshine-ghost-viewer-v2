@@ -1,7 +1,7 @@
 // Player/MarioMove.cpp: statuses and their entry speeds, the controller, the planes he stands in,
 // the per-tick thinking (situation, water surface, height), and playerControl.
 
-import { V3, fr, s16, JMASSin, JMASCos, matan, mtxMultVec, mtxInverse, mtx, MsMtxSetXYZRPH } from '../math.js';
+import { V3, fr, s16, JMASSin, JMASCos, matan, psMtxMultVec, psMtxInverse, mtx, MsMtxSetTRS } from '../math.js';
 import { HitActor, MSG } from '../engine.js';
 import { DONT_MOVE_XZ } from '../collision.js';
 import { AT } from '../actortypes.js';
@@ -37,11 +37,14 @@ export abstract class MarioMove extends MarioBase {
         if (this.mWallPlane) { const d = s16(this.getWallAngle() - this.mFaceAngle.y); if (d < -0x71C7 || d > 0x71C7) return true; }
         return false;
     }
+    /** getRidingMtx: a copy of the ridden actor's root joint matrix, else SMS_GetActorMtx (MsMtxSetTRS of its position, rotation and scale) */
     getRidingMtx() {
         const a = this.unk2C0;
         const m = a.getRootJointMtx ? a.getRootJointMtx() : null;
-        if (m) return m;
-        const r = mtx(); MsMtxSetXYZRPH(r, a.pos.x, a.pos.y, a.pos.z, a.rot.x, a.rot.y, a.rot.z); return r;
+        if (m) return Float64Array.from(m);
+        const r = mtx(), s = a.scale || { x: 1, y: 1, z: 1 };
+        MsMtxSetTRS(r, a.pos.x, a.pos.y, a.pos.z, a.rot.x, a.rot.y, a.rot.z, s.x, s.y, s.z);
+        return r;
     }
     isForceSlip() {
         if (bg.isUnk1(this.mGroundPlane)) return true;
@@ -445,6 +448,11 @@ export abstract class MarioMove extends MarioBase {
         const p = this.getDmgMapCode(code);
         this.damageExec(null, p.mDamage, p.mDownType, p.mWaterEmit, p.mMinSpeed, p.mMotor, p.mDirty, p.mInvincibleTime);
     }
+    /**
+     * checkRideMovement: the ridden actor's matrix is its model's (getRootJointMtx: anm or base
+     * matrix), which only CalcAnim (the frame's last tick, after the movement) refreshes — so on a
+     * moving object the carry comes all at once on a frame's first tick, as its collision moves.
+     */
     checkRideMovement() {
         let actor: any = null;
         const p = { x: fr(this.pos.x + 0.8 * fr(50 * JMASSin(this.mFaceAngle.y))), y: this.pos.y, z: fr(this.pos.z + 0.8 * fr(50 * JMASCos(this.mFaceAngle.y))) };
@@ -456,7 +464,7 @@ export abstract class MarioMove extends MarioBase {
         if (actor) {
             if (!this.unk2C0 || this.unk2C0 !== actor) { this.unk2C0 = actor; this.unk30C = actor.rot.y; this.checkRideReCalc(); }
             else {
-                mtxMultVec(this.getRidingMtx(), this.unk2F4, this.pos);
+                psMtxMultVec(this.getRidingMtx(), this.unk2F4, this.pos);
                 this.mFaceAngle.y = s16(this.mFaceAngle.y + s16(fr((this.unk2C0.rot.y - this.unk30C) * 32768 / 180)));
                 this.unk30C = this.unk2C0.rot.y;
             }
@@ -464,9 +472,11 @@ export abstract class MarioMove extends MarioBase {
     }
     checkRideReCalc() {
         if (!this.unk2C0) return;
-        const inv = mtxInverse(this.getRidingMtx());
+        // (MTXInverse(m, m): a singular matrix is left as it is)
+        const inv = this.getRidingMtx();
+        psMtxInverse(inv, inv);
         this.unk300.set(this.unk2F4);
-        mtxMultVec(inv, this.pos, this.unk2F4);
+        psMtxMultVec(inv, this.pos, this.unk2F4);
     }
     checkPlayerAction() {
         this.mInput = 0;

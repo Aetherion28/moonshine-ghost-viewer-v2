@@ -154,6 +154,11 @@ export class Stage {
      * secret's blocks line up with the recorded run (sync 232 -> 2428 and 260 -> 1240 QF), and the
      * main-stage ghosts are unchanged. Its source in the game (the director's first frame before
      * Moonshine starts counting, most likely) isn't pinned down.
+     * TODO: the Noki Bay secret (NB6 ghost 5141834D80D3C, its second segment) needs its rolling
+     * geta blocks about 21 frames further on than this gives (TRollBlock's roll: the landing at
+     * stage tick 585 that the video's H 36.15 shows, and the one at 632, both need it), so the
+     * objects' lead before a segment that starts on a stage change is longer, by an amount the
+     * decomp doesn't say.
      */
     private leadFrame() {
         const w = this.world;

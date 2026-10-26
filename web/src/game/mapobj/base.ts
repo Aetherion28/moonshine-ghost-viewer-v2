@@ -89,13 +89,20 @@ export class MapObjBase extends LiveActor {
     isState(s: number) { return this.state === s; }
     isStateTimerEngaged() { return this.stateTimer > 0; }
 
-    /** getModel()->getAnmMtx(0): the root joint's matrix (the base matrix and scale; the root joint itself is at rest). */
+    /**
+     * getModel()->getAnmMtx(0): the root joint's matrix (the base matrix and scale; the root joint
+     * itself is at rest). J3DMtxCalcBasic::init (0x8001F904) scales the base matrix's columns by
+     * fmuls, translation as it is; a rest root joint's concat with the identity leaves it so.
+     * It is what the model's calc (CalcAnim: once a frame, the last tick) made it: baseTR only
+     * changes there (calcRootMatrix), so it stands for the whole frame's four movement ticks.
+     */
     rootMtx(): Mtx {
         if (this.anmMtx0) return this.anmMtx0;
         const B = this.baseTR, s = this.scale, m = mtx();
-        m[0] = B[0] * s.x; m[1] = B[1] * s.y; m[2] = B[2] * s.z; m[3] = B[3];
-        m[4] = B[4] * s.x; m[5] = B[5] * s.y; m[6] = B[6] * s.z; m[7] = B[7];
-        m[8] = B[8] * s.x; m[9] = B[9] * s.y; m[10] = B[10] * s.z; m[11] = B[11];
+        const sx = fr(s.x), sy = fr(s.y), sz = fr(s.z);
+        m[0] = fr(B[0] * sx); m[1] = fr(B[1] * sy); m[2] = fr(B[2] * sz); m[3] = fr(B[3]);
+        m[4] = fr(B[4] * sx); m[5] = fr(B[5] * sy); m[6] = fr(B[6] * sz); m[7] = fr(B[7]);
+        m[8] = fr(B[8] * sx); m[9] = fr(B[9] * sy); m[10] = fr(B[10] * sz); m[11] = fr(B[11]);
         return m;
     }
 

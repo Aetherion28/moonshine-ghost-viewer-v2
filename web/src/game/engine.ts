@@ -10,7 +10,7 @@
 import { FlagManager } from './flags.js';
 import { SplineRail } from './spline.js';
 import { psVecMag } from './camera/lib.js';
-import { rngCtx, fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsIsInSight, matan, MsRandF, sqDist, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, SMSCalcJumpVelocityY } from './math.js';
+import { rngCtx, fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsIsInSight, matan, MsRandF, sqDist, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, psMtxMultVec, psMtxInverse, MsMtxSetTRS, SMSCalcJumpVelocityY } from './math.js';
 import type { MarioProxy } from './mario.js';
 import type { PlayerMario } from './player/player.js';
 import type { mat4 } from 'gl-matrix';
@@ -634,7 +634,10 @@ export class LiveActor extends TakeActor {
     getGravityY() { return this.gravity; }
     hasMapCollision() { return !!this.mapCollision; }
     getRootJointMtx(): Mtx | null { return null; }
-    actorMtx(): Mtx { const m = mtx(); MsMtxSetXYZRPH(m, this.pos.x, this.pos.y, this.pos.z, this.rot.x, this.rot.y, this.rot.z); return m; }
+    /** SMS_GetActorMtx: MsMtxSetTRS of its position, rotation and scale */
+    actorMtx(): Mtx { const m = mtx(); MsMtxSetTRS(m, this.pos.x, this.pos.y, this.pos.z, this.rot.x, this.rot.y, this.rot.z, this.scale.x, this.scale.y, this.scale.z); return m; }
+    /** the ground actor's root joint matrix (copied: MTXCopy), else SMS_GetActorMtx */
+    private groundMtx(a: LiveActor): Mtx { const m = a.getRootJointMtx(); return m ? Float64Array.from(m) : a.actorMtx(); }
     load(s: Stream) {
         super.load(s);
         const mgr = s.str();
@@ -667,8 +670,9 @@ export class LiveActor extends TakeActor {
     belongToGround() { return !!this.groundPlane && !this.groundPlane.isIllegal() && !!this.groundPlane.actor && !this.isAirborne(); }
     calcRidePos() {
         if (!this.groundActor) return;
-        const m = this.groundActor.getRootJointMtx() || this.groundActor.actorMtx();
-        mtxMultVec(mtxInverse(m), this.pos, this.ridePos);
+        const m = this.groundMtx(this.groundActor);
+        psMtxInverse(m, m);
+        psMtxMultVec(m, this.pos, this.ridePos);
     }
     calcRideMomentum() {
         if (this.unkE8 === 0) return;
@@ -679,8 +683,7 @@ export class LiveActor extends TakeActor {
                 this.calcRidePos();
                 if (this.unkE8 >= 2 && this.groundActor) this.groundActorYaw = this.groundActor.rot.y;
             } else {
-                const m = this.groundActor.getRootJointMtx() || this.groundActor.actorMtx();
-                const v = mtxMultVec(m, this.ridePos).sub(this.pos);
+                const v = psMtxMultVec(this.groundMtx(this.groundActor), this.ridePos).sub(this.pos);
                 this.posDelta.add(v);
                 if (this.unkE8 >= 2) { this.rotDelta.y += MsAngleDiff(this.groundActor.rot.y, this.groundActorYaw); this.groundActorYaw = this.groundActor.rot.y; }
             }
