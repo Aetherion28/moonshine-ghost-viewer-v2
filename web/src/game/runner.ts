@@ -392,6 +392,13 @@ export function closingCopyQf(g: any, segment: number, q0: number): number | und
     return g.qf[k] - q0;
 }
 
+/**
+ * Ticks the sim runs a later segment's stage before the segment's first QF (2 frames). How long the
+ * game had really run is not recorded (a skipped opening camera, say); on NB6 (2026_10_21) every lead
+ * from 8 to 4400 ticks gives the same replay, so the shortest whole-frame one that fits is used.
+ */
+export const LATER_SEGMENT_LEAD = 8;
+
 export class SimRunner {
     /** steer Mario by a v8 ghost's recorded camera instead of the sim's camera (debug; see where it's read) */
     static steerByRecordedCamera = false;
@@ -449,7 +456,11 @@ export class SimRunner {
         const segI = s ? g.segIndex[s.i] : 0;
         const seg = g.segments[segI];
         if (!seg) return false;
-        const q0 = seg.startQf - g.header.startQf;
+        // Moonshine anchors only the first segment at QF 0 (its first pose is held from there); a later
+        // segment starts at the first QF its timer can be read, when the new stage has already run a while
+        // (ghost.cpp startEpochSamples). The sim starts that stage LATER_SEGMENT_LEAD ticks early so the
+        // intro's end (introDemoEnd: six ticks before the first sample) lands inside the run.
+        const q0 = seg.startQf - g.header.startQf - (segI > 0 ? LATER_SEGMENT_LEAD : 0);
         const I = g.inputs;
         const replay = this.inputReplay && !!I && I.count > 0 && (() => { for (let i = 0; i < I.count; i++) { const q = I.qf[i]; if (q >= q0 && q <= seg.endQf - g.header.startQf) return true; } return false; })();
         const key = `${sceneName}|${segI}|${q0}|${replay}`;
