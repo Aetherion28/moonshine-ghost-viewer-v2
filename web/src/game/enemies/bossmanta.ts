@@ -526,6 +526,7 @@ export class BossMantaManager extends EnemyManager {
             case 0:
                 if (this.flagMantaSpawned()) {
                     this.world.effect('demo:sirena_manta', this.world.mario.pos);
+                    if (this.world.talk) this.world.talk.fireStartDemoCamera('sirena_manta');
                     (this.getObj(0) as BossManta | undefined)?.initNthGeneration(0);
                     // (MSBgm::stopTrackBGMs)
                     this.battleState++;

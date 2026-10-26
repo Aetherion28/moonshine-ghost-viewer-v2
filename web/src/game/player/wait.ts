@@ -51,6 +51,7 @@ export abstract class MarioWait extends MarioJump {
             if (this.mStatusTimer >= 10) return this.changePlayerStatus(S.SLEEPY, 0, false);
         }
         if (this.mStatusState & 2) this.setAnimation(A.MONTEMAN_WAIT, 1);
+        else if (this.world.talk && this.world.talk.unk124 === 3) this.setAnimation(A.T_WAIT, 1);
         else if (this.isSinking()) this.setAnimation(A.SINKING, 1);
         else if (this.mUpperState === 5 && (this.mPrevStatus === S.BRAKE_END || this.checkFlag(MF.UNK_20)) && !(this.mStatusState & 1)) {
             this.setAnimation(A.HOT_WAIT, 1);

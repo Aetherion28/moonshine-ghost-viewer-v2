@@ -35,17 +35,34 @@
 //
 // What is left out: the presentation (the 2D panes' drawing, the sounds, the talk cursor, the
 // telop / balloon / Mario icon of the console), makeBoxLine's cut of a line wider than its curve
-// (the messages fit), the shine / demo / game-over parts of updateGameMode (no demo system), and
+// (the messages fit), the pause / guide / card save / stage transition / game over states
+// updateGameMode asks of the director (nextState), the demo's jingle (MSBgm::getHandle(2)), and
 // the jump of a talk started outside the game state.
+//
+// The camera demos: fireStartDemoCamera (the scripts', the Shine get) queues a TDemoInfo and sets
+// DIRECTOR_FLAG_DEMO_PENDING; updateGameMode then goes to the demo mode (unk124 3, or 4 from a talk): the
+// pad gets PAD_FLAG_NO_INPUT (Mario waits in T_WAIT), the camera starts the demo (a bck's
+// (duration + 1) * 2 ticks), and when the camera's rest frames run out the mode returns to 0 (2 from 4).
 
-import { fr } from './math.js';
-import { World, NameRef, LF } from './engine.js';
+import { fr, V3 } from './math.js';
+import { World, NameRef, LF, CUE_MOVE, CUE_CALC_ANIM } from './engine.js';
 import { AT } from './actortypes.js';
 
 /** MARIO_STATUS_WAIT, MARIO_STATUS_READ_BILLBOARD */
 const MARIO_STATUS_WAIT = 0x0C400201;
 /** TMarioGamePad flags and meanings (player/pad.ts PAD_FLAG / MEANING) */
-const PAD_FLAG_TALK_NPC = 0x4, PAD_FLAG_TALK_SELECT = 0x8;
+const PAD_FLAG_TALK_NPC = 0x4, PAD_FLAG_TALK_SELECT = 0x8, PAD_FLAG_NO_INPUT = 0x10;
+/** MARIO_FLAG_GAME_OVER */
+const MF_GAME_OVER = 0x400;
+/** TMarDirector's DIRECTOR_FLAG_* (as far as updateGameMode reads them) */
+const DF = {
+    SHINE_GET_PENDING: 0x1, STAGE_TRANSITION_PENDING: 0x2, GAME_OVER_PENDING: 0x20, DEMO_PENDING: 0x40, END_DEMO_PENDING: 0x80,
+    CARD_SAVE_PENDING: 0x200, SHINE_TAKEN: 0x8000,
+};
+/** MSBgm::getHandle(2) (the demo's jingle track): the BGM isn't simulated, taken as not playing */
+const BGM_HANDLE2_PLAYING = false;
+/** a TDemoInfo of mDemoQueue (fireStartDemoCamera's arguments) */
+interface DemoInfo { name: string | null; offset: V3 | null; frames: number; angle: number; timed: boolean; actor: NameRef | null; }
 const MEANING_TALK_B = 0x800, MEANING_SELECT_A = 0x20000, MEANING_SELECT_B = 0x40000, MEANING_SELECT_UP = 0x80000, MEANING_SELECT_DOWN = 0x100000;
 /** CPolarSubCamera modes (camera/polar.ts CM) */
 const CM_TALK_A = 0xC, CM_TALK_B = 0x2D, CM_TALK_C = 0x3F, CM_TALK_D = 0x40, CM_TALK_E = 0xA;
@@ -614,28 +631,143 @@ export class TalkDirector {
     }
     /** the scripts' __forceStartTalk */
     forceStartTalk(npc: NameRef | null) { this.unkA0 = npc; this.unk126 = 1; }
-    /** updateGameMode's talk part (changeState in the game state, at the tick's end) */
+    // ------------------------------------------------------------ the demo queue (fireStartDemoCamera)
+    /** mFlags (DIRECTOR_FLAG_*): the pending demo / shine / game over */
+    dflags = 0;
+    /** mDemoQueue (8 entries, head / tail) */
+    private demoQueue: DemoInfo[] = [];
+    private demoHead = 0; private demoTail = 0;
+    /** unk60: the tick the demo started (mTickCount) */
+    private unk60 = 0;
+    /** the state updateGameMode last asked of the director (mState: STATE_UNK4 is 4; 7 the game over, 5 pause, 6 guide, 0xB card save) */
+    nextState = 4;
+    /** TMarDirector::fireStartDemoCamera: queue a camera demo (the script's: timed, no offset) */
+    fireStartDemoCamera(name: string | null, offset: V3 | null = null, frames = -1, angle = 0, timed = true, actor: NameRef | null = null) {
+        if (((this.demoTail - this.demoHead) & 7) >= 7) return;
+        this.dflags |= DF.DEMO_PENDING;
+        this.demoQueue[this.demoTail] = { name, offset, frames, angle, timed, actor };
+        this.demoTail = (this.demoTail + 1) & 7;
+    }
+    /**
+     * TCameraBck::isFileExist / getTotalDemoFrames: the stage's map/camera/<name>.bck, a demo of its
+     * (duration + 1) * 2 ticks (a looping one: -1). Only the length is read (no view: the sim's
+     * camera doesn't show). 'startcamera' is the stage intro's, whose end the ghost gives.
+     */
+    private demoBck(name: string): { totalFrames: number; view(tick: number): null } | null {
+        if (name === 'startcamera') return null;
+        const f = this.world.files.scene('map/camera/' + name + '.bck');
+        if (!f || f.length < 0x30) return null;
+        const v = new DataView(f.buffer, f.byteOffset, f.byteLength);
+        let o = 0x20;
+        while (o + 8 <= f.length) {
+            const tag = String.fromCharCode(f[o], f[o + 1], f[o + 2], f[o + 3]), size = v.getUint32(o + 4);
+            if (tag === 'ANK1') return { totalFrames: v.getUint8(o + 8) !== 0 ? -1 : (v.getUint16(o + 0xA) + 1) * 2, view: () => null };
+            if (!size) break;
+            o += size;
+        }
+        return null;
+    }
+    /** TMarDirector::fireEndDemoCamera */
+    fireEndDemoCamera() { this.dflags |= DF.END_DEMO_PENDING; }
+    private startQueuedDemo() {
+        const d = this.demoQueue[this.demoHead], C: any = this.camera();
+        if (C && !C.bckSource) C.bckSource = (name: string) => this.demoBck(name);
+        if (C && C.startDemoCamera) C.startDemoCamera(d.name, d.offset, d.frames, d.angle, d.timed);
+    }
+    /** updateGameMode (changeState in the game state, at the tick's end) */
     updateGameMode() {
-        if (this.unk124 === 2 && this.talk.unk248 === 0) this.unk126 = 0;
+        const w = this.world;
+        const m: any = this.mario();
+        const P = this.pad();
+        const C: any = this.camera();
+        this.nextState = 4;
+        // DIRECTOR_FLAG_STAGE_TRANSITION_PENDING: World.setNextStage's (mapevent.ts)
+        if (w.stageTransitionPending) this.dflags |= DF.STAGE_TRANSITION_PENDING;
+        switch (this.unk124) {
+            case 0:
+                if (!(this.dflags & ~DF.SHINE_TAKEN)) {
+                    // (the pause menu / guide (STATE_UNK5 / 6) are not simulated)
+                    if (m && m.checkFlag(MF_GAME_OVER)) this.dflags |= DF.GAME_OVER_PENDING;
+                } else if (this.dflags & DF.GAME_OVER_PENDING) {
+                    this.dflags &= ~DF.GAME_OVER_PENDING;
+                    this.nextState = 7;
+                } else if (this.dflags & DF.SHINE_GET_PENDING) {
+                    this.dflags &= ~DF.SHINE_GET_PENDING;
+                    this.unk126 = 3;
+                    this.dflags |= DF.SHINE_TAKEN | DF.CARD_SAVE_PENDING | DF.STAGE_TRANSITION_PENDING;
+                } else if (this.dflags & DF.DEMO_PENDING) {
+                    this.unk126 = 3;
+                } else if (this.dflags & DF.CARD_SAVE_PENDING) {
+                    // (STATE_CARD_SAVE: not simulated)
+                    this.dflags &= ~DF.CARD_SAVE_PENDING;
+                } else if (this.dflags & DF.STAGE_TRANSITION_PENDING) {
+                    // moveStage: the director goes to STATE_UNK9 (the fade out; the pad loses GAME_INPUT)
+                    this.nextState = 9;
+                }
+                // (the gate demo's camera is fired by setNextStage itself (mapevent.ts), the actor demo's isn't simulated)
+                break;
+            case 2:
+                if (this.dflags & DF.DEMO_PENDING) this.unk126 = 4;
+                else if (this.talk.unk248 === 0) this.unk126 = 0;
+                break;
+            case 3: case 4: {
+                let end = false, endCamera = false;
+                if (this.dflags & DF.END_DEMO_PENDING) { endCamera = true; end = true; this.dflags &= ~DF.END_DEMO_PENDING; }
+                else if ((!C || !C.getRestDemoFrames || !C.getRestDemoFrames())
+                    && (!BGM_HANDLE2_PLAYING || w.tickCount - this.unk60 >= 720)) {
+                    // (mTickCount counts movement ticks: direct's loop, DOL 0x800ecfa8; 720 = 6 s)
+                    end = true;
+                    endCamera = this.demoQueue[this.demoHead] ? this.demoQueue[this.demoHead].timed : false;
+                }
+                if (end) {
+                    this.demoHead = (this.demoHead + 1) & 7;
+                    if (this.demoHead !== this.demoTail) {
+                        if (C) C.endDemoCamera();
+                        this.startQueuedDemo();
+                    } else {
+                        this.dflags &= ~DF.DEMO_PENDING;
+                        this.unk126 = this.unk124 === 4 ? 2 : 0;
+                        if (endCamera && C) C.endDemoCamera();
+                    }
+                }
+                break;
+            }
+        }
+        if (this.demoHead === this.demoTail) this.dflags &= ~DF.DEMO_PENDING;
         this.unk125 = this.unk124;
         if (this.unk124 !== this.unk126) {
-            const P = this.pad();
-            if (this.unk124 === 2 && this.unk126 === 0) {
-                this.world.events.push({ t: this.world.tickCount, kind: 'talk:end', data: { npc: this.unkA0 ? this.unkA0.name : '' } });
-                this.unkA0 = null;
-                if (P) P.offFlag(PAD_FLAG_TALK_SELECT);
-                this.stopwatchOn = true;
+            switch (this.unk124) {
+                case 2:
+                    if (this.unk126 === 0) {
+                        w.events.push({ t: w.tickCount, kind: 'talk:end', data: { npc: this.unkA0 ? this.unkA0.name : '' } });
+                        this.unkA0 = null;
+                        if (P) P.offFlag(PAD_FLAG_TALK_SELECT);
+                        this.stopwatchOn = true;
+                    }
+                    break;
+                case 3: case 4:
+                    if (P) P.offFlag(PAD_FLAG_NO_INPUT);
+                    this.stopwatchOn = true;
+                    break;
             }
             switch (this.unk126) {
                 case 1: {
                     const a: any = this.unkA0;
                     if (a && typeof a.onLiveFlag === 'function') a.onLiveFlag(LF.UNK40000);
+                    // unkA0->unkC.off(CUE_MOVE | CUE_CALC_ANIM): the cue skip mask's bits cleared
+                    if (a) a.flags &= ~(CUE_MOVE | CUE_CALC_ANIM);
                     if (P) P.onFlag(PAD_FLAG_TALK_SELECT);
                     this.stopwatchOn = false;
-                    this.world.events.push({ t: this.world.tickCount, kind: 'talk:start', data: { npc: a ? a.name : '' } });
+                    w.events.push({ t: w.tickCount, kind: 'talk:start', data: { npc: a ? a.name : '' } });
                     break;
                 }
                 case 2: if (this.unk124 === 1) this.talk.openTalkWindow(this.unkA0); break;
+                case 3: case 4:
+                    if (P) P.onFlag(PAD_FLAG_NO_INPUT);
+                    this.startQueuedDemo();
+                    this.stopwatchOn = false;
+                    this.unk60 = w.tickCount;
+                    break;
             }
             this.setMode(this.unk126);
         }

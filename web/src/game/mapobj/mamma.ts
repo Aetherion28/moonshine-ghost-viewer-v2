@@ -41,7 +41,7 @@ import { MapObjFlag } from './view.js';
 import { MTXConcat, MTXRotAxisRad, setRootMtx, mapObjWave, marioGroundLevel, marioGroundPlane, marioTouchGround4cm, sendToMario } from './lib.js';
 import './item.js';
 
-const demoCamera = (w: World, name: string, p: V3 | null, frames = -1) => w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name, p: p ? p.clone() : null, frames } });
+const demoCamera = (w: World, name: string, p: V3 | null, frames = -1) => { w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name, p: p ? p.clone() : null, frames } }); if (w.talk) w.talk.fireStartDemoCamera(name, p ? p.clone() : null, frames); };
 /** (fabricated) addAnmFrame: frame ctrl `type` of the actor's model moved on by speed */
 function addAnmFrame(o: LiveActor, type: number, speed: number) {
     const fc = o.mactor && o.mactor.getFrameCtrl(type);

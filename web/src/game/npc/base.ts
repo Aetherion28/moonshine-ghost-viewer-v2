@@ -263,7 +263,8 @@ class NpcThrow {
 }
 /** TMarDirector::isTalkOrDemoModeNow / isThing (talk, or the demo kind 4) */
 const talkOrDemo = (w: World) => !!(w.talkMode || w.demoMode);
-const directorIsThing = (w: World) => !!w.talkMode;
+/** TMarDirector::isThing: isTalkModeNow() || unk124 == 4 (a demo from a talk) */
+const directorIsThing = (w: World) => !!w.talkMode || (!!w.talk && w.talk.unk124 === 4);
 
 /** TBaseNPC::TNpcUnk22CStruct: a countdown with a random length */
 class NpcTimer {

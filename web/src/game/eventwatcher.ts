@@ -559,7 +559,7 @@ const NPC: Record<string, Ev> = {
         if (!b) return;
         b.unk150 = a[2].getDataInt() !== 0 ? ([AT.FRUIT_BANANA, AT.FRUIT_COCONUT, AT.FRUIT_PINE, AT.FRUIT_DURIAN][a[1].getDataInt()] ?? 0) : 0;
     }),
-    fireStartDemoCamera: noop(1, (it, a) => effect(it, 'demo:' + a[0].getDataString(), null)),
+    fireStartDemoCamera: noop(1, (it, a) => { const name = a[0].getDataString(); effect(it, 'demo:' + name, null); const T = W(it).talk; if (T) T.fireStartDemoCamera(name); }),
     isDemoMode: (it, n) => { args(it, 0, n); it.pushBool(demoModeNow(W(it))); },
     checkMonteClear: (it, n) => {
         args(it, 1, n); const i = it.pop().getDataInt();

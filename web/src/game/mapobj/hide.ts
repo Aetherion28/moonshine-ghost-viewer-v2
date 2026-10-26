@@ -180,6 +180,7 @@ export class HideObjPictureTwin extends WaterHitPictureHideObj {
             o.offLiveFlag(LF.UNK10);
             if (MapObjBase.isCoin(o)) { (o as Coin).container = this; (o as Coin).unk14C = this.unk148; }
             this.world.events.push({ t: this.world.tickCount, kind: 'demoCamera', data: { name: this.camera, p: o.pos.clone() } });
+            if (this.world.talk) this.world.talk.fireStartDemoCamera(this.camera, o.pos.clone());
         }
         this.state = 3;
     }

@@ -710,6 +710,7 @@ export class BigWatermelon extends MapObjBall {
             this.onLiveFlag(LF.UNK10);
             this.startAnim(7);
             w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name: 'スイカゴールカメラ', p: this.pos.clone() } });
+            if (w.talk) w.talk.fireStartDemoCamera('スイカゴールカメラ', this.pos.clone());
             const im = mapObjGlobals(w).itemManager as any;
             if (im && im.makeShineAppearWithDemoOffset) im.makeShineAppearWithDemoOffset('シャイン（お化けスイカ用）', 'スイカシャインカメラ', 0, 0, 0);
             this.stateTimer = 380;

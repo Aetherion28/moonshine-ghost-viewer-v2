@@ -338,6 +338,7 @@ export class Shine extends Item {
     appearWithDemo(camera: string) {
         this.unk18C = demoLength(this.world, camera);
         this.world.events.push({ t: this.world.tickCount, kind: 'demoCamera', data: { name: camera, p: this.pos.clone(), frames: this.unk18C } });
+        if (this.world.talk) this.world.talk.fireStartDemoCamera(camera, this.pos.clone());
         this.appearWithTime(this.unk18C, -1, -1, -1);
     }
 }

@@ -264,6 +264,7 @@ export class FruitLauncher extends MapObjBase {
             fruit.vel.set(x, -FruitLauncher.mObjSpeedY, z);
             fruit.offLiveFlag(LF.UNK10);
             this.world.events.push({ t: this.world.tickCount, kind: 'demoCamera', data: { name: 'フルーツタンクカメラカメラ', p: fruit.pos.clone() } });
+            if (this.world.talk) this.world.talk.fireStartDemoCamera('フルーツタンクカメラカメラ', fruit.pos.clone());
             this.world.sound(SE.SY_COLLECT_DELIGHT, null);
             if (MapObjBase.isFruit(fruit)) (fruit as ResetFruit).killByTimer(FruitLauncher.mFruitLiveTime);
         }

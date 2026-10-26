@@ -1476,7 +1476,7 @@ export class PlayerMario extends TMarioSim {
 
 // ---------------------------------------------------------------- TMarDirector: the stage's opening
 /** TMarDirector's states (STATE_UNK0 ... STATE_UNK4: the game) */
-export const DIR = { BOOT: 0, DEMO: 1, UNK2: 2, WIPE_OPEN: 3, GAME: 4 };
+export const DIR = { BOOT: 0, DEMO: 1, UNK2: 2, WIPE_OPEN: 3, GAME: 4, GAME_OVER: 7, MOVE_STAGE: 9 };
 /** stages whose opening is always the camera demo (changeState STATE_UNK0) */
 const DEMO_STAGES = new Set([2, 3, 4, 5, 6, 8, 9, 0x34]);
 /** TConsoleStr: the open wipe's ticks (startOpenWipe to unk2BC 6) */
@@ -1534,6 +1534,12 @@ export class PlayerDirector {
             if (!this.mario.simCamera) this.mario.mGamePad.onNeutralMarioKey();
             this.wipeDoneTick = tick + OPEN_WIPE_TICKS;
         }
+        // STATE_UNK4's finalize: the stopwatch stops (in mode 0) and the pad loses GAME_INPUT
+        if (prev === DIR.GAME) {
+            const T = this.mario.world.talk;
+            if (T && T.unk124 === 0) T.stopwatchOn = false;
+            this.mario.mGamePad.offFlag(PAD_FLAG.GAME_INPUT);
+        }
         this.state = next;
         const C = this.mario.simCamera as any;
         if (C && C.setDirectorState) C.setDirectorState(next);
@@ -1565,7 +1571,12 @@ export class PlayerDirector {
                 break;
             // STATE_UNK4: updateGameMode (its talk part: talk.ts)
             case DIR.GAME:
-                if (m.world.talk) m.world.talk.updateGameMode();
+                if (m.world.talk) {
+                    m.world.talk.updateGameMode();
+                    // the states it asks for that are simulated: the stage change's fade (STATE_UNK9), the game over (STATE_UNK7)
+                    const n = m.world.talk.nextState;
+                    if (n === DIR.MOVE_STAGE || n === DIR.GAME_OVER) this.enter(n, tick);
+                }
                 break;
         }
     }

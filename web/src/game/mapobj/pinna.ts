@@ -41,7 +41,7 @@ import { itemCounts } from './item.js';
 import type { ItemManager, Coin } from './item.js';
 
 const itemManager = (w: World) => mapObjGlobals(w).itemManager as ItemManager | null;
-const demoCamera = (w: World, name: string, p: V3) => w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name, p: p.clone() } });
+const demoCamera = (w: World, name: string, p: V3) => { w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name, p: p.clone() } }); if (w.talk) w.talk.fireStartDemoCamera(name, p.clone()); };
 /** a J3D anm matrix (column-major 4x4) as the game's 3x4 */
 function m4ToMtx(w: mat4): Mtx {
     const m = mtx();

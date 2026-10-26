@@ -60,7 +60,7 @@ const marioIsOn = (w: World, a: LiveActor) => marioGroundPlane(w).actor === a &&
 /** SMS_MarioWarpRequest */
 const marioWarpRequest = (w: World, p: V3, angle: number) => { const m = w.mario as any; if (typeof m.warpRequest === 'function') m.warpRequest(p.clone(), angle); };
 /** TMarDirector::fireStartDemoCamera / fireEndDemoCamera (the camera itself isn't driven from here) */
-const demoCamera = (w: World, name: string, p: V3 | null) => w.effect('demo:' + name, p ? p.clone() : new V3());
+const demoCamera = (w: World, name: string, p: V3 | null) => { w.effect('demo:' + name, p ? p.clone() : new V3()); if (w.talk) w.talk.fireStartDemoCamera(name, p ? p.clone() : null); };
 
 // ================================================================ the map model's joints
 /** JNT1's per-joint data the game reads (J3DJoint's J3DTransformInfo, getMin / getMax). */

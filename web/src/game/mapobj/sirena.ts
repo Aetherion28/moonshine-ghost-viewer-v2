@@ -480,6 +480,7 @@ export class Donchou extends MapObjBase {
             this.world.sound(SE.SY_DONCHO_OPEN, this.pos);
             this.mactor.setBck('donchou');
             this.world.events.push({ t: this.world.tickCount, kind: 'demoCamera', data: { name: 'どん帳カメラ', p: this.pos.clone() } });
+            if (this.world.talk) this.world.talk.fireStartDemoCamera('どん帳カメラ', this.pos.clone());
             const fc = this.mactor.getFrameCtrl(ANM_BCK);
             if (fc) fc.rate = fr(0.5 * fc.rate);
         }
