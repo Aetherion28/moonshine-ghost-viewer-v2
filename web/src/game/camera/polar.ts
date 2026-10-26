@@ -137,6 +137,21 @@ export interface DemoView { pos: Vec; at: Vec; up: Vec; fovy: number; }
  */
 export interface DemoBck { totalFrames: number; view(tick: number): DemoView | null; }
 
+/**
+ * correctYawToRecorded's tolerance (s16 units) between the sim's rendered yaw and a recorded one: the
+ * render drops the yaw's low 4 bits (a 16-unit bucket) and the recording's s16 quaternion adds under
+ * half a unit (PV6 / NB6 while in sync: all within 0.45), so a disagreement is either < 0.5 (the same
+ * bucket) or >= 15.5 (another one); 8 splits them with room either side.
+ */
+const YAW_TOL = 8;
+/**
+ * correctYawToRecorded: how far (world units, across the line of sight) the recorded eye must be from
+ * the sim's before the sim's rig is the one turned: the recording keeps the eye to a quarter unit
+ * (under 0.18 across), the sims in sync agree to 0.2.
+ */
+const EYE_TOL = 0.5;
+const wrapAngle = (v: number) => ((((v + 32768) % 65536) + 65536) % 65536) - 32768;
+
 // ---------------------------------------------------------------- TTargetCamera
 class Target {
     pos = vec(); target = vec(); unk18 = vec();
@@ -1308,6 +1323,79 @@ export class PolarSubCamera implements SimCamera {
         this.cur.yaw = p.yaw;
         vset(this.cur.pos, pos); vset(this.cur.unk18, pos); vset(this.cur.target, at);
     }
+    /**
+     * Not the game's: the hybrid steering camera's correction (runner.ts SimRunner.correctByRecordedCamera).
+     * recFwd: a v8 ghost's recorded view at the end of this frame, its forward (eye to look-at) yaw in
+     * s16 units, unrounded; recPos: its eye (quarter-unit precision), or null.
+     *
+     * What the game renders is C_MTXLookAt(unk124, unk148) after calcFinalPosAndAt_'s
+     * CLBRevisionLookatByAngleX, which rebuilds unk148 around unk124 from JMASSin / JMASCos of the
+     * yaw: tables of 4096, so the rendered yaw is that of mPosition -> mTarget with its low 4 bits
+     * dropped. A recording therefore pins Mario's unk258 (CLBCrossToPolar(mTarget, mPosition)) to one
+     * 16-unit bucket and no closer, and the quaternion's s16 components add under half a unit. When
+     * the sim's rendered yaw is more than YAW_TOL off the recording, the sim's camera sits in another
+     * bucket. If the recorded eye is off the sim's across the line of sight, that way (more than
+     * EYE_TOL), the eye is what went astray and the whole horizontal rig is turned about its look-at
+     * to put mPosition -> mTarget back in the recorded bucket, where in it the recorded eye's bearing
+     * says (2 units off its edges): mPosition (and its copies), the polar yaw cur.yaw with cur.pos / cur.unk18 about
+     * cur.target (what next tick's calcPosAndAt_ builds the eye from) and the inbetween's eye
+     * (inb.pos, inb.unkE) about inb.at; then unk148's revision, unk256 / unk258 and the matrices are
+     * redone as the tick's end does. Only where the polar rig places the camera (no demo, talk, fix /
+     * definite, death or bck camera). An eye that agrees means the look-at differs (GB3 2026_10_21
+     * QF 576: one key, and the sim's turned rig drifted sooner than the untouched one): left alone.
+     * Without recPos, the bucket's middle. Returns the turn applied (s16; 0: none).
+     */
+    correctYawToRecorded(recFwd: number, recPos: Vec | null): number {
+        const m = this.mMode;
+        if (!this.mario || m < 0 || m === CM.REPRODUCE_DEMO || m === CM.JET_COASTER || m === CM.MULTI_PLAYER || isTalkMode(m) || this.isTalkCameraInbetween()
+            || isFixOrDefinite(m) || this.isDemoCamera() || (this.unk64 & (CF.DEAD_DEMO | CF.GATE_DEMO | CF.JET_COASTER_SCENE)) || this.directorState !== 4) return 0;
+        const e = this.unk124, a = this.unk148;
+        const rend = Math.atan2(a.x - e.x, a.z - e.z) * (32768 / Math.PI);
+        if (Math.abs(wrapAngle(recFwd - rend)) <= YAW_TOL) return 0;
+        const R = s16(((Math.round(recFwd / 16) & 4095) << 4));
+        const f0 = crossToPolar(this.mPosition, this.mTarget).yaw;
+        if (s16(f0 - R) >= 0 && s16(f0 - R) < 16) return 0;
+        // which way the bucket is, and where in it: the recorded eye's bearing from the look-at
+        const up = s16(f0 - R) < 0;
+        let want = s16(R + 8);
+        if (recPos) {
+            const fp = crossToPolar(recPos, this.mTarget).yaw, dx = fr(this.mTarget.x - this.mPosition.x), dz = fr(this.mTarget.z - this.mPosition.z);
+            const lat = Math.hypot(dx, dz) * Math.sin(s16(fp - f0) * (Math.PI / 32768));
+            // the eye where the recording has it (or off the other way): the look-at is what differs, not the rig
+            if (Math.abs(lat) <= EYE_TOL || (lat > 0) !== up) return 0;
+            want = s16(R + clamp(s16(fp - R), 2, 13));
+        }
+        let total = 0;
+        for (let pass = 0; pass < 3; pass++) {
+            const f = crossToPolar(this.mPosition, this.mTarget).yaw;
+            if (s16(f - R) >= 0 && s16(f - R) < 16) break;
+            if (pass > 0) want = s16(R + (s16(f - R) < 0 ? 2 : 13));
+            const d = s16(want - f);
+            if (d === 0) break;
+            this.turnRig_(d);
+            total = s16(total + d);
+        }
+        if (!total) return 0;
+        vset(this.unk124, this.mPosition); vset(this.unk148, this.mTarget);
+        this.calcFinalPosAndAt_();
+        this.calcExternalData_();
+        this.calcMatrices();
+        return total;
+    }
+    /** correctYawToRecorded's turn: the camera's eye-side state about its look-ats by d (s16) */
+    private turnRig_(d: number) {
+        const rad = d * (Math.PI / 32768), c = Math.cos(rad), s = Math.sin(rad);
+        const rot = (p: Vec, o: Vec) => {
+            const dx = p.x - o.x, dz = p.z - o.z;
+            p.x = fr(o.x + dx * c + dz * s); p.z = fr(o.z + dz * c - dx * s);
+        };
+        rot(this.mPosition, this.mTarget);
+        vset(this.unk130, this.mPosition);
+        rot(this.cur.pos, this.cur.target); rot(this.cur.unk18, this.cur.target);
+        this.cur.yaw = s16(this.cur.yaw + d);
+        rot(this.inb.pos, this.inb.at); this.inb.unkE = s16(this.inb.unkE + d);
+    }
+
     /** warpPosAndAt(const Vec&, const Vec&) */
     warpPosAndAt(pos: Vec, at: Vec) {
         if (this.mMode >= CM.REPRODUCE_DEMO) return;

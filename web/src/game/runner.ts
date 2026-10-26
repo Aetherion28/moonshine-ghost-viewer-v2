@@ -204,7 +204,7 @@ export interface ReplaySync {
     driftErr: number; maxErr: number;
     /** frames compared, and frames bit-exact (to the ghost's 1/8 unit) before the first drift */
     frames: number; exactFrames: number;
-    /** the stick's camera: 'recorded' (v8 SGCA), 'sim' (the game camera port), 'approx' (behind Mario) */
+    /** the stick's camera: 'recorded' (v8 SGCA), 'hybrid' (the sim's, kept in the recorded one's yaw bucket), 'sim' (the game camera port), 'approx' (behind Mario) */
     camera: string;
     /** QF Mario lost a life (the run continues) */
     lostLives: number[];
@@ -238,6 +238,25 @@ export function recordedStickCamera(at: (qf: number) => { quat: [number, number,
             return matan(-fz, -fx);
         },
     };
+}
+
+/**
+ * A v8 ghost's recorded camera keys of one pose segment by ghost QF (the frame they end): each the
+ * rendered view's forward (eye to look-at) yaw, s16 units unrounded, and its eye. The keys are the
+ * exact view of their frame (every 4th frame, sooner at a cut); ghostCameraAt's in-betweens are not.
+ */
+export function recordedCameraKeys(g: any, seg: number): Map<number, { fwd: number; pos: { x: number; y: number; z: number } }> {
+    const out = new Map<number, { fwd: number; pos: { x: number; y: number; z: number } }>();
+    const c = g && g.camera;
+    if (!c) return out;
+    for (let i = 0; i < c.count; i++) {
+        if ((c.tag[i] & 63) !== seg) continue;
+        const x = c.quat[i * 4], y = c.quat[i * 4 + 1], z = c.quat[i * 4 + 2], w = c.quat[i * 4 + 3];
+        // the view's -Z in the world: the conjugate rotation of (0, 0, -1)
+        const fx = -2 * (x * z - w * y), fz = -(1 - 2 * (x * x + y * y));
+        out.set(c.qf[i], { fwd: Math.atan2(fx, fz) * (32768 / Math.PI), pos: { x: c.pos[i * 3], y: c.pos[i * 3 + 1], z: c.pos[i * 3 + 2] } });
+    }
+    return out;
 }
 
 /**
@@ -376,6 +395,17 @@ export function closingCopyQf(g: any, segment: number, q0: number): number | und
 export class SimRunner {
     /** steer Mario by a v8 ghost's recorded camera instead of the sim's camera (debug; see where it's read) */
     static steerByRecordedCamera = false;
+    /**
+     * The hybrid steering camera: with a v8 ghost's recorded camera, the sim's camera still runs every
+     * tick, and at each recorded key (the end of every 4th frame) a sim camera that renders outside the
+     * recorded 16-unit yaw bucket is turned back into it (PolarSubCamera.correctYawToRecorded). Off:
+     * the sim's camera alone. No effect on ghosts without a recorded camera, nor with steerByRecordedCamera.
+     */
+    static correctByRecordedCamera = true;
+    /** this stage's recorded camera keys (correctByRecordedCamera), null: none */
+    private camKeys: Map<number, { fwd: number; pos: { x: number; y: number; z: number } }> | null = null;
+    /** the corrections made this stage: ghost QF and turn (s16) */
+    camCorrections: { qf: number; turn: number }[] = [];
     private rng: RngReplay | null = null;
     /** run Mario from the ghost's inputs where it has them (the viewer's "Input replay") */
     inputReplay = true;
@@ -438,7 +468,7 @@ export class SimRunner {
             try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, seed ?? 0, 0, intro); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
             const st0 = this.stage;
-            this.pads = null; this.sync = null; this.history = null;
+            this.pads = null; this.sync = null; this.history = null; this.camKeys = null; this.camCorrections = [];
             if (st0.player) {
                 const P = st0.player;
                 this.pads = new Map();
@@ -447,10 +477,15 @@ export class SimRunner {
                 // Steering by a v8 ghost's recorded camera is off by default: it is sampled once a frame and
                 // Mario reads the camera every tick, so the ticks in between are guessed. With the sim's own
                 // camera, NB6 (2026_10_21) syncs to QF 1056 instead of 688 and PV6 to 1456 instead of 836.
+                // What the recording does pin down (its keys' 16-unit yaw bucket and eye) corrects the
+                // sim's camera instead: correctByRecordedCamera, the hybrid.
                 if (g.camera && inp.api.ghostCameraAt && SimRunner.steerByRecordedCamera) {
                     const at = inp.api.ghostCameraAt;
                     P.setStickCamera(recordedStickCamera((q) => at(g, q0 + q, segI), () => st0.qf, () => s16(P.mFaceAngle.y + 0x8000)), false);
                     cam = 'recorded';
+                } else if (g.camera && SimRunner.correctByRecordedCamera && P.simCamera && (P.simCamera as any).correctYawToRecorded) {
+                    this.camKeys = recordedCameraKeys(g, segI);
+                    if (this.camKeys.size) cam = 'hybrid'; else this.camKeys = null;
                 }
                 this.history = new ReplayHistory(g, q0 + Math.max(0, P.driftFrom));
                 this.sync = { replay: true, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: cam, lostLives: P.lostLives, lateInputsQf: -1, controlQf: -1 };
@@ -465,6 +500,11 @@ export class SimRunner {
             rngCtx.roll = this.rng ? this.rng.roll : null; rngCtx.node = this.rng ? this.rng.node : null;
             try { st.runFrame(track, st.player ? this.padAt(inp.ghost, st.qf + 4) : null); } catch (e) { this.error = e; console.warn('[game] frame', e); this.stage = null; return false; }
             finally { rngCtx.roll = null; rngCtx.node = null; }
+            if (st.player && this.camKeys) {
+                const k = this.camKeys.get(q0 + st.qf);
+                const turn = k ? (st.player.simCamera as any).correctYawToRecorded(k.fwd, k.pos) : 0;
+                if (turn) this.camCorrections.push({ qf: q0 + st.qf, turn });
+            }
             if (st.player && this.history) this.history.push(q0 + st.qf, st.player);
             if (st.player && this.sync) {
                 const d = st.player.drift, S = this.sync;
