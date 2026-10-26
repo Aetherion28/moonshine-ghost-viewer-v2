@@ -306,7 +306,9 @@ export class PlayerMario extends TMarioSim {
             }
             if (G.mCurrentNozzle === NOZZLE.Turbo && (((this.mStatus - 0xC400000) >>> 0) === 0x201 || ((this.mStatus - 0x4000000) >>> 0) === 0x440)) {
                 const n = G.getCurrentNozzle();
-                if (n) n.mInsidePressure = fmul(this.mIntendedMag, 0.03125);
+                // the DOL stores to the Turbo nozzle's float at +0x714 (stfs f31,0x714(r3) @0x801314b8; what it
+                // is isn't known), not to TNozzleTrigger::mInsidePressure at 0x388: the charge is left alone
+                if (n) (n as any).unk714 = fmul(this.mIntendedMag, 0.03125);
             }
         }
         if (this.mIntendedMag > 0) this.mInput |= 1;
