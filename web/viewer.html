@@ -5671,7 +5671,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
       sleepMario.add(body);
       scene.add(sleepMario);
     }
-    if (poseLiveMario(sleepMario)) return;
+    if (poseLiveMario(sleepMario)) { sleepMario.visible = !(livePad.runner && livePad.runner.marioHidden && livePad.runner.marioHidden()); return; }   // (not on the stage before setMario: the intro)
     const [x, y, z, yaw] = objSpawn;
     const ck = activeCol() ? 1 : 0;
     if (sleepMario.userData.livePosed) {
@@ -5707,7 +5707,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   // gameViewer.gamepad(true/false). While on and no ghost is loaded, the shown stage runs live
   // (the game layer's LiveRunner: the player Mario and the sim camera) from the gamepad, one game
   // frame per 1/29.97 s; a loaded ghost stops it and the gamepad is ignored.
-  const livePad = { on: false, id: '', index: -1, clock: 0, frames: 0, reset: 0, active: false, runner: null, rec: false, last: null, ease: null };
+  const livePad = { on: false, id: '', index: -1, clock: 0, frames: 0, reset: 0, active: false, runner: null, rec: false, last: null, ease: null, goKey: '', note: '' };
   const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
   let konamiAt = 0;
   window.addEventListener('keydown', (e) => {
@@ -5842,7 +5842,9 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     return { t: 0, ghost: null, api: RAW, live: { area: a, episode: e, frames: livePad.frames, pad: readLivePad, reset: livePad.reset, record: livePad.rec, sleepPhase: livePad.rec ? null : sp } };
   }
   function liveStep(dt) {
-    const want = livePad.on && !ghosts.length && !!gameLayer && !!gameLayer.common && !splitOn() && !!objectsGroup;
+    // (a live stage change: the next stage's objects are loading, the run waits for them: LiveRunner.pending)
+    const changing = !!(livePad.active && livePad.runner && livePad.runner.pending);
+    const want = livePad.on && !ghosts.length && !!gameLayer && !!gameLayer.common && !splitOn() && (!!objectsGroup || changing);
     if (livePad.active && !want) {   // (a ghost came in, or the mode went off: back to the sleeping Mario)
       if (livePad.rec) setLiveRec(false);
       livePad.active = false; livePad.runner = null;
@@ -5859,6 +5861,21 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     const st = livePad.runner.stage;
     if (st && livePad.frames - st.frame > 4) livePad.frames = st.frame + 4;
     if (gameLive) gameLayer.advanceSim(liveSimInput());
+    liveStageChange();
+  }
+  // The live run left the stage (a warp, pipe, painting, the Shine, a miss): show the area it goes to
+  // (the runner starts it once its scene is the one drawn) and what happened on the way.
+  function liveStageChange() {
+    const R = livePad.runner, P = R && R.pending;
+    const note = R ? R.notice || '' : '';
+    if (note !== livePad.note) { livePad.note = note; showNotice(note); }
+    if (!P) { livePad.goKey = ''; return; }
+    if (P.key === livePad.goKey) return;
+    livePad.goKey = P.key;
+    const r = worldRoutes ? [...worldRoutes.values()].flat().find((x) => x.key === P.key) : null;
+    if (!r) { showNotice(`Live play: the viewer has no stage for area ${P.area}, episode ${P.episode + 1}`); return; }
+    if (r.map !== currentMap) loadMap(r.map, r.key);
+    else { const entry = maps.find((m) => m.id === currentMap); if (entry) loadObjects(entry, r.key); }
   }
   const liveHistory = () => (livePad.active && livePad.runner && livePad.runner.history && livePad.runner.history.last >= 0 ? livePad.runner.history : null);
   // the live Mario on the sleeper's rig (true: posed)
@@ -7862,7 +7879,8 @@ void main() {
     const rv = cameraMode === 'follow' ? recordedView(sgLead) : null, rp = rv ? recordedPhase(now) : null;
     // (else a demo camera of a boss Shine's: the boss's fall, then the Shine flying in)
     const iv = cameraMode === 'follow' && !(userCamUntil > now || camDragging) ? introView(sgLead, t) : null;
-    { const w = iv && !(gameHud && gameHud.drawsWipe) ? Math.max(0, Math.min(1, iv.wipe)) : 0; if (introWipe.style.opacity !== String(w)) introWipe.style.opacity = String(w); }
+    { const lw = livePad.active && livePad.runner && livePad.runner.wipe ? livePad.runner.wipe() : 0;   // (live play: the director's fades and the console's wipes)
+      const w = iv && !(gameHud && gameHud.drawsWipe) ? Math.max(0, Math.min(1, iv.wipe)) : lw; if (introWipe.style.opacity !== String(w)) introWipe.style.opacity = String(w); }
     const sgCam = iv && iv.cam ? iv.cam : !rv && cameraMode === 'follow' && !(userCamUntil > now || camDragging) ? (sgDm ? shineDemoCam(sgDm, t) : flightCam(t)) : null;
     if (sgCam) {
       camera.position.set(sgCam.pos[0], sgCam.pos[1], sgCam.pos[2]);
@@ -7909,6 +7927,7 @@ void main() {
     // (the hidden gamepad mode: the live sim's camera)
     const lv = livePad.active && livePad.runner ? livePad.runner.view() : null;
     if (!lv) livePad.ease = null;
+    { const u = lv && lv.up ? lv.up : [0, 1, 0]; if (camera.up.x !== u[0] || camera.up.y !== u[1] || camera.up.z !== u[2]) camera.up.set(u[0], u[1], u[2]).normalize(); }   // (a demo camera's roll)
     if (lv) {
       // (display only: the camera eases from the idle view to the sim's over 0.5 s as live play starts)
       const e = livePad.ease || (livePad.ease = { t: 0, pos: camera.position.clone(), at: controls.target.clone(), fov: camera.fov });

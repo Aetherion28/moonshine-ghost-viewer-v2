@@ -1,7 +1,7 @@
 // Player/MarioJump.cpp: the jumps, the air control, landing on things, wall kicks, dives, the down
 // statuses in the air, and jumpMain.
 
-import { fr, s16, JMASSin, JMASCos, matan, FConverge } from '../math.js';
+import { fr, s16, JMASSin, JMASCos, matan, FConverge, IConverge } from '../math.js';
 import { HitActor, MSG } from '../engine.js';
 import { MarioRun } from './run.js';
 import { fmul, fadd, fsub, fmadd } from './fmath.js';
@@ -432,6 +432,85 @@ export abstract class MarioJump extends MarioRun {
         if (h && h.moveRequest && h.moveRequest(p) === true) this.pos.set(p);
         return 0;
     }
+    /**
+     * diving (0x8012968c): MARIO_STATUS_DIVE, walking the sea floor in the diving helmet (the diving
+     * maps, the helmet item): held (mHolder's taking matrix) he hangs there thrown; the stick
+     * ahead / behind pushes him (mAccelControl), to the side turns him (mRotSp), the underwater
+     * nozzle's side angle following the stick; then the sea's brakes and jumpProcess (fallProcess has
+     * the dive's own gravity). (Named divingStatus here: `diving` is the MarioProxy flag game code reads.)
+     */
+    divingStatus() {
+        const G = (this as any).mWaterGun;
+        const h = this.holder as any;
+        if (h) {
+            const m = h.getTakingMtx ? h.getTakingMtx() : null;
+            if (m) { this.pos.x = m[3]; this.pos.y = m[7]; this.pos.z = m[11]; }
+            this.mFaceAngle.x = 0; this.mModelFaceAngle = this.mFaceAngle.y; this.mFaceAngle.z = 0;
+            this.setAnimation(A.THROWN, 1);
+            return 0;
+        }
+        const fludd = this.checkFlag(MF.HAS_FLUDD) && G;
+        if (this.mInput & 1) {
+            const mag = this.mIntendedMag;
+            const d = s16(this.mIntendedYaw - this.mFaceAngle.y);
+            const side = G ? G.getCurrentNozzle().getSideAngleMaxSide() : 0;
+            const k = fmul(fmul(fr(0.03125), -mag), side);
+            if ((d > -0x1555 && d < 0x1555) || d < -0x6AAA || d > 0x6AAA) {
+                const na = s16(Math.trunc(fmul(k, JMASCos(d & 0xFFFF))));
+                if (fludd) {
+                    G.unk1CC2 = na; G.unk1CC4 = na;
+                    this.mForwardVel = fmadd(fmul(mag, JMASCos(d & 0xFFFF)), this.mDivingParams.mAccelControl, this.mForwardVel);
+                }
+            } else {
+                const na = s16(Math.trunc(fmul(k, JMASSin(d & 0xFFFF))));
+                if (fludd) {
+                    G.unk1CC2 = s16(-na); G.unk1CC4 = na;
+                    const rot = this.mDivingParams.mRotSp;
+                    this.mFaceAngle.y = s16(this.mIntendedYaw - IConverge(s16(this.mIntendedYaw - this.mFaceAngle.y), 0, rot, rot));
+                }
+            }
+            this.setAnimation(A.DIVE_WAIT, 1);
+        } else {
+            if (this.pos.y <= fadd(4, this.mFloorPosition.y)) {
+                this.setPlayerVelocity(0);
+                switch (this.mAnimationId) {
+                    case A.WAIT: break;
+                    case A.DIVE_LAND: if (this.isLast1AnimeFrame()) this.setAnimation(A.WAIT, 1); break;
+                    default: this.setAnimation(A.DIVE_LAND, 1); break;
+                }
+            } else this.setAnimation(A.DIVE_WAIT, 1);
+            if (fludd) { G.unk1CC2 = 0; G.unk1CC4 = 0; }
+        }
+        // (MSD_SE_MA_DIVE_IN_MAHRE, bubbleFromBody)
+        this.mForwardVel = fmul(this.mForwardVel, this.mDivingParams.mSeaBrake);
+        this.mSlideVelX = fmul(this.mForwardVel, JMASSin(this.mFaceAngle.y & 0xFFFF));
+        this.mSlideVelZ = fmul(this.mForwardVel, JMASCos(this.mFaceAngle.y & 0xFFFF));
+        this.mVel.x = this.mSlideVelX;
+        this.mVel.y = fmul(this.mVel.y, this.mDivingParams.mSeaBrakeY);
+        this.mVel.z = this.mSlideVelZ;
+        this.jumpProcess(0);
+        return 0;
+    }
+    /**
+     * boardJumping (0x8012a678): the surf board's jump (0x281089A) and fall (0x81089B): landing while
+     * falling back onto SURF; a wall head-on faster than (water red's) mClashSpeed ends him (loserExec)
+     */
+    boardJumping() {
+        this.setAnimation(A.RIDE_SHELL, 1);
+        this.setJumpingAttackArea();
+        switch (this.jumpProcess(0)) {
+            case 1: if (this.mVel.y < 0) this.changePlayerStatus(S.SURF, 0, false); break;
+            case 2: {
+                if (!this.mWallPlane) { this.setPlayerVelocity(0); this.loserExec(); break; }
+                const d = s16(matan(this.mWallPlane.n[2], this.mWallPlane.n[0]) - this.mFaceAngle.y);
+                const max = this.mSurfingParamsWaterRed.mClashAngle;
+                if ((d < -max || max < d) && this.mForwardVel > this.mSurfingParamsWaterRed.mClashSpeed) this.loserExec();
+                else this.setPlayerVelocity(0);
+                break;
+            }
+        }
+        return 0;
+    }
     jumpMain() {
         this.checkJumpingThrowStart();
         switch (this.mStatus) {
@@ -447,6 +526,7 @@ export abstract class MarioJump extends MarioRun {
             case S.FIRE_LAND: return this.fireLanding();
             case S.BROAD_JUMP: return this.broadJumping();
             case S.ROTATE_BROAD_JUMP: return this.rotateBroadJumping();
+            case 0x281089A: case 0x81089B: return this.boardJumping();
             case S.LEFT_ROTATE_JUMP: case S.RIGHT_ROTATE_JUMP: return this.rotateJumping();
             case S.WIRE_JUMP: case S.WIRE_ROLL_JUMP: return this.wireJumping();
             case S.JUMP_CATCH: return this.jumpCatch();
@@ -463,10 +543,10 @@ export abstract class MarioJump extends MarioRun {
             case S.THROWN_DOWN: return this.thrownDowning();
             case S.TRAMPLE: return this.trample();
             case S.HIP_DROP: return this.hipAttacking();
+            case S.DIVE: return this.divingStatus();
             case S.FALL_DEAD: return this.fallDead();
             case S.ROCKET: return this.rocketing();
             case S.PULL_JUMP: return this.pullJumping();
-            // (surfing, diving: not his)
         }
         return 0;
     }

@@ -10,8 +10,8 @@
 // Everything the stage's other actors ask of Mario (MarioProxy's interface: pos, vel, faceAngle,
 // groundPlane, isJumping, hipDrop, marioFlags...) is here too, so they work on either.
 
-import { V3, s16, JMASSin, JMASCos, matan, IConverge } from '../math.js';
-import { HitActor, TakeActor, LiveActor, MSG, HC, LF, Stream, CUE_MOVE, World, calcKeyCode, shineIDofExStage, FC_PINGPONG_LOOP } from '../engine.js';
+import { V3, s16, JMASSin, JMASCos, matan, IConverge, Mtx, mtx, MsMtxSetRotRPH } from '../math.js';
+import { HitActor, TakeActor, LiveActor, MSG, HC, LF, Stream, CUE_MOVE, World, calcKeyCode, shineIDofExStage, FC_PINGPONG_LOOP, MActor, AnmData, ANM_BCK } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { POLLUTION_TYPE } from '../pollution.js';
 import { TMarioSim, j3dTRMtx } from './tmario.js';
@@ -24,7 +24,7 @@ import * as P from './params.js';
 import { Params } from '../engine.js';
 import type { MarioTrack, MarioSample } from '../mario.js';
 import type { StickCamera, SimCamera } from '../camera/types.js';
-import { fr, fmul, fadd, fsub, fdiv, fmadd, MsSqrtf, sqrtf, s16f, u8f } from './fmath.js';
+import { fr, fmul, fadd, fsub, fdiv, fmadd, fnmsub, MsSqrtf, sqrtf, s16f, s32f, u8f } from './fmath.js';
 import { TWaterGun, marioGunExec } from './watergun.js';
 import { makePlayerCamera, PolarSubCamera } from '../camera/index.js';
 import { Yoshi } from './yoshi.js';
@@ -144,6 +144,7 @@ export class PlayerMario extends TMarioSim {
         this.mPlayerType = 0;   // PLAYER_TYPE_MARIO
         this.mHolderHeightDiff = 0;
         this.initModel();
+        this.initTorocco();
         this.unk414.set(0, 0, 1);
         this.unk530 = new Int16Array(60); this.unk534 = 0; this.unk536 = 0; this.unk538 = 0; this.unk53A = 0; this.unk53B = 0;
         this.initHitActor(AT.MARIO, 5, HC.PLAYER | HC.MAP_OBJECT | HC.ITEM | HC.ENEMY | HC.BOSS | HC.NPC,
@@ -328,11 +329,64 @@ export class PlayerMario extends TMarioSim {
     padFrameL() { return this.mGamePad.checkFrameMeaning(MEANING.L); }
 
     // ---------------------------------------------------------------- MarioMove.cpp: the player-only parts
-    /** canSquat: FLUDD out, R held, standing still enough */
+    /** TMario::considerRotateStart (0x8013c118): the stick spun round while FLUDD sprays: the spin (checkStickRotate's direction is 2 or 3, so always ROTATE_L) */
+    considerRotateStart() {
+        const [ok, dir] = this.checkStickRotate();
+        const G = this.mWaterGun;
+        if (ok === 1 && G && G.isEmitting()) return this.changePlayerStatus(dir > 0 ? S.ROTATE_L : S.ROTATE_R, 0, false);
+        return 0;
+    }
+    /** TMario::canSquat (0x80135390): FLUDD out, not a rocket-type nozzle (hover, rocket), not Turbo, R held (mInput 0x200) */
     canSquat() {
-        if (!this.checkFlag(MF.HAS_FLUDD) || !this.mWaterGun) return false;
-        // (TMario::canSquat: needs the water gun's squat nozzle; the spray / hover nozzles only)
-        return false;
+        const G = this.mWaterGun;
+        return this.checkFlag(MF.HAS_FLUDD) && !!G && G.getCurrentNozzle().mRocketType !== 1 && G.mCurrentNozzle !== NOZZLE.Turbo && (this.mInput & 0x200) !== 0;
+    }
+    /** TMario::getSideWalkValues (0x801451a8): [type (0 none, 1 left, 2 right), the anim rate, the side speed] */
+    getSideWalkValues(): [number, number, number] {
+        const diff = s16(this.mIntendedYaw - this.mFaceAngle.y);
+        const side = fmul(fmul(this.mIntendedMag, JMASSin(diff & 0xFFFF)), this.mRunParams.mPumpingSlideSp);
+        if (side === 0) return [0, this.getMotionFrameCtrl().rate, side];
+        let r = fmul(side, this.mRunParams.mPumpingSlideAnmSp);
+        if (r < 0) r = -r;
+        return [diff > 0 ? 1 : 2, r, side];
+    }
+    /**
+     * TMario::squating (0x80144dec): spraying standing still. A with R held and the spray nozzle out: the
+     * back jump; a rocket-type nozzle firing: the hover / rocket; L (MEANING_L): side-stepping; R: turning
+     * on the spot with the stick (mSquatRotMid*), mWaitingRotSp at full.
+     */
+    squating() {
+        if (this.mInput & 4) return this.changePlayerStatus(S.LANDING, 0, false);
+        if (this.mInput & 8) return this.changePlayerStatus(S.SLIP, 0, false);
+        if (this.mInput & 0x10) return this.changePlayerStatus(S.SQUAT_STANDUP, 0, false);
+        if (!(this.mInput & 0x4000) && !(this.mInput & 0x200)) return this.changePlayerStatus(S.SQUAT_STANDUP, 0, false);
+        const G = this.mWaterGun;
+        if (!G || !this.checkFlag(MF.HAS_FLUDD)) return this.changePlayerStatus(S.SQUAT_STANDUP, 0, false);
+        if ((this.mInput & 2) && this.mGamePad.checkMeaning(MEANING.R) && G.mCurrentNozzle === NOZZLE.Spray) {
+            this.rumbleStart(0x15, this.mMotorParams.mMotorHipDrop);
+            return this.changePlayerStatus(S.BACK_JUMP, 0, false);
+        }
+        if (G.getCurrentNozzle().mRocketType === 1 && G.isEmitting()) {
+            this.unk314 = fadd(this.mFloorPosition.y, this.hoverHeight());
+            return this.changePlayerStatus(S.ROCKET, 0, false);
+        }
+        if (this.mGamePad.checkMeaning(MEANING.L)) {
+            const [type, rate, side] = this.getSideWalkValues();
+            if (type === 0) this.setAnimation(A.SQWAT, 1);
+            else if (type === 1) this.setAnimation(A.SWLKL, rate);
+            else if (type === 2) this.setAnimation(A.SWLKR, rate);
+            this.pos.x = fmadd(side, JMASCos(this.mFaceAngle.y & 0xFFFF), this.pos.x);
+            this.pos.z = fnmsub(side, JMASSin(this.mFaceAngle.y & 0xFFFF), this.pos.z);
+        } else if (this.mGamePad.checkMeaning(MEANING.R)) {
+            const h = this.mGamePad.mCompSPos[0], absH = Math.abs(h);
+            const mid = this.mControllerParams.mSquatRotMidAnalog, midVal = this.mControllerParams.mSquatRotMidValue;
+            let rot = absH < mid ? fmul(midVal, fdiv(absH, mid)) : fmadd(fsub(1, midVal), fdiv(fsub(absH, mid), fsub(1, mid)), midVal);
+            if (h < 0) rot = -rot;
+            this.mFaceAngle.y = s16(this.mFaceAngle.y + s32f(fmul(rot, fr(-this.mDeParams.mWaitingRotSp))));
+            this.setAnimation(A.SQWAT, 1);
+        }
+        this.waitProcess();
+        return 0;
     }
     thinkSituation() {
         const hpBefore = this.mHealth;
@@ -344,9 +398,25 @@ export class PlayerMario extends TMarioSim {
         // (super's offFlag(RECENTLY_LEFT_WATER) came just before, as in the game)
         if (this.isTouchGround4cm() && this.askHitWaterParticleOnGround()) this.onFlag(MF.RECENTLY_LEFT_WATER);
     }
-    thinkParams() {
-        super.thinkParams();
-        // (the cap's heat: TMarioCap unk4 & 1 is the cap on in the heat; no heat damage without it)
+    /** TMarioCap::unk4 (E_CAP_MODEL: 1 the hat, 2 the helmet, 4 the sunglasses) */
+    mCapModel = 1;
+    /** TMario::isWearingCap */
+    isWearingCap() { return (this.mCapModel & 1) !== 0; }
+    /**
+     * thinkParams (0x8012e324) out of the water: without his hat (taken by a Doro Hane / Hamu Kuri)
+     * the sun takes 1 HP every mHotTimer ticks (and his invincibility for unk55C)
+     */
+    thinkHeat() {
+        if (this.mCapModel & 1) return;
+        this.mHotTimer = (this.mHotTimer + 1) & 0xFFFF;
+        if (this.mHotTimer > this.mHotTimerMax) {
+            this.decHP(1);
+            this.mHotTimerMax = this.mDeParams.mHotTimer;
+            this.mHotTimer = 0;
+            this.rumbleStart(0x14, this.mMotorParams.mMotorWall);
+            this.mInvincibilityFrames = s16f(this.unk55C);
+            this.event('heatDamage', { hp: this.mHealth });
+        }
     }
     /** TMario::checkGraffito: the goop under him */
     checkGraffito() {
@@ -515,8 +585,82 @@ export class PlayerMario extends TMarioSim {
         marioGunExec(this as any, x);
     }
     thinkSound() { }
-    /** TMario::thinkTorocco */
-    thinkTorocco() { }
+    /** TMario::thinkTorocco (inlined in playerControl @0x8012d4a8): the cart's seat turned by the stick */
+    thinkTorocco() { this.mToroccoAngle = s16(Math.trunc(fmadd(this.unk108.mStickHS16, this.mDeParams.mToroccoRotSp, this.mToroccoAngle))); }
+
+    // ---------------------------------------------------------------- the Pinna coaster (map 58)
+    /** the cart (map/map/Torocco), the track (Pinna_rail for stage 0, Koopa_rail for 1: joint 0 runs along it on BCK 0) */
+    mTorocco: MActor | null = null; mPinaRail: MActor | null = null; mKoopaRail: MActor | null = null;
+    mRailType = 0; mToroccoAngle = 0; mToroccoPos = new V3();
+    private toroccoTR: Mtx = mtx(); private railTR: Mtx = mtx();
+    private static readonly ONE = new V3(1, 1, 1);
+    /** MActor::calcAnm: the frames on, then the joints (here: joint j's world matrix as a game Mtx) */
+    private static calcAnmMtx(a: MActor, base: Mtx, j: number): Mtx | null {
+        a.frameUpdate();
+        const m = a.anmMtx(j, base, PlayerMario.ONE);
+        if (!m) return null;
+        const out = mtx();
+        for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) out[r * 4 + c] = m[c * 4 + r];
+        return out;
+    }
+    /**
+     * TMario::initModel's coaster part (MarioDraw.cpp): on map 58, stage 0 or 1, the cart and its
+     * track; FLUDD on; he starts at the cart's seat (joint 2), facing his way (mToroccoAngle).
+     * TODO: the track's base is set from the cart's joint 0 before the cart is ever calculated
+     * (identity assumed here).
+     */
+    initTorocco() {
+        const w = this.world as any;
+        this.mTorocco = this.mPinaRail = this.mKoopaRail = null;
+        if (w.map !== 58 || (w.stage !== 0 && w.stage !== 1)) return;
+        try {
+            this.mTorocco = new MActor('map/map/Torocco/Torocco.bmd', new AnmData('map/map/Torocco', w.files));
+            const rail = (name: string) => {
+                const r = new MActor(`map/map/${name}/${name}.bmd`, new AnmData(`map/map/${name}`, w.files));
+                const c = r.getFrameCtrl(ANM_BCK); if (c) c.rate = fr(0.5);
+                PlayerMario.calcAnmMtx(r, mtx(), 0);
+                return r;
+            };
+            if (w.stage === 0) { this.mRailType = 0; this.mPinaRail = rail('Pinna_rail'); }
+            else { this.mRailType = 1; this.mKoopaRail = rail('Koopa_rail'); }
+            this.railTR = mtx();
+            this.onFlag(MF.HAS_FLUDD);
+            const seat = PlayerMario.calcAnmMtx(this.mTorocco, this.toroccoTR, 2);
+            if (seat) this.pos.set(fr(seat[3]), fr(seat[7]), fr(seat[11]));
+            this.mToroccoAngle = this.mFaceAngle.y;
+        } catch (e) { console.warn('[player] torocco', e); this.mTorocco = this.mPinaRail = this.mKoopaRail = null; }
+    }
+    /** TMario::toroccoStart (0x8011fbxx): TOROCCO, the track's BCK 0 from frame 0 at 0.5 */
+    toroccoStart() {
+        this.changePlayerStatus(S.TOROCCO, 0, true);
+        this.onUnk114(2);
+        for (const r of [this.mPinaRail, this.mKoopaRail]) {
+            if (!r) continue;
+            r.setBckFromIndex(0);
+            const c = r.getFrameCtrl(ANM_BCK);
+            if (c) { c.rate = fr(0.5); c.frame = 0; }
+        }
+        return true;
+    }
+    /**
+     * calcBaseMtxTorocco (inlined in calcBaseMtx @0x8012469c): the track on a frame, the cart on
+     * the track's joint 0, Mario on the cart's seat (joint 2) turned by mToroccoAngle; his position
+     * is the seat's (mToroccoPos keeps the one before).
+     */
+    calcBaseMtxTorocco(m: Mtx) {
+        const rail = this.mRailType === 0 ? this.mPinaRail : this.mRailType === 1 ? this.mKoopaRail : null;
+        if (rail) { const r0 = PlayerMario.calcAnmMtx(rail, this.railTR, 0); if (r0) this.toroccoTR = r0; }
+        const seat = this.mTorocco ? PlayerMario.calcAnmMtx(this.mTorocco, this.toroccoTR, 2) : null;
+        const rot = mtx();
+        MsMtxSetRotRPH(rot, 0, fr(0.0054931640625 * this.mToroccoAngle), 0);
+        const a = seat || mtx();
+        for (let i = 0; i < 3; i++) {
+            for (let j = 0; j < 3; j++) m[i * 4 + j] = fr(a[i * 4] * rot[j] + a[i * 4 + 1] * rot[4 + j] + a[i * 4 + 2] * rot[8 + j]);
+            m[i * 4 + 3] = a[i * 4 + 3];
+        }
+        this.mToroccoPos.set(this.pos);
+        this.pos.set(fr(m[3]), fr(m[7]), fr(m[11]));
+    }
     /** TMario::getOffYoshi: knocked off (fly: status 0x89C) or jumping off (X: a back jump of mGetOffYoshiY) */
     getOffYoshi(fly: boolean) {
         this.mInput &= ~0x8000;
@@ -667,13 +811,23 @@ export class PlayerMario extends TMarioSim {
                 if (!this.mHeldObject) this.mUpperState = UPPER.IDLE;
                 break;
             case UPPER.FIXED_ANIMATION:
-                // (someAnimationCompleted: the upper body's fixed animation done)
-                this.mUpperState = UPPER.IDLE;
+                // someAnimationCompleted: the upper body's frame control completed or looped once
+                if (this.mModel.fc[1].state & 3) this.mUpperState = UPPER.IDLE;
                 break;
             default:
                 if (this.checkPumpEnable()) this.checkPumping();
                 break;
         }
+    }
+
+    /** TMario::setUpperDamageRun (0x80124238): the upper body's flinch (bck 0x4a) at half speed while he runs on */
+    setUpperDamageRun() {
+        const fc = this.mModel.fc[1];
+        this.mModel.upperCalc = 1;
+        this.mModel.changeAnm(1, 0x4a);
+        fc.frame = fc.start;
+        fc.rate = 1; fc.rate = fr(0.5);
+        this.mUpperState = UPPER.FIXED_ANIMATION;
     }
 
     // ---------------------------------------------------------------- MarioCollision.cpp
@@ -777,7 +931,7 @@ export class PlayerMario extends TMarioSim {
         const air = this.checkStatusType(S.FLAG_JUMPING) ? 1 : 0;
         const from = hit || this.mFloorHitActor;
         if (downType === 3) {
-            // (setUpperDamageRun: the upper body's flinch while running)
+            if (this.mStatus === S.RUN || this.mStatus === S.OIL_RUN) this.setUpperDamageRun();
         } else {
             const att = this.getAttackAngle(from);
             const prev = this.mFaceAngle.y;
@@ -844,6 +998,25 @@ export class PlayerMario extends TMarioSim {
         this.event('nozzleGet', { type });
         return true;
     }
+    /**
+     * TMario::getGesso (0x80164248): onto a surfing Blooper: facing its way, SURF, frozen for
+     * mSurfStartFreezeTime (mStatusTimer), the Blooper's colour picks the surfing params (unk389).
+     * (The condition is mStatus != 0x10000 in the DOL: always true.)
+     */
+    getGesso(sender: HitActor) {
+        if (this.mStatus === 0x10000) return;
+        this.mFaceAngle.y = s16(s32f(fmul(fr(182.04445), sender.rot.y)));
+        this.mModelFaceAngle = this.mFaceAngle.y;
+        this.changePlayerStatus(S.SURF, 0, false);
+        this.mStatusTimer = this.mDeParams.mSurfStartFreezeTime & 0xFFFF;
+        const t = sender.actorType;
+        this.mSurfGessoType = t === T.SURF_GESO_RED ? 0 : t === T.SURF_GESO_YELLOW ? 1 : 2;
+        // (mSurfGesso: gpMapObjManager's red / yellow / green surfgeso model, surfgeso_run1 at 0.5: drawn under him)
+        this.mSurfGesso = sender;
+        this.event('surfStart', { type: this.mSurfGessoType });
+    }
+    /** the Blooper he surfs (mSurfGesso: for drawing; the game draws gpMapObjManager's model of that colour) */
+    mSurfGesso: HitActor | null = null;
     getCoin() { ++this.mCoinCount; this.incHP(1); }
     getCoinRed() { this.incHP(2); }
     getCoinBlue() { this.incHP(2); }
@@ -900,7 +1073,7 @@ export class PlayerMario extends TMarioSim {
                 case T.BACK_NOZZLE_ITEM: return this.getNozzle(sender, NOZZLE.Turbo);
                 case T.ITEM_UNK2B: this.changePlayerStatus(S.DIVE, 0, false); return this.getNozzle(sender, NOZZLE.Underwater);
                 case T.WATERGUN_ITEM: this.getNozzle(sender, NOZZLE.Spray); return true;
-                case T.MARIO_CAP: this.mHealth = this.mDeParams.mHPMax; return true;
+                case T.MARIO_CAP: this.mCapModel |= 1; this.mHealth = this.mDeParams.mHPMax; return true;
                 case T.COIN: this.getCoin(); return true;
                 case T.COIN_RED: this.getCoinRed(); return true;
                 case T.COIN_BLUE: this.getCoinBlue(); return true;
@@ -925,7 +1098,7 @@ export class PlayerMario extends TMarioSim {
             switch (t) {
                 case T.LAMPTRAPIRON: if (msg === MSG.BURN && !inv()) { this.fireDamage(sender, this.mDmgParamsLampTrapIron); return true; } break;
                 case T.LAMPTRAPSPIKE: if (msg === MSG.ATTACK && !inv()) { this.dmg(sender, this.mDmgParamsLampTrapSpike); return true; } break;
-                case T.SURF_GESO_RED: case T.SURF_GESO_YELLOW: case T.SURF_GESO_GREEN: return true;   // (getGesso: surfing isn't simulated)
+                case T.SURF_GESO_RED: case T.SURF_GESO_YELLOW: case T.SURF_GESO_GREEN: this.getGesso(sender); return true;
                 case T.BATH: if (msg === MSG.TAKE) { this.holder = sender as TakeActor; this.changePlayerStatus(S.NOMOTION, 0, false); return true; } break;
                 case T.BATH_WATER:
                     if (msg === MSG.BURN) {
@@ -967,7 +1140,7 @@ export class PlayerMario extends TMarioSim {
         if (sender.isHitCategory(HC.ENEMY)) {
             switch (t) {
                 case T.NAME_KURI: if (msg === MSG.ATTACK && !inv()) { this.dmg(sender, this.mDmgParamsNamekuri); return true; } break;
-                case T.DORO_HANE_KURI: case T.DORO_HAMU_KURI: if (msg === MSG.ATTACK && !inv()) { this.dmg(sender, this.mDmgParamsEnemyCommon); return true; } break;
+                case T.DORO_HANE_KURI: case T.DORO_HAMU_KURI: if (msg === MSG.ATTACK && !inv()) { this.mCapModel &= ~1; this.dmg(sender, this.mDmgParamsEnemyCommon); return true; } break;
                 case T.SROTDRAM: case T.HAMU_KURI: if (msg === MSG.ATTACK && !inv()) { this.dmg(sender, this.mDmgParamsHamakuri); return true; } break;
                 case T.ELEC_NOKONOKO:
                     if (msg === MSG.ATTACK && !inv()) { this.dmg(sender, this.mDmgParamsHamakuri); return true; }
@@ -1029,7 +1202,40 @@ export class PlayerMario extends TMarioSim {
                 if (msg === MSG.ATTACK && !inv()) { this.dmg(sender, this.mDmgParamsHanachanBoss); return true; }
                 break;
             case T.DOOR:
-                // (doors: opening them isn't simulated)
+                // B (mInput 0x8000) facing the door (within 0x2000 of the way to it): from its front (its rot.y
+                // within 0x2000 of his yaw) DOOR_OPEN_R, from behind (beyond 0x6000) DOOR_OPEN_L, which the
+                // locked door (UNK12, not UNK11) only rattles (door_gacha_l, false) unless he holds something
+                if (this.mInput & 0x8000) {
+                    const prevYaw = this.mFaceAngle.y;
+                    const toDoor = s16(this.getAttackAngle(sender) - prevYaw);
+                    if (toDoor > -0x2000 && toDoor < 0x2000) {
+                        const frontYaw = s16(s32f(fmul(65536, fmul(fr(1 / 360), sender.rot.y))));
+                        const fd = s16(frontYaw - prevYaw);
+                        const held = !!this.mHeldObject;
+                        if (fd > -0x2000 && fd < 0x2000) {
+                            this.pos.set(sender.pos); this.mFaceAngle.y = frontYaw;
+                            this.changePlayerStatus(S.DOOR_OPEN_R, 0, false);
+                            if (held) { this.mUpperState = UPPER.HOLDING_OBJECT; this.setAnimation(A.DOOR_KICK, 1); } else this.setAnimation(A.DOOR_OPENR, 1);
+                            this.startVoice(SE.MV31_OPEN_DOOR_01);
+                            return true;
+                        }
+                        if (fd < -0x6000 || fd > 0x6000) {
+                            if (msg === MSG.UNK11) {
+                                this.pos.set(sender.pos); this.mFaceAngle.y = s16(frontYaw + 0x8000);
+                                this.changePlayerStatus(S.DOOR_OPEN_L, 0, false);
+                                if (held) { this.mUpperState = UPPER.HOLDING_OBJECT; this.setAnimation(A.DOOR_KICK, 1); } else this.setAnimation(A.DOOR_OPENL, 1);
+                                this.startVoice(SE.MV31_OPEN_DOOR_01);
+                                return true;
+                            }
+                            if (!held) {
+                                this.pos.set(sender.pos); this.mFaceAngle.y = s16(frontYaw + 0x8000);
+                                this.changePlayerStatus(S.DOOR_OPEN_L, 0, false);
+                                this.setAnimation(A.DOOR_GACHA_L, 1);
+                                return false;
+                            }
+                        }
+                    }
+                }
                 break;
             case T.E_MARIO: case T.MARIO:
                 if (!inv()) {
@@ -1040,7 +1246,17 @@ export class PlayerMario extends TMarioSim {
                 }
                 break;
             case T.MODEL_GATE:
-                // (the warp gate's capture: the segment ends there)
+                // the paint gate takes him (TModelGate: a jumping Mario in its box while charged): WARP_IN
+                if (this.mStatus !== S.WARP_IN && msg === MSG.TAKE) {
+                    this.holder = sender as TakeActor;
+                    if (!this.checkStatusType(S.FLAG_JUMPING)) {
+                        this.setAnimation(A.JUMP, 1);
+                        const fc = this.getMotionFrameCtrl();
+                        fc.frame = fr(fc.end | 0);
+                    }
+                    this.changePlayerDropping(S.WARP_IN, 0);
+                    return true;
+                }
                 break;
             case T.LEAF_BOAT_ROTTEN: case T.LEAF_BOAT:
                 if (msg === MSG.ATTACK) { this.keepDistance(sender.pos, fadd(sender.damageRadius, 30), 0); return true; }
@@ -1228,7 +1444,28 @@ export class PlayerMario extends TMarioSim {
         this.unk2BC = this.mFloorPosition.y;
         this.setAnimation(A.WAIT, 1);
     }
+    /**
+     * TMario::isUnUsualStageStart (0x8011fbxx): the diving maps (SMS_isDivingMap: 0x39, 0x2C, 0x10) start
+     * him in the helmet, diving (DIVE) with the underwater nozzle.
+     * The Pinna coaster (map 0x3A stages 0 / 1): toroccoStart.
+     */
+    isUnUsualStageStart() {
+        const map = (this.world as any).map, stage = (this.world as any).stage;
+        if (map === 0x3A && (stage === 0 || stage === 1)) return this.toroccoStart();
+        if (map === 0x39 || map === 0x2C || map === 0x10) {
+            this.onUnk114(2);
+            this.onFlag(MF.HELMET_FLW_CAMERA); this.onFlag(MF.HELMET); this.onFlag(MF.HAS_FLUDD);
+            const G = this.mWaterGun;
+            if (this.checkFlag(MF.HAS_FLUDD) && G) G.changeNozzle(NOZZLE.Underwater, true);
+            if (this.checkFlag(MF.HAS_FLUDD) && G) G.changeNozzle(G.mSecondNozzle, true);
+            this.mCapModel |= 2;
+            this.changePlayerStatus(S.DIVE, 0, true);
+            return true;
+        }
+        return false;
+    }
     rollingStart(warp: V3 | null, rot: number) {
+        if (this.isUnUsualStageStart()) return true;
         if (this.mStatus === S.DISAPPEAR) { this.startCommon(warp, rot); this.changePlayerStatus(S.WARP_OUT, 0x200, true); return true; }
         return false;
     }
@@ -1242,6 +1479,7 @@ export class PlayerMario extends TMarioSim {
         return false;
     }
     waitingStart(warp: V3 | null, rot: number) {
+        if (this.isUnUsualStageStart()) return true;
         this.startCommon(warp, rot);
         this.onUnk114(2);
         this.changePlayerStatus(S.WAIT, 0, true);
@@ -1294,11 +1532,65 @@ export class PlayerMario extends TMarioSim {
         }
         return 0;
     }
+    /**
+     * TMario::warpIn (0x8011fd5c): taken by a paint gate (mHolder, a TModelGate). The first tick: off
+     * Yoshi, the stage change (setNextStage: 2 Bianco, 3 Ricco, 4 Gelato by the gate's unk71, others 2);
+     * then drawn, frozen in his pose, drawn 2% of the way a tick to 80 below the gate's mouth (unkAC)
+     * for 120 ticks; then the balls (hidden after mWarpInBallsDispTime), captured (mWarpInCapturedTime:
+     * the gate gets ATTACK) and done (MARIO_FLAG_IS_PERFORMING: his perform stops).
+     * (Not here: mWarpInDir and the light, the tremble (TTrembleModelEffect::clash), effects, rumble.)
+     */
+    warpIn() {
+        this.mStatusTimer = (this.mStatusTimer + 1) & 0xFFFF;
+        const gate = this.holder as any;
+        if (!gate) return 0;
+        const tgt = gate.unkAC as V3;
+        const hx = tgt.x, hy = fsub(tgt.y, 80), hz = tgt.z;
+        const D = this.mAutoDemoParams;
+        switch (this.mStatusState) {
+            case 0: {
+                if (this.mStatusTimer <= 1) {
+                    if (this.onYoshi()) this.getOffYoshi(true);
+                    const dest = gate.unk71 | 0;
+                    const next = dest === 1 ? 3 : dest === 2 ? 4 : 2;
+                    this.world.setNextStage?.(next, gate);
+                }
+                this.onUnk114(2);
+                this.getMotionFrameCtrl().rate = 0;
+                const dx = fsub(hx, this.pos.x), dy = fsub(hy, this.pos.y), dz = fsub(hz, this.pos.z);
+                this.pos.set(fadd(fmul(dx, fr(0.02)), this.pos.x), fadd(fmul(dy, fr(0.02)), this.pos.y), fadd(fmul(dz, fr(0.02)), this.pos.z));
+                if (this.mStatusTimer > 0x78) {
+                    this.mStatusTimer = 0;
+                    this.unk468 = 0;
+                    this.mStatusState = 1;
+                    // (startVoice(-2), the warpInEffect)
+                }
+                break;
+            }
+            case 1:
+                if (this.mStatusTimer > D.mWarpInBallsDispTime) this.offUnk114(2);
+                if (this.mStatusTimer > D.mWarpInBallsTime) { this.mStatusTimer = 0; this.unk468 = D.mWarpInVecBase; this.mStatusState = 2; }
+                break;
+            case 2:
+                this.offUnk114(2);
+                if (this.mStatusTimer > D.mWarpInCapturedTime) {
+                    this.offUnk114(2);
+                    this.mStatusTimer = 0;
+                    gate.receiveMessage(this, MSG.ATTACK);
+                    this.mStatusState = 3;
+                }
+                break;
+            case 3:
+                this.onFlag(MF.IS_PERFORMING);
+                break;
+        }
+        return 0;
+    }
     winDemo() {
         switch (this.mStatusState) {
             case 0:
                 if (this.mHeldObject) { (this.mHeldObject as HitActor).receiveMessage(this.mHeldObject, MSG.UNKD); this.mHeldObject = null; }
-                if (this.jumpProcess(0) === 1) { if (this.unk384) this.unk384.receiveMessage(this, MSG.TAKE); this.mStatusState = 1; }
+                if (this.jumpProcess(0) === 1) { if (this.world.talk) this.world.talk.fireGetStar(this.unk384); if (this.unk384) this.unk384.receiveMessage(this, MSG.TAKE); this.mStatusState = 1; }
                 break;
             case 1: this.setAnimation(A.DEMO_SHINE_GET, 1); this.stopProcess(); break;
         }
@@ -1363,6 +1655,7 @@ export class PlayerMario extends TMarioSim {
             case S.ELEC_DOWN: return this.elecDowning();
             case S.DOWN_LOSER: return this.downLoser();
             case S.WARP_OUT: return this.warpOut();
+            case S.WARP_IN: return this.warpIn();
             case S.ELECTRIC_DAMAGE: return this.electricDamage();
             case S.READ_BILLBOARD: return this.readBillboard();
         }
@@ -1520,6 +1813,10 @@ export interface IntroTiming {
     /** live play from the viewer's sleeping Mario: setMario lays him down asleep (sleepingStart) at this
      * phase (0..1) of sleep_wait instead of the stage's start; null: the stage's own start */
     sleepPhase?: number | null;
+    /** setMario's start in place of the stage's own (stagechange.ts: the entrance decideMarioPosIdx picks) */
+    start?: (m: PlayerMario) => void;
+    /** Delfino Plaza opens with its camera demo (DEMO_FLAG_CAMERA_DEMO_ON_START), ending at demoEndTick */
+    plazaDemo?: boolean;
 }
 
 /**
@@ -1540,7 +1837,8 @@ export class PlayerDirector {
         if (this.setMarioDone) return;
         this.setMarioDone = true;
         const m = this.mario;
-        if (this.timing.sleepPhase != null) m.sleepingStart(this.timing.sleepPhase);
+        if (this.timing.start) this.timing.start(m);   // (stagechange.ts: decideMarioPosIdx's entrance)
+        else if (this.timing.sleepPhase != null) m.sleepingStart(this.timing.sleepPhase);
         else if (DEMO_STAGES.has(this.map)) m.rollingStart(null, 0);
         else m.waitingStart(null, 0);
         if (m.checkFlag(MF.HAS_FLUDD) && m.mWaterGun) {
@@ -1584,7 +1882,7 @@ export class PlayerDirector {
             case DIR.BOOT:
                 if (this.map === 0xF) this.enter(DIR.GAME, tick);
                 else if (DEMO_STAGES.has(this.map)) this.enter(DIR.DEMO, tick);
-                else if (this.map === 1) this.enter(DIR.UNK2, tick);
+                else if (this.map === 1) this.enter(this.timing.plazaDemo ? DIR.DEMO : DIR.UNK2, tick);
                 else this.enter(this.hasStartCamera ? DIR.DEMO : DIR.GAME, tick);
                 break;
             case DIR.DEMO:

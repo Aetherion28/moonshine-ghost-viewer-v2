@@ -20,6 +20,7 @@ import { CHARAS } from './charas.js';
 import { installMapWires } from './mapwire.js';
 import { installEventWatchers } from './eventwatcher.js';
 import { installTalk } from './talk.js';
+import { cameraBck } from './camera/bck.js';
 
 /** A class the game makes from scene.bin (TMarNameRefGen::getNameRef_*), by its name there. */
 export type Maker = (w: World, name: string) => NameRef;
@@ -58,8 +59,11 @@ export class Stage {
         const w = this.world;
         w.files = files;
         w.map = map; w.stage = stage;
-        w.exShineGot = !!(intro && intro.exShineGot);
-        w.flags.setupStage(map, stage, w.exShineGot, shineIDofExStage(map));
+        // (live play's later stages: the save's flags carried over from the stage before, stagechange.ts)
+        const carried = intro ? (intro as any).flags : null;
+        if (carried) w.flags = carried;
+        w.exShineGot = carried ? shineIDofExStage(map) !== 0xFF && w.flags.getShineFlag(shineIDofExStage(map)) : !!(intro && intro.exShineGot);
+        w.flags.setupStage(map, stage, w.exShineGot, shineIDofExStage(map), !carried);
         w.groups = GROUP_NAMES.map(() => []);
         // the map's collision (TMap: the grid size from the scene's Map object, filled from map.col)
         const sb = files.scene('map/scene.bin');
@@ -100,10 +104,14 @@ export class Stage {
         for (const o of this.objects) o.loadAfter();
         // TMarDirector's talk mode and the message window (talk.ts): the NPCs entryNPC'd at their loadAfter
         if (this.player) installTalk(w, this.objects, files.scene('map/message.bmg'), files.common('2d/sys_message.bmg'));
+        // the camera's demos (TCameraBck: the stage intro's and the director's demo queue's, with their views)
+        if (this.player && this.player.simCamera) (this.player.simCamera as any).bckSource = (name: string) => cameraBck(w, name);
         for (const gw of w.graphs.values()) { gw.initGoalIndex(new V3()); gw.attachToGround(w); }
         w.conductor.init();
         if (this.player && intro) this.leadFrame();
-        if (this.player && intro) { this.director = new PlayerDirector(this.player, map, !!files.scene('map/camera/startcamera.bck'), intro); this.player.driftFrom = Math.max(intro.demoEndTick, (intro.firstSample ?? 0) - 1); }
+        if (this.player && intro) {
+            const make = (intro as any).makeDirector as ((p: PlayerMario, map: number, start: boolean, t: IntroTiming) => PlayerDirector) | undefined;   // (live play's: stagechange.ts LiveDirector)
+            this.director = make ? make(this.player, map, !!files.scene('map/camera/startcamera.bck'), intro) : new PlayerDirector(this.player, map, !!files.scene('map/camera/startcamera.bck'), intro); this.player.driftFrom = Math.max(intro.demoEndTick, (intro.firstSample ?? 0) - 1); }
     }
 
     private walk(n: SceneNode, common: boolean, group = -1) {

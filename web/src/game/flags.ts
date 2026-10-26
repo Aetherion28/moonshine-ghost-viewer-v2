@@ -93,10 +93,10 @@ export class FlagManager {
      * The save as far as the stage proves it (see the file's head), then TMarDirector::setupObjects'
      * flag writes for (area, scenario).
      */
-    setupStage(area: number, scenario: number, exShineGot: boolean, exShineId: number) {
-        // -- inferences from the loaded scene
-        if (exShineId !== 0xFF && exShineGot) this.setShineFlag(exShineId);
-        if (area === 1) {
+    setupStage(area: number, scenario: number, exShineGot: boolean, exShineId: number, infer = true) {
+        // -- inferences from the loaded scene (not for live play's carried-over flags: they are the save)
+        if (infer && exShineId !== 0xFF && exShineGot) this.setShineFlag(exShineId);
+        if (infer && area === 1) {
             const s = scenario;
             // the scenario-pick chain (MarDirectorDirect.cpp): each scenario proves its own test...
             if (s === 2) this.setBool(true, MSF.CORONA_VISITED);

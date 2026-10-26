@@ -47,6 +47,7 @@
 import { fr, V3 } from './math.js';
 import { World, NameRef, LF, CUE_MOVE, CUE_CALC_ANIM } from './engine.js';
 import { AT } from './actortypes.js';
+import { cameraBck } from './camera/bck.js';
 
 /** MARIO_STATUS_WAIT, MARIO_STATUS_READ_BILLBOARD */
 const MARIO_STATUS_WAIT = 0x0C400201;
@@ -54,6 +55,8 @@ const MARIO_STATUS_WAIT = 0x0C400201;
 const PAD_FLAG_TALK_NPC = 0x4, PAD_FLAG_TALK_SELECT = 0x8, PAD_FLAG_NO_INPUT = 0x10;
 /** MARIO_FLAG_GAME_OVER */
 const MF_GAME_OVER = 0x400;
+/** MSF_GOT_SHINE_IN_PREV_STAGE (msflags.ts) */
+const MSF_GOT_SHINE_IN_PREV_STAGE = 0x30006;
 /** TMarDirector's DIRECTOR_FLAG_* (as far as updateGameMode reads them) */
 const DF = {
     SHINE_GET_PENDING: 0x1, STAGE_TRANSITION_PENDING: 0x2, GAME_OVER_PENDING: 0x20, DEMO_PENDING: 0x40, END_DEMO_PENDING: 0x80,
@@ -649,23 +652,23 @@ export class TalkDirector {
         this.demoTail = (this.demoTail + 1) & 7;
     }
     /**
-     * TCameraBck::isFileExist / getTotalDemoFrames: the stage's map/camera/<name>.bck, a demo of its
-     * (duration + 1) * 2 ticks (a looping one: -1). Only the length is read (no view: the sim's
-     * camera doesn't show). 'startcamera' is the stage intro's, whose end the ghost gives.
+     * TCameraBck::isFileExist / startDemo: the stage's map/camera/<name>.bck (or a common camera
+     * demo's), its length ((duration + 1) * 2 ticks, a looping one -1) and its view (camera/bck.ts).
      */
-    private demoBck(name: string): { totalFrames: number; view(tick: number): null } | null {
-        if (name === 'startcamera') return null;
-        const f = this.world.files.scene('map/camera/' + name + '.bck');
-        if (!f || f.length < 0x30) return null;
-        const v = new DataView(f.buffer, f.byteOffset, f.byteLength);
-        let o = 0x20;
-        while (o + 8 <= f.length) {
-            const tag = String.fromCharCode(f[o], f[o + 1], f[o + 2], f[o + 3]), size = v.getUint32(o + 4);
-            if (tag === 'ANK1') return { totalFrames: v.getUint8(o + 8) !== 0 ? -1 : (v.getUint16(o + 0xA) + 1) * 2, view: () => null };
-            if (!size) break;
-            o += size;
-        }
-        return null;
+    private demoBck(name: string) { return cameraBck(this.world, name); }
+    /** unk25C: the Shine got (fireGetStar) */
+    shine: NameRef | null = null;
+    /**
+     * TMarDirector::fireGetStar (TMario::winDemo, once he lands): the Shine get pending and its demo
+     * camera, the common camera_demo_shine_get_outside.bck (inside: the Shine's unk190) about Mario,
+     * turned by the Shine's initial Y rotation.
+     */
+    fireGetStar(shine: NameRef | null) {
+        this.shine = shine;
+        this.dflags |= DF.SHINE_GET_PENDING;
+        const s: any = shine, m: any = this.world.mario;
+        const r = s ? (s.mInitialRotation || s.initRot || s.initialRot || s.rot) : null;
+        this.fireStartDemoCamera(s && s.unk190 ? 'camera_demo_shine_get_inside' : 'camera_demo_shine_get_outside', m ? m.pos : null, -1, r ? r.y : 0, false);
     }
     /** TMarDirector::fireEndDemoCamera */
     fireEndDemoCamera() { this.dflags |= DF.END_DEMO_PENDING; }
@@ -694,7 +697,14 @@ export class TalkDirector {
                 } else if (this.dflags & DF.SHINE_GET_PENDING) {
                     this.dflags &= ~DF.SHINE_GET_PENDING;
                     this.unk126 = 3;
+                    // (the console's shine-get banner, the jingle and the BGM fade are not simulated)
+                    w.flags.setBool(true, MSF_GOT_SHINE_IN_PREV_STAGE);
+                    const sh: any = this.shine;
+                    if (sh && typeof sh.eventId === 'number') w.flags.setShineFlag(sh.eventId);
                     this.dflags |= DF.SHINE_TAKEN | DF.CARD_SAVE_PENDING | DF.STAGE_TRANSITION_PENDING;
+                    // decideNextStage: back to Delfino Plaza, its scenario picked by moveStage
+                    w.nextArea = { stage: 1, scenario: 0xFF };
+                    w.stageTransitionPending = true;
                 } else if (this.dflags & DF.DEMO_PENDING) {
                     this.unk126 = 3;
                 } else if (this.dflags & DF.CARD_SAVE_PENDING) {

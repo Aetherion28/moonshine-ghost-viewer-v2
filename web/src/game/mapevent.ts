@@ -996,6 +996,8 @@ declare module './engine.js' {
         fireStreamingMovie(id: number): void;
         /** DIRECTOR_FLAG_MOVIE_PENDING */
         moviePending?: boolean;
+        /** SMSGetApplication()->mNextArea as setNextStage / decideNextStage set it (scenario 0xFF: moveStage picks it); the movie setMovie asked for */
+        nextArea?: { stage: number; scenario: number; movie?: number } | null;
     }
 }
 /**
@@ -1008,6 +1010,10 @@ World.prototype.setNextStage = function (this: World, stage: number, actor: any)
     if (this.stageTransitionPending) return;
     this.stageTransitionPending = true;
     const next = stage >= 0x100 ? (stage >> 8) - 1 : stage;
+    // SMSGetApplication()->setNextArea (a stage >= 0x100: (area + 1) << 8 | scenario)
+    const na: { stage: number; scenario: number; movie?: number } = { stage: next & 0xFF, scenario: stage >= 0x100 ? stage & 0xFF : 0xFF, movie: this.nextArea ? this.nextArea.movie : undefined };
+    if (next === 0x37) { this.moviePending = true; na.movie = 6; }
+    this.nextArea = na;
     if (actor || this.map !== 1 || (next !== 5 && next !== 6 && next !== 8)) return;
     if (next === 5) {
         demoCamera(this, 'hodai_dpt_pinna1', null);
@@ -1026,6 +1032,7 @@ World.prototype.fireStreamingMovie = function (this: World, id: number) {
     if (this.moviePending) return;
     this.moviePending = true;
     const next: Record<number, number> = { 0: 0x1, 10: 0x3B, 7: 0xE06, 8: 0xE07, 11: 0x3C, 2: 0x101 };
+    this.nextArea = { stage: 0xFF, scenario: 0xFF, movie: id };
     this.setNextStage(next[id] ?? 0xF, null);
     if (id === 0) {
         this.flags.setBool(true, MSF.BOWSER_BOAT_CUTSCENE_TRIGGERED);

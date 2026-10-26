@@ -214,12 +214,14 @@ export abstract class MarioMove extends MarioBase {
             case S.BROAD_JUMP: this.startVoice(SE.MV22_JUMP_MID_01); this.mForwardVel = J.mBroadJumpForce; this.mVel.y = J.mBroadJumpForceY; break;
             case S.ROTATE_BROAD_JUMP: this.startVoice(SE.MV22_JUMP_MID_01); this.mForwardVel = J.mRotBroadJumpForce; this.mVel.y = J.mRotBroadJumpForceY; break;
             case S.ROCKET: {
-                // the nozzle's line (the jump speed and rocketEffectStart are not simulated here)
+                // the nozzle's line and the lift-off (@0x80133db0: setPlayerJumpSpeed(0, 10), vel.y = fwd * 0 + 10);
+                // (rocketEffectStart: the effect)
                 const G = (this as any).mWaterGun as { mCurrentNozzle: number } | null;
                 if (G) {
                     if (G.mCurrentNozzle === 1) this.startVoice(SE.MV24_JUMP_SPECIAL_01);
                     if (G.mCurrentNozzle === 5) this.startVoice(SE.MV15_EXERT_INST_01);
                     if (G.mCurrentNozzle === 4) this.startVoice(SE.MV21_JUMP_SMALL_01);
+                    this.setPlayerJumpSpeed(0, 10);
                 }
                 break;
             }
@@ -597,9 +599,11 @@ export abstract class MarioMove extends MarioBase {
                     this.floorDamageExec(p.mDamage, p.mDownType, p.mWaterEmit, p.mMotor);
                 }
                 this.mHotTimer = 0; this.mHotTimerMax = this.mDeParams.mHotTimer;
-            } else this.unk122 = 0;   // (no cap: no heat)
+            } else { this.thinkHeat(); this.unk122 = 0; }
         }
     }
+    /** thinkParams out of the water: the heat without his cap (mCap: the player's only) */
+    thinkHeat() { }
     checkWet() { /* the player's only (isMario) */ }
     gunExec() { /* no FLUDD */ }
     thinkSound() { }

@@ -132,8 +132,8 @@ const NO_PAD: CameraPad = { mCompSPos: new Float32Array(10), mSubStick: { mPosX:
 /** A camera demo's frame (TCameraBck::updateDemo: the bck's cam_position / cam_interest joints). */
 export interface DemoView { pos: Vec; at: Vec; up: Vec; fovy: number; }
 /**
- * A demo's .bck (TCameraBck): its length in camera ticks (getTotalDemoFrames) and the view at a
- * tick since its start. The viewer supplies it (it has the J3D animation code: layer.introCamera).
+ * A demo's .bck (TCameraBck): its length in camera ticks (getTotalDemoFrames) and the view on the
+ * n-th updateDemo since its start (camera/bck.ts cameraBck: the frame's last tick's perform).
  */
 export interface DemoBck { totalFrames: number; view(tick: number): DemoView | null; }
 
@@ -240,7 +240,7 @@ export class PolarSubCamera implements SimCamera {
     hold = { unk0: 0, unk4: 0, unk8: 0, unkC: 0 };
     /** mCameraDemo (TCameraDemo) */
     demo = { offset: null as Vec | null, angle: 0, tool: null as CameraMapTool | null, unkC: 0, total: 0, remaining: 0 };
-    /** unk2B0 (TCameraBck): the running bck demo and its tick */
+    /** unk2B0 (TCameraBck): the running bck demo and its updateDemo calls so far */
     private bck: DemoBck | null = null; private bckTick = 0;
     unk2C0 = 3; unk2C4 = 2; unk2C8 = -1; unk2CA = -1; unk2CC = 0;
     /** TCameraMarioData (gpCameraMario) */
@@ -1476,15 +1476,29 @@ export class PolarSubCamera implements SimCamera {
     }
     private updateDemoCamera_(last: boolean) {
         if (last && this.isBckDemoCamera() && this.bck) {
+            // TCameraBck::updateDemo (MActor::calcAnm: one bck step a call, camera/bck.ts)
+            this.bckTick++;
             const v = this.bck.view(this.bckTick);
             if (v) {
                 vset(this.unk124, v.pos); vset(this.unk148, v.at); vset(this.mUp, v.up); this.mFovy = v.fovy;
-                if (this.demo.offset) { vadd(this.unk124, this.demo.offset); vadd(this.unk148, this.demo.offset); }
+                const o = this.demo.offset;
+                if (o) { vadd(this.unk124, o); vadd(this.unk148, o); }
+                // mCameraDemo->unk4: the demo turned by that many degrees about its offset (the shine get's: the Shine's Y rotation)
+                if (this.demo.angle !== 0) {
+                    const a = CLBDegToShortAngle(this.demo.angle), sn = JMASSin(a), cs = JMASCos(a);
+                    const ox = o ? o.x : 0, oy = o ? o.y : 0, oz = o ? o.z : 0;
+                    const turn = (p: Vec) => {
+                        const dx = fr(p.x - ox), dy = fr(p.y - oy), dz = fr(p.z - oz);
+                        p.x = fr(ox + fr(fr(dx * cs) + fr(dz * sn))); p.y = fr(oy + dy); p.z = fr(oz + fr(fr(-dx * sn) + fr(dz * cs)));
+                    };
+                    turn(this.unk124); turn(this.unk148);
+                    const ux = this.mUp.x, uz = this.mUp.z;
+                    this.mUp.x = fr(fr(ux * cs) + fr(uz * sn)); this.mUp.z = fr(fr(-ux * sn) + fr(uz * cs));
+                }
                 this.calcFinalPosAndAt_();
                 this.calcMatrices();
             }
         }
-        if (this.isBckDemoCamera()) this.bckTick++;
         if (this.demo.remaining > 0) {
             this.demo.remaining -= 1;
             if (this.demo.remaining === 0) {

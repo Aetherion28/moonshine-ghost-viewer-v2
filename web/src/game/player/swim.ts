@@ -1,7 +1,8 @@
 // Player/MarioSwim.cpp: swimming on and under the water, and swimMain. (And the few demo statuses
 // from MarioAutodemo.cpp a simulated Mario uses: no motion, disappearing, sand.)
 
-import { fr, s16, matan, IConverge } from '../math.js';
+import { fr, s16, matan, IConverge, JMASSin, JMASCos } from '../math.js';
+import { SE } from '../soundids.js';
 import { MarioWait } from './wait.js';
 import { S, MF, A, bg } from './base.js';
 
@@ -143,10 +144,32 @@ export abstract class MarioSwim extends MarioWait {
         this.stopProcess();
         return 0;
     }
+    /** bottleIn (inlined in demoMain @0x8011ef68): the bottle_in animation, nothing else */
+    bottleIn() { this.setAnimation(A.BOTTLE_IN, 1); return 0; }
+    /**
+     * openDoor (inlined in demoMain @0x8011ef98): the door's animation standing still, then 150 on
+     * through it (open_r / open_l / kick) or back from it (door_gacha_l, the locked door) and WAIT
+     */
+    openDoor() {
+        if (this.mStatusState === 0) { this.startVoice(SE.MV13_ACTION_SMALL_01); this.mStatusState = 1; }
+        this.stopProcess();
+        if (this.isLast1AnimeFrame()) {
+            const y = this.mFaceAngle.y & 0xFFFF;
+            if (this.mAnimationId === A.DOOR_OPENR || this.mAnimationId === A.DOOR_OPENL || this.mAnimationId === A.DOOR_KICK) {
+                this.pos.x = fr(150 * JMASSin(y) + this.pos.x); this.pos.z = fr(150 * JMASCos(y) + this.pos.z);
+            } else {
+                this.pos.x = fr(this.pos.x - 150 * JMASSin(y)); this.pos.z = fr(this.pos.z - 150 * JMASCos(y));
+            }
+            return this.changePlayerStatus(S.WAIT, 0, true);
+        }
+        return 0;
+    }
     nomotion() { this.stopProcess(); return 0; }
     disappear() { this.offUnk114(2); return 0; }
     demoMain() {
         switch (this.mStatus) {
+            case S.BOTTLE_IN: return this.bottleIn();
+            case S.DOOR_OPEN_R: case S.DOOR_OPEN_L: return this.openDoor();
             case S.SINK_LOSER: return this.sinkLoser();
             case S.FOOT_DOWN: return this.footDowning();
             case S.NOMOTION: return this.nomotion();

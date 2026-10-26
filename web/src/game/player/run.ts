@@ -523,6 +523,68 @@ export abstract class MarioRun extends MarioPhysics {
         this.jumpSlipCommon(A.SQWAT, S.LANDING);
         return 0;
     }
+    /** unk389: the surfing Blooper's colour (0 red, 1 yellow, 2 green) */
+    mSurfGessoType = 0;
+    /** getSurfingParamsWater / getSurfingParamsGround (0x80139xxx): the params by the Blooper's colour */
+    getSurfingParamsWater() { return this.mSurfGessoType === 1 ? this.mSurfingParamsWaterYellow : this.mSurfGessoType === 2 ? this.mSurfingParamsWaterGreen : this.mSurfingParamsWaterRed; }
+    getSurfingParamsGround() { return this.mSurfGessoType === 1 ? this.mSurfingParamsGroundYellow : this.mSurfGessoType === 2 ? this.mSurfingParamsGroundGreen : this.mSurfingParamsGroundRed; }
+    /**
+     * doSurfing (0x8013a890): the speed toward 2x the stick (clamped to mPowMin..mPowMax), the turn
+     * rate from mRotMin to mRotMax by that, then slopeProcess. Water or ground params by the plane
+     * under where he was (y - vel.y); the acceleration's by the ground plane.
+     */
+    doSurfing() {
+        const [, below] = this.checkGround(this.pos.x, fsub(this.pos.y, this.mVel.y), this.pos.z);
+        const P = below.isWaterSurface() ? this.getSurfingParamsWater() : this.getSurfingParamsGround();
+        const rotMin = P.mRotMin, rotMax = P.mRotMax, powMin = P.mPowMin, powMax = P.mPowMax;
+        let want = fmul(2, this.mIntendedMag);
+        if (want > powMax) want = powMax;
+        if (want < powMin) want = powMin;
+        const fv = this.mForwardVel;
+        if (fv <= 0) this.mForwardVel = fadd(fv, fr(1.1));
+        else if (fv <= want) {
+            const accel = (this.mGroundPlane.isWaterSurface() ? this.getSurfingParamsWater() : this.getSurfingParamsGround()).mAccel;
+            this.mForwardVel = fadd(fv, fsub(fr(1.1), fdiv(fv, accel)));
+        } else if (this.mGroundPlane.n[1] >= fr(0.95)) this.mForwardVel = fsub(fv, 1);
+        if (this.mForwardVel > powMax) this.mForwardVel = powMax;
+        const rotSp = s16(Math.trunc(fmadd(fdiv(fsub(want, powMin), fsub(powMax, powMin)), fsub(rotMax, rotMin), rotMin)));
+        this.mFaceAngle.y = s16(this.mIntendedYaw - IConverge(s16(this.mIntendedYaw - this.mFaceAngle.y), 0, rotSp, rotSp));
+        this.slopeProcess();
+        // (surfingEffect on the water)
+    }
+    /**
+     * surfing (0x80139588): frozen for mStatusTimer at the start, A: the board jump (0x281089A), else
+     * doSurfing and walkProcess (twice, as the DOL does): off an edge the board falls (0x81089B); a
+     * wall head-on (beyond mClashAngle) faster than mClashSpeed knocks him off (all his HP, JUMP_BACK_DOWN).
+     */
+    surfing() {
+        this.setAnimation(A.RIDE_SHELL, 1);
+        if (this.mStatusTimer !== 0) { this.mStatusTimer = (this.mStatusTimer - 1) & 0xFFFF; return 0; }
+        if (this.mInput & 2) { this.pos.y = fadd(this.pos.y, 1); return this.changePlayerStatus(0x281089A, 0, false); }
+        this.doSurfing();
+        this.walkProcess();
+        switch (this.walkProcess()) {
+            case 0: this.changePlayerStatus(0x81089B, 0, false); break;
+            case 2: {
+                if (!this.mWallPlane) { this.setPlayerVelocity(0); this.loserExec(); break; }
+                const d = s16(matan(this.mWallPlane.n[2], this.mWallPlane.n[0]) - this.mFaceAngle.y);
+                const P = this.mGroundPlane.isWaterSurface() ? this.getSurfingParamsWater() : this.getSurfingParamsGround();
+                const max = P.mClashAngle;
+                if ((d < -max || max < d) && this.mForwardVel > P.mClashSpeed) {
+                    this.decHP(this.mDeParams.mHPMax);
+                    const r = this.changePlayerStatus(S.JUMP_BACK_DOWN, 0, true);
+                    this.mForwardVel = fmul(fr(0.8), -this.mForwardVel);
+                    this.mVel.y = 50;
+                    return r;
+                }
+                this.setPlayerVelocity(0);
+                break;
+            }
+        }
+        return 0;
+    }
+    /** toroccoing (inlined in moveMain): only the cart's sound and effects (calcBaseMtx moves him) */
+    toroccoing() { return 0; }
     moveMain() {
         this.checkEnforceJump();
         this.checkReturn();
@@ -532,6 +594,7 @@ export abstract class MarioRun extends MarioPhysics {
             case S.TURN: return this.turnning();
             case S.TURN_END: return this.turnEnd();
             case S.BRAKE: return this.braking();
+            case S.SURF: return this.surfing();
             case S.WALK_END: return this.walkEnd();
             case S.SPEED_SLIDING: return this.speedSliding();
             case S.FIRE_DASH: return this.fireDashing();
@@ -556,7 +619,7 @@ export abstract class MarioRun extends MarioPhysics {
             case S.U_TURN_JUMP_SLIP: return this.uTurnJumpSlip();
             case S.ULTRA_JUMP_SLIP: return this.ultraJumpSlip();
             case S.BROAD_JUMP_SLIP: return this.broadJumpSlip();
-            // (surfing, the pinna rail: not in Bianco)
+            case S.TOROCCO: return this.toroccoing();
         }
         return 0;
     }

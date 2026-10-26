@@ -2,7 +2,7 @@
 // MarioCollision.cpp a simulated Mario runs (decHP, dropObject, loserExec, floorDamageExec) and
 // MarioDraw.cpp's model placement (calcBaseMtx, calcAnim's body, setPositions).
 
-import { fr, s16, JMASSin, JMASCos, mtx, Mtx, V3 } from '../math.js';
+import { fr, s16, JMASSin, JMASCos, mtx, Mtx, V3, MsMtxSetRotRPH } from '../math.js';
 import { HitActor, MSG } from '../engine.js';
 import { MarioSpecial } from './special.js';
 import { S, A, MF } from './base.js';
@@ -137,8 +137,18 @@ export abstract class TMarioSim extends MarioSpecial {
         // + gpMapObjWave->getHeight(x, water, z) - water: the waves aren't simulated (no offset)
         j3dTRMtx(m, 0, this.mModelFaceAngle, 0, this.pos.x, this.pos.y, this.pos.z);
     }
+    /** calcBaseMtxTorocco: the player's (the coaster's cart and track) */
+    calcBaseMtxTorocco(m: Mtx) { j3dTRMtx(m, 0, this.mModelFaceAngle, 0, this.pos.x, this.pos.y, this.pos.z); }
+    /** calcBaseMtxPole (inlined in calcBaseMtx @0x801247a8): on a pole or tree, the pole's radius at his height out from its axis */
+    calcBaseMtxPole(m: Mtx) {
+        const h = this.holder as any;
+        const r = h && h.getRadiusAtY ? fr(h.getRadiusAtY(this.pos.y)) : 0;
+        const a = this.mModelFaceAngle & 0xFFFF;
+        j3dTRMtx(m, 0, this.mModelFaceAngle, 0, fr(this.pos.x - r * JMASSin(a)), this.pos.y, fr(this.pos.z - r * JMASCos(a)));
+    }
     calcBaseMtx(m: Mtx) {
-        // (TOROCCO and the pole statuses (0x100000): a simulated Mario doesn't reach them)
+        if (this.mStatus === S.TOROCCO) { this.calcBaseMtxTorocco(m); return; }
+        if (this.checkStatusType(S.FLAG_UNK100000)) { this.calcBaseMtxPole(m); return; }
         if (this.checkStatusType(S.FLAG_SWIMMING)) { this.calcBaseMtxSwim(m); return; }
         else {
             const h = this.holder as any;
@@ -167,7 +177,25 @@ export abstract class TMarioSim extends MarioSpecial {
                 m[4] = axis.y; m[5] = nc.y; m[6] = bin.y; m[7] = avgY < this.pos.y ? this.pos.y : avgY;
                 m[8] = axis.z; m[9] = nc.z; m[10] = bin.z; m[11] = this.pos.z;
             } else j3dTRMtx(m, this.mFaceAngle.x, this.mModelFaceAngle, this.mFaceAngle.z, this.pos.x, this.pos.y, this.pos.z);
-            // (surfing's pitch and roll (0x10000): not reached)
+            if (this.checkStatusType(S.FLAG_UNK10000)) {
+                // surfing (@0x80124d2c): pitched by his speed, rolled by his turn (red's params, water or ground)
+                const P = this.mGroundPlane.isWaterSurface() ? this.mSurfingParamsWaterRed : this.mSurfingParamsGroundRed;
+                let pitch = s16(Math.trunc(fr(this.mForwardVel * P.mPitch)));
+                const delta = s16(this.mFaceAngle.y - this.unk9C);
+                let roll = s16(Math.trunc(fr(fr(delta * this.mForwardVel) * P.mRoll)));
+                const pm = P.mPitchMax, rm = P.mRollMax;
+                if (pitch > pm) pitch = pm;
+                if (pitch < -pm) pitch = s16(-pm);
+                if (roll > rm) roll = rm;
+                if (roll < -rm) roll = s16(-rm);
+                const U = this.unk414;
+                U.y = fr(fr(pitch - U.y) * P.mAngleChangeRate + U.y);
+                U.x = fr(fr(roll - U.x) * P.mAngleChangeRate + U.x);
+                const r = mtx();
+                MsMtxSetRotRPH(r, fr(0.0054931640625 * s16(Math.trunc(U.y))), 0, fr(0.0054931640625 * s16(Math.trunc(U.x))));
+                const a = Float64Array.from(m);
+                for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) m[i * 4 + j] = fr(a[i * 4] * r[j] + a[i * 4 + 1] * r[4 + j] + a[i * 4 + 2] * r[8 + j]);
+            }
         }
         // unk318: sinking into goop, the dive offset
         let ty = 0;

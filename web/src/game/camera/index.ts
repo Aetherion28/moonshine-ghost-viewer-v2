@@ -35,6 +35,8 @@ declare module './polar.js' {
          * the camera cubes and mode changes run in STATE_UNK4.
          */
         setDirectorState(next: number, bck?: DemoBck | null): void;
+        /** nextStateInitialize(STATE_UNK1)'s demo name ("startcamera"; Delfino's sinkricco, yoshi_startcamera, ...) */
+        stageDemoName?: string;
     }
 }
 PolarSubCamera.prototype.setDirectorState = function (this: PolarSubCamera, next: number, bck: DemoBck | null = null) {
@@ -42,5 +44,5 @@ PolarSubCamera.prototype.setDirectorState = function (this: PolarSubCamera, next
     if (prev === next) return;
     if (prev === 1) this.endDemoCamera();
     this.directorState = next;
-    if (next === 1) this.startStageDemo(bck || (this.bckSource ? this.bckSource('startcamera') : null));
+    if (next === 1) this.startStageDemo(bck || (this.bckSource ? this.bckSource(this.stageDemoName || 'startcamera') : null));
 };
