@@ -78,6 +78,13 @@ export class FlagManager {
         if (this.getFlag(MSF.RACE_RECORD_PIANTA) === 0) this.setFlag(MSF.RACE_RECORD_PIANTA, 3000);
         if (this.getFlag(MSF.RACE_RECORD_NOKI) === 0) this.setFlag(MSF.RACE_RECORD_NOKI, 4000);
         if (this.getFlag(MSF.BOX_GAME_RECORD) === 0) this.setFlag(MSF.BOX_GAME_RECORD, 3000);
+        this.setBool(true, MSF.FMV_OPENING_WATCHED);
+        this.setBool(true, MSF.AUTO_DEMO_WATCHED);
+        // the counts are recounted from the flags
+        let shines = 0; for (let f = MSF.SHINE_BASE; f <= MSF.SHINE_LAST; f++) if (this.getFlag(f) !== 0) shines++;
+        this.setFlag(MSF.SHINE_COUNT, shines);
+        let blues = 0; for (let f = MSF.BLUE_COIN_BASE; f <= MSF.BLUE_COIN_LAST; f++) if (this.getFlag(f) !== 0) blues++;
+        this.setFlag(MSF.BLUE_COIN_COUNT, blues);
     }
     /** raise the shine count to at least n (an inferred lower bound) */
     private atLeastShines(n: number) { if (this.getFlag(MSF.SHINE_COUNT) < n) this.setFlag(MSF.SHINE_COUNT, n); }

@@ -639,7 +639,7 @@ export class TalkDirector {
     private demoHead = 0; private demoTail = 0;
     /** unk60: the tick the demo started (mTickCount) */
     private unk60 = 0;
-    /** the state updateGameMode last asked of the director (mState: STATE_UNK4 is 4; 7 the game over, 5 pause, 6 guide, 0xB card save) */
+    /** the state updateGameMode last asked of the director (mState: STATE_UNK4 is 4; 7 the game over, 5 pause, 10 guide, 11 card save) */
     nextState = 4;
     /** TMarDirector::fireStartDemoCamera: queue a camera demo (the script's: timed, no offset) */
     fireStartDemoCamera(name: string | null, offset: V3 | null = null, frames = -1, angle = 0, timed = true, actor: NameRef | null = null) {
@@ -686,7 +686,7 @@ export class TalkDirector {
         switch (this.unk124) {
             case 0:
                 if (!(this.dflags & ~DF.SHINE_TAKEN)) {
-                    // (the pause menu / guide (STATE_UNK5 / 6) are not simulated)
+                    // (the pause menu / guide (STATE_PAUSE_MENU 5 / STATE_GUIDE 10) are not simulated)
                     if (m && m.checkFlag(MF_GAME_OVER)) this.dflags |= DF.GAME_OVER_PENDING;
                 } else if (this.dflags & DF.GAME_OVER_PENDING) {
                     this.dflags &= ~DF.GAME_OVER_PENDING;

@@ -233,7 +233,8 @@ export class SpcInterp {
             case 8: this.arith((a, b) => (a + b) | 0, (a, b) => fr(a + b)); break;
             case 9: this.arith((a, b) => (a - b) | 0, (a, b) => fr(a - b)); break;
             case 10: this.arith((a, b) => Math.imul(a, b), (a, b) => fr(a * b)); break;
-            case 11: this.arith((a, b) => (b === 0 ? 0 : (a / b) | 0), (a, b) => fr(a / b)); break;
+            // divw: by zero the Gekko gives -1 for a negative dividend and 0 otherwise; 0x80000000 / -1 gives 0
+            case 11: this.arith((a, b) => (b === 0 ? (a < 0 ? -1 : 0) : (a === -0x80000000 && b === -1) ? 0 : (a / b) | 0), (a, b) => fr(a / b)); break;
             case 12: this.arith((a, b) => (b === 0 ? a : (a % b) | 0), null); break;
             case 13: { const v = this.proc.pop(); this.u8(); const l = this.u32(), i = this.u32(); this.slot(l, i).copyFrom(v); break; }  // ass
             case 14: this.bin2((a, b) => this.pushBool(a.eq(b))); break;
