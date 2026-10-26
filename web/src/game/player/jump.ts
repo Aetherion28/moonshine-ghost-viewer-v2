@@ -85,8 +85,14 @@ export abstract class MarioJump extends MarioRun {
                 let trampled = false;
                 if (this.askStrongGroundTouch()) {
                     if (this.checkFlag(MF.ON_SAND)) return this.changePlayerStatus(S.FOOT_DOWN, 0, false);
-                    // (the hard landing with FLUDD on, BROAD_JUMP_SLIP: its status change isn't simulated here, only its line)
-                    if (this.checkFlag(MF.HAS_FLUDD) && this.fluddNozzle() !== 2) { trampled = true; this.startVoice(0x789E); }
+                    // the hard landing with FLUDD on (not the hover nozzle): BROAD_JUMP_SLIP, then the floor damage
+                    // (MarioJump.cpp jumpingBasic; the tremble, rumble and effects are drawing only)
+                    if (this.checkFlag(MF.HAS_FLUDD) && this.fluddNozzle() !== 2) {
+                        this.changePlayerStatus(S.BROAD_JUMP_SLIP, 0, false);
+                        trampled = true;
+                        this.startVoice(0x789E);
+                        this.floorDamageExec(1, 3, 0, this.mMotorParams.mMotorReturn);
+                    }
                 }
                 this.unk2A8.y = this.pos.y;
                 this.changePlayerStatus(onGround, 0, false);

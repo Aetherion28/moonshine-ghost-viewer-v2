@@ -374,6 +374,8 @@ export function closingCopyQf(g: any, segment: number, q0: number): number | und
 }
 
 export class SimRunner {
+    /** steer Mario by a v8 ghost's recorded camera instead of the sim's camera (debug; see where it's read) */
+    static steerByRecordedCamera = false;
     private rng: RngReplay | null = null;
     /** run Mario from the ghost's inputs where it has them (the viewer's "Input replay") */
     inputReplay = true;
@@ -442,7 +444,10 @@ export class SimRunner {
                 this.pads = new Map();
                 for (let i = 0; i < I.count; i++) this.pads.set(I.qf[i] - q0, i);
                 let cam = P.cameraApprox ? 'approx' : 'sim';
-                if (g.camera && inp.api.ghostCameraAt) {
+                // Steering by a v8 ghost's recorded camera is off by default: it is sampled once a frame and
+                // Mario reads the camera every tick, so the ticks in between are guessed. With the sim's own
+                // camera, NB6 (2026_10_21) syncs to QF 1056 instead of 688 and PV6 to 1456 instead of 836.
+                if (g.camera && inp.api.ghostCameraAt && SimRunner.steerByRecordedCamera) {
                     const at = inp.api.ghostCameraAt;
                     P.setStickCamera(recordedStickCamera((q) => at(g, q0 + q, segI), () => st0.qf, () => s16(P.mFaceAngle.y + 0x8000)), false);
                     cam = 'recorded';
