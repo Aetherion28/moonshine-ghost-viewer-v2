@@ -51,7 +51,7 @@ export abstract class MarioMove extends MarioBase {
     moveRequest(p: V3) {
         const o = V3.sub(p, this.pos);
         this.pos.set(p);
-        this.unk160.add(o); this.mPrevPosition.add(o); this.unk2A8.add(o); this.unk2BC = fr(this.unk2BC + o.y);
+        this.unk160.add(o); this.mPrevPosition.add(o); this.mWireStartPos.add(o); this.mWireEndPos.add(o); this.unk2A8.add(o); this.unk2BC = fr(this.unk2BC + o.y);
         this.mHeadMtx[3] += o.x; this.mHeadMtx[7] += o.y; this.mHeadMtx[11] += o.z;
         this.checkRideReCalc();
         return true;

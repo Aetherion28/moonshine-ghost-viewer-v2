@@ -131,6 +131,8 @@ export abstract class TMarioSim extends MarioSpecial {
         r[8] = m[2]; r[9] = m[6]; r[10] = m[10]; r[11] = m[14];
         return r;
     }
+    /** getTakenMtx: the body model's base TR matrix (calcAnim's calcBaseMtx) */
+    getTakenMtx(): Mtx { return this.mModel.baseTR; }
     calcBaseMtxSwim(m: Mtx) {
         // + gpMapObjWave->getHeight(x, water, z) - water: the waves aren't simulated (no offset)
         j3dTRMtx(m, 0, this.mModelFaceAngle, 0, this.pos.x, this.pos.y, this.pos.z);

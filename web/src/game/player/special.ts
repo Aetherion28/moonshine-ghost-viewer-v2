@@ -1,8 +1,7 @@
 // Player/MarioSpecial.cpp: climbing bars (poles, trees, the fluff), hanging from ledges and roofs
-// (fence ceilings), climbing fences, being carried, pulling, and specMain. Wires are kept as
-// the let-go branches only.
+// (fence ceilings), climbing fences, being carried, pulling, the tightrope wires, and specMain.
 
-import { fr, s16, JMASSin, JMASCos, matan, IConverge, V3, Mtx, mtxMultVec } from '../math.js';
+import { fr, s16, JMASSin, JMASCos, matan, IConverge, V3, Mtx, mtxMultVec, frsqrte, rand } from '../math.js';
 import { HitActor, HF, MSG } from '../engine.js';
 import { WallCheck } from '../collision.js';
 import { MarioSwim } from './swim.js';
@@ -497,8 +496,272 @@ export abstract class MarioSpecial extends MarioSwim {
         return 0;
     }
 
-    // ---------------------------------------------------------------- wires: not reachable (see the top)
-    wireStub() { if (!this.holder) return this.changePlayerStatus(S.LANDING, 0, false); return 0; }
+    // ---------------------------------------------------------------- wires (tightropes)
+    // He catches one in receiveMessage (the wire's TMapWireActor sends TAKE: mapwire.ts). From then
+    // his position is on the segment mWireStartPos..mWireEndPos at mWirePosRatio, 160 below it, and
+    // mWireSag (specMain's spring) down from there in his body's frame.
+    /** getOnWirePosAngle (inlined in each state): his place on the wire, and the wire's heading */
+    getOnWirePosAngle(out: V3): number {
+        const s = this.mWireStartPos, e = this.mWireEndPos;
+        const dx = fr(e.x - s.x), dy = fr(e.y - s.y), dz = fr(e.z - s.z);
+        const r = this.mWirePosRatio;
+        out.set(fr(s.x + fr(dx * r)), fr(s.y + fr(dy * r)), fr(s.z + fr(dz * r)));
+        out.y = fr(out.y - 160);
+        // rotY(mFaceAngle.y) * rotX(mFaceAngle.x) times (0, -mWireSag * 1, 0): its Y column (the zero
+        // terms of PSMTXConcat / PSMTXMultVec add nothing)
+        const ax = this.mFaceAngle.x, ay = this.mFaceAngle.y;
+        const sx = JMASSin(ax), cx = JMASCos(ax), sy = JMASSin(ay), cy = JMASCos(ay);
+        const n = fr(-this.mWireSag * 1);
+        out.x = fr(out.x + fr(fr(sy * sx) * n));
+        out.y = fr(out.y + fr(cx * n));
+        out.z = fr(out.z + fr(fr(cy * sx) * n));
+        return matan(dz, dx);
+    }
+    /** swaps the wire's ends (he turned round on it) */
+    wireFlipEnds() {
+        const t = this.mWireStartPos.clone();
+        this.mWireStartPos.set(this.mWireEndPos); this.mWireEndPos.set(t);
+        this.mWirePosRatio = fr(1 - this.mWirePosRatio);
+    }
+    /** wireMove: along the wire by d units, kept 100 units from its ends (false: stopped at one) */
+    wireMove(d: number) {
+        const s = this.mWireStartPos, e = this.mWireEndPos;
+        const x = fr(e.x - s.x), y = fr(e.y - s.y), z = fr(e.z - s.z);
+        // TVec3::length inlined: (x*x + y*y fused) + z*z, then frsqrte and one single Newton step
+        let len = fr(fr(x * x + fr(y * y)) + fr(z * z));
+        if (len > 0) {
+            const g = fr(frsqrte(len));
+            len = fr(len * fr(fr(0.5 * g) * fr(3 - len * fr(g * g))));
+        }
+        const delta = fr(d / len), margin = fr(100 / len);
+        let clean = true;
+        if (fr(this.mWirePosRatio + delta) > fr(1 - margin)) { this.mWirePosRatio = fr(1 - margin); clean = false; }
+        if (fr(this.mWirePosRatio + delta) < margin) { this.mWirePosRatio = margin; clean = false; }
+        if (clean) this.mWirePosRatio = fr(this.mWirePosRatio + delta);
+        return clean;
+    }
+    /** let go of the wire jumping (wireWait, wireSWait) */
+    private wireLetGo() {
+        (this.holder as HitActor).receiveMessage(this, MSG.DETACH);
+        this.holder = null;
+        const r = this.changePlayerStatus(S.WIRE_JUMP, 0, false);
+        this.setPlayerVelocity(0);
+        return r;
+    }
+    /** walking on the wire (ANIM_ROPE_WALK / RUN / WAIT) */
+    wireWait() {
+        const a = this.getOnWirePosAngle(this.pos);
+        if (this.mInput & 2) this.onFlag(MF.UNK100);
+        if (this.checkFlag(MF.UNK100) && this.mWireSag <= 0) {
+            const r = this.wireLetGo();
+            const W = this.mWireParams;
+            if (this.mWireBounceVel < 0) this.mVel.y = fr(this.mVel.y - W.mWireJumpMult * this.mWireBounceVel);
+            this.mVel.y = fr(this.mVel.y + W.mWireJumpBase);
+            const se = this.mWireBounceVel < this.mWireSfx1MinVel ? SE.MA_ROPE_JUMP_C : this.mWireBounceVel < this.mWireSfx0MinVel ? SE.MA_ROPE_JUMP_B : SE.MA_ROPE_JUMP_A;
+            this.startSoundActor(se);
+            this.unk78 &= ~0x100;
+            return r;
+        }
+        if (this.mInput & 0x8000) { this.mWireBounceVel = 5; return this.changePlayerStatus(S.WIRE_WAIT_TO_HANG, 0, false); }
+        if (this.mInput & 1) {
+            const diff = s16(a - this.mIntendedYaw);
+            if (diff > -0x2000 && diff < 0x2000) {
+                const rate = fr(0.05 * this.mIntendedMag);
+                if (this.wireMove(fr(0.1 * this.mIntendedMag))) this.setAnimation(this.mIntendedMag > 16 ? A.ROPE_RUN : A.ROPE_WALK, rate);
+                else this.setAnimation(A.ROPE_WAIT, 1);
+            }
+            if (diff < -0x2000) { this.startVoice(SE.MV30_FRIGHT_01); return this.changePlayerStatus(S.WIRE_WAIT_TO_S_WAIT_L, 0, false); }
+            if (diff > 0x2000) { this.startVoice(SE.MV30_FRIGHT_01); return this.changePlayerStatus(S.WIRE_WAIT_TO_S_WAIT_R, 0, false); }
+        } else this.setAnimation(A.ROPE_WAIT, 1);
+        this.mFaceAngle.y = a;
+        this.mModelFaceAngle = this.mFaceAngle.y;
+        return 0;
+    }
+    /** standing sideways on the wire (ANIM_ROPE_SWAIT) */
+    wireSWait() {
+        const a = this.getOnWirePosAngle(this.pos);
+        if (this.mInput & 2) this.onFlag(MF.UNK100);
+        if (this.checkFlag(MF.UNK100) && this.mWireSag < 0) {
+            const r = this.wireLetGo();
+            if (this.mWireBounceVel < 0) this.mVel.y = fr(this.mVel.y - 5 * this.mWireBounceVel);
+            return r;
+        }
+        if (this.mInput & 0x8000) { this.mWireBounceVel = 5; this.startVoice(SE.MV30_FRIGHT_01); return this.changePlayerStatus(S.WIRE_WAIT_TO_HANG, 0, false); }
+        if (this.mInput & 1) {
+            // (the asm's wire - intended; the range is symmetric)
+            const diff = s16(a - this.mIntendedYaw);
+            if (diff > -0x4000 && diff < 0x4000) return this.changePlayerStatus(S.WIRE_S_WAIT_TO_WAIT_L, 0, false);
+            this.wireFlipEnds();
+            return this.changePlayerStatus(S.WIRE_S_WAIT_TO_WAIT_R, 0, false);
+        }
+        this.setAnimation(A.ROPE_SWAIT, 1);
+        this.mModelFaceAngle = a;
+        this.mFaceAngle.y = s16(this.mModelFaceAngle + 0x4000);
+        return 0;
+    }
+    wireWaitToSWaitL() {
+        this.mModelFaceAngle = this.getOnWirePosAngle(this.pos);
+        this.mFaceAngle.y = s16(this.mModelFaceAngle + 0x4000);
+        this.setAnimation(A.ROPE_WTOSW, 1);
+        if (this.isLast1AnimeFrame()) this.changePlayerStatus(S.WIRE_S_WAIT, 0, false);
+        return 0;
+    }
+    wireWaitToSWaitR() {
+        this.mModelFaceAngle = this.getOnWirePosAngle(this.pos);
+        this.mFaceAngle.y = s16(this.mModelFaceAngle - 0x4000);
+        this.setAnimation(A.ROPE_WTOSW_R, 1);
+        if (this.isLast1AnimeFrame()) { this.changePlayerStatus(S.WIRE_S_WAIT, 0, false); this.wireFlipEnds(); }
+        return 0;
+    }
+    /** changeWireHanging: hanging from it unless he holds something or rides Yoshi */
+    changeWireHanging() { this.changePlayerStatus(this.canHang() ? S.WIRE_HANGING : S.LANDING, 0, false); }
+    wireWaitToHang() {
+        this.mModelFaceAngle = this.getOnWirePosAngle(this.pos);
+        this.mFaceAngle.y = s16(this.mModelFaceAngle + 0x4000);
+        this.setAnimation(A.ROPE_WHG, 1);
+        if (this.isLast1AnimeFrame()) return this.changePlayerStatus(this.canHang() ? S.WIRE_HANGING : S.LANDING, 0, false);
+        return 0;
+    }
+    wireSWaitToHang() {
+        this.mFaceAngle.y = this.getOnWirePosAngle(this.pos);
+        this.mModelFaceAngle = this.mFaceAngle.y;
+        this.setAnimation(A.ROPE_SWHG, 1);
+        if (this.isLast1AnimeFrame()) return this.changePlayerStatus(this.canHang() ? S.WIRE_HANGING : S.LANDING, 0, false);
+        return 0;
+    }
+    /** climbing back up onto it (ANIM_ROPE_RETURN) */
+    wireReturn() {
+        this.mFaceAngle.y = this.getOnWirePosAngle(this.pos);
+        this.mModelFaceAngle = this.mFaceAngle.y;
+        this.setAnimation(A.ROPE_RETURN, 1);
+        if (this.isLast1AnimeFrame()) this.changePlayerStatus(S.WIRE_WAIT, 0, false);
+        return 0;
+    }
+    wireHanging() {
+        const a = this.getOnWirePosAngle(this.pos);
+        const room = fr(this.mFloorPosition.x - this.mFloorPosition.y) >= 160;
+        if ((this.mInput & 2) && room) { this.mWireBounceVel = 5; return this.changePlayerStatus(S.WIRE_RETURN, 0, false); }
+        if (this.mInput & 0x8000) {
+            (this.holder as HitActor).receiveMessage(this, MSG.DETACH);
+            this.holder = null;
+            return this.startHangLanding(S.WIRE_HANG_LAND_SAFE_DOWN);
+        }
+        this.unkF6 = 0;
+        this.mFaceAngle.x = 0;
+        this.mFaceAngle.y = s16(a + 0x4000);
+        this.mModelFaceAngle = a;
+        if (this.mInput & 1) {
+            const diff = s16(a - this.mIntendedYaw);
+            if (diff > -0x2000 && diff < 0x3555) this.setAnimation(this.wireMove(3) ? A.ROPE_HMOVR : A.ROPE_HGWAT, 1);
+            if (diff < -0x6000 || diff > 0x4AAA) this.setAnimation(this.wireMove(-3) ? A.ROPE_HMOVL : A.ROPE_HGWAT, 1);
+            if (diff >= -0x6000 && diff <= -0x2000) { this.mWireBounceVel = 5; return this.changePlayerStatus(S.WIRE_RETURN, 0, false); }
+            // (dropping off: still holding the wire actor, as the game has it)
+            if (diff >= 0x3555 && diff <= 0x4AAA) this.startHangLanding(S.WIRE_HANG_LAND_SAFE_DOWN);
+            return 0;
+        }
+        if (this.mUpperState === 0 && this.wireCanSpray()) {   // UPPER_STATE_PUMPING
+            const v = this.getNozzleEmitVX();
+            this.unkF6 = s16(this.unkF6 + (v > 0 ? 2 * this.mWireParams.mRotStop : -2 * this.mWireParams.mRotStop));
+            this.unkF6 = s16(this.unkF6 + this.getNozzleEmitVX());
+            return this.changePlayerStatus(S.WIRE_ROLLING, 0, false);
+        }
+        this.setAnimation(A.ROPE_HGWAT, 1);
+        return 0;
+    }
+    /** mWaterGun && TWaterGun::canSpray (inlined) */
+    private wireCanSpray() {
+        const G: any = this.mWaterGun;
+        return !!G && (G.canSpray ? G.canSpray() : G.isEmitting());
+    }
+    /** getNozzleEmitVX: how hard the nozzle spins him round the wire */
+    getNozzleEmitVX(): number {
+        const G: any = this.mWaterGun;
+        if (!G) return 0;
+        const W = this.mWireParams;
+        switch (G.mCurrentNozzle) {
+            case 1: return W.mRotSpeedTrgRocket;   // Rocket
+            case 4: return W.mRotSpeedTrgHover;    // Hover
+            case 5: return W.mRotSpeedTrgTurbo;    // Turbo
+            default: return W.mRotSpeed;           // Spray
+        }
+    }
+    /** spinning round the wire on the nozzle's thrust (mFaceAngle.x the roll, unkF6 its speed) */
+    wireRolling() {
+        const a0 = this.mFaceAngle.x;
+        const a = this.getOnWirePosAngle(this.pos);
+        const W = this.mWireParams;
+        if (this.mInput & 2) this.mStatusState |= 1;
+        const max = W.mRotSpeedMax;
+        if ((this.mStatusState & 1) && this.unkF6 < 0) {
+            const x = this.mFaceAngle.x;
+            if (x > -0x2000 && x <= max - 0x2000) return this.changePlayerStatus(S.WIRE_ROLL_JUMP, 0, false);
+        }
+        if ((this.mStatusState & 1) && this.unkF6 > 0) {
+            const x = this.mFaceAngle.x;
+            if (0x6000 - max <= x && x < 0x6000) return this.changePlayerStatus(S.WIRE_ROLL_JUMP, 1, false);
+        }
+        if (this.mInput & 1) {
+            const diff = s16(a - this.mIntendedYaw);
+            if (diff > -0x2000 && diff < 0x3555) this.wireMove(3);
+            if (diff < -0x6000 || diff > 0x4AAA) this.wireMove(-3);
+        }
+        if (this.mUpperState === 0 && this.wireCanSpray()) this.unkF6 = s16(this.unkF6 + this.getNozzleEmitVX());
+        this.unkF6 = s16(this.unkF6 - Math.trunc(fr(W.mRotGravity * JMASSin(this.mFaceAngle.x))));
+        if (this.mInput & 0x4000) this.unkF6 = s16(Math.trunc(fr(this.unkF6 * W.mRotBrake)));
+        if (this.unkF6 < -max) this.unkF6 = s16(-max);
+        if (this.unkF6 > max) this.unkF6 = max;
+        this.mFaceAngle.x = s16(this.mFaceAngle.x + this.unkF6);
+        this.mWireSag = fr(0.1 * Math.abs(this.unkF6));
+        this.mWireBounceVel = 0;
+        const x = this.mFaceAngle.x;
+        if (a0 < -0x4000 && x > 0x4000) this.mStatusState |= 2;
+        else if (a0 < x) this.mStatusState &= ~2;
+        let se = 0, play = false;
+        if (this.mStatusState & 2) {
+            if (x < this.mWireSwingPosAngle && this.mWireSwingPosAngle <= a0) {
+                this.mWireQueuedSfxID = SE.OBJ_ROPE_CLEAK_ROLL; se = SE.MA_ROPE_ROLL_FULL_A; play = true;
+                this.mWireSfxTimer = this.mWireSfxDelay;
+                // (a voice picked once a spin: rand)
+                if (!(this.mStatusState & 0xC)) this.mStatusState |= fr(fr(0.000030517578) * rand()) < 0.5 ? 4 : 8;
+                if ((this.mStatusState & 0xC) === 4) this.startVoice(SE.MV25A_WIRE_ROLL_01A);
+                if ((this.mStatusState & 0xC) === 8) this.startVoice(SE.MV25A_WIRE_ROLL_02A);
+            }
+            if (x < this.mWireSwingNegAngle && this.mWireSwingNegAngle <= a0) { se = SE.MA_ROPE_ROLL_FULL_B; play = true; }
+            if (a0 > 0 && x <= 0) { this.mWireQueuedSfxID = SE.OBJ_ROPE_CLEAK_ROLL; this.mWireSfxTimer = this.mWireSfxDelay; }
+        } else {
+            if (x < this.mWireRollAngle && this.mWireRollAngle <= a0) {
+                this.mWireQueuedSfxID = SE.OBJ_ROPE_CLEAK_HALFA; se = SE.MA_ROPE_ROLL_HALF_A; play = true; this.mWireSfxTimer = this.mWireSfxDelay;
+            }
+            if (a0 < this.mWireRollAngle && this.mWireRollAngle <= x) {
+                this.mWireQueuedSfxID = SE.OBJ_ROPE_CLEAK_HALFB; se = SE.MA_ROPE_ROLL_HALF_B; play = true; this.mWireSfxTimer = this.mWireSfxDelay;
+            }
+        }
+        if (play) this.startSoundActor(se);
+        // (blurEffect: drawing only)
+        const stop = W.mRotStop;
+        if (this.mFaceAngle.x > -0x200 && this.mFaceAngle.x < 0x200 && -stop < this.unkF6 && this.unkF6 < stop) {
+            this.mFaceAngle.x = 0; this.unkF6 = 0; this.mWireBounceVel = 0; this.mWireSag = 0;
+            return this.changePlayerStatus(this.canHang() ? S.WIRE_HANGING : S.LANDING, 0, false);
+        }
+        this.mFaceAngle.y = s16(a + 0x4000);
+        this.mModelFaceAngle = this.mFaceAngle.y;
+        this.setAnimation(A.HANG, 1);
+        return 0;
+    }
+    wireSWaitToWaitL() {
+        this.mModelFaceAngle = this.getOnWirePosAngle(this.pos);
+        this.mFaceAngle.y = s16(this.mModelFaceAngle + 0x4000);
+        this.setReverseAnimation(A.ROPE_WTOSW, 1);
+        if (this.isAnimeLoopOrStop()) this.changePlayerStatus(S.WIRE_WAIT, 0, false);
+        return 0;
+    }
+    wireSWaitToWaitR() {
+        this.mModelFaceAngle = this.getOnWirePosAngle(this.pos);
+        this.mFaceAngle.y = s16(this.mModelFaceAngle - 0x4000);
+        this.setReverseAnimation(A.ROPE_WTOSW_R, 1);
+        if (this.isAnimeLoopOrStop()) this.changePlayerStatus(S.WIRE_WAIT, 0, false);
+        return 0;
+    }
 
     // ---------------------------------------------------------------- pulling (a tentacle, the beak, a Fire Chomp's tail)
     /** getCurrentPullParams: [rate V, rate H] by what he holds (the oil rates while oil-pulling) */
@@ -580,10 +843,17 @@ export abstract class MarioSpecial extends MarioSwim {
             case S.DESCEND: result = this.descend(); break;
             case S.HANG_JUMPING: result = this.hangJumping(); break;
             case S.TAKEN: result = this.taken(); break;
-            case S.WIRE_WAIT: case S.WIRE_S_WAIT: case S.WIRE_WAIT_TO_S_WAIT_L: case S.WIRE_WAIT_TO_S_WAIT_R:
-            case S.WIRE_WAIT_TO_HANG: case S.WIRE_S_WAIT_TO_HANG: case S.WIRE_RETURN: case S.WIRE_HANGING:
-            case S.WIRE_ROLLING: case S.WIRE_S_WAIT_TO_WAIT_R: case S.WIRE_S_WAIT_TO_WAIT_L:
-                result = this.wireStub(); break;
+            case S.WIRE_WAIT: result = this.wireWait(); break;
+            case S.WIRE_S_WAIT: result = this.wireSWait(); break;
+            case S.WIRE_WAIT_TO_S_WAIT_L: result = this.wireWaitToSWaitL(); break;
+            case S.WIRE_WAIT_TO_S_WAIT_R: result = this.wireWaitToSWaitR(); break;
+            case S.WIRE_WAIT_TO_HANG: result = this.wireWaitToHang(); break;
+            case S.WIRE_S_WAIT_TO_HANG: result = this.wireSWaitToHang(); break;
+            case S.WIRE_RETURN: result = this.wireReturn(); break;
+            case S.WIRE_HANGING: result = this.wireHanging(); break;
+            case S.WIRE_ROLLING: result = this.wireRolling(); break;
+            case S.WIRE_S_WAIT_TO_WAIT_R: result = this.wireSWaitToWaitR(); break;
+            case S.WIRE_S_WAIT_TO_WAIT_L: result = this.wireSWaitToWaitL(); break;
             case S.PULLING: case S.OIL_PULLING: result = this.pulling(); break;
             case S.FENCE_CATCH: result = this.fenceCatch(); break;
             case S.FENCE_JUMP_CATCH: result = this.fenceJumpCatch(); break;

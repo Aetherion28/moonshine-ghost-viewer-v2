@@ -11,8 +11,10 @@
 // matrix (where the wire bends to) is his position. The wire fittings' collision
 // (/common/map/WireFitting.col at each end) goes into the static map collision.
 
-import { fr, V3, JMASSin, JMASCos, s16, MsMtxSetXYZRPH, mtx } from './math.js';
-import { World, NameRef, Stream, parseSceneBin, SceneNode, CUE_MOVE } from './engine.js';
+import { fr, V3, JMASSin, JMASCos, s16, MsMtxSetXYZRPH, mtx, type Mtx } from './math.js';
+import { World, NameRef, Stream, parseSceneBin, SceneNode, CUE_MOVE, TakeActor, HitActor, HF, HC, MSG, IDX } from './engine.js';
+import { AT } from './actortypes.js';
+import { lengthJ } from './player/fmath.js';
 import { MapCollision } from './collision.js';
 
 // ---------------------------------------------------------------- cubes
@@ -248,34 +250,114 @@ export class MapWire {
 /** Mario's rope animations (TMario's wire states): his holder is then the wire actor. */
 export const isMarioOnWireAnim = (anim: number) => anim >= 0xDB && anim <= 0xE6;
 
+/** the simulated Mario as the wire actor sees him (TMario::getTakenMtx: his body's base matrix) */
+interface WireMario extends TakeActor { getTakenMtx(): Mtx; }
+const isSimMario = (m: any): m is WireMario => !!m && typeof m.getTakenMtx === 'function' && typeof m.wireMove === 'function';
+
+/**
+ * TMapWireActor (アクター補助): a hit actor in the item group, put at Mario's taken matrix each
+ * tick he's in a wire cube (else no collision). The hit check gives it Mario when he's within its
+ * 200 x 200 cylinder; its checkTakingActor then sends him TAKE, and his receiveMessage catches
+ * the wire (TMario's mHolder is this actor; it holds him).
+ */
+export class MapWireActor extends TakeActor {
+    static mCommonAttackRadius = 200; static mCommonAttackHeight = 200;
+    /** unk70: he let go (the wire is released) */
+    unk70 = false;
+    constructor(public mgr: WireActorManager) {
+        super('アクター補助');
+        this.initHitActor(AT.MAP_WIRE_ACTOR, 1, HC.PLAYER, MapWireActor.mCommonAttackRadius, MapWireActor.mCommonAttackHeight, 0, 0);
+    }
+    getTakingMtx(): Mtx | null { return null; }
+    receiveMessage(sender: HitActor, msg: number) {
+        if (msg === MSG.DETACH && sender === this.held) { this.held = null; this.unk70 = true; return true; }
+        return false;
+    }
+    checkTakingActor() {
+        if (this.held && this.held.holder !== this) { this.held = null; this.unk70 = true; }
+        if (this.mgr.wire) for (const c of this.collisions.slice())
+            if (c.isActorType(AT.MARIO) && c.receiveMessage(this, MSG.TAKE)) this.held = c as TakeActor;
+    }
+    getTipPoints(start: V3, end: V3) { const w = this.mgr.wire!; start.set(w.start); end.set(w.end); }
+    /** getPosInWire: his place along the wire, flat (both tips at y 0), from the actor's position */
+    getPosInWire() {
+        const a = new V3(), b = new V3();
+        this.getTipPoints(a, b);
+        a.y = 0; b.y = 0;
+        const foot = perpendicFoot(a, b, this.pos);
+        const l = (v: V3) => lengthJ(v.x, v.y, v.z);
+        return fr(l(V3.sub(foot, a)) / l(V3.sub(b, a)));
+    }
+}
+
 /** TMapWireActorManager for Mario (TMapWireManager::loadAfter: entry(gpMarioOriginal)). */
 class WireActorManager {
+    /** unk7C: the wire whose cube he's in */
     wire: MapWire | null = null;
-    /** the wire actor holds him (mHeldObject) */
-    held = false;
-    /** unk70: let go */
-    letGo = false;
-    constructor(public mgr: MapWireManager) { }
+    /** unk4 */
+    actor: MapWireActor;
+    /** (the ghost's Mario: on a wire while he plays a rope animation) */
+    private ghostHeld = false; private ghostLetGo = false;
+    constructor(public mgr: MapWireManager) {
+        this.actor = new MapWireActor(this);
+        const w = mgr.world, g = w.groups[IDX.ITEM] || (w.groups[IDX.ITEM] = []);
+        g.push(this.actor);
+    }
+    /** the wire actor holds him */
+    get held() { return isSimMario(this.mgr.world.mario) ? !!this.actor.held : this.ghostHeld; }
+    takenPos() {
+        const m = this.mgr.world.mario;
+        if (isSimMario(m)) { const t = m.getTakenMtx(); return new V3(fr(t[3]), fr(t[7]), fr(t[11])); }
+        return m.pos.clone();
+    }
     doActorToWire() {
-        const w = this.mgr.world, m = w.mario;
+        const m = this.mgr.world.mario;
+        if (!isSimMario(m)) return this.doActorToWireGhost();
+        const A = this.actor, prev = this.wire;
+        const no = this.mgr.cubes.getInCubeNo(m.pos);
+        this.wire = no !== -1 ? this.mgr.getWire(no & 0xFFFF) : null;
+        A.checkTakingActor();
+        if (prev && this.wire && this.wire !== prev) A.unk70 = true;
+        if (A.unk70) {
+            if (prev) prev.release(m.vel);
+            A.unk70 = false;
+            return;
+        }
+        if (A.held) {
+            if (this.wire) this.wire.setFootPointsAtHanged(this.takenPos());
+            if (prev) { prev.setFootPointsAtHanged(this.takenPos()); this.wire = prev; }
+        }
+        if (!this.wire && prev) prev.release(m.vel);
+    }
+    /** the ghost's Mario can't be sent TAKE: held while he plays a rope animation */
+    private doActorToWireGhost() {
+        const m = this.mgr.world.mario;
         const prev = this.wire;
         const no = this.mgr.cubes.getInCubeNo(m.pos);
         this.wire = no !== -1 ? this.mgr.wires[no] || null : null;
-        // checkTakingActor: let go when he's no longer held; taken when he grabs it
         const on = !!m.present && isMarioOnWireAnim(m.anim);
-        if (this.held && !on) { this.held = false; this.letGo = true; }
-        if (this.wire && !this.held && on) this.held = true;
-        if (prev && this.wire && this.wire !== prev) this.letGo = true;
-        if (this.letGo) {
+        if (this.ghostHeld && !on) { this.ghostHeld = false; this.ghostLetGo = true; }
+        if (this.wire && !this.ghostHeld && on) this.ghostHeld = true;
+        if (prev && this.wire && this.wire !== prev) this.ghostLetGo = true;
+        if (this.ghostLetGo) {
             if (prev) prev.release(m.vel);
-            this.letGo = false;
+            this.ghostLetGo = false;
             return;
         }
-        if (this.held) {
+        if (this.ghostHeld) {
             if (this.wire) this.wire.setFootPointsAtHanged(m.pos);
             if (prev) { prev.setFootPointsAtHanged(m.pos); this.wire = prev; }
         }
         if (!this.wire && prev) prev.release(m.vel);
+    }
+    /** (perform's end) the actor at his taken matrix while he's in a wire cube, else no collision */
+    placeActor() {
+        const A = this.actor;
+        A.onHitFilter(HF.NO_COLLISION);
+        if (this.wire && isSimMario(this.mgr.world.mario)) {
+            A.offHitFilter(HF.NO_COLLISION);
+            A.pos.set(this.takenPos());
+        }
     }
 }
 
@@ -305,6 +387,7 @@ export class MapWireManager extends NameRef {
         if (!this.actors.length) this.loadAfter();
         for (const a of this.actors) a.doActorToWire();
         for (const w of this.wires) w.move();
+        for (const a of this.actors) a.placeActor();
     }
 }
 

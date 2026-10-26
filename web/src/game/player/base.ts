@@ -168,6 +168,11 @@ export abstract class MarioBase extends TakeActor {
     /** unk2C0: the live actor he rides */
     unk2C0: any = null; unk2F4 = new V3(); unk300 = new V3(); unk30C = 0;
     unk314 = 0;
+    /** mWireStartPos / mWireEndPos (0x428 / 0x434): the wire he's on, its ends swapped so he faces the end; mWirePosRatio (0x440) where on it (initValues' values) */
+    mWireStartPos = new V3(-1000, 3000, -1000); mWireEndPos = new V3(1000, 3000, 1000); mWirePosRatio = 0.5;
+    /** the rope sounds (initValues): the jump's by bounce speed, the rolling's angles (mWireSwingNegAngle 0xC000 as an s16) */
+    mWireSfx0MinVel = -5; mWireSfx1MinVel = -10; mWireQueuedSfxID = 0; mWireSfxTimer = 0; mWireSfxDelay = 20;
+    mWireSwingPosAngle = 0x4000; mWireSwingNegAngle = -0x4000; mWireRollAngle = 0;
     mPumpAnmRate = 0; mStandingOnGraffitoTimer = 0; mPollutionTypeStandingOn = 0;
     mFootPrintTimer = 0; mWetWaterParticleTimer = 0;
     mSinkTimer = 0; unk36C = 0; unk370 = 0; unk374 = 0; unk378 = 0; mPumpCooldown = 0;

@@ -933,9 +933,35 @@ export class PlayerMario extends TMarioSim {
                         return false;
                     }
                     break;
-                case T.MAP_WIRE_ACTOR:
-                    // (hanging from a wire: the wire statuses aren't simulated, so he doesn't catch it)
-                    return false;
+                case T.MAP_WIRE_ACTOR: {
+                    // catching a tightrope (any message: the wire actor sends TAKE)
+                    if (this.holder) return false;
+                    if (this.mStatus === S.WIRE_JUMP && this.mVel.y > 0) return false;
+                    if (this.mStatus === S.WIRE_ROLL_JUMP && this.mVel.y > 0) return false;
+                    if (this.mStatus === S.WIRE_HANG_LAND_SAFE_DOWN) return false;
+                    if (this.onYoshi()) return false;
+                    this.holder = sender as TakeActor;
+                    const wire = sender as any as { getTipPoints(a: V3, b: V3): void; getPosInWire(): number };
+                    wire.getTipPoints(this.mWireStartPos, this.mWireEndPos);
+                    this.mWirePosRatio = wire.getPosInWire();
+                    this.wireMove(0);
+                    this.offFlag(MF.UNK100);
+                    const d = V3.sub(this.mWireEndPos, this.mWireStartPos);
+                    const toEnd = s16(matan(d.z, d.x) - this.mFaceAngle.y);
+                    this.mWireBounceVel = fr(0.2 * -this.mVel.y);
+                    this.mWireSag = 0;
+                    // from below (rising, a roll jump, a dive): hanging, facing so the wire runs left to right
+                    const hang = this.mStatus === S.WIRE_ROLL_JUMP || this.mStatus === S.JUMP_CATCH || !(this.mVel.y < 0);
+                    if (hang) {
+                        if (toEnd > 0) this.wireFlipEnds();
+                        this.changeWireHanging();
+                        return true;
+                    }
+                    // landing on it: walking towards the end he faces
+                    if (toEnd <= -0x4000 || toEnd > 0x4000) this.wireFlipEnds();
+                    this.changePlayerStatus(S.WIRE_WAIT, 0, false);
+                    return true;
+                }
             }
         }
         if (sender.isHitCategory(HC.ENEMY)) {
