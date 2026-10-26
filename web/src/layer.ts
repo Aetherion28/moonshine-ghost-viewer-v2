@@ -28,6 +28,8 @@ import { SMSPass, SunshineRenderer, SunshineSceneDesc } from './sms_scene.js';
 import { MarioModel, YoshiModel, parseArchive, setPlayerLights } from './mario.js';
 import { swapTextures, npcDress, npcPartColours, npcGoop } from './actors.js';
 import { SimRunner, LiveRunner, DiscCommon, SimInput, fileMap, FileMap } from './game/runner.js';
+import { WireDraw, WireLine } from './wiredraw.js';
+import { MapWireConst } from './game/mapwire.js';
 import { CLASSES } from './game/scene.js';
 import { LiveActor, MActor } from './game/engine.js';
 import { Mtx } from './game/math.js';
@@ -294,6 +296,7 @@ export class GameLayer {
             this.objectSun = findLight(r, '太陽（オブジェクト）');
             this.files = listFiles(r.rarc); this.introBck = undefined;
             r.beforePrepare = () => this.lights();
+            r.extraMain = (dev, rim, vi) => { if (this.live) this.wireDraw.prepare(dev, rim, vi, this.wireLines()); };
         } catch (e) { this.onError(e); }
         finally { if (this.loading === name) { this.loading = ''; this.onStatus(''); } }
     }
@@ -923,6 +926,24 @@ export class GameLayer {
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     }
 
+    // ------------------------------------------------------------ the tightrope wires
+    private wireDraw = new WireDraw();
+    /** the stage the sim ran this frame (its wires are drawn), else null */
+    private wireStage: any = null;
+    /**
+     * The viewer's wires for when the stage isn't simulated: each one's points as TMapWire::init
+     * leaves them (start, the sagging points, end; x, y, z each).
+     */
+    public staticWires: number[][] = [];
+    /** True while the layer draws the wires itself (the viewer's own are then left out). */
+    public get drawsWires() { return this.live && !!this.renderer; }
+    private wireLines(): WireLine[] {
+        const M = this.wireStage && this.wireStage.world ? this.wireStage.world.mapWires : null;
+        if (M && M.wires && M.wires.length)
+            return M.wires.map((w: any) => ({ pts: w.polyline().flatMap((p: any) => [p.x, p.y, p.z]), width: MapWireConst.mDrawWidth, height: MapWireConst.mDrawHeight, upper: M.upper, lower: M.lower }));
+        return this.staticWires.map((pts) => ({ pts, width: MapWireConst.mDrawWidth, height: MapWireConst.mDrawHeight, upper: [0x78, 0x78, 0x78], lower: [0x32, 0x32, 0x32] }));
+    }
+
     // ------------------------------------------------------------ drawing
     /**
      * Draw the frame: cam is the viewer's three.js camera (matrixWorld, fov in degrees, aspect,
@@ -953,6 +974,7 @@ export class GameLayer {
             this.marios.delete(k);
         }
         this.syncSim(sim, group);
+        this.wireStage = sim && this.sim ? this.sim.stage : null;
         this.syncObjects();
         mat4.copy(this.camera.worldMatrix, cam.matrixWorld.elements);
         this.camera.worldMatrixUpdated();

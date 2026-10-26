@@ -5,7 +5,7 @@ import * as bmd from './bmd.js';
 import { GlbWriter } from './glb.js';
 import { parseBck } from './anim.js';
 import { materialFor, uvFor, SUBSTITUTE, pickBase } from './gxmat.js';
-import { quatFromMatrix, inverseBinds, skinArrays, addMesh, addSkinned } from './objects.js';
+import { quatFromMatrix, inverseBinds, skinArrays, addMesh, addSkinned, parseBtp } from './objects.js';
 import { btiRgba } from './objparts.js';
 import type { Image } from './gxtex.js';
 
@@ -120,14 +120,16 @@ export async function buildMario(arc: Arc): Promise<{ glb: Uint8Array; bck: any 
     }
     const glb = await w.write();
     SUBSTITUTE.clear();
-    const anims: any = {}, fl: any = {};
+    const anims: any = {}, fl: any = {}, btp: any = {};
     for (const [k, v] of arc) {
         let m = /^bck\/ma_(.+)\.bck$/.exec(k);
         if (m) anims[m[1]] = parseBck(v);
+        const tp = /^btp\/ma_(.+)_tx\.btp$/.exec(k);   // eye texture patterns: TEX1 index per frame (both eyes alike)
+        if (tp) { const b = parseBtp(v); if (b && b.anims[0]) btp[tp[1]] = { d: b.d, l: b.l, t: b.anims[0].t }; }
         m = /^watergun2\/(?:body|normal_wg|hover_wg|rocket_wg|back_wg)\/(.+)\.bck$/.exec(k);
         if (m) fl[m[1]] = parseBck(v);
     }
-    return { glb, bck: { joints: body.jointNames, anims, fludd: fl } };
+    return { glb, bck: { joints: body.jointNames, anims, fludd: fl, btp } };
 }
 import { contentHash } from './bin.js';
 const digest10 = (img: Image) => contentHash(img.d).slice(0, 10);

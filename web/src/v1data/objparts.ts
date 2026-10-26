@@ -436,7 +436,8 @@ export function wires(arc: Arc) {
         const r = bmd.eulerMatrix(rad(rx), rad(ry), rad(rz));
         const hz0 = length * 0.5;
         const hx = r[2] * hz0, hy = r[5] * hz0, hz = r[8] * hz0;
-        out.push([pyRound(cx - hx, 1), pyRound(cy - hy + lift, 1), pyRound(cz - hz, 1), pyRound(cx + hx, 1), pyRound(cy + hy + lift, 1), pyRound(cz + hz, 1)]);
+        // (then TMapWire::init's sag: half the cube's height, and its length, the cube's depth)
+        out.push([pyRound(cx - hx, 1), pyRound(cy - hy + lift, 1), pyRound(cz - hz, 1), pyRound(cx + hx, 1), pyRound(cy + hy + lift, 1), pyRound(cz + hz, 1), lift * 0.5, length]);
     }
     return out;
 }

@@ -2410,31 +2410,69 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     return mesh;
   }
   // ---------------------------------------------------------------- wires
-  const wireMat = new THREE.MeshBasicMaterial({ color: 0x2b2b2b });
-  const wireGeo = new THREE.CylinderGeometry(5, 5, 1, 6, 1, true);
+  // TMapWire as the game draws it (TMapWireManager's CUE_DRAW: drawUpper / drawLower, unlit): a
+  // thin prism through the wire's points, its flat top mDrawWidth (5) to each side across the
+  // wire in mUpperSurface grey (0x78), its two lower faces down to a ridge mDrawHeight (6) under
+  // the points in mLowerSurface grey (0x32). At rest the points sag as TMapWire::init puts them
+  // (getPointPosDefault: by half the wire cube's height, a sine along it). With the game layer
+  // drawing (src/wiredraw.ts, in its own depth buffer, from the sim's wires when the stage is
+  // simulated) these meshes stay hidden and only hand it their shape.
+  const WIRE = { w: 5, h: 6, upper: 0x78 / 255, lower: 0x32 / 255, foot: 26 };
+  const wireMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
   function makeWire(group, w) {
-    const a = new THREE.Mesh(wireGeo, wireMat), b = new THREE.Mesh(wireGeo, wireMat);
-    group.add(a, b);
-    const wire = { p0: new THREE.Vector3(w[0], w[1], w[2]), p1: new THREE.Vector3(w[3], w[4], w[5]), a, b };
-    setWire(wire, null);
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), wireMat);
+    mesh.frustumCulled = false;
+    group.add(mesh);
+    const p0 = new THREE.Vector3(w[0], w[1], w[2]), p1 = new THREE.Vector3(w[3], w[4], w[5]);
+    const sag = w[6] || 0, len = w[7] || p0.distanceTo(p1);
+    // TMapWire::init: trunc(length / 50 + 1) - 2 points at (i + 1) / n along it
+    const n = Math.max(0, Math.trunc(len / 50 + 1 - 2)), def = [[p0.x, p0.y, p0.z]];
+    for (let i = 0; i < n; i++) { const u = (i + 1) / n; def.push([p0.x + (p1.x - p0.x) * u, p0.y + (p1.y - p0.y) * u - sag * Math.sin(u * Math.PI), p0.z + (p1.z - p0.z) * u]); }
+    def.push([p1.x, p1.y, p1.z]);
+    const wire = { p0, p1, sag, len, mesh, def, cur: null };
+    setWire(wire, def);
     return wire;
   }
-  const _up = new THREE.Vector3(0, 1, 0), _d = new THREE.Vector3();
-  function placeSegment(mesh, p, q) {
-    _d.subVectors(q, p);
-    const len = _d.length() || 1;
-    mesh.position.addVectors(p, q).multiplyScalar(0.5);
-    mesh.quaternion.setFromUnitVectors(_up, _d.multiplyScalar(1 / len));
-    mesh.scale.set(1, len, 1);
+  // the prism through pts ([x, y, z] each), as triangles with their colours
+  function setWire(wire, pts) {
+    if (wire.cur === pts) return;
+    wire.cur = pts;
+    const n = pts.length, a = pts[0], b = pts[n - 1], dx = b[0] - a[0], dz = b[2] - a[2], l = Math.hypot(dx, dz) || 1;
+    const ox = (-dz / l) * WIRE.w, oz = (dx / l) * WIRE.w;   // mDrawAxes x mDrawWidth
+    const P = [], C = [];
+    const quad = (A, B, Cc, D, c) => { P.push(...A, ...B, ...Cc, ...A, ...Cc, ...D); for (let k = 0; k < 6; k++) C.push(c, c, c); };
+    for (let i = 0; i + 1 < n; i++) {
+      const p = pts[i], q = pts[i + 1];
+      const pl = [p[0] - ox, p[1], p[2] - oz], pr = [p[0] + ox, p[1], p[2] + oz], pd = [p[0], p[1] - WIRE.h, p[2]];
+      const ql = [q[0] - ox, q[1], q[2] - oz], qr = [q[0] + ox, q[1], q[2] + oz], qd = [q[0], q[1] - WIRE.h, q[2]];
+      quad(pr, pl, ql, qr, WIRE.upper);   // drawUpper
+      quad(pl, pd, qd, ql, WIRE.lower);   // drawLower: the -offset edge to the ridge
+      quad(pd, pr, qr, qd, WIRE.lower);   // and the ridge to the +offset edge
+    }
+    const g = wire.mesh.geometry;
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
   }
-  function setWire(wire, mid) {
-    const m = mid || wire.p0.clone().lerp(wire.p1, 0.5);
-    placeSegment(wire.a, wire.p0, m);
-    placeSegment(wire.b, m, wire.p1);
+  // TMapWire::getPointPosAtHanged: Mario's taken point h pulls the wire down, its two foot points
+  // mFootLength (26) to either side of him at his height, straight from there to the tips.
+  function hangedWire(w, h) {
+    const sx = w.p1.x - w.p0.x, sz = w.p1.z - w.p0.z, L2 = sx * sx + sz * sz || 1;
+    const hp = Math.min(1, Math.max(0, ((h.x - w.p0.x) * sx + (h.z - w.p0.z) * sz) / L2));
+    const r1 = hp - WIRE.foot / w.len, r2 = hp + WIRE.foot / w.len;
+    const at = (u) => {
+      const y = u <= r1 ? h.y + (w.p0.y - h.y) * (r1 - u) / r1 : u >= r2 ? h.y + (w.p1.y - h.y) * (u - r2) / (1 - r2) : h.y;
+      return [h.x + sx * (u - hp), y, h.z + sz * (u - hp)];
+    };
+    const pts = [[w.p0.x, w.p0.y, w.p0.z]];
+    if (WIRE.foot < hp * w.len) pts.push(at(r1)); else pts.push([h.x, h.y, h.z]);
+    if (WIRE.foot < (1 - hp) * w.len) pts.push(at(r2)); else pts.push([h.x, h.y, h.z]);
+    pts.push([w.p1.x, w.p1.y, w.p1.z]);
+    return pts;
   }
   // Sag a wire under the leading ghost while it is in a rope animation.
   function updateWires(g, s) {
-    if (!wireMeshes.length) return;
+    const layerDraws = !!(gameLayer && gameLive && gameLayer.drawsWires);
+    if (!wireMeshes.length) { if (gameLayer && gameLayer.staticWires && gameLayer.staticWires.length) gameLayer.staticWires = []; return; }
     const name = g && g.marker.userData.rig ? (g.marker.userData.rig.anim || '') : '';
     let target = null, best = 250, hit = null;
     if (/^rope_/.test(name)) {
@@ -2448,7 +2486,8 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
         if (dist < best && Math.abs(c.y - m.y) < 400) { best = dist; target = w; hit = new THREE.Vector3(c.x, Math.min(c.y, m.y), c.z); }
       });
     }
-    wireMeshes.forEach((w) => setWire(w, w === target ? hit : null));
+    wireMeshes.forEach((w) => { setWire(w, w === target ? hangedWire(w, hit) : w.def); w.mesh.visible = !layerDraws; });
+    if (gameLayer && gameLayer.staticWires !== undefined) gameLayer.staticWires = wireMeshes.map((w) => w.cur.flat());
   }
 
   // First time each pickup is touched by a ghost: Mario's damage cylinder against the item's
@@ -5597,18 +5636,23 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   }
   let sleepMario = null;
   // shut (ma_sleep_tx / ma_sleep_wait_tx.btp: TEX1 texture 8) or his own eyes on the sleeper's rig
+  // state: true shut, false his own open eyes, or a TEX1 index (a ma_*_tx.btp frame)
   function marioEyes(m, shut) {
     if (m.userData.eyesShut === shut) return;
     m.userData.eyesShut = shut;
     m.traverse((o) => { if (o.isMesh) [].concat(o.material).forEach((mt) => {
-      const tx = shut ? mt.userData.eyeShut : mt.userData.eyeOpen;
+      let tx = shut === true ? mt.userData.eyeShut : mt.userData.eyeOpen;
+      if (typeof shut === 'number' && mt.userData.eyes && mt.userData.eyeOpen) {
+        tx = MARIO_EYE_TEX.get(mt.userData.eyes[String(shut)]) || mt.userData.eyeOpen;
+        if (tx !== mt.userData.eyeOpen) { tx.wrapS = mt.userData.eyeOpen.wrapS; tx.wrapT = mt.userData.eyeOpen.wrapT; }
+      }
       if (tx && mt.map !== tx) { mt.map = tx; mt.needsUpdate = true; }
     }); });
   }
   const MARIO_EYE_TEX = new Map();
   function updateSleeper() {
     const show = !!(marioModel && objSpawn && !ghosts.length && MarioRig.ready());
-    if (!show) { if (sleepMario) sleepMario.visible = false; return; }
+    if (!show) { if (sleepMario) sleepMario.visible = false; liveFxOff(); return; }
     if (!sleepMario && liveHistory()) return;   // (made below the first time he sleeps; live play starts from there)
     if (!sleepMario) {
       sleepMario = new THREE.Group();
@@ -5630,7 +5674,10 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     if (poseLiveMario(sleepMario)) return;
     const [x, y, z, yaw] = objSpawn;
     const ck = activeCol() ? 1 : 0;
-    if (sleepMario.userData.livePosed) { sleepMario.userData.livePosed = false; sleepMario.userData.at = null; marioEyes(sleepMario, true); }
+    if (sleepMario.userData.livePosed) {
+      sleepMario.userData.livePosed = false; sleepMario.userData.at = null; marioEyes(sleepMario, true);
+      const fb = sleepMario.userData.rig.parts.fludd_body; if (fb && fb.userData.rz0 !== undefined) fb.rotation.z = fb.userData.rz0;   // (live play tilted it)
+    }
     if (sleepMario.userData.at !== objSpawn || sleepMario.userData.col !== ck) {   // light set from the floor, once collision is in
       sleepMario.userData.at = objSpawn; sleepMario.userData.col = ck;
       // Some stages start Mario in the air (he drops in): asleep he lies on the floor below.
@@ -5660,7 +5707,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   // gameViewer.gamepad(true/false). While on and no ghost is loaded, the shown stage runs live
   // (the game layer's LiveRunner: the player Mario and the sim camera) from the gamepad, one game
   // frame per 1/29.97 s; a loaded ghost stops it and the gamepad is ignored.
-  const livePad = { on: false, id: '', index: -1, clock: 0, frames: 0, reset: 0, active: false, runner: null, rec: false, last: null };
+  const livePad = { on: false, id: '', index: -1, clock: 0, frames: 0, reset: 0, active: false, runner: null, rec: false, last: null, ease: null };
   const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
   let konamiAt = 0;
   window.addEventListener('keydown', (e) => {
@@ -5817,27 +5864,121 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   // the live Mario on the sleeper's rig (true: posed)
   function poseLiveMario(m) {
     const H = liveHistory();
-    if (!H) return false;
-    const q = H.last, s = H.sampleAt(q), a = H.animAt(q);
-    if (!s || !a) return false;
+    if (!H) { liveFxOff(); return false; }
+    const q = H.last;
+    if (!H.sampleAt(q) || !H.animAt(q)) { liveFxOff(); return false; }
+    // his particles first: they pose him at the frames before this one (as update() does a ghost's)
+    const L = liveFxFor(m, H, q);
+    updateJpa(L);
+    const { s, a } = poseLiveAt(m, H, q);
     m.userData.livePosed = true;
-    m.position.set(s.x, s.y, s.z);
-    m.rotation.set(0, (s.yaw / 32768) * Math.PI, 0);
     gxApply(m, gxSet('player', lightSetAt(s.x, s.y, s.z)));
-    MarioRig.pose(m.userData.rig, a.id, a.yoshi, a.phase);
     // TMario::sleeping: asleep (sleep, sleep_wait) his eyes shut and the Z's over him (sleepingEffect)
     // until he wakes (sleep_end)
     const asleep = !a.yoshi && (a.id === 308 || a.id === 309), dozing = asleep;
-    marioEyes(m, asleep);
+    // waking (sleep_end): ma_sleep_end_tx.btp's TEX1 index for the animation's frame (shut 8, 7, 6, open 3)
+    const bt = a.id === 310 && !a.yoshi && MARIO_BCK_JSON && MARIO_BCK_JSON.btp ? MARIO_BCK_JSON.btp.sleep_end : null, bd = MarioRig.bckFor(310, false);
+    const bi = bt && bt.t.length ? bt.t[Math.max(0, Math.min(bt.t.length - 1, Math.floor((a.phase / 4096) * (bd && bd.data ? bd.data.d : bt.t.length))))] : -1;
+    marioEyes(m, bi >= 0 ? bi : asleep);
     if (dozing) updateZzz(m, (idleClock / QF_PER_FRAME));
     if (m.userData.zzz) m.userData.zzz.forEach((sp) => { sp.visible = dozing; });
-    const v = H.fluddAt(q), parts = m.userData.rig.parts;
-    if (parts.fludd_body) parts.fludd_body.visible = v >= 0;
-    const n = v & 7;
-    if (parts.nozzle_normal_wg) parts.nozzle_normal_wg.visible = v >= 0;
-    Object.entries(NOZZLE_PARTS).forEach(([k, nm]) => { if (parts[nm]) parts[nm].visible = v >= 0 && +k === n; });
-    if (v >= 0) poseFludd(m.userData.rig, { spray: v & 0x10 ? 0 : null, since: null, power: v & 0x10 ? 1 : 0, nozzle: n === 0 || n === 2 ? 'normal_wg' : (NOZZLE_PARTS[n] || 'nozzle_normal_wg').replace(/^nozzle_/, ''), h: asleep ? 1 : 0 });
+    // FLUDD's water as the replay draws it: the live sim's water manager (drops, wet spots, splashes)
+    const st = livePad.runner && livePad.runner.stage, W = st && st.world && st.world.water;
+    if (W) drawSimWater(L, W); else { L.water.visible = false; L.puddles.visible = false; }
     return true;
+  }
+  // Poses the live Mario (place, facing, animation, FLUDD) at QF q of the live sim's history, the
+  // way poseFluddAt poses a replayed ghost's: only the nozzle that is out (Spray, or the
+  // underwater one on Spray's model, or the secondary), the tank's tilt, its housing and shoot
+  // animations from the spray runs so far.
+  function poseLiveAt(m, H, q) {
+    const s = H.sampleAt(q), a = H.animAt(q);
+    m.position.set(s.x, s.y, s.z);
+    m.rotation.set(0, (s.yaw / 32768) * Math.PI, 0);
+    const rig = m.userData.rig;
+    MarioRig.pose(rig, a.id, a.yoshi, a.phase);
+    const v = H.fluddAt(q), parts = rig.parts, has = v !== undefined && v >= 0;
+    // (on Yoshi he keeps FLUDD folded on his back with its spray nozzle)
+    const n = has && !a.yoshi ? v & 7 : 0, spray = n === 0 || n === 2;
+    if (parts.fludd_body) parts.fludd_body.visible = has;
+    if (parts.nozzle_normal_wg) parts.nozzle_normal_wg.visible = has && spray;
+    Object.entries(NOZZLE_PARTS).forEach(([k, nm]) => { if (parts[nm]) parts[nm].visible = has && +k === n; });
+    let nm = null;
+    if (has) {
+      if (parts.fludd_body && rig.chest) { m.updateMatrixWorld(true); if (parts.fludd_body.userData.rz0 === undefined) parts.fludd_body.userData.rz0 = parts.fludd_body.rotation.z; parts.fludd_body.rotation.z = (Math.abs(rig.chest.matrixWorld.elements[1]) - 1) * 0.589048623; }
+      nm = spray ? 'normal_wg' : NOZZLE_PARTS[n].replace(/^nozzle_/, '');
+      if (a.yoshi) poseFludd(rig, { spray: null, since: null, power: 0, nozzle: 'normal_wg', h: 1 });
+      else poseFludd(rig, liveFluddState(H, q, nm));
+    }
+    m.updateMatrixWorld(true);
+    return { s, a, nm };
+  }
+  // fluddState for the live sim: its spray runs ([start, end) QF, from the history's FLUDD bit 0x10,
+  // kept on the history as it grows), the shoot animations' frames and the housing from them.
+  function liveFluddState(H, q, nozzle) {
+    const R = H.vwRuns || (H.vwRuns = { runs: [], at: 0, open: null });
+    for (; R.at < H.qf.length; R.at++) {
+      const on = H.fludd[R.at] >= 0 && !!(H.fludd[R.at] & 0x10), qq = H.qf[R.at];
+      if (on && R.open === null) R.open = qq;
+      if (!on && R.open !== null) { R.runs.push([R.open, qq]); R.open = null; }
+    }
+    const runs = R.open !== null && R.open <= q ? [...R.runs.filter((r) => r[0] <= q), [R.open, Infinity]] : R.runs.filter((r) => r[0] <= q);
+    const af = (x) => (x / QF_PER_FRAME) * 2, h = fluddHousing(runs, q), last = runs[runs.length - 1];
+    if (last && q < last[1]) return { spray: af(q - last[0]), since: null, power: 1, nozzle, h, pump: null };
+    return { spray: null, since: last ? af(q - last[1]) : null, power: 0, nozzle, h, pump: null };
+  }
+
+  // ---------------------------------------------------------------- live play's water and particles
+  // What holds them, in place of a ghost: drawSimWater, updateJpa / drawJpa (JPA_SLOTS) and
+  // drawWater take it like a ghost (fxOwners); its slots read the live history (g.live).
+  let liveFx = null, liveStageNo = 0;
+  const liveStageIds = new WeakMap();
+  function liveFxFor(m, H, q) {
+    if (!liveFx) {
+      liveFx = { live: true, visible: true, water: makeWaterFx(), puddles: makeWetSpots(), marker: m, H: null, q: 0, key: '', jpa: null, jpaPose: new Map() };
+      scene.add(liveFx.puddles); waterScene.add(liveFx.water);
+    }
+    const st = livePad.runner && livePad.runner.stage;
+    if (st && !liveStageIds.has(st)) liveStageIds.set(st, ++liveStageNo);
+    const key = (st ? liveStageIds.get(st) : 0) + ':' + livePad.reset;
+    if (liveFx.key !== key) { liveFx.key = key; liveFx.jpaPose.clear(); }
+    liveFx.marker = m; liveFx.H = H; liveFx.q = q; liveFx.visible = true;
+    return liveFx;
+  }
+  function liveFxOff() {
+    if (!liveFx) return;
+    liveFx.visible = false; liveFx.water.visible = false; liveFx.puddles.visible = false; liveFx.jpa = null; liveFx.jpaRuns = null; liveFx.jpaAt = undefined;
+  }
+  const fxOwners = () => (liveFx && liveFx.visible ? [...ghosts, liveFx] : ghosts);
+  // jpaJoints for live play: the joints at frame e, the live Mario posed there
+  function liveJpaJoints(g, e) {
+    const C = g.jpaPose;
+    if (C.has(e)) return C.get(e);
+    if (C.size > 3000) C.clear();
+    const out = { mdl1: null, center: null, noz: null }, q = e * QF_PER_FRAME;
+    if (!g.H.sampleAt(q) || !g.H.animAt(q)) return out;   // (not in the history: not kept)
+    const { nm } = poseLiveAt(g.marker, g.H, q), rig = g.marker.userData.rig;
+    if (rig.bones[0]) out.mdl1 = rig.bones[0].matrixWorld.elements.slice();
+    if (rig.bones[1]) out.center = rig.bones[1].matrixWorld.elements.slice();
+    const bones = nm && rig.fludd ? rig.fludd.noz[nm] : null, b = bones && bones[NOZZLE_EMIT_JOINT[nm]];
+    if (b) out.noz = b.matrixWorld.elements.slice();
+    C.set(e, out);
+    return out;
+  }
+  // jpaJets for live play: the frames the sim's water manager made drops (the history's emit), at
+  // the out nozzle's emitters; the emit point and direction are the nozzle's emit joint's (TWaterGun
+  // getEmitPosDirSpeed: its position and x axis), the side jets across it as nozzleEmit has them.
+  function liveJpaJets(g, e) {
+    const q = e * QF_PER_FRAME, v = g.H.fluddAt(q), made = g.H.emitAt(q);
+    if (v === undefined || v < 0 || (v & 7) === 2 || !made) return null;
+    const a = g.H.animAt(q);
+    if (a && a.yoshi) return null;
+    const noz = liveJpaJoints(g, e).noz;
+    if (!noz) return null;
+    const l = Math.hypot(noz[0], noz[1], noz[2]) || 1, dir = [noz[0] / l, noz[1] / l, noz[2] / l];
+    const h = Math.hypot(dir[0], dir[2]) || 1, side = [dir[2] / h, 0, -dir[0] / h];
+    const jets = v & 0x10 ? nozzleEmit(v & 7, 1).jets : [0];
+    return jets.map((off) => [[noz[12] + side[0] * off, noz[13], noz[14] + side[2] * off], dir]);
   }
 
   function setMarkerBody(group) {
@@ -6365,7 +6506,7 @@ void main() {
     let any = false;
     camera.updateMatrixWorld();
     const V = camera.matrixWorldInverse;
-    ghosts.forEach((g) => {
+    fxOwners().forEach((g) => {
       const fx = g.water;
       if (!fx || !fx.visible) return;
       any = true;
@@ -6650,6 +6791,10 @@ void main() {
   function simSpray(g) {
     const H = replayOf(g.data), st = H && replayLayer && replayLayer.sim ? replayLayer.sim.stage : null, W = st && st.world && st.world.water;
     if (!W) return false;
+    return drawSimWater(g, W);
+  }
+  // (g: what holds the water's meshes, a ghost or live play's liveFx; W: the sim's TModelWaterManager)
+  function drawSimWater(g, W) {
     const L = g.water.userData.list;
     L.drops.length = 0; L.splashes.length = 0;
     const sp = g.puddles, pa = sp.geometry.attributes.position.array, ua = sp.geometry.attributes.uv.array;
@@ -6847,6 +6992,7 @@ void main() {
   // World matrices of the joints Mario's effects bind to at game frame e: joint 0 (mdl1),
   // the centre joint, and the out nozzle's emit joint.
   function jpaJoints(g, e) {
+    if (g.live) return liveJpaJoints(g, e);
     const C = g.jpaPose || (g.jpaPose = new Map());
     if (C.has(e)) return C.get(e);
     if (C.size > 3000) C.clear();
@@ -6863,6 +7009,7 @@ void main() {
   }
   // 'wet' / 'dry' while Mario slides on the ground at frame e, else null.
   function jpaSlide(g, e) {
+    if (g.live) { const v = g.H.slipAt(e * QF_PER_FRAME); return v === 1 ? 'wet' : v === 2 ? 'dry' : null; }
     const C = g.jpaSlide || (g.jpaSlide = new Map()), key = (mapGroup && mapGroup.uuid) + (activeCol() ? ':col' : '');
     if (C.mapId !== key) { C.clear(); C.mapId = key; }
     const d = g.data, q = e * QF_PER_FRAME;
@@ -6900,6 +7047,7 @@ void main() {
   }
   // The nozzle emitters putting out water at frame e: [[x, y, z], dir] each, or null.
   function jpaJets(g, e) {
+    if (g.live) return liveJpaJets(g, e);
     const C = g.jpaJets || (g.jpaJets = new Map());
     if (C.has(e) && !replayOf(g.data)) return C.get(e);
     if (C.size > 20000) C.clear();
@@ -6951,7 +7099,7 @@ void main() {
   // every time (jpa.js reseeds its randoms per emitter and calc).
   function updateJpa(g) {
     if (typeof JPA === 'undefined' || typeof JPA_RES === 'undefined') return;
-    const f0 = Math.floor(t / QF_PER_FRAME), key = (mapGroup && mapGroup.uuid) + (activeCol() ? ':col' : '');
+    const f0 = Math.floor((g.live ? g.q : t) / QF_PER_FRAME), key = (mapGroup && mapGroup.uuid) + (activeCol() ? ':col' : '') + (g.live ? '|' + g.key : '');
     // Hidden (in the comparison view: shown only in its own half), it keeps what it last built.
     if (!g.visible) return;
     if (g.jpaAt === f0 && g.jpaKey === key) return;
@@ -7023,7 +7171,7 @@ void main() {
   function drawJpa() {
     if (typeof JPA === 'undefined' || typeof JPA_RES === 'undefined') return;
     const list = [];
-    ghosts.forEach((g) => { if (g.visible && g.jpa && g.jpa.length) list.push(...g.jpa); });
+    fxOwners().forEach((g) => { if (g.visible && g.jpa && g.jpa.length) list.push(...g.jpa); });
     objNodes.forEach((o) => { if (o.visible && o.userData.bwJpa && o.userData.bwJpa.length) list.push(...o.userData.bwJpa); });
     objNodes.forEach((o) => { if (o.userData.bg && o.userData.bgJpa && o.userData.bgJpa.length) list.push(...o.userData.bgJpa); });
     objNodes.forEach((o) => { if (o.visible && o.userData.sfxList && o.userData.sfxList.length) list.push(...o.userData.sfxList); });
@@ -7760,11 +7908,22 @@ void main() {
     }
     // (the hidden gamepad mode: the live sim's camera)
     const lv = livePad.active && livePad.runner ? livePad.runner.view() : null;
+    if (!lv) livePad.ease = null;
     if (lv) {
-      camera.position.set(lv.pos[0], lv.pos[1], lv.pos[2]);
-      controls.target.set(lv.at[0], lv.at[1], lv.at[2]);
+      // (display only: the camera eases from the idle view to the sim's over 0.5 s as live play starts)
+      const e = livePad.ease || (livePad.ease = { t: 0, pos: camera.position.clone(), at: controls.target.clone(), fov: camera.fov });
+      e.t += dt;
+      const k = Math.min(1, e.t / 0.5), w = k * k * (3 - 2 * k), L = (a, b) => a + (b - a) * w;
+      if (k < 1) {
+        camera.position.set(L(e.pos.x, lv.pos[0]), L(e.pos.y, lv.pos[1]), L(e.pos.z, lv.pos[2]));
+        controls.target.set(L(e.at.x, lv.at[0]), L(e.at.y, lv.at[1]), L(e.at.z, lv.at[2]));
+      } else {
+        camera.position.set(lv.pos[0], lv.pos[1], lv.pos[2]);
+        controls.target.set(lv.at[0], lv.at[1], lv.at[2]);
+      }
       camera.lookAt(controls.target);
-      if (camera.fov !== lv.fov) { camera.fov = lv.fov; camera.updateProjectionMatrix(); }
+      const f = k < 1 ? L(e.fov, lv.fov) : lv.fov;
+      if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); }
     }
     if (mapGroup && mapGroup.userData.sky) mapGroup.userData.sky.position.copy(camera.position);
     updateTriggers();
@@ -8649,7 +8808,31 @@ void main() {
     const main = ghosts.find((g) => g.data && g.marker && g.marker.parent);
     const f = { t, on: gameLive && !splitOn(), ghost: main ? main.data : null, api: { ghostSampleAt, ghostAnimAt, ghostFluddAt },
       sim: gameLayer ? gameLayer.sim : null, demoAt: (q) => !!(main && shineDemoAt(main, q)) };
+    if (!main) { const L = liveHud(); if (L) { f.t = L.t; f.ghost = L.ghost; f.api = L.api; f.demoAt = () => false; } }
     try { gameHud.frame(f); } catch (e) { console.warn('[hud]', e); }
+  }
+  // Live play's HUD: the HUD reads a ghost, so it is handed one segment standing for the live stage
+  // (from its QF 0, no inputs: the console from the first frame, no opening), read from the live
+  // history; the counters, tank, health and air come from the live sim's world as in a replay
+  // (its events, waterGunLog and playerLog: hud/index.ts simStage, the LiveRunner's q0 being 0).
+  let liveHudCache = null;
+  function liveHud() {
+    const H = liveHistory(), st = livePad.runner && livePad.runner.stage;
+    if (!H || !st || !objectsKey) return null;
+    const [a, e] = objectsKey.split('|').pop().split(':').map(Number);
+    if (st && !liveStageIds.has(st)) liveStageIds.set(st, ++liveStageNo);
+    const key = 'live:' + liveStageIds.get(st) + ':' + livePad.reset + ':' + a + ':' + e;
+    if (!liveHudCache || liveHudCache.key !== key) {
+      const ghost = { header: { startQf: 0, created: key }, segments: [{ startQf: 0, route: { area: a, episode: e } }], segIndex: [0], inputs: null };
+      const api = {
+        ghostSampleAt: (d, q) => { const r = liveHudCache.H.sampleAt(Math.min(q, liveHudCache.H.last)); return r ? { ...r, i: 0, gap: false } : { x: 0, y: 0, z: 0, yaw: 0, i: 0, gap: true }; },
+        ghostAnimAt: (d, q) => liveHudCache.H.animAt(Math.min(q, liveHudCache.H.last)) || { id: 0, yoshi: 0, phase: 0 },
+        ghostFluddAt: (d, q) => { const v = liveHudCache.H.fluddAt(Math.min(q, liveHudCache.H.last)); return v === undefined || v < 0 ? { present: false } : { present: true, nozzle: v & 7, spraying: !!(v & 0x10), power: v & 0x10 ? 40 : 0, burst: false }; },
+      };
+      liveHudCache = { key, ghost, api, H };
+    }
+    liveHudCache.H = H;
+    return { t: H.last, ghost: liveHudCache.ghost, api: liveHudCache.api };
   }
   // the game's sound (v2 audio/): music and sound effects from the disc, after a user gesture
   let gameAudio = null;
@@ -8919,7 +9102,7 @@ void main() {
     $('gateDisc').disabled = $('gateFolder').disabled = true;
     $('gateNote').textContent = 'This browser can\'t run the game renderer (it needs WebGL 2).';
   }
-  window.gameViewer = { get layer() { return gameLayer; }, get live() { return gameLive; }, useDisc, useDiscFile,
+  window.gameViewer = { get layer() { return gameLayer; }, get sleeperEyes() { return sleepMario ? sleepMario.userData.eyesShut : null; }, get live() { return gameLive; }, useDisc, useDiscFile,
     gamepad: (on = !livePad.on) => setLivePad(on), record: (on = !livePad.rec) => setLiveRec(on), get lastRecording() { return livePad.last; }, get gamepadState() { return { on: livePad.on, active: livePad.active, id: livePad.id, frames: livePad.frames, pad: livePad.on ? readLivePad() : null }; },
     setView: (v) => { debugView = v; }, getView: () => ({ pos: camera.position.toArray(), at: controls.target.toArray(), fov: camera.fov, aspect: camera.aspect }),
     // the main ghost's Mario at t as drawn (the input replay's where it has run) and as recorded

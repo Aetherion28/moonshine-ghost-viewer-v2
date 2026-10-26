@@ -22,7 +22,7 @@ import { makeBackbufferDescSimple, opaqueBlackFullClearRenderPassDescriptor } fr
 import { GfxDevice } from '../noclip/gfx/platform/GfxPlatform.js';
 import { GfxRenderCache } from '../noclip/gfx/render/GfxRenderCache.js';
 import { GfxrAttachmentSlot } from '../noclip/gfx/render/GfxRenderGraph.js';
-import { GfxRenderInstList } from '../noclip/gfx/render/GfxRenderInstManager.js';
+import { GfxRenderInstList, GfxRenderInstManager } from '../noclip/gfx/render/GfxRenderInstManager.js';
 import { EFB_HEIGHT, EFB_WIDTH, Light, lightSetWorldPosition } from '../noclip/gx/gx_material.js';
 import { GXRenderHelperGfx, fillSceneParamsDataOnTemplate } from '../noclip/gx/gx_render.js';
 
@@ -515,6 +515,8 @@ export class SunshineRenderer implements Viewer.SceneGfx {
     public sceneBin: SceneBinObj | null = null;
     /** Called before the models are prepared each frame (the viewer poses its ghosts there). */
     public beforePrepare: ((viewerInput: Viewer.ViewerRenderInput) => void) | null = null;
+    /** Called after the main pass's models are prepared, with that list current (the layer's wires). */
+    public extraMain: ((device: GfxDevice, renderInstManager: GfxRenderInstManager, viewerInput: Viewer.ViewerRenderInput) => void) | null = null;
 
     private copyFilter: CopyFilter | null = null;
     /** The interlaced picture's vertical copy filter (off: the progressive-scan picture). */
@@ -563,6 +565,7 @@ export class SunshineRenderer implements Viewer.SceneGfx {
         fillSceneParamsDataOnTemplate(template, viewerInput);
         this.preparePass(device, this.renderInstListSky, SMSPass.SKYBOX, viewerInput);
         this.preparePass(device, this.renderInstListMain, SMSPass.MAIN, viewerInput);
+        if (this.extraMain !== null) this.extraMain(device, this.renderHelper.renderInstManager, viewerInput);   // (main list still current)
         this.preparePass(device, this.renderInstListInd, SMSPass.INDIRECT, viewerInput);
         this.renderHelper.renderInstManager.popTemplate();
     }
