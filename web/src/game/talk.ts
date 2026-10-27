@@ -731,7 +731,8 @@ export class TalkDirector {
                     w.flags.setBool(true, MSF_GOT_SHINE_IN_PREV_STAGE);
                     const sh: any = this.shine;
                     if (sh && typeof sh.eventId === 'number') w.flags.setShineFlag(sh.eventId);
-                    if (this.freeRoamShine) {
+                    // live play's free roam is for Delfino Plaza only (map 1): a course's Shine goes back to the plaza
+                    if (this.freeRoamShine && w.map === 1) {
                         // (live play's free roam: the flags as the game sets them, but no stage change)
                         this.dflags |= DF.SHINE_TAKEN | DF.CARD_SAVE_PENDING;
                         this.freeRoamDemo = true;
