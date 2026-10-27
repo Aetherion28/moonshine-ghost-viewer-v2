@@ -14,11 +14,11 @@
 // Mario: TSharedParts) and the voice; TFlagManager's save flags (world fields, unset: none set yet).
 
 import { fr, V3, mtx, MsSin, MsAngleDiff, rand } from '../math.js';
-import { World, HitActor, HF, ANM_BCK, CUE_CALC_ANIM } from '../engine.js';
+import { World, HitActor, HF, LF, LiveActor, MActor, ANM_BCK, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
-import '../sound.js';
+import { holdKey } from '../sound.js';
 import { MapObjBase, mapObjGlobals } from './base.js';
 import { HideObjBase } from './hide.js';
 import type { ItemManager } from './item.js';
@@ -216,28 +216,68 @@ export class MareGate extends MapObjBase {
 }
 
 // ---------------------------------------------------------------- TDemoCannon
+/** A TSharedParts model of the cannon's (the dome, the flying Mario): drawn by the viewer (world.extras) on the cannon's joint. */
+class CannonPart extends LiveActor {
+    constructor(w: World, name: string, m: MActor, public owner: DemoCannon, public joint: number) {
+        super(w, name);
+        this.mactor = m;
+        this.offLiveFlag(LF.ENABLE_CLIPPING);
+        w.extras.push(this);
+    }
+    shown = false;
+    drawn() { return this.shown && !this.owner.checkLiveFlag(LF.DEAD | LF.HIDDEN); }
+    /** TSharedParts::perform: the model on the owner's joint matrix, its BCK going */
+    perform(cue: number) {
+        if (this.owner.checkLiveFlag(LF.DEAD | LF.HIDDEN | LF.CLIPPED_OUT)) return;
+        if (cue & CUE_CALC_ANIM) {
+            const o = this.owner, m = o.mactor ? o.mactor.anmMtx(this.joint, o.baseTR, o.scale) : null;
+            if (m) for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) this.baseTR[r * 4 + c] = m[c * 4 + r];
+            this.mactor!.frameUpdate();
+        }
+    }
+}
 export class DemoCannon extends MapObjBase {
     unk14C = 0;
+    /** unk138 the dome (demoCannon_dom, on the joint nullA), unk13C the flying Mario (demoCannon_mario, on joint 0) */
+    unk138: CannonPart | null = null; unk13C: CannonPart | null = null;
     constructor(w: World, name = 'デモ砲台') { super(w, name); }
     /** loadAfter: only its particles (not here); not TMapObjBase's */
     loadAfter() { }
     initMapObj() {
         super.initMapObj();
-        if (!this.mactor) return;
+        if (!this.mactor || !this.manager) return;
         this.mactor.setBck('democannon_dpt');
         const fc = this.mactor.getFrameCtrl(ANM_BCK);
         if (fc) fc.frame = fc.end;
+        const anm = this.manager.getMActorAnmData(), f = this.manager.folder();
+        this.unk138 = new CannonPart(this.world, '<TSharedParts>', new MActor((f + '/democannon_dom.bmd').toLowerCase(), anm), this, Math.max(0, this.mactor.jointIndex('nullA')));
+        this.unk13C = new CannonPart(this.world, '<TSharedParts>', new MActor((f + '/democannon_mario.bmd').toLowerCase(), anm), this, 0);
     }
     /** startDemo (TMarDirector's demo to Pinna Park) */
     startDemo() {
         this.unk14C = 1;
+        // gpMSound->startMarioVoice(30911, hp, 0)
+        const m: any = this.world.mario;
+        if (m && typeof m.startVoice === 'function') m.startVoice(30911);
         if (this.mactor) this.mactor.setBck('democannon_dpt');
-        // TODO: the dome's and the flying Mario's BCKs (TSharedParts), Mario's voice
+        if (this.unk138) { this.unk138.mactor!.setBck('democannon_dom'); this.unk138.shown = true; }
+        if (this.unk13C) { this.unk13C.mactor!.setBck('democannon_mario_fly1'); this.unk13C.shown = true; }
     }
     perform(cue: number) {
         super.perform(cue);
-        if (!this.unk14C || !(cue & CUE_CALC_ANIM)) return;
-        // TODO: the shared parts' frame (the flying Mario's: < 174 cannon move sound, 174 fire) isn't simulated
+        if (!this.unk14C) return;
+        if (this.unk138) this.unk138.perform(cue);
+        if (this.unk13C) this.unk13C.perform(cue);
+        if (!(cue & CUE_CALC_ANIM) || !this.unk13C) return;
+        const w = this.world, fc = this.unk13C.mactor!.getFrameCtrl(ANM_BCK);
+        if (!fc) return;
+        if (fc.frame < 174) w.sound(SE.EN_CANNON_MOVE, this.pos, { hold: holdKey(this, 'move') });
+        if (fc.checkPass(174)) {
+            // (the camera shake, the rumble and the muzzle's particles 232-236: not here)
+            w.sound(SE.EN_CANNON_FIRE_MARIO, this.pos);
+            w.sound(SE.DM_FLY_TO_PINNNA, this.pos);
+        }
+        // (frame > 175: the smoke particle 358 on the flying Mario)
     }
 }
 
