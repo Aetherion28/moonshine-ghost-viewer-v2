@@ -11,6 +11,7 @@
 // refills every frame (initMoveCollision, then each mover's setList).
 
 const f = Math.fround;
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './player/fmath.js';
 import { frsqrte } from './math.js';
 const f64 = new Float64Array(1), i64 = new BigUint64Array(f64.buffer);
 /** Dolphin's Force25Bit (camera/lib.ts has the same): a single multiply's second operand */
@@ -38,18 +39,18 @@ export class BGCheckData {
         this.p1 = a.map(f); this.p2 = b.map(f); this.p3 = c.map(f);
         const [p1, p2, p3] = [this.p1, this.p2, this.p3];
         // (the DOL: each component a fmuls then a fused fmsubs)
-        let nx = f(f(p2[1] - p1[1]) * f(p3[2] - p2[2]) - f(f(p2[2] - p1[2]) * f(p3[1] - p2[1])));
-        let ny = f(f(p2[2] - p1[2]) * f(p3[0] - p2[0]) - f(f(p2[0] - p1[0]) * f(p3[2] - p2[2])));
-        let nz = f(f(p2[0] - p1[0]) * f(p3[1] - p2[1]) - f(f(p2[1] - p1[1]) * f(p3[0] - p2[0])));
+        let nx = FMS(f(p2[1] - p1[1]), f(p3[2] - p2[2]), f(f(p2[2] - p1[2]) * f(p3[1] - p2[1])));
+        let ny = FMS(f(p2[2] - p1[2]), f(p3[0] - p2[0]), f(f(p2[0] - p1[0]) * f(p3[2] - p2[2])));
+        let nz = FMS(f(p2[0] - p1[0]), f(p3[1] - p2[1]), f(f(p2[1] - p1[1]) * f(p3[0] - p2[0])));
         if (nx !== 0 || ny !== 0 || nz !== 0) {
             // MsVECNormalize: the raw frsqrte estimate, no Newton step (so a flat floor's n.y is
             // rarely exactly 1: TMapObjGeneral::calcVelocity's n.y == 1 test relies on it)
-            const s = f(f(nz * nz + f(nx * nx)) + f(ny * ny));
+            const s = f(FMA(nz, nz, f(nx * nx)) + f(ny * ny));
             const e = force25(frsqrte(s));
             nx = f(nx * e); ny = f(ny * e); nz = f(nz * e);
             this.n = [nx, ny, nz];
             // (fmuls, fmadds, fnmadds)
-            this.d = f(-(nz * p1[2] + f(nx * p1[0] + f(ny * p1[1]))));
+            this.d = -FMA(nz, p1[2], FMA(nx, p1[0], f(ny * p1[1])));
             this.minY = Math.min(p1[1], p2[1], p3[1]);
             this.maxY = Math.max(p1[1], p2[1], p3[1]);
         }
@@ -59,7 +60,7 @@ export class BGCheckData {
     updateTrans(t: number[]) {
         for (const p of [this.p1, this.p2, this.p3]) for (let i = 0; i < 3; i++) p[i] = f(p[i] + t[i]);
         this.minY = f(this.minY + t[1]); this.maxY = f(this.maxY + t[1]);
-        this.d = f(-(this.n[0] * this.p1[0] + this.n[1] * this.p1[1] + this.n[2] * this.p1[2]));
+        this.d = -FMA(this.n[2], this.p1[2], FMA(this.n[0], this.p1[0], f(this.n[1] * this.p1[1])));   // (fmuls, fmadds, fnmadds)
     }
 
     /** TBGCheckData::getPlaneType: 0 ground, 1 roof, 2 wall. */
@@ -107,9 +108,9 @@ export interface WallCheck {
 }
 
 /** checkGroundList / checkRoofList's edge test: (a.z - z) * (b.x - a.x) - (a.x - x) * (b.z - a.z) (fmuls, then fmsubs) */
-const edge = (a: number[], b: number[], x: number, z: number) => f(f(a[2] - z) * f(b[0] - a[0]) - f(f(a[0] - x) * f(b[2] - a[2])));
+const edge = (a: number[], b: number[], x: number, z: number) => FMS(f(a[2] - z), f(b[0] - a[0]), f(f(a[0] - x) * f(b[2] - a[2])));
 /** the plane's height at (x, z): -(x * nx + z * nz + d) / ny (fmuls, fmadds, fadds, fdivs) */
-const planeY = (d: BGCheckData, x: number, z: number) => f(-f(d.d + f(x * d.n[0] + f(z * d.n[2]))) / d.n[1]);
+const planeY = (d: BGCheckData, x: number, z: number) => f(-f(d.d + FMA(x, d.n[0], f(z * d.n[2]))) / d.n[1]);
 
 export class MapCollision {
     /** mGridExtentX / Y: half the grid's size. */
@@ -276,12 +277,12 @@ export class MapCollision {
         if ((flags & IGNORE_WATER_SURFACE) && d.isWaterSurface()) return false;
         const cx = r.center[0], cy = r.center[1], cz = r.center[2];
         const [nx, ny, nz] = d.n;
-        const dist = f(d.d + f(cz * nz + f(cx * nx + f(cy * ny))));
+        const dist = f(d.d + FMA(cz, nz, FMA(cx, nx, f(cy * ny))));
         if (dist < -radius) return false;
         if (!(radius >= dist)) return false;
         const y1 = d.p1[1], y2 = d.p2[1], y3 = d.p3[1];
         // s = (ya - cy) * (b - a) - (a - c) * (yb - ya), over the wall's facing axis
-        const side = (ya: number, yb: number, a: number, b: number, c: number) => f((f(ya - cy) * f(b - a)) - f(f(a - c) * f(yb - ya)));
+        const side = (ya: number, yb: number, a: number, b: number, c: number) => FMS(f(ya - cy), f(b - a), f(f(a - c) * f(yb - ya)));
         if (d.flags & FLAG_X_FACING) {
             const c = -cz, z1 = -d.p1[2], z2 = -d.p2[2], z3 = -d.p3[2];
             const s1 = side(y1, y2, z1, z2, c), s2 = side(y2, y3, z2, z3, c), s3 = side(y3, y1, z3, z1, c);
@@ -295,8 +296,8 @@ export class MapCollision {
         }
         if (!(flags & DONT_MOVE_XZ)) {
             const push = f(radius - dist);
-            r.center[0] = f(push * nx + r.center[0]);
-            r.center[2] = f(push * nz + r.center[2]);
+            r.center[0] = FMA(push, nx, r.center[0]);
+            r.center[2] = FMA(push, nz, r.center[2]);
         }
         return true;
     }

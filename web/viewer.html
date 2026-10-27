@@ -496,6 +496,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="The stage's music, played from the game disc by the game's own sequences and instruments"><input type="checkbox" id="optMusic"> Music</label>
       <label title="Mario's and the objects' sounds, from the game disc"><input type="checkbox" id="optSfx"> Sound effects <span class="discInfo" id="audioInfo"></span></label>
       <label><input type="checkbox" id="optPath" checked> Show full route lines</label>
+      <label title="The box of Mario's position, speed, animation and FLUDD in the view's corner"><input type="checkbox" id="optInfo" checked> Show info box</label>
       <label title="The coloured circle at each ghost's feet that tells ghosts apart"><input type="checkbox" id="optRing" checked> Show ghost circles</label>
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
       <div class="discLine">Disc: <span class="discInfo" id="discInfo">none loaded</span> <span class="discInfo" id="padInfo" hidden></span> <span class="discInfo" id="padRec" hidden></span></div>
@@ -7916,6 +7917,27 @@ void main() {
     trig: { n: objTrig.length, enemy: objTrig.filter((t) => t[0] === 'enemy').length, drawn: trigGroup ? trigGroup.children.length : -1, key: trigGroup && trigGroup.userData.key },
     flights: shineFlights.map((fl) => ({ i: fl.i, q0: fl.q0, stopEnd: fl.stopEnd, L: fl.L, from: fl.from, to: fl.to, cams: (fl.cams || []).map((c) => [c.q, c.len, c.bck ? 'bck' : 'tool']) })) });
   let hudKey = null;   // what the readout shows
+  // live play: the game's own Mario in the info box (there's no ghost to read)
+  function liveInfoRows(rows) {
+    if (!(livePad.on && gameLayer && gameLive && gameLayer.sim && gameLayer.sim.stage && gameLayer.sim.stage.player)) return;
+    const P = gameLayer.sim.stage.player, y = P.mFaceAngle.y, yd = (((y % 65536) + 65536) % 65536) / 65536 * 360, an = P.mAnimationId;
+    const G = P.mWaterGun, NZ = ['Spray', 'Rocket', 'Underwater', 'Yoshi', 'Hover', 'Turbo', 'Sprinkler'];
+    rows.push(['X', P.pos.x.toFixed(2)], ['Y', P.pos.y.toFixed(2)], ['Z', P.pos.z.toFixed(2)], ['Yaw', `${y} (${yd.toFixed(1)}°)`],
+      ['HSpd', Math.hypot(P.mVel.x, P.mVel.z).toFixed(2)], ['VSpd', P.mVel.y.toFixed(2)],
+      ['Anim', `${(typeof MARIO_ANIM_NAMES !== 'undefined' && MARIO_ANIM_NAMES[an]) || 'unnamed'} (0x${an.toString(16).toUpperCase()})`],
+      ['State', '0x' + (P.mStatus >>> 0).toString(16).toUpperCase()]);
+    if (G && P.checkFlag && P.checkFlag(0x8000)) rows.push(['FLUDD', `${NZ[G.mCurrentNozzle] || G.mCurrentNozzle} · water ${Math.round(G.mCurrentWater)}`]);
+  }
+  function drawInfoBox(rows) {
+    if (!$('optInfo').checked) rows.length = 0;
+    const hudEl = $('hud'), key = rows.join('\n');
+    if (hudKey !== key) {
+      hudKey = key;
+      hudEl.innerHTML = '';
+      rows.forEach(([k, v]) => { const d = document.createElement('div'); const b = document.createElement('b'); b.textContent = k; d.append(b, ' ' + v); hudEl.append(d); });
+    }
+    setHidden(hudEl, !rows.length);
+  }
   function update() {
     if (ctxQuiet) return;   // a stage finished loading for the view not being drawn: its next frame poses it
     if (gameLayer && gameLive) gameLayer.advanceSim(gameSimInput());   // (the input replay's Mario, before he's posed)
@@ -7981,13 +8003,8 @@ void main() {
       }
       if (replayText) rows.push(['Input replay', replayText]);
     }
-    const hudEl = $('hud'), key = rows.join('\n');
-    if (hudKey !== key) {
-      hudKey = key;
-      hudEl.innerHTML = '';
-      rows.forEach(([k, v]) => { const d = document.createElement('div'); const b = document.createElement('b'); b.textContent = k; d.append(b, ' ' + v); hudEl.append(d); });
-    }
-    setHidden(hudEl, !hud);
+    if (!hud) liveInfoRows(rows);
+    drawInfoBox(rows);
     setText($('clockNow'), ghostFormatTime(Math.round(t)));
     setText($('clockSub'), `frame ${Math.floor(t / QF_PER_FRAME)} · ${ghostFormatTime(duration)} total`);
     setMax($('scrub'), Math.max(1, Math.round(duration)));
@@ -8229,6 +8246,7 @@ void main() {
     if (!ghosts.length && objectsGroup) { idleClock += dt * QF_PER_SECOND; updateWalkers(); }
     pollPadStart();
     liveStep(dt);
+    if (livePad.on && !playing && gameLive) { const r = []; liveInfoRows(r); drawInfoBox(r); }
     pollPadSelect();
     updateSleeper();
     if (splitOn()) renderSplit(dt, now);
@@ -8871,6 +8889,8 @@ void main() {
   $('camFree').onclick = () => setCameraMode('free');
   $('camTop').onclick = () => setCameraMode('top');
   $('optPath').onchange = (e) => ghosts.forEach((g) => { g.path.visible = e.target.checked && g.visible; });
+  try { if (localStorage.getItem('ghostViewer.infoBox') === '0') $('optInfo').checked = false; } catch (e) { }
+  $('optInfo').onchange = (e) => { try { localStorage.setItem('ghostViewer.infoBox', e.target.checked ? '1' : '0'); } catch (err) { } hudKey = null; };
   $('optRing').onchange = (e) => ghosts.forEach((g) => { if (g.marker.userData.ring) g.marker.userData.ring.visible = e.target.checked; });
   $('optWire').onchange = (e) => setWireframe(e.target.checked);
   $('optAutoStage').onchange = () => { autoStageRoute = ''; update(); updateMapNotice(); };
