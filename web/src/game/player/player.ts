@@ -1787,11 +1787,17 @@ export class PlayerMario extends TMarioSim {
                 this.mFaceAngle.y = s.yaw; this.mModelFaceAngle = s.yaw;
                 this.followAnim = { anim: s.anim, phase: s.phase };
                 const [gy] = this.world.checkGround(s.x, s.y + 50, s.z);
-                if (p && !s.yoshi && !p.yoshi && Math.abs(s.y - gy) < 1 && Math.abs(s.y - p.y) < 0.5) {
-                    const h = Math.hypot(s.x - p.x, s.z - p.z);
+                // (only from the ghost walking, running or standing: those are the statuses taken up here)
+                const moving = s.anim === A.WALK || s.anim === A.RUN2 || s.anim === A.RUN1, standing = s.anim === A.WAIT;
+                if (p && (moving || standing) && !s.yoshi && !p.yoshi && Math.abs(s.y - gy) < 1 && Math.abs(s.y - p.y) < 0.5) {
+                    // the speed at the frame's end: he moves fv / 4 each of a frame's four ticks, his speed
+                    // rising each tick, so a frame's step is 3/8 of a frame's speed-up behind it
+                    const h = Math.hypot(s.x - p.x, s.z - p.z), p2 = this.track!.at(q - 8);
+                    const h0 = p2 ? Math.hypot(p.x - p2.x, p.z - p2.z) : h;
                     this.mVel.set(0, 0, 0);
-                    this.mForwardVel = h;
-                    this.changePlayerStatus(h > 1 ? S.RUN : S.WAIT, 0, true);
+                    this.mForwardVel = h + 0.375 * (h - h0);
+                    if (standing) this.mForwardVel = 0;
+                    this.changePlayerStatus(moving ? S.RUN : S.WAIT, 0, true);
                     this.pos.set(s.x, s.y, s.z);
                     this.following = false; this.followAnim = null;
                 }
