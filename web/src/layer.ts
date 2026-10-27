@@ -36,10 +36,12 @@ import { Mtx } from './game/math.js';
 import { ModelGate } from './game/mapobj/modelgate.js';
 import { ShiningStone } from './game/mapobj/mamma.js';
 import { BathWaterManager } from './game/bathwater.js';
-import { mapJoints, MapJointModel } from './game/mapevent.js';
+import { mapJoints, MapJointModel, pollutionJoints } from './game/mapevent.js';
 import { calcANK1JointAnimationTransform } from '../noclip/Common/JSYSTEM/J3D/J3DGraphAnimator.js';
 import { JointTransformInfo } from '../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
 import { V1Data } from './v1data/index.js';
+import { ThpPlayer } from './movie/player.js';
+import { GfxFormat, GfxTexture, makeTextureDescriptor2D } from './../noclip/gfx/platform/GfxPlatform.js';
 
 /** Where a viewer library model comes from on the disc (tools/build_objects.py, data["mp"]). */
 interface Spec { f: string; bmt?: string; tex?: number; bck?: string; shrink?: string; parts?: [string, string][]; lift?: number; swap?: [string, string]; }
@@ -170,6 +172,9 @@ class MarioMirror {
         if (on) {
             mat4.copy(M.body.modelMatrix, rig.root.matrixWorld.elements as any);
             for (const [k, s] of Object.entries(rig.bodyShapes as Record<string, any>)) if (M.body.shapeInstances[+k]) M.body.setShapeVisible(+k, worldVisible(s));
+            // (shape 4, the cap on the body model, is never drawn: initModel's onFlag(J3DShpFlag_Visible);
+            // TMarioCap's ma_cap1 / ma_cap3 are drawn in its place)
+            if (rig.capModel !== undefined && M.body.shapeInstances[4]) M.body.setShapeVisible(4, false);
             M.setEyes(typeof rig.eyeTex === 'number' ? rig.eyeTex : null);   // (the viewer's marioEyes: asleep, waking)
             const part = (m: J3DModelInstanceSimple | null, node: any) => {
                 if (!m) return;
@@ -178,6 +183,17 @@ class MarioMirror {
             };
             for (const [k, m] of Object.entries(M.hands)) part(m, rig.parts[`hand_${k[0]}_${k[1]}`]);
             part(M.cap, rig.parts.cap);
+            // TMarioCap::perform: the cap (ma_cap1) while E_CAP_MODEL_HAT is on, else his hair (ma_cap3),
+            // both on M_head; the diving helmet (E_CAP_MODEL_HELMET) on jnt_head (rig.capModel: the
+            // live sim's TMarioCap::unk4; undefined for a ghost: the cap as the viewer shows it)
+            const cm = rig.capModel as number | undefined;
+            if (cm !== undefined && M.cap && M.cap.visible && !(cm & 1)) M.cap.visible = false;
+            if (M.capless) { part(M.capless, rig.parts.cap); if (cm === undefined || (cm & 1)) M.capless.visible = false; }
+            if (M.helmet) {
+                const j = M.jointIndex('jnt_head'), b = rig.bones && j >= 0 ? rig.bones[j] : null;
+                M.helmet.visible = cm !== undefined && !!(cm & 2) && !!b;
+                if (M.helmet.visible) mat4.copy(M.helmet.modelMatrix, b.matrixWorld.elements as any);
+            }
             part(M.fludd, rig.parts.fludd_body);
             for (const [n, m] of Object.entries(M.nozzles)) part(m, rig.parts['nozzle_' + n]);
         }
@@ -275,6 +291,16 @@ export class GameLayer {
     public sceneFor(area: number, episode: number) { return sceneForRoute(this.stageTable, area, episode); }
     public hasScene(name: string) { return !!this.fs && this.fs.has(`data/scene/${name}.szs`); }
 
+    private prefetched = new Map<string, Promise<ArrayBuffer>>();
+    /** Read a scene archive ahead of loadScene (the next stage of a replay or a live run, during the stage before) */
+    public prefetchScene(name: string | null) {
+        const fs = this.fs;
+        if (!fs || !name || name === this.scene || name === this.loading || this.prefetched.has(name) || !this.hasScene(name)) return;
+        if (this.prefetched.size >= 3) this.prefetched.delete(this.prefetched.keys().next().value as string);
+        const p = fs.read(`data/scene/${name}.szs`);
+        p.catch(() => this.prefetched.delete(name));
+        this.prefetched.set(name, p);
+    }
     /** Load a scene archive (e.g. "dolpic0"); resolves once it is the one drawn (or another was asked for). */
     public async loadScene(name: string) {
         const fs = this.fs;
@@ -283,7 +309,9 @@ export class GameLayer {
         this.loading = name;
         this.onStatus(`Loading ${name} from the disc…`);
         try {
-            const buf = await fs.read(`data/scene/${name}.szs`);
+            const pre = this.prefetched.get(name);
+            this.prefetched.delete(name);
+            const buf = pre ? await pre : await fs.read(`data/scene/${name}.szs`);
             const device = this.device;
             const desc = new SunshineSceneDesc(name, name);
             desc.mapObjects = false;   // (the viewer's objects are drawn instead)
@@ -297,17 +325,21 @@ export class GameLayer {
             this.objectSun = findLight(r, '太陽（オブジェクト）');
             this.files = listFiles(r.rarc); this.introBck = undefined;
             r.beforePrepare = () => this.lights();
-            r.extraMain = (dev, rim, vi) => { if (this.live) this.wireDraw.prepare(dev, rim, vi, this.wireLines()); };
+            // (a WireDraw per scene: its program and vertex layout live in this renderer's cache, which
+            // goes with the scene; one kept from the stage before drew nothing on the next)
+            const wd = this.wireDraw = new WireDraw();
+            r.extraMain = (dev, rim, vi) => { if (this.live) wd.prepare(dev, rim, vi, this.wireLines()); };
         } catch (e) { this.onError(e); }
         finally { if (this.loading === name) { this.loading = ''; this.onStatus(''); } }
     }
 
     private destroyScene() {
-        if (this.renderer) this.renderer.destroy(this.device);
+        if (this.renderer) { this.renderer.destroy(this.device); this.wireDraw.destroy(this.device); }
+        this.gateStop();
         for (const v of this.bmtCache.values()) if (v) v.destroy(this.device);
         this.setLive(false);
         this.renderer = null; this.scene = ''; this.mirrors = []; this.byObj.clear(); this.boundGroup = null; this.marios.clear();
-        this.actorModels = []; this.dataCache.clear(); this.bmtCache.clear(); this.files.clear();
+        this.actorModels = []; this.fittingInsts = []; this.fittingFor = null; this.dataCache.clear(); this.bmtCache.clear(); this.files.clear();
         this.drawn = false;
         this.simFiles = null; this.simMirrors.clear(); this.simPlaces.clear();
     }
@@ -572,6 +604,13 @@ export class GameLayer {
         this.simPlaces.clear();
         for (const d of list) this.simPlaces.add(d.type + '|' + d.place.map((v) => v.toFixed(1)).join(','));
         if (group) for (const o of group.children) {
+            // the Bianco windmill's blocks (objparts.ts windmillBlocks: the viewer's stand-ins riding the
+            // wheel): the sim makes the game's own (bigWindmillBlock, code-made: no scene place to match)
+            if (o.userData && o.userData.move && o.userData.move.orbit) {
+                if (st) { if (!o.userData.simHidden) { o.visible = false; o.userData.simHidden = true; } }
+                else if (o.userData.simHidden) { o.visible = true; o.userData.simHidden = false; }
+                continue;
+            }
             const b = o.userData && o.userData.base;
             if (!b || !o.userData.type || !CLASSES.has(o.userData.type)) continue;
             const k = o.userData.type + '|' + b.p.map((v: number) => v.toFixed(1)).join(',');
@@ -636,7 +675,8 @@ export class GameLayer {
                 this.actorModels.push(inst);
             }
             const inst = m.inst;
-            inst.visible = this.live && a.drawn();
+            // (shadowOnly: the game draws no model for it, only its shadow: the Sirena mantas)
+            inst.visible = this.live && a.drawn() && !(a as any).shadowOnly;
             const parts = (m as any).parts as { inst: J3DModelInstanceSimple; joint: number }[] | undefined;
             if (parts) for (const p of parts) p.inst.visible = inst.visible;
             if (!inst.visible) continue;
@@ -653,6 +693,10 @@ export class GameLayer {
                     if (mi.name === '_mat_body' && base) mi.setColorOverride(ColorKind.C0, { r: base[0] / 255, g: base[1] / 255, b: base[2] / 255, a: base[3] / 255 });
                 }
             }
+            if ((a as any).gateMovie) this.gateMovieOn(inst);
+            // TEVREG1 (initPacketMatColor(GX_TEVREG1)): the surfing Blooper's colour, on every material
+            const t1 = (a as any).tevColor1 as number[] | undefined;
+            if (t1) { const c = { r: t1[0] / 255, g: t1[1] / 255, b: t1[2] / 255, a: t1[3] / 255 }; for (const mi of inst.materialInstances) mi.setColorOverride(ColorKind.C1, c); }
             // TEVREG0 the game code sets (GXColorS10): the Fire Chomps' body and tail colour
             const tc = (a as any).tevColor0 as number[] | undefined;
             if (tc) {
@@ -714,6 +758,10 @@ export class GameLayer {
      *  - TShiningStone: the four coloured stones (unk68) and the stone (unk6C), on its base matrix, always performed
      */
     private simModelProxies = new WeakMap<MActor, LiveActor>();
+    /** the posed Mario whose surf Blooper is drawn (rig.surfGesso: the viewer sets it in live play) */
+    private surfRig: any = null;
+    private surfBase: number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+    private surfClock = 0;
     private simModelDrawables(st: any): { a: LiveActor; type: string; place: [number, number, number] }[] {
         const out: { a: LiveActor; type: string; place: [number, number, number] }[] = [];
         const add = (o: any, m: MActor | null, base: Mtx, drawn: () => boolean) => {
@@ -726,8 +774,25 @@ export class GameLayer {
             const n = st.nodeOf.get(o);
             out.push({ a: p, type: n ? n.type : '', place: [o.pos.x, o.pos.y, o.pos.z] });
         };
+        // TMario's mSurfGesso (gpMapObjManager's surfgeso of that colour) on his base matrix while he
+        // surfs (MarioDraw.cpp: checkStatusType(0x10000)); the viewer's posed Mario gives the matrix
+        const sg = this.surfRig && this.surfRig.surfGesso;
+        if (sg && sg.mactor) {
+            const B = this.surfBase, e = this.surfRig.root.matrixWorld.elements;
+            for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) B[r * 4 + c] = e[c * 4 + r];
+            let p = this.simModelProxies.get(sg.mactor);
+            if (!p) {
+                const c1 = sg.unk154 as number[] | undefined;
+                p = { mactor: sg.mactor, baseTR: B, scale: { x: 1, y: 1, z: 1 }, drawn: () => !!(this.surfRig && this.surfRig.surfGesso === sg), tevColor1: c1 } as any as LiveActor;
+                this.simModelProxies.set(sg.mactor, p);
+            }
+            // (surfgeso_run1, run on: the item it came from is gone)
+            const fc = sg.mactor.getFrameCtrl(0);
+            if (fc) { const now = performance.now(); fc.frame = fc.end > 0 ? (fc.frame + Math.min(4, (now - this.surfClock) / (1000 / 30)) * 0.5) % fc.end : 0; this.surfClock = now; }
+            out.push({ a: p, type: '', place: [sg.pos.x, sg.pos.y, sg.pos.z] });
+        }
         for (const o of st.objects) {
-            if (o instanceof ModelGate) add(o, o.unk78, o.baseTR, () => !!(o.unk70 & 1));
+            if (o instanceof ModelGate) { add(o, o.unk78, o.baseTR, () => !!(o.unk70 & 1)); const pp = o.unk78 && this.simModelProxies.get(o.unk78); if (pp) (pp as any).gateMovie = true; }
             else if (o instanceof ShiningStone) {
                 for (const m of o.unk68) add(o, m, o.baseMtx, () => true);
                 add(o, o.unk6C, o.baseMtx, () => true);
@@ -837,6 +902,19 @@ export class GameLayer {
         }
         const G = this.goop;
         for (const g of G.insts) if (g) g.visible = this.live;
+        // each layer's joints as its TJointModel leaves them (a killed joint's shapes hidden: Bianco's "reset" goop)
+        P.layers.forEach((L: any, i: number) => {
+            const inst = G.insts[i], jm = inst ? pollutionJoints(L) : null;
+            if (!inst) return;
+            const v = jm ? jm.version : -1;
+            if ((inst as any)._goopJv === v) return;
+            (inst as any)._goopJv = v;
+            const md = inst.modelData;
+            md.shapeData.forEach((sd, k) => {
+                const j = md.materialJointIndices[sd.shape.materialIndex];
+                inst.setShapeVisible(k, !jm || j === undefined || jm.shownJoint(j));
+            });
+        });
         if (G.frame === st.frame) return;
         G.frame = st.frame;
         P.layers.forEach((L: any, i: number) => {
@@ -931,6 +1009,80 @@ export class GameLayer {
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     }
 
+    /**
+     * Delfino Plaza's paint gates' view of where they go (TModelGate::perform's CUE_DRAW): the THP
+     * movie TMarDirector::thpInit opens on that map (/data/ex128x144_q0.thp, looped), each frame's
+     * Y, U and V planes as the gate model's textures 0, 1 and 2 (I8: Y full size, U and V half),
+     * which its TEV turns back into colour (the planes as the THP's JPEG has them: full-range YCbCr).
+     * Without the movie on the disc the gate keeps its own textures.
+     */
+    private gate: { player: ThpPlayer | null; shown: ImageBitmap | null; cx: CanvasRenderingContext2D | null; tex: GfxTexture[]; w: number; h: number; renderer: any } | null = null;
+    private gateMovieOn(inst: J3DModelInstanceSimple) {
+        const fs = this.fs;
+        if (!fs) return;
+        let G = this.gate;
+        if (G && G.renderer !== this.renderer) { this.gateStop(); G = null; }
+        if (!G) {
+            const path = fs.list().find((p) => p.endsWith('ex128x144_q0.thp')) || null;
+            G = this.gate = { player: path ? new ThpPlayer(fs as any, path, { audio: false }) : null, shown: null, cx: null, tex: [], w: 0, h: 0, renderer: this.renderer };
+            if (G.player) void G.player.open();
+        }
+        const P = G.player;
+        if (!P) return;
+        if (P.state === 'ended' && P.info) { P.stop(); const path = (P as any).path; G.player = new ThpPlayer(this.fs as any, path, { audio: false }); void G.player.open(); return; }   // (THPPlayerPrepare's loop)
+        const pic = P.picture();
+        if (pic && pic !== G.shown) {
+            G.shown = pic;
+            const w = pic.width, h = pic.height;
+            if (!G.cx || G.w !== w || G.h !== h) {
+                const c = document.createElement('canvas'); c.width = w; c.height = h;
+                G.cx = c.getContext('2d', { willReadFrequently: true });
+                for (const t of G.tex) this.device.destroyTexture(t);
+                G.tex = [[w, h], [w >> 1, h >> 1], [w >> 1, h >> 1]].map(([tw, th]) => this.device.createTexture(makeTextureDescriptor2D(GfxFormat.U8_RGBA_NORM, tw, th, 1)));
+                G.w = w; G.h = h;
+            }
+            const cx = G.cx!;
+            cx.drawImage(pic, 0, 0);
+            const px = cx.getImageData(0, 0, w, h).data, hw = w >> 1, hh = h >> 1;
+            const Y = new Uint8Array(w * h * 4), U = new Uint8Array(hw * hh * 4), V = new Uint8Array(hw * hh * 4);
+            for (let i = 0; i < w * h; i++) {
+                const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
+                const y = Math.max(0, Math.min(255, 0.299 * r + 0.587 * g + 0.114 * b));
+                Y[i * 4] = Y[i * 4 + 1] = Y[i * 4 + 2] = Y[i * 4 + 3] = y;
+            }
+            for (let y = 0; y < hh; y++) for (let x = 0; x < hw; x++) {
+                const i = ((y * 2) * w + x * 2) * 4, r = px[i], g = px[i + 1], b = px[i + 2], o = (y * hw + x) * 4;
+                const u = Math.max(0, Math.min(255, -0.168736 * r - 0.331264 * g + 0.5 * b + 128)), v = Math.max(0, Math.min(255, 0.5 * r - 0.418688 * g - 0.081312 * b + 128));
+                U[o] = U[o + 1] = U[o + 2] = U[o + 3] = u; V[o] = V[o + 1] = V[o + 2] = V[o + 3] = v;
+            }
+            this.device.uploadTextureData(G.tex[0], 0, [Y]); this.device.uploadTextureData(G.tex[1], 0, [U]); this.device.uploadTextureData(G.tex[2], 0, [V]);
+        }
+        if (G.tex.length === 3) {
+            const M = inst.materialInstanceState.textureMappings;
+            for (let k = 0; k < 3; k++) if (M[k] && M[k].gfxTexture !== G.tex[k]) { M[k].gfxTexture = G.tex[k]; (M[k] as any).width = k ? G.w >> 1 : G.w; (M[k] as any).height = k ? G.h >> 1 : G.h; }
+        }
+    }
+    private gateStop() {
+        const G = this.gate;
+        if (!G) return;
+        if (G.player) G.player.stop();
+        for (const t of G.tex) this.device.destroyTexture(t);
+        this.gate = null;
+    }
+
+    /** A joint's index in one of FLUDD's nozzle models (watergun2/<nozzle>/<nozzle>.bmd), -1 if none: the viewer turns it as TWaterGun's joint callbacks do. */
+    private nozzleJoints = new Map<string, string[]>();
+    public nozzleJoint(nozzle: string, joint: string): number {
+        if (!this.marioArc) return -1;
+        let names = this.nozzleJoints.get(nozzle);
+        if (!names) {
+            const f = this.marioArc.findFile(`watergun2/${nozzle}/${nozzle}.bmd`);
+            try { names = f ? BMD.parse(f.buffer).jnt1.joints.map((j) => j.name) : []; } catch { names = []; }
+            this.nozzleJoints.set(nozzle, names);
+        }
+        return names.indexOf(joint);
+    }
+
     // ------------------------------------------------------------ the tightrope wires
     private wireDraw = new WireDraw();
     /** the stage the sim ran this frame (its wires are drawn), else null */
@@ -942,6 +1094,35 @@ export class GameLayer {
     public staticWires: number[][] = [];
     /** True while the layer draws the wires itself (the viewer's own are then left out). */
     public get drawsWires() { return this.live && !!this.renderer; }
+    /** TMapWire's end fittings (/common/map/WireFitting.bmd at mStartFittingModel / mEndFittingModel's base matrices) */
+    private fittingInsts: J3DModelInstanceSimple[] = [];
+    private fittingFor: any = null;
+    private syncFittings() {
+        const r = this.renderer, M = this.wireStage && this.wireStage.world ? this.wireStage.world.mapWires : null;
+        const want = this.live && r && M && M.wires.length ? M : null;
+        if (want !== this.fittingFor) {
+            this.fittingFor = want;
+            for (const m of this.fittingInsts) m.visible = false;
+            if (want && r && this.common && this.common.common) {
+                const f = this.common.common.files.get('map/wirefitting.bmd');
+                if (f) {
+                    const cache = r.renderHelper.renderInstManager.gfxRenderCache;
+                    let data: J3DModelData | null = (r as any)._fitData || null;
+                    if (!data) try { data = (r as any)._fitData = new J3DModelData(this.device, cache, BMD.parse(new ArrayBufferSlice(f.buffer as ArrayBuffer, f.byteOffset, f.byteLength))); } catch (e) { console.warn('[game layer] WireFitting', e); }
+                    const mats: Mtx[] = data ? want.wires.flatMap((w: any) => w.fittings || []) : [];
+                    while (this.fittingInsts.length < mats.length) {
+                        const m = new J3DModelInstanceSimple(data!); m.passMask = SMSPass.MAIN;
+                        this.fittingInsts.push(m); r.modelInstances.push(m); this.actorModels.push(m);
+                    }
+                    mats.forEach((B, i) => {
+                        const m = this.fittingInsts[i];
+                        mat4.set(m.modelMatrix, B[0], B[4], B[8], 0, B[1], B[5], B[9], 0, B[2], B[6], B[10], 0, B[3], B[7], B[11], 1);
+                        m.visible = true;
+                    });
+                }
+            }
+        }
+    }
     private wireLines(): WireLine[] {
         const M = this.wireStage && this.wireStage.world ? this.wireStage.world.mapWires : null;
         if (M && M.wires && M.wires.length)
@@ -963,11 +1144,13 @@ export class GameLayer {
         this.setLive(true);
         this.syncGroup(group, mp);
         const seen = new Set<any>();
+        this.surfRig = null;
         for (const mo of marios) {
             if (!mo.rig) continue;
             let mm = this.marios.get(mo.key);
             if (!mm) { mm = new MarioMirror(this, r); this.marios.set(mo.key, mm); }
             mm.sync(mo.rig, mo.yoshi);
+            if (mo.rig.surfGesso) this.surfRig = mo.rig;
             seen.add(mo.key);
             const proxy = (root: any) => root && root.traverse((x: any) => { if (x.isMesh) for (const m of [].concat(x.material) as any[]) { if (m.colorWrite) m.colorWrite = false; this.proxiedMario.add(m); } });
             proxy(mo.rig.root);
@@ -980,6 +1163,7 @@ export class GameLayer {
         }
         this.syncSim(sim, group);
         this.wireStage = sim && this.sim ? this.sim.stage : null;
+        this.syncFittings();
         this.syncObjects();
         mat4.copy(this.camera.worldMatrix, cam.matrixWorld.elements);
         this.camera.worldMatrixUpdated();

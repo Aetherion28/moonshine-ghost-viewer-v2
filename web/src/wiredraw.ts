@@ -16,7 +16,7 @@ import { GXMaterialHelperGfx, MaterialParams, DrawParams } from '../noclip/gx/gx
 import { ColorKind } from '../noclip/gx/gx_render.js';
 import { colorFromRGBA } from '../noclip/Color.js';
 import { GfxDevice } from '../noclip/gfx/platform/GfxPlatform.js';
-import { GfxRenderInstManager } from '../noclip/gfx/render/GfxRenderInstManager.js';
+import { GfxRenderInstManager, GfxRendererLayer, makeSortKey } from '../noclip/gfx/render/GfxRenderInstManager.js';
 import * as Viewer from '../noclip/viewer.js';
 
 /** One wire: its points (x, y, z each: start, the active points, end), the draw sizes and colours (0..255). */
@@ -62,6 +62,7 @@ export class WireDraw {
         d.endDraw(rim);
         if (!d.hasIndicesToDraw()) return;
         const inst = d.makeRenderInst(rim);
+        inst.sortKey = makeSortKey(GfxRendererLayer.OPAQUE);   // (with the opaque models, before the translucent ones)
         this.helper.setOnRenderInst(rim.gfxRenderCache, inst);
         colorFromRGBA(this.mp.u_Color[ColorKind.MAT0], c[0] / 255, c[1] / 255, c[2] / 255, 1);
         this.helper.allocateMaterialParamsDataOnInst(inst, this.mp);

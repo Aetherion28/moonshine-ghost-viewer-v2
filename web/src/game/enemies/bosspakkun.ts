@@ -16,6 +16,8 @@ import { AT } from '../actortypes.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { Walker } from './walker.js';
+import { mapObjGlobals } from '../mapobj/base.js';
+import type { ItemManager } from '../mapobj/item.js';
 import { register } from '../scene.js';
 import { emitInfo, EmitInfo } from '../water.js';
 import { mat4 } from 'gl-matrix';
@@ -721,7 +723,8 @@ BPNerves.die = nerve<BossPakkun>('TNerveBPDie', (spine: S) => {
     if (a.checkCurBckFromIndex(7) && spine.time === 680) self.onLiveFlag(LF.UNK8);
     if (a.curAnmEndsNext(ANM_BCK) && a.checkCurBckFromIndex(7)) {
         self.kill();
-        self.world.events.push({ t: self.world.tickCount, kind: 'shine', data: { p: self.pos.clone() } });
+        const im = mapObjGlobals(self.world).itemManager as ItemManager | null;
+        if (im) im.makeShineAppearWithDemo('シャイン（ボス用）', 'ボスシャインカメラ', self.pos.x, self.pos.y, self.pos.z);
         return true;
     }
     return false;

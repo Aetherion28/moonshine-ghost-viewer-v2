@@ -81,7 +81,7 @@ import type { StickCamera } from './camera/types.js';
 import { matan, s16 } from './math.js';
 import './bathwater.js';
 import { writeSmsGhost, type GhostFrame, type GhostSegment } from './ghostwrite.js';
-import { LiveDirector, LiveTiming, decideMarioPosIdx, entranceStart, gotShineFromSamples, moveStage, decideNextStageOfMiss, plazaDemoOnStart, stageDemoName, Area } from './stagechange.js';
+import { LiveDirector, LiveTiming, decideMarioPosIdx, entranceStart, gotShineFromSamples, moveStage, decideNextStageOfMiss, plazaDemoOnStart, stageDemoName, liveRunCarry, loadGapQf, Area, selectMenuInput } from './stagechange.js';
 import { FlagManager, MSF } from './flags.js';
 import { DIR } from './player/player.js';
 import { parseStageArc, sceneForRoute } from '../stagearc.js';
@@ -289,10 +289,13 @@ export class ReplayHistory {
      * (mType: the body colour, bodyColor[mType]).
      */
     yState: number[] = []; yPos: number[] = []; yYaw: number[] = []; yBck: number[] = []; yFrame: number[] = []; yBlend: number[] = []; yType: number[] = [];
+    /** the upper body's own motion each frame (PlayerMario.upperAnim: the pump, a held object's, the damage flinch): its BCK (-1: none) and frame */
+    upBck: number[] = []; upFrame: number[] = [];
     constructor(public ghost: any, public from: number) { }
     get last() { return this.qf.length ? this.qf[this.qf.length - 1] : -1; }
     push(qf: number, P: PlayerMario) {
-        this.qf.push(qf); this.pos.push(P.pos.x, P.pos.y, P.pos.z); this.yaw.push(P.mModelFaceAngle);
+        const dp = P.drawPos;   // (the drawn place: on a pole or tree his base matrix's, off its axis)
+        this.qf.push(qf); this.pos.push(dp.x, dp.y, dp.z); this.yaw.push(P.mModelFaceAngle);
         this.anim.push(P.mAnimationId); this.phase.push(Math.round(P.phase * 4096) & 4095);
         const f = P.fludd;
         this.fludd.push(f ? (f.nozzle & 7) | (f.spraying ? 0x10 : 0) : -1);
@@ -300,6 +303,7 @@ export class ReplayHistory {
         const Y = P.mYoshi ? P.mYoshi.viewState() : null;
         this.yState.push(Y ? Y.state : -1); this.yPos.push(Y ? Y.x : 0, Y ? Y.y : 0, Y ? Y.z : 0); this.yYaw.push(Y ? Y.yaw : 0);
         this.yBck.push(Y ? Y.bck : -1); this.yFrame.push(Y ? Y.frame : 0); this.yBlend.push(Y ? Y.blend : 0); this.yType.push(Y ? Y.type : 0);
+        const U = P.upperAnim; this.upBck.push(U ? U.bck : -1); this.upFrame.push(U ? U.frame : 0);
         const W = P.world.water, tot = W ? W.emitted : 0;
         const made = this.emitted < 0 || tot < this.emitted ? 0 : tot - this.emitted;
         this.emitted = tot; this.emit.push(made);
@@ -345,6 +349,15 @@ export class ReplayHistory {
         // on Yoshi his animation is a BCK index (TMario::setAnimation's yo_*): the ghost's yoshi field (colour 1-4)
         const yoshi = this.yState.length > i && this.yState[i] === 8 ? this.yType[i] + 1 : 0;
         return { id: this.anim[i], yoshi, phase };
+    }
+    /** the sim's upper-body motion at t ({ bck, frame }; null: none, or outside what the replay ran) */
+    upperAt(t: number) {
+        const i = this.index(t);
+        if (i < 0 || i >= this.upBck.length || this.upBck[i] < 0) return null;
+        const j = Math.min(i + 1, this.qf.length - 1);
+        let frame = this.upFrame[i];
+        if (j > i && this.upBck[j] === this.upBck[i] && this.upFrame[j] >= frame) frame += (this.upFrame[j] - frame) * ((t - this.qf[i]) / (this.qf[j] - this.qf[i]));
+        return { bck: this.upBck[i], frame };
     }
     /** the sim's Yoshi at t (null: an egg / not hatched; undefined: outside what the replay ran) */
     yoshiAt(t: number) {
@@ -406,6 +419,22 @@ export function closingCopyQf(g: any, segment: number, q0: number): number | und
  */
 export const LATER_SEGMENT_LEAD = 8;
 
+/**
+ * A later segment anchored at its stage's tick 0, as live play's recordings write them (ghostwrite.ts:
+ * the first frame's pose copied back to the stage's start, a frame or more before it, as Moonshine
+ * does for the first segment only): its stage then starts at the segment's first QF, and the run's
+ * flags are carried into it (stagechange.ts liveRunCarry). Moonshine's later segments start at their
+ * first frame.
+ */
+export function stageStartCopy(g: any, segI: number): boolean {
+    const seg = g && g.segments && g.segments[segI];
+    if (!segI || !seg || seg.sampleCount < 2) return false;
+    const a = seg.firstSample, b = a + 1;
+    if (g.qf[b] - g.qf[a] < 8 || g.anim[a] !== g.anim[b] || g.phase[a] !== g.phase[b] || g.yaw[a] !== g.yaw[b]) return false;
+    for (let c = 0; c < 3; c++) if (g.pos[a * 3 + c] !== g.pos[b * 3 + c]) return false;
+    return true;
+}
+
 export class SimRunner {
     /** steer Mario by a v8 ghost's recorded camera instead of the sim's camera (debug; see where it's read) */
     static steerByRecordedCamera = false;
@@ -436,10 +465,11 @@ export class SimRunner {
     constructor(public disc: DiscCommon) { }
 
     /** The ghost as Mario: its samples from the stage's start. */
-    private track(inp: SimInput): MarioTrack {
+    private track(inp: SimInput, segI: number): MarioTrack {
         const g = inp.ghost, A = inp.api, q0 = this.q0;
         return {
-            closingCopyQf: closingCopyQf(g, g.segIndex[A.ghostSampleAt(g, q0).i], q0),
+            // (this segment's: a later stage starts before its first sample, where the sample at q0 is the stage before's)
+            closingCopyQf: closingCopyQf(g, segI, q0),
             at: (q: number): MarioSample | null => {
                 const t = q0 + q;
                 const s = A.ghostSampleAt(g, t);
@@ -466,25 +496,35 @@ export class SimRunner {
         // Moonshine anchors only the first segment at QF 0 (its first pose is held from there); a later
         // segment starts at the first QF its timer can be read, when the new stage has already run a while
         // (ghost.cpp startEpochSamples). The sim starts that stage LATER_SEGMENT_LEAD ticks early so the
-        // intro's end (introDemoEnd: six ticks before the first sample) lands inside the run.
-        const q0 = seg.startQf - g.header.startQf - (segI > 0 ? LATER_SEGMENT_LEAD : 0);
+        // intro's end (introDemoEnd: six ticks before the first sample) lands inside the run. A live
+        // recording's later segment is anchored at its stage's tick 0 like the first (stageStartCopy).
+        const live = stageStartCopy(g, segI);
+        const q0 = seg.startQf - g.header.startQf - (segI > 0 && !live ? LATER_SEGMENT_LEAD : 0);
         const I = g.inputs;
         const replay = this.inputReplay && !!I && I.count > 0 && (() => { for (let i = 0; i < I.count; i++) { const q = I.qf[i]; if (q >= q0 && q <= seg.endQf - g.header.startQf) return true; } return false; })();
         const key = `${sceneName}|${segI}|${q0}|${replay}`;
         const want = inp.t - q0;
         if (this.key !== key || !this.stage || this.stage.qf > want + 4) {
             this.key = key; this.q0 = q0; this.error = null;
-            let intro = null;
+            let intro = null, demoName: ((f: FlagManager) => string) | null = null;
             if (replay) {
                 const ss: { qf: number; anim: number; phase: number }[] = [];
                 for (let i = seg.firstSample; i < seg.firstSample + seg.sampleCount; i++) { const q = g.qf[i] - q0; if (q > 0) ss.push({ qf: q, anim: g.anim[i], phase: g.phase[i] }); }
                 intro = introTiming(ss, I, q0, seg.endQf - g.header.startQf);
                 // Delfino Plaza's own opening demo (DEMO_FLAG_CAMERA_DEMO_ON_START): Mario comes in late, the
                 // first sample 7 ticks after setMario (stagechange.ts LiveDirector), as a live run records it
-                if (seg.route.area === 1 && segI === 0 && (intro.firstSample ?? 0) > 12) { intro.plazaDemo = true; intro.demoEndTick = (intro.firstSample ?? 0) - 7; }
-                // a later segment: the entrance the stage before leads to (decideMarioPosIdx: Delfino's door
-                // or pipe of the course left), the Shine got there as its APPEAR animation shows
-                if (segI > 0 && g.segments[segI - 1] && seg.route.area === 1) {
+                if (seg.route.area === 1 && (segI === 0 || live) && (intro.firstSample ?? 0) > 12) { intro.plazaDemo = true; intro.demoEndTick = (intro.firstSample ?? 0) - 7; }
+                if (live) {
+                    // a live recording's later stage: the save's flags and the area the run carried in
+                    // (stagechange.ts liveRunCarry), the entrance from them as LiveRunner.build has it
+                    const area = seg.route.area, c = liveRunCarry(g, segI), got = gotShineFromSamples(ss);
+                    (intro as LiveTiming).flags = c.flags;
+                    intro.start = (m) => entranceStart(m.world, decideMarioPosIdx(m.world.flags, area, c.prevArea), c.prevArea, got)(m);
+                    const plazaDemo = !!intro.plazaDemo;
+                    demoName = (f: FlagManager) => stageDemoName(f, area, seg.route.episode, plazaDemo);
+                } else if (segI > 0 && g.segments[segI - 1] && seg.route.area === 1) {
+                    // a later segment: the entrance the stage before leads to (decideMarioPosIdx: Delfino's door
+                    // or pipe of the course left), the Shine got there as its APPEAR animation shows
                     const area = seg.route.area, prev = g.segments[segI - 1].route.area, got = gotShineFromSamples(ss);
                     intro.start = (m) => entranceStart(m.world, decideMarioPosIdx(m.world.flags, area, prev), prev, got)(m);
                 }
@@ -495,6 +535,8 @@ export class SimRunner {
             try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, seed ?? 0, 0, intro); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
             const st0 = this.stage;
+            const C0: any = st0.player && st0.player.simCamera;
+            if (C0 && demoName) C0.stageDemoName = demoName(st0.world.flags);
             this.pads = null; this.sync = null; this.history = null; this.camKeys = null; this.camCorrections = [];
             if (st0.player) {
                 const P = st0.player;
@@ -520,7 +562,7 @@ export class SimRunner {
             this.rng = g.rng ? new RngReplay(g.rng, segI, q0, () => q0 + st0.qf) : null;
         }
         const st = this.stage!;
-        const track = this.track(inp);
+        const track = this.track(inp, segI);
         const t0 = performance.now();
         while (st.qf + 4 <= want) {
             st.camera = this.camera(inp, q0 + st.qf + 4, segI);
@@ -610,8 +652,42 @@ export interface LiveInput {
     /** the free-roam Shine get (LiveRunner.freeRoamShine) when given, else the runner's own setting */
     freeRoamShine?: boolean;
 }
+/**
+ * The run QFs between a live stage's last tick and the next stage's tick 0 (the load; the game's
+ * time isn't counted there). A frame, so the next segment's first sample (its pose copied back to
+ * the stage's tick 0: ghostwrite.ts) comes after the stage before's last.
+ */
+const STAGE_LOAD_QF = 4;   // (the least: a recording's later segments need a gap; loadGapQf is the real one)
+/**
+ * The 2D screens live play shows (the page hands in the HUD's makers: hud/index.ts GameHud.screens):
+ * each a menu run a game frame at a time with the pad (frame(pad)) and drawn by the HUD. A maker
+ * gives null when the disc's files for it are missing (the run then goes on as without it), or
+ * undefined while they load.
+ */
+export interface LiveScreens {
+    pauseMenu(o: { area: number; episode: number }): any;
+    gameOverMenu(): any;
+    selectMenu(o: ReturnType<typeof selectMenuInput>): any;
+    movie(id: number, flags: FlagManager): any;
+}
 export class LiveRunner extends SimRunner {
+    /** the HUD's screen makers (null: none, the notices stand in) */
+    screens: LiveScreens | null = null;
+    /** the screen showing: the pause menu, the game over's choice, the episode select, a movie */
+    screen: { kind: 'pause' | 'gameover' | 'select' | 'movie'; menu: any } | null = null;
+    /** a stage change waiting on a screen (leave's later steps) */
+    private leaving: { cur: Area; next: Area; note: string; movie?: number; n?: Area & { select: boolean }; step: number } | null = null;
     private liveKey = '';
+    /** the screens' clock: game frames (1/29.97 s) of real time (update runs more than once a page frame) */
+    private menuT = -1;
+    private menuFrames() {
+        const now = performance.now();
+        if (this.menuT < 0 || now - this.menuT > 500) { this.menuT = now; return 1; }
+        let n = 0;
+        while (now - this.menuT >= 1000 / 29.97 && n < 4) { this.menuT += 1000 / 29.97; n++; }
+        if (n === 4) this.menuT = now;
+        return n;
+    }
     private resetSeen = NaN;
     /** the stages recorded since the run (re)started with record on (ghostwrite.ts), else null */
     recording: GhostSegment[] | null = null;
@@ -623,6 +699,10 @@ export class LiveRunner extends SimRunner {
     private carry: { flags: FlagManager; prevArea: number } | null = null;
     /** the run's QF at this stage's tick 0, and this stage's first recorded tick (the frame after setMario's) */
     private qfBase = 0; private recFrom = -1;
+    /** the load before the pending stage (stagechange.ts loadGapQf): its QF, and what is left of it */
+    loadQf = 0; loadLeft = 0;
+    /** the run is in a stage change's load (black: the next stage's files can be read meanwhile) */
+    get loading() { return !!this.pending && this.loadLeft > 0; }
     /** what the viewer shows about the run (a movie that would play, the end) */
     notice = '';
     /**
@@ -661,7 +741,7 @@ export class LiveRunner extends SimRunner {
         this.history = st.player ? new ReplayHistory(null, 0) : null;
         this.recFrom = -1;
         this.camPrev = this.camCur = null; this.camW = 0;
-        if (this.recording) this.recording.push({ area, episode, frames: [] });
+        if (this.recording) this.recording.push({ area, episode, frames: [], startQf: this.qfBase });
     }
     update(sceneName: string, scene: FileMap, inp: any, budgetMs = 20): boolean {
         const L: LiveInput | undefined = inp && inp.live;
@@ -670,6 +750,11 @@ export class LiveRunner extends SimRunner {
         let fresh = false, next = false;
         if (L.reset !== this.resetSeen) fresh = true;
         else if (P) {
+            // the load (loadGapQf): black, the stage before held at its last frame; its frame count goes
+            // on (the viewer's clock is held to it) while the next stage's files are read
+            const st0 = this.stage;
+            while (st0 && this.loadLeft > 0 && st0.frame < L.frames) { st0.frame++; this.loadLeft -= 4; }
+            if (this.loadLeft > 0) return false;
             if (L.area !== P.area || L.episode !== P.episode || (P.scene && sceneName !== P.scene)) return false;   // (the viewer is loading it)
             next = true;
         } else if (!this.stage || L.area !== this.area || L.episode !== this.episode || sceneName !== this.sceneName) fresh = true;
@@ -678,10 +763,10 @@ export class LiveRunner extends SimRunner {
             if (this.liveKey === key && this.error) return false;   // (it failed: don't rebuild every frame)
             this.liveKey = key; this.error = null; this.sync = null; this.q0 = 0;
             if (fresh) {
-                this.resetSeen = L.reset; this.carry = null; this.qfBase = 0; this.notice = '';
+                this.resetSeen = L.reset; this.carry = null; this.qfBase = 0; this.notice = ''; this.loadQf = this.loadLeft = 0;
                 this.recording = L.record ? [] : null;
-            } else if (this.stage) this.qfBase += this.stage.qf;
-            this.pending = null; this.paused = false;
+            } else if (this.stage) this.qfBase += this.stage.qf + Math.max(STAGE_LOAD_QF, this.loadQf);
+            this.pending = null; this.paused = false; this.screen = null; this.leaving = null;
             // (the sleeping Mario: only on a stage that starts without its intro, live play not recording)
             const sp = fresh && !L.record && L.sleepPhase != null ? L.sleepPhase : null;
             try { this.build(sceneName, scene, L.area, L.episode, L, sp); }
@@ -697,13 +782,16 @@ export class LiveRunner extends SimRunner {
         }
         const st = this.stage!, t0 = performance.now();
         if (!st) return false;
+        if (this.leaving) { this.leaveScreens(st, L); return true; }
         if (this.paused) { this.pauseMenu(st, L); if (this.paused) return true; }
         this.wantFrames = L.frames;
-        while (st.frame < L.frames && !this.pending && !this.paused) {
+        while (st.frame < L.frames && !this.pending && !this.paused && !this.leaving) {
             st.camera = null;
             const pad = st.player ? L.pad() : null;
             const T = st.world.talk;
             if (T) T.freeRoamShine = (L.freeRoamShine ?? this.freeRoamShine) && !this.recording;
+            // (the game's own text in live play; Moonshine's Fast text while recording, as its replay reads the talks)
+            if (T) T.fastText = !!this.recording;
             const roamed = T ? T.freeRoamTick : -1;
             try { st.runFrame(null, pad); } catch (e) { this.error = e; console.warn('[live] frame', e); this.stage = null; return false; }
             this.snapCamera(st);
@@ -745,11 +833,28 @@ export class LiveRunner extends SimRunner {
         if (!(pad.button & 0x1000) || (was & 0x1000)) return;
         if (!(P.checkFlag(0x1000) || !P.checkStatusType(0x800))) return;   // (checkActionThing3: not jumping)
         this.paused = true;
-        this.notice = 'Paused: Start continues' + (this.area !== 1 ? ', X exits the area' : '');
+        const menu = this.screens ? this.screens.pauseMenu({ area: this.area, episode: st.world.flags.getFlag(MSF.EPISODE) }) : null;
+        if (menu) { this.screen = { kind: 'pause', menu }; this.notice = ''; }
+        else this.notice = 'Paused: Start continues' + (this.area !== 1 ? ', X exits the area' : '');
     }
     private pauseMenu(st: Stage, L: LiveInput) {
         const pad = L.pad(), was = this.padWas;
         this.padWas = pad.button;
+        if (this.screen && this.screen.kind === 'pause') {
+            // TPauseMenu2 (getNextState: 0 go on, 5 exit the area; the save isn't kept: go on)
+            const M = this.screen.menu;
+            for (let k = this.menuFrames(); k > 0; k--) M.frame(pad);
+            const ns = M.nextState();
+            if (ns === 2) return;
+            this.screen = null; this.paused = false;
+            if (M.savePicked) { this.notice = 'Saving isn\'t simulated: the game goes on'; this.noticeUntil = st.frame + 90; }
+            if (ns === 5) {
+                const w = st.world, D = st.director as LiveDirector;
+                w.nextArea = { stage: 1, scenario: 0xFF }; w.moviePending = false; w.stageTransitionPending = true;
+                D.exitArea(st.qf);
+            }
+            return;
+        }
         const press = (b: number) => (pad.button & b) && !(was & b);
         if (press(0x1000)) { this.paused = false; this.notice = ''; return; }
         if (press(0x400) && this.area !== 1) {
@@ -762,33 +867,88 @@ export class LiveRunner extends SimRunner {
     /** the stage's end (STATE_UNK9's fade or the miss's): the next area (moveStage), the flags carried */
     private leave(st: Stage, D: LiveDirector) {
         const w = st.world, f = w.flags, cur: Area = { stage: this.area, scenario: this.episode };
-        let next: Area, note = '';
+        let next: Area, step = 1;
         if (D.state === DIR.GAME_OVER) {
             if (f.getFlag(MSF.LIFE_COUNT) >= 0) {
                 f.setBool(true, MSF.LOST_LIFE_IN_PREV_STAGE);
                 next = decideNextStageOfMiss(cur);
             } else {
-                // the game over: the card's flags back (TFlagManager::restore: the save isn't kept here, the
-                // lives come back as a fresh save's), Delfino, or the airstrip without a Shine
-                f.setFlag(MSF.LIFE_COUNT, 0); f.correctFlag();
-                f.setBool(true, MSF.UNK30001);
-                next = f.getFlag(MSF.SHINE_COUNT) ? { stage: 1, scenario: 0xFF } : { stage: 0, scenario: 0 };
-                note = 'Game over';
+                // the game over: STATE_CARD_SAVE (7)'s choice first (leaveScreens' step 0)
+                next = { stage: 1, scenario: 0xFF };
+                step = 0;
             }
             w.moviePending = false;
             if (w.nextArea) w.nextArea.movie = undefined;
         } else next = w.nextArea ? { stage: w.nextArea.stage, scenario: w.nextArea.scenario } : { stage: 1, scenario: 0xFF };
-        const P: any = st.player, G = P && P.mWaterGun;
-        const second = P && P.checkFlag && P.checkFlag(0x8000) && G ? (G.mSecondNozzle ?? -1) : -1;
-        const n = moveStage(f, cur, next, second);
         const movie = w.moviePending && w.nextArea ? w.nextArea.movie : undefined;
-        if (movie !== undefined) note = `Streaming movie ${movie} plays here (THP movies aren't shown)`;
-        if (n.select) note = (note ? note + '; ' : '') + `episode select: episode ${n.scenario + 1}`;
+        this.leaving = { cur, next, note: '', movie, step };
+        this.leaveScreens(st, null);
+    }
+    /**
+     * leave's steps, each waiting on its screen when the HUD gives one (else as the notices had it):
+     * the game over's choice (TCardSave 7: then the card's flags back, TFlagManager::restore — the save
+     * isn't kept here, the lives come back as a fresh save's — and Delfino, or the airstrip without a
+     * Shine), moveStage, the streaming movie (TMovieDirector), the episode select (TSelectDir: the
+     * episode picked is mNextArea's scenario and MSF_EPISODE).
+     */
+    private leaveScreens(st: Stage, L: LiveInput | null) {
+        const G = this.leaving!, w = st.world, f = w.flags, S = this.screens;
+        const pad = L ? L.pad() : null;
+        const add = (s: string) => { G.note = G.note ? G.note + '; ' + s : s; };
+        const run = (kind: 'gameover' | 'select' | 'movie', make: () => any): any => {
+            if (this.screen && this.screen.kind === kind) {
+                if (pad) for (let k = this.menuFrames(); k > 0; k--) this.screen.menu.frame(pad);
+                return this.screen.menu;
+            }
+            const m = S ? make() : null;
+            if (m === undefined || m === null) return m;   // (undefined: its files are loading)
+            this.screen = { kind, menu: m };
+            return undefined;
+        };
+        if (G.step === 0) {
+            const m = run('gameover', () => S!.gameOverMenu());
+            if (m === undefined || (m && m.choice < 0)) return;
+            this.screen = null;
+            f.setFlag(MSF.LIFE_COUNT, 0); f.correctFlag();
+            f.setBool(true, MSF.UNK30001);
+            G.next = f.getFlag(MSF.SHINE_COUNT) ? { stage: 1, scenario: 0xFF } : { stage: 0, scenario: 0 };
+            add(!m ? 'Game over' : m.choice === 1 ? 'Back to the title: the game goes to its title screen here (the run goes on from the save)' : '');
+            G.step = 1;
+        }
+        if (G.step === 1) {
+            const P: any = st.player, Gun = P && P.mWaterGun;
+            const second = P && P.checkFlag && P.checkFlag(0x8000) && Gun ? (Gun.mSecondNozzle ?? -1) : -1;
+            G.n = moveStage(f, G.cur, G.next, second);
+            G.step = G.movie !== undefined ? 2 : 3;
+        }
+        if (G.step === 2) {
+            const m = run('movie', () => S!.movie(G.movie!, f));
+            if (m === undefined || (m && !m.done)) return;
+            this.screen = null;
+            if (!m) add(`Streaming movie ${G.movie} plays here (THP movies aren't shown)`);
+            else { if (m.note) add(m.note); if (m.result === 'title') G.n = { stage: 0xF, scenario: 0, select: false }; }
+            G.step = 3;
+        }
+        if (G.step === 3) {
+            const n = G.n!;
+            if (n.select) {
+                const m = run('select', () => S!.selectMenu(selectMenuInput(f, n.stage)));
+                if (m === undefined || (m && !m.closeMenu)) return;
+                this.screen = null;
+                if (m) { n.scenario = m.selected; f.setFlag(MSF.EPISODE, m.selected); }
+                else add(`episode select: episode ${n.scenario + 1}`);
+            }
+            G.step = 4;
+        }
+        const n = G.n!;
+        let note = G.note;
         if (n.stage === 0xF) note = 'The game goes to its title / file select here';
+        this.leaving = null;
         this.carry = { flags: f, prevArea: this.area };
         const scene = this.disc.stageArc ? sceneForRoute(this.disc.stageArc, n.stage, n.scenario) : null;
         this.notice = note;
         this.pending = { area: n.stage, episode: n.scenario, scene, key: `${n.stage}:${n.scenario}`, note };
+        this.loadQf = this.loadLeft = loadGapQf(n.stage);
         if (!scene || n.stage === 0xF) console.warn('[live] no scene for the next area', n);
     }
     /** the camera's view at the end of the last two frames run (view's in-between), and the frames L.frames asked for */
@@ -833,7 +993,7 @@ export class LiveRunner extends SimRunner {
     }
     /** how dark the screen is (0..1): the director's fades and the console's wipes (black while the next stage loads) */
     wipe(): number {
-        if (this.pending) return 1;
+        if (this.pending || this.leaving) return 1;
         const st = this.stage, D = st && st.director as LiveDirector | null;
         return D && D.wipe ? D.wipe(st!.qf) : 0;
     }

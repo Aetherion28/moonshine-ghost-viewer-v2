@@ -5856,7 +5856,17 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     const sp = sleepMario && sleepMario.visible && !sleepMario.userData.livePosed && sleepMario.userData.phase != null ? sleepMario.userData.phase : null;
     return { t: 0, ghost: null, api: RAW, live: { area: a, episode: e, frames: livePad.frames, pad: readLivePad, reset: livePad.reset, record: livePad.rec, sleepPhase: livePad.rec ? null : sp } };
   }
+  // the Play button while live play runs: "Restart level" (back to Play / Pause when it ends)
+  var playRestart = false;
+  function livePlayButton() {
+    const on = !!livePad.active, b = $('play');
+    if (on === playRestart) return;
+    playRestart = on;
+    if (on) { b.textContent = 'Restart level'; b.setAttribute('aria-label', 'Restart level'); b.dataset.wasDisabled = b.disabled ? '1' : ''; b.disabled = false; }
+    else { b.disabled = b.dataset.wasDisabled === '1'; setPlaying(playing); }
+  }
   function liveStep(dt) {
+    try { livePlayButton(); } catch (e) { }
     // (a live stage change: the next stage's objects are loading, the run waits for them: LiveRunner.pending)
     const changing = !!(livePad.active && livePad.runner && livePad.runner.pending);
     const want = livePad.on && !ghosts.length && !!gameLayer && !!gameLayer.common && !splitOn() && (!!objectsGroup || changing);
@@ -5869,6 +5879,8 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     }
     if (!want) return;
     if (!livePad.active) { livePad.runner = gameLayer.setLivePlay(true); livePad.active = !!livePad.runner; livePad.frames = 0; livePad.clock = 0; padInfoLine(); }
+    // (the HUD's screens: the pause menu, the game over, the episode select, the movies)
+    if (livePad.runner && gameHud && gameHud.screens && livePad.runner.screens !== gameHud.screens) livePad.runner.screens = gameHud.screens;
     if (!livePad.active) return;
     // one game frame per 1/29.97 s of real time (catch-up capped at 4 frames)
     livePad.clock = Math.min(livePad.clock + dt, 4 / 29.97);
@@ -5890,9 +5902,45 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     const Q = liveGun.q;
     if (Q.length && Q[Q.length - 1] >= H.last) return;
     const B = G.mFluddModel, A = G.getCurrentNozzle().mMActor;
+    const prevQ = Q.length ? Q[Q.length - 1] : H.last;
     Q.push(H.last);
-    liveGun.v.push({ bb: B.bckName(), bf: B.fc.frame, nb: A ? A.bckName() : null, nf: A ? A.fc.frame : 0 });
+    // (drawing: the joint angles TWaterGun's callbacks apply, his TMarioCap models, the Blooper he
+    // surfs, and the eyes' texture pattern)
+    const D = G.drawState ? G.drawState() : null;
+    const surfing = !!(P.mSurfGesso && (P.mStatus & 0x10000) && P.mSurfGesso.mactor);
+    liveGun.v.push({ bb: B.bckName(), bf: B.fc.frame, nb: A ? A.bckName() : null, nf: A ? A.fc.frame : 0,
+      ga: D ? D.gunAngle : 0, hl: D ? D.hoverAngleL : 0, hr: D ? D.hoverAngleR : 0, pa: D ? D.propellerAngle : 0,
+      wc: P.mModel && P.mModel.jointCtrl ? { j: P.mModel.jointCtrl.joint, r: Array.from(P.mModel.jointCtrl.r) } : null,
+      cap: P.mCapModel, surf: surfing ? P.mSurfGesso : null, eye: liveEyeStep(H, P, (H.last - prevQ) / QF_PER_FRAME) });
     if (Q.length > 4000) { Q.splice(0, 1000); liveGun.v.splice(0, 1000); }
+  }
+  // TMario::setAnimation's texture pattern (MarioDraw.cpp): gMarioAnimeData[anim].unk4 picks one of
+  // marioAnimeTexPatternFilenames (ma_<name>_tx.btp: the eyes' TEX1 index by frame), started at frame 0
+  // as the animation changes and run at its rate (0x19: none, the last one runs on); not on Yoshi.
+  const MARIO_ANIM_BTP = [0,1,2,25,25,0,0,25,25,25,25,25,25,0,25,0,0,25,25,25,25,25,25,25,25,25,25,25,0,25,25,25,25,25,25,25,25,25,25,25,10,9,25,25,3,4,25,25,25,25,25,0,0,0,25,25,25,25,0,25,0,0,25,25,25,25,25,25,25,25,25,25,0,25,25,0,0,0,0,25,0,25,25,25,25,25,0,0,25,25,0,25,0,0,25,0,0,25,25,25,25,0,25,25,25,25,25,0,0,0,0,0,25,25,0,25,0,0,25,25,25,5,5,5,3,25,0,0,0,25,25,25,25,25,25,25,0,0,6,25,25,25,25,0,0,0,0,25,25,25,0,0,0,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,0,0,0,0,0,0,25,0,25,25,0,0,25,25,0,0,0,0,25,25,25,0,0,0,0,7,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,13,0,0,0,0,0,0,0,0,0,14,0,0,0,0,0,0,0,0,0,0,0,0,15,16,0,0,0,0,17,18,19,20,21,22,23,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+  const MARIO_BTP_NAMES = ['wink', 'bdwn', 'bkdwn', 'sdwnf', 'jfdwn', 'sdown', 'sldwn', 'dgrun', 'hot_wait', 'firejmp', 'fjpend', 'shock', 'gate_out', 'die', 'd_wait', 'swim_p_damage', 'swim_p_down', 'yawn', 'sit', 'sit_wait', 'sit_end', 'sleep', 'sleep_wait', 'sleep_end'];
+  const liveEye = { H: null, anim: -1, btp: -1, f: 0 };
+  function liveEyeStep(H, P, ticks) {
+    const E = liveEye;
+    if (E.H !== H) { E.H = H; E.anim = -1; E.btp = -1; E.f = 0; }
+    const id = P.mAnimationId, yoshi = H.yState.length && H.yState[H.yState.length - 1] === 8;
+    const fc = P.getMotionFrameCtrl ? P.getMotionFrameCtrl() : null, rate = fc ? Math.abs(fc.rate) : 0.5;
+    if (!yoshi && id !== E.anim) {
+      E.anim = id;
+      const b = MARIO_ANIM_BTP[id];
+      if (b !== undefined && b < 0x18) { E.btp = b; E.f = 0; }
+    }
+    E.f += rate * Math.max(0, Math.min(8, ticks));
+    return E.btp >= 0 ? { btp: E.btp, f: E.f } : null;
+  }
+  // the eyes' TEX1 index for a kept eye state (null: the model's own)
+  function eyeTexOf(e) {
+    const B = e && MARIO_BCK_JSON && MARIO_BCK_JSON.btp ? MARIO_BCK_JSON.btp[MARIO_BTP_NAMES[e.btp]] : null;
+    if (!B || !B.t || !B.t.length) return null;
+    const n = B.t.length, d = B.d || n;
+    let f = e.f;
+    f = B.l === 2 || B.l === 4 ? f % d : Math.min(f, d - 1);   // (J3D loop modes: 2 repeat; else once, held at the end)
+    return B.t[Math.max(0, Math.min(n - 1, Math.floor(f)))];
   }
   // the sim's FLUDD at history QF q (the latest kept at or before it), null when none is kept
   function liveGunAt(H, q) {
@@ -5931,11 +5979,17 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     gxApply(m, gxSet('player', lightSetAt(s.x, s.y, s.z)));
     // TMario::sleeping: asleep (sleep, sleep_wait) his eyes shut and the Z's over him (sleepingEffect)
     // until he wakes (sleep_end)
-    const asleep = !a.yoshi && (a.id === 308 || a.id === 309), dozing = asleep;
-    // waking (sleep_end): ma_sleep_end_tx.btp's TEX1 index for the animation's frame (shut 8, 7, 6, open 3)
-    const bt = a.id === 310 && !a.yoshi && MARIO_BCK_JSON && MARIO_BCK_JSON.btp ? MARIO_BCK_JSON.btp.sleep_end : null, bd = MarioRig.bckFor(310, false);
-    const bi = bt && bt.t.length ? bt.t[Math.max(0, Math.min(bt.t.length - 1, Math.floor((a.phase / 4096) * (bd && bd.data ? bd.data.d : bt.t.length))))] : -1;
-    marioEyes(m, bi >= 0 ? bi : asleep);
+    // (TMario::sleeping, every stage of it: sitting up dozing (sit_wait), lying down (sleep), asleep (sleep_wait))
+    const asleep = !a.yoshi && (a.id === 308 || a.id === 309), dozing = !a.yoshi && (a.id === 306 || a.id === 308 || a.id === 309);
+    // his eyes: the animation's texture pattern as the sim ran it (liveEyeStep: ma_*_tx.btp)
+    const gq = liveGunAt(H, q), et = gq ? eyeTexOf(gq.eye) : null;
+    if (et !== null) marioEyes(m, et);
+    else {
+      // waking (sleep_end): ma_sleep_end_tx.btp's TEX1 index for the animation's frame (shut 8, 7, 6, open 3)
+      const bt = a.id === 310 && !a.yoshi && MARIO_BCK_JSON && MARIO_BCK_JSON.btp ? MARIO_BCK_JSON.btp.sleep_end : null, bd = MarioRig.bckFor(310, false);
+      const bi = bt && bt.t.length ? bt.t[Math.max(0, Math.min(bt.t.length - 1, Math.floor((a.phase / 4096) * (bd && bd.data ? bd.data.d : bt.t.length))))] : -1;
+      marioEyes(m, bi >= 0 ? bi : asleep);
+    }
     if (dozing) updateZzz(m, (idleClock / QF_PER_FRAME));
     if (m.userData.zzz) m.userData.zzz.forEach((sp) => { sp.visible = dozing; });
     // FLUDD's water as the replay draws it: the live sim's water manager (drops, wet spots, splashes)
@@ -5955,6 +6009,11 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     m.rotation.set(0, (s.yaw / 32768) * Math.PI, 0);
     const rig = m.userData.rig;
     MarioRig.pose(rig, a.id, a.yoshi, a.phase);
+    poseSimUpper(rig, H.upperAt ? H.upperAt(q) : null);
+    // MarioWaistCtrl (chn_chest's callback: the chest bent by the gun angle aiming down, or the L
+    // camera's pitch), as the sim's calcAnim applied it: the joint's local matrix times that rotation
+    { const g0 = liveGunAt(H, q), w = g0 && g0.wc, b = w && rig.bones ? rig.bones[w.j] : null;
+      if (b) { const r = w.r; _wcM.set(r[0], r[1], r[2], 0, r[4], r[5], r[6], 0, r[8], r[9], r[10], 0, 0, 0, 0, 1); b.quaternion.multiply(_wcQ.setFromRotationMatrix(_wcM)); } }
     const v = H.fluddAt(q), parts = rig.parts, has = v !== undefined && v >= 0;
     // (on Yoshi he keeps FLUDD folded on his back with its spray nozzle)
     const n = has && !a.yoshi ? v & 7 : 0, spray = n === 0 || n === 2;
@@ -5972,10 +6031,36 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
           fluddPlay(rig.fludd.body, gs.bb, gs.bf, true);
           if (gs.nb) fluddPlay(rig.fludd.noz[nm], gs.nb, gs.nf, true);
         } else poseFludd(rig, liveFluddState(H, q, nm));
+        if (gs) turnNozzle(rig, nm, gs);
       }
     }
+    // (the live sim's TMarioCap models and the Blooper he surfs, for the game layer: MarioMirror, surfGesso)
+    { const gs = liveGunAt(H, q); rig.capModel = gs ? gs.cap : undefined; rig.surfGesso = gs && !a.yoshi ? gs.surf : null; }
     m.updateMatrixWorld(true);
     return { s, a, nm };
+  }
+  // TWaterGun's joint callbacks (WaterGun.cpp), after the nozzle's own animation: NozzleCtrl on the
+  // spray's chn_muzzle_1 and the turbo's jnt_back_nozzle_neck (the gun angle about z, while it's
+  // under 0: aiming down), WaterGunDivingCtrlL / R on the hover's jnt_nozzle_L / R (-mHoverAngleL / R
+  // about z: the jets tilting as he steers), RotateCtrl on the turbo's chn_back_nozzle_prop (the
+  // propeller angle about x). Each is the joint's local matrix times that rotation.
+  const _wcM = new THREE.Matrix4(), _wcQ = new THREE.Quaternion();
+  const _nzQ = new THREE.Quaternion(), _nzX = new THREE.Vector3(1, 0, 0), _nzZ = new THREE.Vector3(0, 0, 1);
+  function turnNozzle(rig, nm, gs) {
+    const bones = rig.fludd && rig.fludd.noz[nm];
+    if (!bones || !gameLayer || !gameLayer.nozzleJoint) return;
+    const turn = (joint, axis, s16) => {
+      const j = gameLayer.nozzleJoint(nm, joint), b = j >= 0 ? bones[j] : null;
+      if (!b) return;
+      // (undo last frame's turn if nothing posed the bone since)
+      if (b.userData.nzTurned && b.quaternion.equals(b.userData.nzTurned)) b.quaternion.copy(b.userData.nzBase);
+      b.userData.nzBase = (b.userData.nzBase || new THREE.Quaternion()).copy(b.quaternion);
+      if (s16) b.quaternion.multiply(_nzQ.setFromAxisAngle(axis, (s16 / 32768) * Math.PI));
+      b.userData.nzTurned = (b.userData.nzTurned || new THREE.Quaternion()).copy(b.quaternion);
+    };
+    if (nm === 'normal_wg') turn('chn_muzzle_1', _nzZ, gs.ga < 0 ? gs.ga : 0);
+    else if (nm === 'hover_wg') { turn('jnt_nozzle_L', _nzZ, -gs.hl); turn('jnt_nozzle_R', _nzZ, -gs.hr); }
+    else if (nm === 'back_wg') { turn('chn_back_nozzle_prop', _nzX, gs.pa); turn('jnt_back_nozzle_neck', _nzZ, gs.ga < 0 ? gs.ga : 0); }
   }
   // fluddState for the live sim: its spray runs ([start, end) QF, from the history's FLUDD bit 0x10,
   // kept on the history as it grows), the shoot animations' frames and the housing from them.
@@ -6808,6 +6893,19 @@ void main() {
     for (let i = from; i >= 0 && i < joints.length; i++) { sub.push(rig.bones[i]); tracks.push(anim.j[i]); }
     poseBck(sub, { d: anim.d + 1, j: tracks }, fr);
     return fr;
+  }
+
+  // The live sim's upper-body motion (ReplayHistory.upperAt: M3UModelMario's second motion slot,
+  // the pump, a held object's, the run's damage flinch setUpperDamageRun) on jnt_chest and down,
+  // at the sim's own frame of that BCK.
+  function poseSimUpper(rig, u) {
+    if (!u || !rig || !MARIO_BCK_JSON) return;
+    const anim = MARIO_BCK_JSON.anims[MARIO_BCK_FILES[u.bck]];
+    if (!anim) return;
+    const joints = MARIO_BCK_JSON.joints, from = joints.indexOf(UPPER_FROM);
+    const sub = [], tracks = [];
+    for (let i = from; i >= 0 && i < joints.length; i++) { sub.push(rig.bones[i]); tracks.push(anim.j[i]); }
+    poseBck(sub, { d: anim.d + 1, j: tracks }, u.frame);
   }
 
   // Poses FLUDD (tank tilt, which nozzle is out, its animation) for the ghost at `time`.
@@ -7868,6 +7966,7 @@ void main() {
   function setPlaying(on) {
     playing = on && duration > 0;
     if (playing && t >= duration) t = 0;
+    if (playRestart) return;
     $('play').textContent = playing ? 'Pause' : 'Play';
     $('play').setAttribute('aria-label', playing ? 'Pause' : 'Play');
   }
@@ -7978,6 +8077,39 @@ void main() {
     return { cam: null, wipe: 1 - (time - end - INTRO_WIPE) / INTRO_WIPE };
   }
 
+  // A ghost's segment gaps: from one segment's end to the next one's start (the load between stages)
+  function replayGapAt(g, time) {
+    const d = g && g.data, S = d && d.segments;
+    if (!S || S.length < 2) return false;
+    const base = d.header.startQf;
+    for (let i = 0; i + 1 < S.length; i++) {
+      const end = (S[i].endQf ?? S[i].startQf) - base, next = S[i + 1].startQf - base;
+      if (time > end && time < next) return true;
+    }
+    return false;
+  }
+  // The next stage read ahead (its scene archive and the viewer's object list): a replay's next
+  // segment's within 8 s of the end of this one, a live run's pending stage during its load
+  function preloadNextStage(g, time) {
+    if (!gameLayer || !gameLayer.prefetchScene) return;
+    const want = [];
+    if (livePad.active && livePad.runner && livePad.runner.pending) want.push(livePad.runner.pending);
+    const d = g && g.data, S = d && d.segments;
+    if (!livePad.active && S && S.length > 1) {
+      const base = d.header.startQf;
+      for (let i = 0; i + 1 < S.length; i++) {
+        const end = (S[i].endQf ?? S[i].startQf) - base;
+        if (time > end - 8 * 120 && time < S[i + 1].startQf - base) want.push({ area: S[i + 1].route.area, episode: S[i + 1].route.episode });
+      }
+    }
+    for (const p of want) {
+      const scene = p.scene || (gameLayer.sceneFor ? gameLayer.sceneFor(p.area, p.episode) : null);
+      if (scene) gameLayer.prefetchScene(scene);
+      const r = worldRoutes ? [...worldRoutes.values()].flat().find((x) => x.key === `${p.area}:${p.episode}`) : null;
+      const entry = r && maps.find((m) => m.id === r.map), info = entry && entry.objects, file = info && info.scenes[r.key];
+      if (file && !objListCache.has(file)) objListCache.set(file, fetchJson(file));
+    }
+  }
   let debugView = null;
   // One view: camera (the Shine demo's, the follow camera's, or the user's), then the frame.
   function viewStep(dt, now, interactive) {
@@ -7991,8 +8123,12 @@ void main() {
     { let lw = livePad.active && livePad.runner && livePad.runner.wipe ? livePad.runner.wipe() : 0;   // (live play: the director's fades and the console's wipes)
       // (the HUD draws the console's wipes itself, the bars closing and the halves opening: only the fades are left here)
       const LR = livePad.active && livePad.runner, LS = LR && LR.stage, LD = LS && LS.director;
+      if (lw && LD && !LR.pending && gameHud && gameHud.drawsWipe && LD.state === 7) lw = 0;   // (the HUD draws the miss's wipe)
       if (lw && LD && !LR.pending && gameHud && gameHud.drawsWipe && gameLive && !splitOn() && ((LD.state === 1 && LD.closeTick >= 0 && LS.qf >= LD.closeTick) || LD.state === 3)) lw = 0;
-      const w = iv && !(gameHud && gameHud.drawsWipe) ? Math.max(0, Math.min(1, iv.wipe)) : lw; if (introWipe.style.opacity !== String(w)) introWipe.style.opacity = String(w); }
+      let w = iv && !(gameHud && gameHud.drawsWipe) ? Math.max(0, Math.min(1, iv.wipe)) : lw;
+      // (a replay between two segments: the real run's load, black; the next stage read ahead meanwhile)
+      try { if (!livePad.active && replayGapAt(sgLead, t)) w = 1; preloadNextStage(sgLead, t); } catch (e) { }
+      if (introWipe.style.opacity !== String(w)) introWipe.style.opacity = String(w); }
     const sgCam = iv && iv.cam ? iv.cam : !rv && cameraMode === 'follow' && !(userCamUntil > now || camDragging) ? (sgDm ? shineDemoCam(sgDm, t) : flightCam(t)) : null;
     if (sgCam) {
       camera.position.set(sgCam.pos[0], sgCam.pos[1], sgCam.pos[2]);
@@ -8041,7 +8177,7 @@ void main() {
     const lv = livePad.active && livePad.runner ? livePad.runner.view(livePad.clock * 29.97) : null;
     if (!lv) livePad.ease = null;
     { const u = lv && lv.up ? lv.up : [0, 1, 0]; if (camera.up.x !== u[0] || camera.up.y !== u[1] || camera.up.z !== u[2]) camera.up.set(u[0], u[1], u[2]).normalize(); }   // (a demo camera's roll)
-    if (lv) {
+    if (lv && !debugView) {   // (setView holds the view in live play too)
       // (display only: the camera eases from the idle view to the sim's over 0.5 s as live play starts)
       const e = livePad.ease || (livePad.ease = { t: 0, pos: camera.position.clone(), at: controls.target.clone(), fov: camera.fov });
       e.t += dt;
@@ -8503,7 +8639,8 @@ void main() {
   }
 
   // ---------------------------------------------------------------- UI wiring
-  $('play').onclick = () => setPlaying(!playing);
+  // (live play: the Play button restarts the live stage, as starting a recording does, without recording)
+  $('play').onclick = () => { if (livePad.active) { livePad.reset++; livePad.frames = 0; livePad.clock = 0; livePad.last = null; return; } setPlaying(!playing); };
   // A plain click on the stage (not a drag to orbit) plays or pauses, like a video player.
   (() => {
     let down = null;
@@ -8929,6 +9066,8 @@ void main() {
       // (over the scene, under the page's own overlays: the info box, the inputs, the controls)
       const rc = renderer && renderer.domElement;
       if (rc && rc.parentNode === stageEl) rc.after(gameHud.canvas); else stageEl.append(gameHud.canvas);
+      // (the full-screen 2D screens: the menus, the movies and the miss's wipes, over the page's fade)
+      if (gameHud.overlay) stageEl.append(gameHud.overlay);
     }
   } catch (e) { console.warn('[hud]', e); }
   if (gameHud) {
@@ -8941,6 +9080,7 @@ void main() {
     const f = { t, on: gameLive && !splitOn(), ghost: main ? main.data : null, api: { ghostSampleAt, ghostAnimAt, ghostFluddAt },
       sim: gameLayer ? gameLayer.sim : null, demoAt: (q) => !!(main && shineDemoAt(main, q)) };
     if (!main) { const L = liveHud(); if (L) { f.t = L.t; f.ghost = L.ghost; f.api = L.api; f.live = L.live; f.demoAt = () => L.demo; } }
+    try { globalThis.gameAudioMuted = !!(gameAudio && !gameAudio.music); } catch { }
     try { gameHud.frame(f); } catch (e) { console.warn('[hud]', e); }
   }
   // Live play's HUD: the HUD reads a ghost, so it is handed one segment standing for the live stage

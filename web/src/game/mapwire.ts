@@ -102,6 +102,8 @@ export class MapWire {
     numActive = 0; points: MapWirePoint[] = [];
     hangPos = 0; hangOrBounce = new V3(); moveTimer = 0; bouncePower = 0; bounceAmplitude = 0; bounceDecay = 0;
     drawAxes = [0, 0]; hangRef1 = 0; hangRef2 = 0;
+    /** the end fittings' base matrices (mStartFittingModel / mEndFittingModel: /common/map/WireFitting.bmd, drawn by the viewer) */
+    fittings: Mtx[] = [];
     state = IDLE;
 
     init(w: World, ci: CubeInfo) {
@@ -126,8 +128,11 @@ export class MapWire {
         this.drawAxes = [fr(-dz / l), fr(dx / l)];   // normalized, rotated by 90°
         // the fittings' collision at both ends (SMS_CreatePartsModel's joint 0 at its base matrix)
         const col = (w.files as any).common ? (w.files as any).common('map/wirefitting.col') as Uint8Array | null : null;
-        if (col) for (const [p, ry] of [[this.start, ci.r.y], [this.end, fr(ci.r.y + 180)]] as [V3, number][]) {
+        this.fittings = [];
+        for (const [p, ry] of [[this.start, ci.r.y], [this.end, fr(ci.r.y + 180)]] as [V3, number][]) {
             const m = mtx(); MsMtxSetXYZRPH(m, p.x, p.y, p.z, ci.r.x, ry, ci.r.z);
+            this.fittings.push(m);
+            if (!col) continue;
             const cm = [m[0], m[4], m[8], 0, m[1], m[5], m[9], 0, m[2], m[6], m[10], 0, m[3], m[7], m[11], 1];
             for (const t of MapCollision.readCol(col.slice().buffer, cm)) w.col.add(t, 'static');
         }

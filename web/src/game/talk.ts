@@ -104,21 +104,31 @@ export class MessageLoader {
 
 // ---------------------------------------------------------------- TTalk2D2's panes (what their timing reads)
 class Pane { visible = false; alpha = 255; show() { this.visible = true; } hide() { this.visible = false; } }
-/** TBoundPane: a move along a quadratic curve, step 1 / frames a call (only its end counts here) */
+/**
+ * TBoundPane: a move along a quadratic curve, step 1 / frames a call (its end is what the talk's
+ * timing reads; the offset it puts the pane at, pos, is for the window's drawing: hud/talkview.ts)
+ */
 class BoundPane {
     unk24 = false; unk28 = 0; unk2C = 0;
-    setPanePosition(frames: number) { this.unk28 = 0; this.unk2C = fr(1 / frames); this.unk24 = true; }
+    /** the curve's points (start, control, end) and the offset at the last update */
+    pts: number[][] = [[0, 0], [0, 0], [0, 0]]; pos = [0, 0];
+    setPanePosition(frames: number, pts?: number[][]) { this.unk28 = 0; this.unk2C = fr(1 / frames); this.unk24 = true; if (pts) this.pts = pts; }
     update() {
         if (this.unk24) {
             if (this.unk28 > 1) { this.unk28 = 1; this.unk24 = false; }
+            const t = this.unk28, u = fr(1 - t), P = this.pts, rnd = (v: number) => Math.trunc(v + (v > 0 ? 0.5 : -0.5));
+            this.pos = [0, 1].map((k) => rnd(fr(P[2][k] * fr(t * t) + fr(P[0][k] * fr(u * u) + P[1][k] * fr(2 * u * t)))));
             this.unk28 = fr(this.unk28 + this.unk2C);
         }
         return !this.unk24;
     }
 }
 
-/** a character's text box (unk9C[line * 30 + i]): only its visibility, alpha and whether it holds text */
-class CharBox extends Pane { code = 0; }
+/**
+ * a character's text box (unk9C[line * 30 + i]): its visibility, alpha and whether it holds text;
+ * for the drawing (hud/talkview.ts) also its Shift-JIS bytes and colour (mCharColor, unk27C)
+ */
+class CharBox extends Pane { code = 0; bytes: number[] = []; color = 0xFFFFFFFF; }
 
 // ---------------------------------------------------------------- TTalk2D2
 export class Talk2D {
@@ -152,6 +162,10 @@ export class Talk2D {
     unk338 = fr(0.04); unk33C = 1; unk340 = 0x64;
     /** a log of the talk for the viewer and the checks: [tick, what] */
     log: [number, string][] = [];
+    /** (the drawing's) unk330 / unk332 / unk334: where openTalkWindow puts the window (me_0) and its rotation, by the talk camera's mode */
+    winPos = [393, 115, -18];
+    /** (the drawing's) the board's text (unk18's string: setupBoardTextBox's output, Shift-JIS) */
+    boardText: number[] = [];
 
     constructor(public world: World, stageBmg: Uint8Array | null, sysBmg: Uint8Array | null, public dir: TalkDirector) {
         for (let i = 0; i < 90; i++) { const c = new CharBox(); c.hide(); this.unk9C.push(c); }
@@ -234,20 +248,20 @@ export class Talk2D {
     }
     /** openTalkWindow */
     openTalkWindow(npc: NameRef | null) {
-        if (npc) {
-            const C = this.camera();
-            if (C && typeof C.makeMtxForTalk === 'function') C.makeMtxForTalk(talkCameraMode(npc));
-        }
-        if (this.unk28 !== 0) { this.unk14.setPanePosition(60); this.unk14.update(); this.unk1C.alpha = 0; this.unk248 = 4; }
+        const C = this.camera();
+        if (npc && C && typeof C.makeMtxForTalk === 'function') C.makeMtxForTalk(talkCameraMode(npc));
+        if (this.unk28 !== 0) { this.unk14.setPanePosition(60, [[0, -800], [0, 80], [0, 80]]); this.unk14.update(); this.unk1C.alpha = 0; this.unk248 = 4; }
         else this.unk248 = 2;
         this.unk90.alpha = 0xFF;
+        // (gpCamera->mMode after makeMtxForTalk: TALK_B a small NPC's)
+        this.winPos = C && C.mMode === CM_TALK_B ? [160, 135, 20] : [388, 115, -18];
         this.unk250 = 1;
         this.log.push([this.world.tickCount, 'open']);
     }
     private openBoardWindow() {
         let r = false;
         switch (this.unk29) {
-            case 0: if (this.unk14.update()) { this.unk14.setPanePosition(0x19); this.unk29++; } break;
+            case 0: if (this.unk14.update()) { this.unk14.setPanePosition(0x19, [[0, 0x50], [0, 0x50], [0, 0]]); this.unk29++; } break;
             case 1: if (this.unk14.update()) { this.unk1C.alpha = 0; r = true; this.unk1C.show(); this.unk29++; } break;
         }
         return r;
@@ -304,7 +318,7 @@ export class Talk2D {
         if (!P) return;
         if (this.unk26A !== 0) {
             if (this.unk26D !== 0 || P.checkFrameMeaning(MEANING_SELECT_A) || P.checkFrameMeaning(MEANING_SELECT_B)) {
-                this.unk14.setPanePosition(60);
+                this.unk14.setPanePosition(60, [[0, 0], [0, 0], [0, -600]]);
                 this.closeTalkWindow();
             }
         } else if (P.checkFrameMeaning(MEANING_SELECT_A | MEANING_SELECT_B)) this.unk248 = 7;
@@ -454,7 +468,8 @@ export class Talk2D {
                 const k = ctx.charIdx + ctx.lineIdx * 30;
                 const c = this.unk9C[k];
                 c.code = code;
-                if (code >= 0x80) rd();
+                c.bytes = code >= 0x80 ? [code, rd()] : [code];
+                c.color = this.unk27C >>> 0;
                 this.unk281[this.unk2DE] = this.unk280;
                 this.unk2DE = k;
                 ctx.charIdx++;
@@ -470,9 +485,16 @@ export class Talk2D {
         pos += 4;
         const skip = () => { pos += size - 5; };
         const F = this.world.flags;
-        const put = (n: number) => {
+        // (the characters a tag prints, snprintf's: their count is what the timing reads)
+        const put = (str: string, color = false, n = str.length) => {
             const k = ctx.charIdx + ctx.lineIdx * 30;
-            for (let i = 0; i < n; i++) this.unk9C[k + i].code = 0x30;
+            str = str.padEnd(n).slice(0, n);
+            for (let i = 0; i < n; i++) {
+                const c = this.unk9C[k + i];
+                if (!c) continue;
+                c.code = str.charCodeAt(i); c.bytes = [c.code];
+                if (color) c.color = this.unk27C >>> 0;
+            }
             ctx.charIdx += n;
         };
         switch (group) {
@@ -495,23 +517,33 @@ export class Talk2D {
             case 2:
                 if (tag === 0 || tag === 1 || tag === 6) {
                     const k = ctx.charIdx + ctx.lineIdx * 30;
-                    put(8);
+                    // MSF_RACE_RECORD_PIANTA / _GELATO / _NOKI, in hundredths: mm:ss:cc
+                    let time = F.getFlag(tag === 0 ? 0x20003 : tag === 1 ? 0x20002 : 0x20014);
+                    time = Math.max(0, Math.min(599999, time));
+                    const min = Math.trunc((time - (time % 100)) / 6000) & 0xFFFF, rest = time - min * 6000;
+                    const sec = Math.trunc(0.01 * rest) & 0xFFFF, hund = (rest - sec * 100) & 0xFFFF;
+                    put(`${Math.trunc(min / 10) % 10}${min % 10}:${Math.trunc(sec / 10) % 10}${sec % 10}:${Math.trunc(hund / 10) % 10}${hund % 10}`, true, 8);
                     for (let i = 0; i < 8; i++) this.unk281[k + i] = this.unk280;
                 } else if (tag === 2) {
                     // MSF_BOX_GAME_RECORD: (record + 99) / 100 boxes, one or two digits
                     const count = Math.trunc(fr(fr(0.01) * (F.getFlag(0x60005) + 99)));
-                    put(count < 10 ? 1 : 2);
+                    put(count < 10 ? `${count}` : `${Math.trunc(count / 10) % 10}${count % 10}`, false, count < 10 ? 1 : 2);
                 } else if (tag === 3) {
                     // the blue coins not yet traded (MSF_BLUE_COIN_COUNT less 10 a traded Shine): one or two digits
                     let v = F.getFlag(0x40001), got = 0;
                     for (let i = 0x46; i < 0x56; i++) if (F.getFlag(0x10000 + i)) got++;
                     for (let i = 0x6C; i <= 0x73; i++) if (F.getFlag(0x10000 + i)) got++;
                     v -= got * 10;
-                    put(v < 100 ? 1 : 2);
+                    put(v < 100 ? `${Math.trunc(v / 10)}` : `${Math.trunc(v / 100)}${Math.trunc((v - Math.trunc(v / 100) * 100) / 10)}`, false, v < 100 ? 1 : 2);
                 } else if (tag === 4) {
                     const which = at(pos); pos++;
                     const name = ['フルーツかごＡ', 'フルーツかごＢ', 'フルーツかごＣ', 'フルーツかごＤ'][which];
-                    if (name && this.world.search(name)) put(2);
+                    const basket: any = name ? this.world.search(name) : null;
+                    if (basket) {
+                        let max = 3 - (typeof basket.getFruitNum === 'function' ? basket.getFruitNum([0, 4, 3, 1][which]) | 0 : 0);
+                        if (max < 0 || max > 9) max = 0;
+                        put(`${max} `, false, 2);
+                    }
                 }
                 break;
             case 0xFF:
@@ -529,13 +561,15 @@ export class Talk2D {
         const rd = () => (base + pos < d.length ? d[base + pos++] : (pos++, 0));
         this.unk254 = entry;
         let line = 0;
+        const out: number[] = [];
         while (line < 6) {
             const c = rd();
-            if (c === 0x0A) line++;
+            if (c === 0x0A) { out.push(c); line++; }
             else if (c === 0) { this.unk26A = 1; line = 6; }
-            else if (c !== 0x1A && c >= 0x80) rd();
+            else if (c !== 0x1A) { out.push(c); if (c >= 0x80) out.push(rd()); }
         }
         if (this.unk26A === 0 && (base + pos >= d.length || d[base + pos] === 0)) { this.unk26A = 1; pos++; }
+        this.boardText = out;
         this.unk278 += pos;
     }
 }

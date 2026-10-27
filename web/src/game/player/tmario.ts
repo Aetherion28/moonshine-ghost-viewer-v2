@@ -142,7 +142,7 @@ export abstract class TMarioSim extends MarioSpecial {
     /** calcBaseMtxPole (inlined in calcBaseMtx @0x801247a8): on a pole or tree, the pole's radius at his height out from its axis */
     calcBaseMtxPole(m: Mtx) {
         const h = this.holder as any;
-        const r = h && h.getRadiusAtY ? fr(h.getRadiusAtY(this.pos.y)) : 0;
+        const r = h ? fr(h.getRadiusAtY(this.pos.y)) : 0;
         const a = this.mModelFaceAngle & 0xFFFF;
         j3dTRMtx(m, 0, this.mModelFaceAngle, 0, fr(this.pos.x - r * JMASSin(a)), this.pos.y, fr(this.pos.z - r * JMASCos(a)));
     }
@@ -208,10 +208,36 @@ export abstract class TMarioSim extends MarioSpecial {
     /** TMario::addUpper (calcAnim, before the body's): the upper body's motion set by mUpperState (PlayerMario's) */
     addUpper() {}
     /** calcAnim's body: calcBaseMtx into the model's base TR, then M3UModelMario::perform(CALC_ANIM) (frames, then the joints). */
+    /**
+     * MarioWaistCtrl (0x80127be8, chn_chest's callback while calcAnimBody runs): the chest and all
+     * above it (FLUDD rides jnt_chest: where the water comes out) bent by
+     * - the player's Y-camera (isLButtonCameraSpecifyMode) looking down (its current target's pitch
+     *   > 0) while canBendBody: RPH(-unkFC.z (0 for Mario), 0, pitch);
+     * - else in a 0x8000 status (squatting) off Yoshi, the nozzle aimed down (getGunAngle() > 0, the
+     *   stick's pitch: calcGunAngle): RPH(0, 0, gunAngle). (Aimed up, < 0, it's the nozzle joint's
+     *   own callback, NozzleCtrl.)
+     * The running lean (run1 / run2 / ride_shell not spraying: mWaistRoll / mWaistPitch) isn't
+     * simulated (it bends only while FLUDD isn't putting out water).
+     */
+    waistCtrl(): Mtx | null {
+        const K = 0.0054931640625;
+        const C: any = (this as any).simCamera;
+        if (C && C.isLButtonCamera && C.isLButtonCamera() && this.canBendBody() && C.cur && s16(C.cur.pitch) > 0) {
+            const r = mtx(); MsMtxSetRotRPH(r, 0, 0, fr(s16(C.cur.pitch) * K)); return r;
+        }
+        const G: any = (this as any).mWaterGun;
+        if ((this.mStatus & 0x8000) && !this.onYoshi() && G && G.getCurrentNozzle) {
+            const a = s16(G.getCurrentNozzle().getGunAngle());
+            if (a > 0) { const r = mtx(); MsMtxSetRotRPH(r, 0, 0, fr(a * K)); return r; }
+        }
+        return null;
+    }
     calcAnim() {
         this.addUpper();
         this.calcBaseMtx(this.mModel.baseTR);
         this.mModel.update();
+        const w = this.waistCtrl();
+        this.mModel.jointCtrl = w ? { joint: this.mJointIdChnChest, r: w } : null;
         this.mModel.calc();
         this.mModel.fc[2].update();
     }

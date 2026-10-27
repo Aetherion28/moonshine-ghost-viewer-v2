@@ -11,6 +11,7 @@ import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { MapObjBase, MOF, mapObjGlobals, newAndRegisterObj, UNIQUE_MAKERS } from './base.js';
+import { Item } from './item.js';
 import { MsMtxSetRotX, MsMtxSetRotY, MTXConcat, makeRootMtxRot, setRootMtx } from './lib.js';
 import { LeanBlock, MapObjFloatOnSea } from './bianco.js';
 import type { ResetFruit } from './fruit.js';
@@ -197,8 +198,13 @@ export class RiccoWatermill extends MapObjBase {
 }
 
 // ---------------------------------------------------------------- TSurfGesoObj
-/** The surfing Bloopers' models (their TEVREG1 by colour, running surfgeso_run1): what Mario rides is TItem's GesoSurfBoard */
-export class SurfGesoObj extends MapObjBase {
+/**
+ * The surfing Bloopers (TSurfGesoObj : TItem; their TEVREG1 by colour, running surfgeso_run1):
+ * an item, so touching Mario it's taken (TItem::touchPlayer -> taken: his receiveMessage, getGesso,
+ * then kill), and he rides gpMapObjManager's model of its colour (PlayerMario.mSurfGesso). (As a
+ * plain map object it sent him getGesso every tick, his surf start freeze never running out.)
+ */
+export class SurfGesoObj extends Item {
     unk154 = [255, 255, 255, 255];
     tevColorMaterialIndex = 0;
     constructor(w: World, name = 'サーフゲッソー') { super(w, name); }

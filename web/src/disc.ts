@@ -14,6 +14,10 @@ export interface GameFS {
     has(path: string): boolean;
     read(path: string): Promise<ArrayBuffer>;
     list(): string[];
+    /** part of a file (the streaming movies are read a frame at a time) */
+    readRange?(path: string, off: number, len: number): Promise<ArrayBuffer>;
+    /** a file's size */
+    size?(path: string): number;
 }
 
 const GC_MAGIC = 0xC2339F3D;
@@ -59,6 +63,13 @@ class DiscImage implements GameFS {
         if (!f) throw new Error(`${path} isn't on the disc`);
         return this.blob.slice(f.off, f.off + f.len).arrayBuffer();
     }
+    async readRange(path: string, off: number, len: number): Promise<ArrayBuffer> {
+        const f = this.files.get(path.toLowerCase());
+        if (!f) throw new Error(`${path} isn't on the disc`);
+        const a = f.off + Math.max(0, off), b = f.off + Math.min(f.len, off + len);
+        return this.blob.slice(a, Math.max(a, b)).arrayBuffer();
+    }
+    size(path: string) { const f = this.files.get(path.toLowerCase()); return f ? f.len : 0; }
 }
 
 class ExtractedFolder implements GameFS {
@@ -95,6 +106,12 @@ class ExtractedFolder implements GameFS {
         if (!f) throw new Error(`${path} isn't in the folder`);
         return f.arrayBuffer();
     }
+    async readRange(path: string, off: number, len: number): Promise<ArrayBuffer> {
+        const f = this.files.get(path.toLowerCase());
+        if (!f) throw new Error(`${path} isn't in the folder`);
+        return f.slice(Math.max(0, off), Math.min(f.size, off + len)).arrayBuffer();
+    }
+    size(path: string) { const f = this.files.get(path.toLowerCase()); return f ? f.size : 0; }
 }
 
 export async function openDisc(file: File): Promise<GameFS> {

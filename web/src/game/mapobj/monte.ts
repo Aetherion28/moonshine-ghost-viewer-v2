@@ -210,6 +210,7 @@ export class SwingBoard extends MapObjBase {
 
 // ---------------------------------------------------------------- TGoalFlag
 export class GoalFlag extends MapObjBase {
+    getRadiusAtY(_y: number) { return 20; }
     touchActor(a: HitActor) {
         if (a.isActorType(AT.MARIO)) {
             // TFlagManager MSF_RACE_GOAL_REACHED
@@ -225,6 +226,7 @@ const WIND = new WeakMap<World, V3>();
 export const mapObjWind = (w: World) => { let v = WIND.get(w); if (!v) { v = new V3(); WIND.set(w, v); } return v; };
 
 export class Fluff extends MapObjBase {
+    getRadiusAtY(_y: number) { return 20; }
     static mScaleUpSpeed = fr(0.05); static mScaleDownSpeed = fr(0.01);
     unk138 = 0; unk13C = 0; unk140 = 0; unk144 = 0; unk148 = 0; unk14C = 0; unk150 = 0;
     unk154 = 0; unk158 = 0; unk15C = 0; unk160 = 1; unk164 = fr(0.95);

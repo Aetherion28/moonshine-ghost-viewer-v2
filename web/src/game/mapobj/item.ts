@@ -16,6 +16,7 @@ import { MapObjBase, MapObjBaseManager, MOF, STATE_NORMAL, OBJ_MAKERS, UNIQUE_MA
 import { MapObjGeneral, GS } from './general.js';
 import { marioOnYoshi } from './lib.js';
 import { SE } from '../soundids.js';
+import { MSF } from '../flags.js';
 import '../sound.js';
 
 export interface ItemCounts { gold: number; red: number; blue: number[]; shines: number[]; }
@@ -376,20 +377,26 @@ export class Shine extends Item {
 }
 
 // ---------------------------------------------------------------- nozzles
+/** TWaterGun's nozzle kinds (watergun.ts NOZZLE: Spray 0, Rocket 1, Hover 4, Turbo 5) */
+const HOVER = 4, ROCKET = 1, TURBO = 5;
 export class ItemNozzle extends Item {
     constructor(w: World) { super(w, 'ノズル'); }
     load(s: Stream) {
         MapObjBase.prototype.load.call(this, s);
         this.onMapObjFlag(MOF.UNK10000000);
-        // (rocket / back nozzle items out in the open: dead unless the Shadow Mario event says; TODO: the save's event state)
-        if (this.individualName === 'rocket_nozzle_item' || this.individualName === 'back_nozzle_item') this.makeObjDead();
+        // (rocket / back nozzle items out in the open: dead unless MSF_SHADOW_MARIO_EVENT is 3 / 2)
+        const ev = this.world.flags.getFlag(MSF.SHADOW_MARIO_EVENT);
+        if (this.individualName === 'rocket_nozzle_item') { if (ev !== 3) this.makeObjDead(); }
+        else if (this.individualName === 'back_nozzle_item') { if (ev !== 2) this.makeObjDead(); }
     }
     touchPlayer(a: HitActor) {
         if (this.isState(GS.HOLDING)) return;
         if (marioOnYoshi(this.world)) return;
         if ((a.isActorType(AT.MARIO) || a.isActorType(AT.YOSHI_TONGUE)) && !this.checkHitFilter(HF.NO_COLLISION)) this.taken(a);
-        let kind = 4;
-        if (this.isActorType(AT.ROCKET_NOZZLE_ITEM)) kind = 1; else if (this.isActorType(AT.BACK_NOZZLE_ITEM)) kind = 5;
+        // (the box kind: TWaterGun's nozzle kinds, Hover 4 for the normal nozzle and the FLUDD item)
+        let kind = HOVER;
+        if (this.isActorType(AT.WATERGUN_ITEM)) kind = HOVER;
+        else if (this.isActorType(AT.ROCKET_NOZZLE_ITEM)) kind = ROCKET; else if (this.isActorType(AT.BACK_NOZZLE_ITEM)) kind = TURBO;
         this.world.sound(SE.SY_GET_NOZZLE, this.pos);
         const im = mapObjGlobals(this.world).itemManager as ItemManager | null;
         if (im) im.resetNozzleBoxesModel(kind);
@@ -404,8 +411,6 @@ export class ItemNozzle extends Item {
     appearing() { if (!this.checkLiveFlag(LF.UNK10)) return; this.state = STATE_NORMAL; this.offHitFilter(HF.NO_COLLISION); }
     initMapObj() { super.initMapObj(); this.unk14C = 7200; }
 }
-/** TWaterGun's nozzle kinds */
-const HOVER = 0, ROCKET = 1, TURBO = 5;
 export class NozzleBox extends MapObjGeneral {
     nozzleType = 0; item: ItemNozzle | null = null; unk150 = 0; unk154 = 0; nozzleName = ''; unk15C = true; unk166 = false;
     constructor(w: World, name = 'ノズルボックス') { super(w, name); }
@@ -427,6 +432,7 @@ export class NozzleBox extends MapObjGeneral {
         if (this.unk15C && sender.isActorType(AT.MARIO) && msg === MSG.TRAMPLE && !this.world.mario.diving) {
             sender.receiveMessage(this, MSG.ATTACK);
             if (this.item) this.throwObjToFront(this.item, 50, this.unk150, this.unk154);
+            this.world.sound(SE.IT_EGG_APPEAR);
             this.kill();
             return true;
         }
@@ -434,6 +440,9 @@ export class NozzleBox extends MapObjGeneral {
         return false;
     }
     touchPlayer(_a: HitActor) {
+        // (startAppearBalloon 0xE0057: the Hover box's help, until this area's rocket or turbo right)
+        const F = this.world.flags, m = this.world.map;
+        if (this.nozzleType === HOVER && !F.nozzleRight(m, 0) && !F.nozzleRight(m, 1) && !this.unk166) { this.world.effect('balloon:e0057', this.pos); this.unk166 = true; }
         if (!this.unk15C && !this.unk166) { this.world.effect('balloon:e0056', this.pos); this.unk166 = true; }
     }
     control() {
@@ -445,15 +454,17 @@ export class NozzleBox extends MapObjGeneral {
         this.item = newAndRegisterObj(this.world, this.nozzleName) as ItemNozzle | null;
         if (this.item) this.item.container = this;
         if (this.nozzleType === HOVER) this.makeModelValid();
-        else if (this.unk15C) this.makeModelValid(); else this.makeModelInvalid();
+        else if (this.nozzleType === ROCKET || this.nozzleType === TURBO) { if (this.unk15C) this.makeModelValid(); else this.makeModelInvalid(); }
     }
     load(s: Stream) {
         MapObjBase.prototype.load.call(this, s);
         this.nozzleName = s.str();
         this.unk15C = s.str() === 'valid';
+        // (a rocket / turbo box is valid once this area has its right)
+        const F = this.world.flags, m = this.world.map;
         if (this.nozzleName === 'normal_nozzle_item') this.nozzleType = HOVER;
-        else if (this.nozzleName === 'rocket_nozzle_item') this.nozzleType = ROCKET;
-        else if (this.nozzleName === 'back_nozzle_item') this.nozzleType = TURBO;
+        else if (this.nozzleName === 'rocket_nozzle_item') { this.nozzleType = ROCKET; if (F.nozzleRight(m, 0)) { this.unk15C = true; this.unk166 = true; } }
+        else if (this.nozzleName === 'back_nozzle_item') { this.nozzleType = TURBO; if (F.nozzleRight(m, 1)) { this.unk15C = true; this.unk166 = true; } }
         this.unk150 = fr(s.f32() * 0.02);
         this.unk154 = s.f32();
         if (this.unk154 < 0) this.unk154 = 20;

@@ -88,6 +88,12 @@ export class MarioModel {
     upperJoint = -1;
     blendRatio = 0;
     baseTR: Mtx = mtx();
+    /**
+     * a joint callback's rotation as of the last calcAnim (TMario::addCallBack: MarioWaistCtrl on
+     * chn_chest): post-multiplied on that joint's matrix for its children (J3DSys::mCurrentMtx), the
+     * joint's own anm matrix left as it was. null: none.
+     */
+    jointCtrl: { joint: number; r: Mtx } | null = null;
     private joints: mat4[] | null = null;
     private jointsKey = '';
     /** changeMtxCalcSIAnmBQAnmTransform(slot, 0, bck) */
@@ -107,14 +113,23 @@ export class MarioModel {
     /** J3DModel::calc: every joint's world matrix: the body's BCK, the chest down the upper body's while unk24[1].unk3 isn't 0xff (the motion blend isn't applied). */
     calc(): mat4[] | null {
         const up = this.upperCalc !== -1 && this.upperJoint >= 0 && this.anm[1] >= 0;
-        const key = this.anm[0] + '|' + this.fc[0].frame + '|' + (up ? this.anm[1] + '@' + this.fc[1].frame : '-') + '|' + Array.from(this.baseTR).join(',');
+        const J = this.jointCtrl;
+        const key = this.anm[0] + '|' + this.fc[0].frame + '|' + (up ? this.anm[1] + '@' + this.fc[1].frame : '-') + '|' + Array.from(this.baseTR).join(',') + (J ? '|' + J.joint + ':' + Array.from(J.r).join(',') : '');
         if (!this.joints || key !== this.jointsKey) {
             const sk = Skeleton.of(marioFile('bmd/ma_mdl1.bmd'));
             if (!sk) return null;
             const b = this.anm[0] >= 0 ? marioFile(`bck/ma_${ANIME_FILES[this.anm[0]]}.bck`) : null;
             const ub = up ? marioFile(`bck/ma_${ANIME_FILES[this.anm[1]]}.bck`) : null;
             const upper = up ? { joint: this.upperJoint, anm: { anm: ub ? parseBCK(ub) : null, frame: this.fc[1].frame } } : null;
-            this.joints = jointMatricesBlend(sk, { anm: b ? parseBCK(b) : null, frame: this.fc[0].frame }, null, 0, false, this.baseTR, [1, 1, 1], this.joints || [], this.locals, undefined, upper);
+            let own: any = null;
+            const post = J ? (j: number, m: mat4) => {
+                if (j !== J.joint) return;
+                own = Float32Array.from(m as any);
+                const a = Array.from(m), r = J.r;
+                for (let c = 0; c < 3; c++) for (let row = 0; row < 3; row++) m[c * 4 + row] = a[row] * r[c] + a[4 + row] * r[4 + c] + a[8 + row] * r[8 + c];
+            } : undefined;
+            this.joints = jointMatricesBlend(sk, { anm: b ? parseBCK(b) : null, frame: this.fc[0].frame }, null, 0, false, this.baseTR, [1, 1, 1], this.joints || [], this.locals, post, upper);
+            if (J && own) (this.joints[J.joint] as any).set(own);
             this.jointsKey = key;
         }
         return this.joints;

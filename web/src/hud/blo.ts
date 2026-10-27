@@ -23,6 +23,10 @@ export class Pane {
     // TBX1 (J2DTextBox)
     font: string | null = null; charColor = 0xFFFFFFFF; gradColor = 0xFFFFFFFF; hBind = 0; vBind = 0;
     charSpace = 0; lineSpace = 0; fontW = 0; fontH = 0; text = '';
+    /** the game gave the text box a font (setFont): a J2DTextBox whose blo font isn't in the archive draws nothing; undefined: drawn (the HUD's own screens) */
+    fontOn: boolean | undefined = undefined;
+    // WIN1 (J2DWindow): the contents rect, the corner textures (top left, top right, bottom left, bottom right), their mirror bits, the contents' corner colours (TL, TR, BL, BR), the contents texture
+    win: { contents: Rect; tex: (string | null)[]; mirror: number; colors: number[]; contentTex: string | null; black: number; white: number } | null = null;
     /** J2DPicture::changeTexture's replacements (a texture name) */
     get width() { return this.bounds.x2 - this.bounds.x1; }
     get height() { return this.bounds.y2 - this.bounds.y1; }
@@ -30,7 +34,11 @@ export class Pane {
     hide() { this.visible = false; }
     move(x: number, y: number) { const w = this.width, h = this.height; this.bounds = { x1: x, y1: y, x2: x + w, y2: y + h }; }
     add(x: number, y: number) { this.bounds = { x1: this.bounds.x1 + x, y1: this.bounds.y1 + y, x2: this.bounds.x2 + x, y2: this.bounds.y2 + y }; }
-    resize(w: number, h: number) { this.bounds = { x1: this.bounds.x1, y1: this.bounds.y1, x2: this.bounds.x1 + w, y2: this.bounds.y1 + h }; }
+    resize(w: number, h: number) {
+        // (J2DWindow::resize: its contents rect grows with it)
+        if (this.win) { const c = this.win.contents; this.win.contents = { x1: c.x1, y1: c.y1, x2: c.x2 + w - this.width, y2: c.y2 + h - this.height }; }
+        this.bounds = { x1: this.bounds.x1, y1: this.bounds.y1, x2: this.bounds.x1 + w, y2: this.bounds.y1 + h };
+    }
     setBounds(r: Rect) { this.bounds = { ...r }; }
     setBasePosition(p: number) {
         this.basePosition = p;
@@ -106,6 +114,22 @@ export function parseBlo(buf: Uint8Array): Screen {
                     if (f) { p.black = dv.getUint32(q); q += 4; f--; }
                     if (f) { p.white = dv.getUint32(q); q += 4; f--; }
                     for (let i = 0; f && i < 4; i++) { p.corner[i] = dv.getUint32(q); q += 4; f--; }
+                } else if (kind === 'WIN1') {
+                    // J2DWindow(parent, stream, is_ex)
+                    let f = buf[q++];
+                    const cx = dv.getUint16(q), cy = dv.getUint16(q + 2), cw = dv.getUint16(q + 4), ch = dv.getUint16(q + 6); q += 8;
+                    const tex: (string | null)[] = [];
+                    for (let i = 0; i < 4; i++) { let t: string | null; [t, q] = resName(q); tex.push(t); }
+                    [, q] = resName(q);   // (TLUT)
+                    const mirror = buf[q++];
+                    const colors: number[] = [];
+                    for (let i = 0; i < 4; i++) { colors.push(dv.getUint32(q)); q += 4; }
+                    f -= 14;
+                    let contentTex: string | null = null, black = 0, white = 0xFFFFFFFF;
+                    if (f > 0) { [contentTex, q] = resName(q); f--; }
+                    if (f > 0) { black = dv.getUint32(q); q += 4; f--; }
+                    if (f > 0) { white = dv.getUint32(q); q += 4; f--; }
+                    p.win = { contents: { x1: cx, y1: cy, x2: cx + cw, y2: cy + ch }, tex, mirror, colors, contentTex, black, white };
                 } else if (kind === 'TBX1') {
                     let f = buf[q++];
                     [p.font, q] = resName(q);

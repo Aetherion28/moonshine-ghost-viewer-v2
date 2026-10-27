@@ -564,8 +564,13 @@ export class SunshineRenderer implements Viewer.SceneGfx {
         const template = this.renderHelper.pushTemplateRenderInst();
         fillSceneParamsDataOnTemplate(template, viewerInput);
         this.preparePass(device, this.renderInstListSky, SMSPass.SKYBOX, viewerInput);
+        // (before the models: their prepare can leave templates of their own on the stack, which a
+        // render inst made after them would take on; the wires sort after the opaque models anyway)
+        if (this.extraMain !== null) {
+            this.renderHelper.renderInstManager.setCurrentList(this.renderInstListMain);
+            this.extraMain(device, this.renderHelper.renderInstManager, viewerInput);
+        }
         this.preparePass(device, this.renderInstListMain, SMSPass.MAIN, viewerInput);
-        if (this.extraMain !== null) this.extraMain(device, this.renderHelper.renderInstManager, viewerInput);   // (main list still current)
         this.preparePass(device, this.renderInstListInd, SMSPass.INDIRECT, viewerInput);
         this.renderHelper.renderInstManager.popTemplate();
     }

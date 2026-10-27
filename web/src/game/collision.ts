@@ -11,6 +11,10 @@
 // refills every frame (initMoveCollision, then each mover's setList).
 
 const f = Math.fround;
+import { frsqrte } from './math.js';
+const f64 = new Float64Array(1), i64 = new BigUint64Array(f64.buffer);
+/** Dolphin's Force25Bit (camera/lib.ts has the same): a single multiply's second operand */
+function force25(d: number) { f64[0] = d; const b = i64[0]; i64[0] = (b & 0xFFFFFFFFF8000000n) + (b & 0x8000000n); return f64[0]; }
 
 export const enum BG {
     WATER = 0x100, DAMAGING_WATER = 0x101, SEA_WATER = 0x102, DAMAGING_SEA_WATER = 0x103, POOL = 0x104, INDOOR_POOL = 0x105,
@@ -33,14 +37,19 @@ export class BGCheckData {
     setVertex(a: number[], b: number[], c: number[]) {
         this.p1 = a.map(f); this.p2 = b.map(f); this.p3 = c.map(f);
         const [p1, p2, p3] = [this.p1, this.p2, this.p3];
-        let nx = f(f((p2[1] - p1[1]) * (p3[2] - p2[2])) - f((p2[2] - p1[2]) * (p3[1] - p2[1])));
-        let ny = f(f((p2[2] - p1[2]) * (p3[0] - p2[0])) - f((p2[0] - p1[0]) * (p3[2] - p2[2])));
-        let nz = f(f((p2[0] - p1[0]) * (p3[1] - p2[1])) - f((p2[1] - p1[1]) * (p3[0] - p2[0])));
+        // (the DOL: each component a fmuls then a fused fmsubs)
+        let nx = f(f(p2[1] - p1[1]) * f(p3[2] - p2[2]) - f(f(p2[2] - p1[2]) * f(p3[1] - p2[1])));
+        let ny = f(f(p2[2] - p1[2]) * f(p3[0] - p2[0]) - f(f(p2[0] - p1[0]) * f(p3[2] - p2[2])));
+        let nz = f(f(p2[0] - p1[0]) * f(p3[1] - p2[1]) - f(f(p2[1] - p1[1]) * f(p3[0] - p2[0])));
         if (nx !== 0 || ny !== 0 || nz !== 0) {
-            const l = f(Math.sqrt(nx * nx + ny * ny + nz * nz));   // MsVECNormalize
-            nx = f(nx / l); ny = f(ny / l); nz = f(nz / l);
+            // MsVECNormalize: the raw frsqrte estimate, no Newton step (so a flat floor's n.y is
+            // rarely exactly 1: TMapObjGeneral::calcVelocity's n.y == 1 test relies on it)
+            const s = f(f(nz * nz + f(nx * nx)) + f(ny * ny));
+            const e = force25(frsqrte(s));
+            nx = f(nx * e); ny = f(ny * e); nz = f(nz * e);
             this.n = [nx, ny, nz];
-            this.d = f(-(nx * p1[0] + ny * p1[1] + nz * p1[2]));
+            // (fmuls, fmadds, fnmadds)
+            this.d = f(-(nz * p1[2] + f(nx * p1[0] + f(ny * p1[1]))));
             this.minY = Math.min(p1[1], p2[1], p3[1]);
             this.maxY = Math.max(p1[1], p2[1], p3[1]);
         }

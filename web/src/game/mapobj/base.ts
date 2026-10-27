@@ -65,6 +65,8 @@ const toLowerPath = (p: string) => p.replace(/^\/?scene\//i, '').replace(/^\//, 
 // ---------------------------------------------------------------- TMapObjBase
 export class MapObjBase extends LiveActor {
     individualName = '';
+    /** TMapObjBase::getRadiusAtY: mBodyRadius */
+    getRadiusAtY(_y: number) { return this.bodyRadius; }
     mapObjFlags = 0;
     state = STATE_NORMAL;
     activeAnimIndex = 0xFFFF;

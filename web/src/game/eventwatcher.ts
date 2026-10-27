@@ -400,8 +400,8 @@ const EV: Record<string, Ev> = {
     changeNozzle: (it, n) => {
         args(it, 1, n);
         const id = it.pop().getDataInt(), m = marioAny(it);
-        // TWaterGun::DivingHelmet (5): setDivHelm
-        if (id === 5) call(m, 'setDivHelm'); else if (m.mWaterGun) call(m.mWaterGun, 'changeNozzle', id, true);
+        // TWaterGun::DivingHelmet (7, cmpwi r4, 7 @0x800e0700): setDivHelm (mare2.sb's changeNozzle(7) before the bottle demo)
+        if (id === 7) call(m, 'setDivHelm'); else if (m.mWaterGun) call(m.mWaterGun, 'changeNozzle', id, true);
         it.pushVoid();
     },
     startMarioTalking: noop(0, (it) => call(marioAny(it), 'startTalking')),
@@ -490,8 +490,8 @@ const EV: Record<string, Ev> = {
         if (!o) return;
         call(o.mactor, 'setBck', 'exbottle_bottle_in');
         const m = marioAny(it); m.pos.set(o.pos);
-        // MARIO_STATUS_BOTTLE_IN
-        call(m, 'changePlayerStatus', 0x1336, 0, true);
+        // MARIO_STATUS_BOTTLE_IN (li r4, 0x1310 @0x800dfae0; 0x1336 is MARIO_STATUS_TALKING)
+        call(m, 'changePlayerStatus', 0x1310, 0, true);
     }),
     isFinishMareBottleDemo: (it, n) => { args(it, 0, n); const o = any(search(it, 'ＥＸビン')); it.pushBool(!!(o && o.mactor && o.mactor.curAnmEndsNext(0, null))); },
     isInsideFastCube: (it, n) => {

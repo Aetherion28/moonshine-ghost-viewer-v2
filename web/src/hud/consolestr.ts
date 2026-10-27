@@ -9,6 +9,7 @@ import { BoundPane, ExPane, P } from './panes.js';
 export const S = { UNK0: 0, UNK1: 1, UNK2: 2, UNK3: 3, UNK4: 4, UNK5: 5, UNK6: 6, UNK7: 7, UNK8: 8 };
 
 export class ConsoleStr {
+    miss: BoundPane[] = [];
     go: BoundPane[]; masks: ExPane[]; wipes: ExPane[];
     titles: [import('./blo.js').Pane, import('./blo.js').Pane];
     unk18 = 0; unk1C = 0; unk2B8 = 0; unk2BC = S.UNK7; unk2A8 = false;
@@ -16,6 +17,7 @@ export class ConsoleStr {
     trail: { x: number; y: number }[][] = [[], [], []];
     constructor(public big: Screen, public demo: Screen) {
         this.go = [0, 1, 2].map((i) => { const b = new BoundPane(big, `go0${i}`); b.pane.hide(); return b; });
+        try { this.miss = [0, 1, 2, 3, 4].map((i) => new BoundPane(big, `ms0${i}`)); } catch { this.miss = []; }
         this.titles = [demo.find('map'), demo.find('stry')];
         this.masks = [new ExPane(demo, 'msk1'), new ExPane(demo, 'msk2')];
         this.wipes = [new ExPane(demo, 'wp_l'), new ExPane(demo, 'wp_r')];
@@ -27,6 +29,29 @@ export class ConsoleStr {
         if (this.unk2B8 === 1) return;
         this.unk2B8 = 1; this.unk18 = 0;
         for (const g of this.go) { g.pane.hide(); g.pane.alpha = 255; }
+    }
+    /** startAppearMiss: "MISS!" (the director's STATE_UNK7) */
+    startAppearMiss() {
+        if (this.unk2B8 === 3 || !this.miss.length) return;
+        if (this.unk2B8 === 1) for (const g of this.go) g.pane.hide();
+        this.unk2B8 = 3; this.unk18 = 0;
+        for (const m of this.miss) { m.pane.hide(); m.pane.alpha = 0; }
+        this.miss[0].setPanePosition(0x28, P(0, -270), P(0, -270), P(0, 30));
+        this.miss[0].pane.show();
+    }
+    private processMiss(p: number) {
+        let result = true;
+        for (let i = 0; i < 5; i++) {
+            const m = this.miss[i];
+            if (p === i * 10) { m.pane.show(); m.setPanePosition(0x3C, P(0, -270), P(0, -270), P(0, 30)); }
+            if (p === i * 10 + 60) { m.pane.rotation = 0; m.setPanePosition(0x28, P(0, 30), P(0, -80), P(0, -80)); }
+            if (p === i * 10 + 100) m.setPanePosition(0x28, P(0, -80), P(0, -80), P(0, 0));
+            if (p === i * 10 + 300) m.setPanePosition(0x1E, P(0, 0), P(0, 0), P(0, 150));
+            if (p < i * 10 + 60) m.pane.alpha = Math.min(255, m.pane.alpha + 12);
+            if (m.update()) { if (p > i * 10 + 360) m.pane.hide(); else result = false; }
+            else { if (p < i * 10 + 60) m.pane.rotation = (((i * 10 - p) * 6) % 360 + 360) % 360; result = false; }
+        }
+        return result;
     }
     startAppearScenario() {
         if (this.unk2B8 !== 0) return;
@@ -116,6 +141,7 @@ export class ConsoleStr {
         let done = false;
         if (this.unk2B8 === 1) done = this.processGo(this.unk18);
         else if (this.unk2B8 === 4) done = this.processScenario();
+        else if (this.unk2B8 === 3) done = this.processMiss(Math.trunc(this.unk18 * 2));
         if (this.unk2BC === S.UNK2) {
             let d = true;
             for (let i = 0; i < 2; i++) { d = this.masks[i].update() && d; this.titles[i].alpha = 255 - this.masks[i].pane.alpha; }

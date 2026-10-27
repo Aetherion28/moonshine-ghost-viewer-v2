@@ -77,6 +77,24 @@ export function selectMenuEpisode(f: FlagManager, area: number) {
     if (n === 0) n = 1;
     return Math.max(0, n - 1);
 }
+/**
+ * TSelectMenu::initData's reading of the save for the episode select (live play's select screen,
+ * hud/menus.ts SelectMenu): each episode's state (3 got, 2 open, 0 not yet), how many are open, the
+ * coin record (MSF_COIN_RECORD_BASE + the Shine stage), the 100-coin Shine and the extra Shines got.
+ */
+export function selectMenuInput(f: FlagManager, area: number) {
+    const ETC: Record<number, number[]> = { 2: [0x64, 0x8, 0x9], 3: [0x65, 0x12, 0x13], 4: [0x66, 0x1C, 0x1D], 5: [0x67, 0x26, 0x27], 6: [0x68, 0x30, 0x31], 8: [0x6A, 0x44, 0x45], 9: [0x69, 0x3A, 0x3B] };
+    const states = [2, 2, 2, 2, 2, 2, 2, 2];
+    let open = 0;
+    for (let i = 0; i < 8; i++) if (isGetShine(f, shineStage(area), i)) { states[i] = 3; open = i + 2; }
+    if (open > 8) open = 8;
+    if (open === 0) open = 1;
+    for (let i = open; i < 8; i++) states[i] = 0;
+    const etc = ETC[area] || [0, 0, 0];
+    let extra = 0;
+    for (let i = 1; i < 3; i++) if (f.getShineFlag(etc[i])) extra++;
+    return { stage: area, states, open, coins: f.getFlag(0x20005 + shineStage(area)), coinShine: f.getShineFlag(etc[0]), extra };
+}
 /** checkDefeatShadowMarioAll */
 function defeatShadowMarioAll(f: FlagManager) {
     for (const s of [0x6, 0x10, 0x1A, 0x24, 0x2E, 0x38, 0x42]) if (!f.getShineFlag(s)) return false;
@@ -224,7 +242,12 @@ export const SCENARIO_TICKS = 278;
 /** the fader's startWipe(.., 0.4 s) */
 export const FADE_TICKS = 48;
 /** STATE_UNK7: the miss's wipe (startWipe(10, 0, 2.2): 2.2 s before it), then its fade (taken as 0.5 s) */
-export const MISS_WAIT_TICKS = 264, MISS_FADE_TICKS = 60;
+export const MISS_WAIT_TICKS = 264, MISS_FADE_TICKS = 176;
+/**
+ * The last life's: startWipe(0xD, 0, 2.0): Hx_GameOver after 2 s, 244 drawn frames (hud/wipe.ts).
+ * (Both waits leave out the jingle the director also waits on: MSBgm::getHandle(2).)
+ */
+export const GAME_OVER_WAIT_TICKS = 240, GAME_OVER_FADE_TICKS = 244 * 4;
 /** DEMO_STAGES (player.ts): their intro shows the stage and episode names (TRANSITION_FLAG_SCENARIO_NAME_BANNER_PENDING) */
 const NAMED = new Set([2, 3, 4, 5, 6, 8, 9, 0x34]);
 
@@ -247,6 +270,10 @@ export interface LiveTiming extends IntroTiming {
 export class LiveDirector extends PlayerDirector {
     /** the tick the state last changed, the demo started, the close wipe started; the tick of setMario */
     enteredTick = 0; demoTick = -1; closeTick = -1; setMarioTick = -1;
+    /** the miss was the last life (STATE_UNK7's game over wipe, 0xD; else 10): hud/wipe.ts draws it */
+    lastLife = false;
+    /** the miss's wipe: its type and the tick it starts (the HUD's) */
+    get missWipe() { return this.state === DIR.GAME_OVER ? { type: this.lastLife ? 13 : 10, tick: this.enteredTick + (this.lastLife ? GAME_OVER_WAIT_TICKS : MISS_WAIT_TICKS) } : null; }
     private tick = 0;
     constructor(mario: PlayerMario, map: number, hasStartCamera: boolean, public live: LiveTiming) {
         super(mario, map, hasStartCamera, live);
@@ -270,6 +297,7 @@ export class LiveDirector extends PlayerDirector {
                 const f = this.mario.world.flags;
                 f.setFlag(MSF.GOLD_COIN_COUNT, 0);
                 f.decFlag(MSF.LIFE_COUNT, 1);
+                this.lastLife = f.getFlag(MSF.LIFE_COUNT) < 0;
             }
         }
     }
@@ -305,7 +333,7 @@ export class LiveDirector extends PlayerDirector {
     /** the stage change's fade (STATE_UNK9) or the miss (STATE_UNK7) is done: the next area can load */
     done(tick: number) {
         if (this.state === DIR.MOVE_STAGE) return tick - this.enteredTick >= FADE_TICKS;
-        if (this.state === DIR.GAME_OVER) return tick - this.enteredTick >= MISS_WAIT_TICKS + MISS_FADE_TICKS;
+        if (this.state === DIR.GAME_OVER) return tick - this.enteredTick >= (this.lastLife ? GAME_OVER_WAIT_TICKS + GAME_OVER_FADE_TICKS : MISS_WAIT_TICKS + MISS_FADE_TICKS);
         return false;
     }
     /** how dark the screen is (0..1): the fade in, the console's wipes, the fades out */
@@ -317,7 +345,7 @@ export class LiveDirector extends PlayerDirector {
             case DIR.DEMO: return this.closeTick >= 0 && tick >= this.closeTick ? c((tick - this.closeTick) / CLOSE_WIPE_TICKS) : c(1 - tick / FADE_TICKS);
             case DIR.WIPE_OPEN: return c(1 - t / 31);
             case DIR.MOVE_STAGE: return c(t / FADE_TICKS);
-            case DIR.GAME_OVER: return c((t - MISS_WAIT_TICKS) / MISS_FADE_TICKS);
+            case DIR.GAME_OVER: return this.lastLife ? c((t - GAME_OVER_WAIT_TICKS) / GAME_OVER_FADE_TICKS) : c((t - MISS_WAIT_TICKS) / MISS_FADE_TICKS);
             default: return this.enteredTick < FADE_TICKS && tick < FADE_TICKS ? c(1 - tick / FADE_TICKS) : 0;
         }
     }
@@ -325,3 +353,90 @@ export class LiveDirector extends PlayerDirector {
 
 /** the secret course's Shine is got (setMario keeps FLUDD on Mario, its red coin switch is there) */
 export function exShineGot(f: FlagManager, area: number) { const id = shineIDofExStage(area); return id !== 0xFF && f.getShineFlag(id); }
+
+// ---------------------------------------------------------------- a recorded live run's stage changes, replayed
+/** a course's episode Shine (scShineConvTable), or a secret course's (shineIDofExStage); -1: not known */
+export function episodeShineId(area: number, episode: number): number {
+    const ex = shineIDofExStage(area);
+    if (ex !== 0xFF) return ex;
+    const s = shineStage(area), t = s >= 2 && s <= 9 ? SHINE_CONV[s] : null;
+    return t && t[episode] !== undefined ? t[episode] : -1;
+}
+/** the animations of a miss (TMario::loserExec's downings: downLoser / elecDowning, swimDown, sinkLoser's sand and goop) */
+const MISS_ANIMS = new Set([A.SHOCK_DOWN, A.SWIM_DOWN, A.SWIM_P_DOWN, A.SINK_DOWN, A.SAND_FILL_HEAD_END, A.SANDFILL_LEG_END]);
+/** how far back from a stage's last sample the miss's animation can be (STATE_UNK7: its wipe and fade) */
+const MISS_LOOKBACK_QF = MISS_WAIT_TICKS + MISS_FADE_TICKS + 120;
+const cloneFlags = (f: FlagManager) => { const c = new FlagManager(), b = (f as any).banks; for (const k in b) (c as any).banks[k] = Int32Array.from(b[k]); return c; };
+
+/**
+ * What a recorded live run (runner.ts LiveRunner, ghostwrite.ts) carried into segment segI of the
+ * ghost (parseSmsGhost's): the save's flags and the area left, as LiveRunner.leave and the stages
+ * before wrote them. From the ghost: each stage's own setup (setupStage, decideMarioPosIdx and
+ * setMario's MSF_GOT_SHINE_IN_PREV_STAGE), how it ended (a Shine: the next stage's APPEAR_GET, or a
+ * Delfino stage followed by Delfino without a miss; a miss: its downing animation at the stage's end,
+ * a life off, the game over below 0 lives; else a stage change), and moveStage (its scenario pick when
+ * that gives the episode recorded, else the recorded one, as the episode select picks it).
+ * Approximations: what a stage's objects and scripts wrote along the way (a red coin switch, an NPC
+ * event, a 1-up) isn't in the ghost, and a Shine got in Delfino Plaza is counted as none (its ID).
+ */
+export function liveRunCarry(g: any, segI: number): { flags: FlagManager; prevArea: number } {
+    const f = new FlagManager();
+    let prev = -1;
+    const samples = (k: number) => { const s = g.segments[k], out: { qf: number; anim: number }[] = []; for (let i = s.firstSample; i < s.firstSample + s.sampleCount; i++) out.push({ qf: g.qf[i], anim: g.anim[i] }); return out; };
+    for (let k = 0; k < segI && k + 1 < g.segments.length; k++) {
+        const seg = g.segments[k], area = seg.route.area, ep = seg.route.episode, nx = g.segments[k + 1].route;
+        // the stage's start: Stage's setupStage (the first stage's a fresh save's, with the inferences), setMario's entrance
+        const exId = shineIDofExStage(area);
+        f.setupStage(area, ep, k > 0 && exId !== 0xFF && f.getShineFlag(exId), exId, k === 0);
+        decideMarioPosIdx(f, area, prev);
+        f.setBool(false, MSF.GOT_SHINE_IN_PREV_STAGE);
+        // how it ended
+        const own = samples(k), end = own.length ? own[own.length - 1].qf : 0;
+        const miss = own.some((s) => s.qf >= end - MISS_LOOKBACK_QF && MISS_ANIMS.has(s.anim));
+        const next = samples(k + 1).slice(1);   // (past the pose copied back to the stage's start)
+        const got = !miss && (gotShineFromSamples(next) ?? (area === 1 && nx.area === 1));
+        let to: Area = { stage: nx.area, scenario: 0xFF };
+        if (got) {
+            f.setBool(true, MSF.GOT_SHINE_IN_PREV_STAGE);
+            const id = area === 1 ? -1 : episodeShineId(area, ep);
+            if (id >= 0) f.setShineFlag(id);
+        } else if (miss) {
+            f.setFlag(MSF.GOLD_COIN_COUNT, 0);
+            f.decFlag(MSF.LIFE_COUNT, 1);
+            if (f.getFlag(MSF.LIFE_COUNT) >= 0) f.setBool(true, MSF.LOST_LIFE_IN_PREV_STAGE);
+            else { f.setFlag(MSF.LIFE_COUNT, 0); f.correctFlag(); f.setBool(true, MSF.UNK30001); }
+        }
+        // FLUDD's second nozzle (moveStage's MSF_SECONDARY_NOZZLE): the last one the inputs saw
+        const I = g.inputs;
+        let second = -1;
+        if (I && I.hasFludd && I.fluddMode) {
+            for (let i = 0; i < I.count; i++) {
+                if (I.qf[i] < seg.startQf - g.header.startQf || I.qf[i] > seg.endQf - g.header.startQf) continue;
+                const m = I.fluddMode[i];
+                if (m & 0x80 || !(m & 0x08)) second = -1;
+                else if ((m & 7) !== 0 || second < 0) second = (m & 7) || 4;
+            }
+        }
+        const cur: Area = { stage: area, scenario: ep };
+        if (moveStage(cloneFlags(f), cur, to, second).scenario !== nx.episode) {
+            to = { stage: nx.area, scenario: nx.episode };
+            if ([1, 0, 0x34].includes(nx.area)) f.setFlag(MSF.EPISODE, 0);
+            else if (nx.area >= 2 && nx.area <= 9 && nx.area !== 7) f.setFlag(MSF.EPISODE, nx.episode);
+        }
+        moveStage(f, cur, to, second);
+        prev = area;
+    }
+    return { flags: f, prevArea: prev };
+}
+
+/**
+ * The QF between one stage's last recorded frame and the next stage's first, by the destination, as
+ * the real Moonshine ghosts have them (their segment gaps: 96-100 into a secret course, 104 into
+ * 0x39 / 0x3C, 8 into everything else: courses, Delfino, Bianco / Ricco / Delfino bosses, Pinna,
+ * Sirena's hotel and casino). The load's black screen, in live play (LiveRunner) and its recordings.
+ */
+export function loadGapQf(dest: number): number {
+    if (isExMap(dest)) return 96;
+    if (dest === 0x39 || dest === 0x3C) return 104;
+    return 8;
+}

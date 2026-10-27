@@ -418,6 +418,8 @@ export class BossManta extends SpineEnemy {
         this.unk164.set(a);
     }
     drawn() { return !this.checkLiveFlag(LF.DEAD); }
+    /** (drawing: TBossManta::drawObject is empty; the manager draws each manta only as its ground shadow, drawMantaShadow) */
+    readonly shadowOnly = true;
 }
 
 // ================================================================ the extra collisions

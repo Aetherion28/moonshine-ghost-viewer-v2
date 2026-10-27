@@ -290,6 +290,8 @@ export class HitActor extends Actor {
 export class TakeActor extends HitActor {
     holder: TakeActor | null = null; held: TakeActor | null = null;
     getTakingMtx(): Mtx | null { return null; }
+    /** TTakeActor::getRadiusAtY: a pole's / tree's radius at height y (Mario climbing it is drawn that far off its axis): mDamageRadius */
+    getRadiusAtY(_y: number) { return this.damageRadius; }
     ensureTakeSituation() {
         if (this.held && this.held.holder !== this) this.held = null;
         if (this.holder && this.holder.held !== this) this.holder = null;

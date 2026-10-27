@@ -6,7 +6,8 @@
 // wet spot lasts). Emission is TNozzle*::emit from what a ghost records of FLUDD each tick: the
 // nozzle, its power, the emit point and direction.
 
-import { V3, fr, rand, MsRandF, JMASSin, JMASCos } from './math.js';
+import { V3, fr, rand, MsRandF, JMASSin, JMASCos, frsqrte } from './math.js';
+import { sqrtf } from './player/fmath.js';
 import { HitActor, Params, PSchema, World, HC, MSG, ObjHitCheck, Files } from './engine.js';
 import { AT } from './actortypes.js';
 import { BGCheckData, IGNORE_WATER_THROUGH, WallCheck } from './collision.js';
@@ -76,7 +77,8 @@ export class Water {
         this.staticHitActor.unk68 = -1;
     }
     getParticleAttack(a: WaterHitActor) { return a.unk68 >= 0 ? this.attack[a.unk68] : 0; }
-    private gravity(i: number) { return this.diving ? K[12] : this.types[this.type[i]].mGravity; }
+    /** getWPGravity: SMS_isDivingMap (maps 0x39, 0x2C, 0x10) unk5D88[12], else the particle type's */
+    private gravity(i: number) { const m = this.w.map; return this.diving || m === 0x39 || m === 0x2C || m === 0x10 ? K[12] : this.types[this.type[i]].mGravity; }
     private friction(p: BGCheckData) { return p.isWaterSlip() ? PLANE.frSlip : PLANE.fr; }
     private fall(p: BGCheckData) { return p.isWaterSlip() ? PLANE.fallSlip : PLANE.fall; }
     private vanish(p: BGCheckData) { return p.isWaterSlip() ? PLANE.vanSlip : PLANE.van; }
@@ -137,11 +139,11 @@ export class Water {
                     continue;
                 }
             }
-            const dx = mario.x - P.x, dz = mario.z - P.z;
-            if (dx * dx + dz * dz > this.far * this.far) { this.life[i] = 0; continue; }
-            const hv = V.x * V.x + V.z * V.z, sz = this.size[i];
-            if (hv > sz * sz) {
-                const hl = Math.sqrt(hv);
+            const dx = fr(mario.x - P.x), dz = fr(mario.z - P.z);
+            if (fr(dx * dx + fr(dz * dz)) > fr(this.far * this.far)) { this.life[i] = 0; continue; }
+            const hv = fr(fr(V.x * V.x) + fr(V.z * V.z)), sz = this.size[i];
+            if (hv > fr(sz * sz)) {
+                const hl = sqrtf(hv);
                 V.x = fr(fr(sz - 0.1) * fr(V.x * fr(1 / hl)));
                 V.z = fr(fr(sz - 0.1) * fr(V.z * fr(1 / hl)));
             }
@@ -194,10 +196,11 @@ export class Water {
             if (this.w.col.checkWalls(wc)) {
                 const wall = wc.results[0];
                 if ((this.flag[i] & 0xF) === 2) { this.life[i] = 0; continue; }
-                if (ground && ground.isLegal() && P.y < this.size[i] * T.mMagnify + f31) { this.life[i] = 0; continue; }
+                if (ground && ground.isLegal() && P.y < fr(this.size[i] * T.mMagnify + f31)) { this.life[i] = 0; continue; }
                 if (wall.actor) this.tell(wall.actor, i);
-                const d = fr(wall.d + (P.x * wall.n[0] + P.y * wall.n[1] + P.z * wall.n[2]));
-                P.x = fr(P.x - wall.n[0] * d); P.y = fr(P.y - wall.n[1] * d); P.z = fr(P.z - wall.n[2] * d);
+                // (fmuls y, fmadds x, fmadds z; the normal scaled (TVec3::scale) then taken off)
+                const d = fr(wall.d + fr(P.z * wall.n[2] + fr(P.x * wall.n[0] + fr(P.y * wall.n[1]))));
+                P.x = fr(P.x - fr(wall.n[0] * d)); P.y = fr(P.y - fr(wall.n[1] * d)); P.z = fr(P.z - fr(wall.n[2] * d));
                 if ((this.flag[i] & 0xF) === 1) {
                     if (MsRandF() < K[10]) this.splash(fr(P.x + wall.n[0] * this.size[i]), fr(P.y + wall.n[1] * this.size[i]), fr(P.z + wall.n[2] * this.size[i]));
                     this.size[i] = fr(this.size[i] * T.mMagnify);
@@ -210,7 +213,7 @@ export class Water {
                     const [rh, roof] = this.w.col.checkRoof(P.x, P.y, P.z, IGNORE_WATER_THROUGH);
                     if (roof && roof.isLegal()) {
                         if (roof.actor) this.tell(roof.actor, i);
-                        if (P.y + this.size[i] > rh) {
+                        if (fr(P.y + this.size[i]) > rh) {
                             P.y = fr(rh - this.size[i]);
                             V.set(0, 0, 0);
                             this.flag[i] = (this.flag[i] & ~0xF) | 1;
@@ -230,20 +233,21 @@ export class Water {
             else if (st === 2) {
                 if (this.life[i] > 256) this.life[i] = 256;
                 this.life[i] -= this.vanish(this.plane[i]!);
-                if (pol) pol.clean(this.pos[i].x, this.pos[i].y, this.pos[i].z, fr(T.mCleanSize * 10), this.w.map);
+                // (the DOL's: 32 x mCleanSize, as for the walls; the decomp's splashGround guesses 10)
+                if (pol) pol.clean(this.pos[i].x, this.pos[i].y, this.pos[i].z, fr(32 * T.mCleanSize), this.w.map);
                 if (this.flags & 0x40) {
                     if (r20 < 0) r20 = i;
-                    else if (V3.sub(this.pos[i], this.pos[r20]).length() < K[6] * (this.size[i] + this.size[r20])) {
+                    else if (this.gap(i, r20) < fr(K[6] * fr(this.size[i] + this.size[r20]))) {
                         this.size[r20] = this.size[i]; this.life[r20] = this.life[i]; this.life[i] = 0;
                     } else r20 = i;
                 }
             } else if (st === 3) {
                 if (this.life[i] > 256) this.life[i] = 256;
                 this.life[i] -= this.vanish(this.plane[i]!);
-                if (pol) pol.clean(this.pos[i].x, this.pos[i].y, this.pos[i].z, fr(T.mCleanSize * 32), this.w.map);
+                if (pol) pol.clean(this.pos[i].x, this.pos[i].y, this.pos[i].z, fr(32 * T.mCleanSize), this.w.map);
                 if (this.flags & 0x40) {
                     if (r26 < 0) r26 = i;
-                    else if (V3.sub(this.pos[i], this.pos[r26]).length() < K[6] * (this.size[i] + this.size[r26])) {
+                    else if (this.gap(i, r26) < fr(K[6] * fr(this.size[i] + this.size[r26]))) {
                         this.size[r26] = this.size[i]; this.life[r26] = this.life[i]; this.life[i] = 0;
                     } else r26 = i;
                 }
@@ -251,6 +255,18 @@ export class Water {
         }
         this.garbageCollect();
         this.tick++;
+    }
+    /**
+     * |pos[i] - pos[j]| as move's merge test has it (TVec3::length inlined): (z z) + (x x + y y),
+     * frsqrte rounded to f32 and one f32 Newton step; the square itself when it's <= 0.
+     */
+    private gap(i: number, j: number) {
+        const a = this.pos[i], b = this.pos[j];
+        const x = fr(a.x - b.x), y = fr(a.y - b.y), z = fr(a.z - b.z);
+        const sq = fr(fr(z * z) + fr(x * x + fr(y * y)));
+        if (sq <= 0) return sq;
+        const e = fr(frsqrte(sq));
+        return fr(sq * fr(fr(0.5 * e) * fr(3 - sq * fr(e * e))));
     }
     private garbageCollect() {
         let j = 0;

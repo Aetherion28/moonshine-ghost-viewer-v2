@@ -21,6 +21,10 @@ import { Font, Tex, parseBTI, bmgMessage, parsePrm, prmF, prmI } from './gx.js';
 import { Painter, M, mul, I } from './draw.js';
 import { Console, ConsoleInput } from './console.js';
 import { ConsoleStr, S } from './consolestr.js';
+import { TalkView } from './talkview.js';
+import { PauseMenu, GameOverMenu, SelectMenu } from './menus.js';
+import { Wipe, HX_W, HX_H } from './wipe.js';
+import { MovieScreen } from './moviescreen.js';
 
 interface GameFS { has(p: string): boolean; read(p: string): Promise<ArrayBuffer>; }
 const store = {
@@ -127,6 +131,10 @@ export class GameHud {
         this.canvas.className = 'hudLayer';
         this.canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
         this.canvas.hidden = true;
+        this.overlay = document.createElement('canvas');
+        this.overlay.className = 'hudOverlay';
+        this.overlay.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3';
+        this.overlay.hidden = true;
         (globalThis as any).gameHudInstance = this;   // (for debugging from the console)
     }
     setShow(v: boolean) { this.show = v; store.set('hud', v); }
@@ -142,7 +150,7 @@ export class GameHud {
         this.common = (await read('data/common.szs')) || new Map();
         this.params = (await read('data/params.szs')) || new Map();
         // the system font (nlogo.szs's /font/standard_fontEx.bfn; common.szs's test font, a copy of it, else)
-        const nlogo = await read('data/nlogo.szs').catch(() => null);
+        const nlogo = (await read('data/nintendo.szs').catch(() => null)) || (await read('data/nlogo.szs').catch(() => null));
         const fb = (nlogo && nlogo.get('font/standard_fontex.bfn')) || this.common.get('test_fontex.bfn') || null;
         try { this.font = fb ? new Font(fb) : null; } catch (e) { console.warn('[hud] font', e); }
         this.painter = new Painter((n) => this.texture(n), this.font);
@@ -153,8 +161,86 @@ export class GameHud {
         });
         const sw = this.params.get('mario/swim.prm'), sm = sw ? parsePrm(sw) : null;
         this.airDec = prmF(sm, 'mAirDec', 0.002); this.airInc = prmF(sm, 'mAirInc', 0.03); this.breath = prmF(sm, 'mCanBreathDepth', 50);
+        // the talk window (TTalk2D2: message_2.blo, message_board_1.blo, message_back_1.bti)
+        try {
+            if (this.font && this.files.has('scrn/message_2.blo') && this.files.has('scrn/message_board_1.blo'))
+                this.talkView = new TalkView(this.screen('message_2.blo'), this.screen('message_board_1.blo'), this.font, this.texture('message_back_1.bti'), this.texture('message_back_0.bti'));
+        } catch (e) { console.warn('[hud] talk window', e); this.talkView = null; }
         this.ready = true;
     }
+    private talkView: TalkView | null = null;
+    /** the full-screen 2D screens' canvas (over the page's fade): the fader's wipes, the menus, the movies */
+    overlay: HTMLCanvasElement;
+    private more = new Map<string, Map<string, Uint8Array> | null | Promise<void>>();
+    /** another 2D archive (select.szs, subtitle.szs): its files, null when the disc has none, undefined while it loads */
+    private archive2(name: string): Map<string, Uint8Array> | null | undefined {
+        const v = this.more.get(name);
+        if (v instanceof Promise) return undefined;
+        if (v !== undefined) return v;
+        const fs = this.fs;
+        if (!fs || !fs.has(`data/${name}`)) { this.more.set(name, null); return null; }
+        this.more.set(name, fs.read(`data/${name}`).then((b) => { this.more.set(name, archive(b)); }, (e) => { console.warn('[hud]', name, e); this.more.set(name, null); }));
+        return undefined;
+    }
+    private texFrom(files: Map<string, Uint8Array>, key: string) {
+        return (name: string): Tex | null => {
+            const k = key + name.toLowerCase();
+            if (this.tex.has(k)) return this.tex.get(k)!;
+            let t: Tex | null = null;
+            const b = files.get('timg/' + name.toLowerCase());
+            try { t = b ? parseBTI(b) : this.texture(name); } catch (e) { console.warn('[hud]', name, e); }
+            this.tex.set(k, t);
+            return t;
+        };
+    }
+    private selectPainter: Painter | null = null;
+    private subPainter: Painter | null = null;
+    /**
+     * The live runner's screen makers (game/runner.ts LiveScreens): the pause menu and the game
+     * over's choice from game_6.szs, the episode select from select.szs, the movies from the disc's
+     * THP files with subtitle.szs's subtitles.
+     */
+    screens = {
+        pauseMenu: (o: { area: number; episode: number }) => {
+            if (!this.ready || !this.files.has('scrn/pause_1.blo')) return null;
+            const n = this.names(o.area, o.episode);
+            const delfino = o.area <= 1;
+            return new PauseMenu(this.screen('pause_1.blo'), { delfino, stageName: n.stage, scenarioName: n.shineStage === 0 || delfino ? '' : n.scenario });
+        },
+        gameOverMenu: () => (this.ready && this.files.has('scrn/save.blo') ? new GameOverMenu(this.screen('save.blo')) : null),
+        selectMenu: (o: { stage: number; states: number[]; open: number; coins: number; coinShine: boolean; extra: number }) => {
+            const a = this.archive2('select.szs');
+            if (a === undefined) return undefined;
+            if (!a || !a.has('scrn/scenario_select_1.blo') || !this.ready) return null;
+            try {
+                this.selectPainter = new Painter(this.texFrom(a, 'select:'), this.font);
+                const seed = { v: (Date.now() & 0x7FFFFFFF) >>> 0 };
+                const rand = () => { seed.v = (Math.imul(seed.v, 1103515245) + 12345) >>> 0; return (seed.v >>> 16) & 0x7FFF; };
+                const m = new SelectMenu(parseBlo(a.get('scrn/scenario_select_1.blo')!), { ...o, stageName: this.names(o.stage, 0).stage, scenarioName: (e: number) => this.names(o.stage, e).scenario },
+                    (i) => `sc_number_${i + 1}.bti`, rand);
+                m.setStageColor(o.stage);
+                return m;
+            } catch (e) { console.warn('[hud] select', e); return null; }
+        },
+        movie: (id: number, flags: any) => {
+            const fs = this.fs as any;
+            if (!fs || typeof fs.list !== 'function') return null;
+            const sub = this.archive2('subtitle.szs');
+            if (sub === undefined) return undefined;
+            const music = () => !(globalThis as any).gameAudioMuted;
+            return new MovieScreen(fs, id, flags, (name, tall) => {
+                if (!sub) return null;
+                const blo = sub.get(tall ? 'scrn/demo_1.blo' : 'scrn/demo_2.blo');
+                if (!blo) return null;
+                // (me_a / me_b keep their blo font: the subtitle archive's own, else the system font)
+                const scr = parseBlo(blo);
+                this.subPainter = new Painter(this.texFrom(sub, 'subtitle:'), this.font);
+                const walk = (p: Pane) => { if (p.kind === 'TBX1') p.fontOn = true; for (const c of p.children) walk(c); };
+                walk(scr);
+                return { scr, bmg: sub.get(name.toLowerCase().replace(/\.thp$/, '.bmg')) || null };
+            }, music);
+        },
+    };
     private texture(name: string): Tex | null {
         const k = name.toLowerCase();
         if (this.tex.has(k)) return this.tex.get(k)!;
@@ -203,18 +289,22 @@ export class GameHud {
     }
     /** TConsoleStr::load: the stage's name and the episode's from the BMGs */
     private setNames(seg: Seg) {
+        const n = this.names(seg.area, seg.episode), str = this.str!;
+        str.titles[0].text = n.stage;
+        str.titles[1].text = seg.area !== 15 ? n.scenario : '';
+    }
+    /** the stage's name (stagename.bmg by SMS_getShineStage) and the episode's (scenarioname.bmg by SMS_getShineID / SMS_getNormalStage) */
+    names(area: number, episode: number) {
         const SHINE_STAGE = [0, 1, 2, 3, 4, 5, 6, 6, 7, 8, 9, 1, 1, 5, 6, 1, 8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 3, 8, 4, 4, 5, 5, 5, 5, 5, 5, 6, 5, 7, 7, 8, 8, 2, 2, 3, 3, 5, 6, 9, 1, 1, 2, 6, 8, 5, 3, 9];
         const SHINES: (number[] | null)[] = [[0x56], null, [0, 1, 2, 3, 4, 5, 6, 7], [10, 11, 12, 13, 14, 15, 16, 17], [20, 21, 22, 23, 24, 25, 26, 27], [30, 31, 32, 33, 34, 35, 36, 37],
             [40, 41, 42, 43, 44, 45, 46, 47], [60, 65, 62, 61, 64, 63, 66, 67], [50, 51, 52, 53, 54, 55, 56, 57], null];
         const NAMES = [0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 0x10, 0x11, 0x12, 0x13, 0x28, 0x29,
             0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x21, 0x20, 0x23,
             0x22, 0x1F, 0x24, 0x25, 0x26, 0x27];
-        const stage = SHINE_STAGE[seg.area] ?? 1;
+        const stage = SHINE_STAGE[area] ?? 1;
         const sn = this.common.get('2d/stagename.bmg'), sc = this.common.get('2d/scenarioname.bmg');
-        const str = this.str!;
-        str.titles[0].text = (sn && bmgMessage(sn, stage)) || '';
-        const id = SHINES[stage] ? SHINES[stage]![seg.episode] : undefined;
-        str.titles[1].text = seg.area !== 15 && sc && id !== undefined && NAMES[id] !== undefined ? bmgMessage(sc, NAMES[id]) || '' : '';
+        const id = SHINES[stage] ? SHINES[stage]![episode] : undefined;
+        return { stage: (sn && bmgMessage(sn, stage)) || '', scenario: sc && id !== undefined && NAMES[id] !== undefined ? bmgMessage(sc, NAMES[id]) || '' : '', shineStage: stage };
     }
 
     private lateEvent(stage: any, seg: Seg) {
@@ -313,6 +403,10 @@ export class GameHud {
 
     /** the page's frame: bring the HUD to time t and draw it */
     frame(f: HudFrame) {
+        this.frameMain(f);
+        try { this.overlayFrame(f); } catch (e) { console.warn('[hud] overlay', e); }
+    }
+    private frameMain(f: HudFrame) {
         if (!f.on || !this.fs || !f.ghost) { this.clear(); return; }
         if (!this.ready) {
             if (!this.loading) this.loading = this.load().catch((e) => { this.status = 'HUD: ' + (e && e.message ? e.message : e); console.warn('[hud]', e); });
@@ -351,6 +445,7 @@ export class GameHud {
             while (this.conF < cf && performance.now() - t0 < 30) { this.conF++; const q = seg.qIn + this.conF * QF_PER_FRAME; this.con.frame(this.consoleInput(f, seg, q, stage), (q - seg.q0) % 4 === 3); }
         }
         // (still replaying the segment after a seek: the console shows once it has caught up)
+        this.drawTalk = stage && stage.world ? stage.world.talk : null;
         this.draw(seg, !this.con || cf - this.conF <= 8);
     }
     /**
@@ -362,17 +457,22 @@ export class GameHud {
      * Live play only moves forward: the HUD carries on a tick at a time.
      */
     private liveFlags = { named: false };
+    private missAt = -1;
     private liveFrame(f: HudFrame, L: { key: string; demo: number; close: number; go: number }) {
         const r = f.ghost.segments[0].route, named = NAMED_STAGES.has(r.area);
         const seg: Seg = { key: L.key, q0: 0, qIn: L.go >= 0 ? L.go : Infinity, area: r.area, episode: r.episode, intro: L.demo >= 0 };
-        if (!this.seg || this.seg.key !== seg.key || f.t < this.strF) { this.newState(seg); this.liveFlags.named = false; }
+        if (!this.seg || this.seg.key !== seg.key || f.t < this.strF) { this.newState(seg); this.liveFlags.named = false; this.missAt = -1; }
         const S0 = this.seg!;
         S0.qIn = seg.qIn; S0.intro = seg.intro;
         const str = this.str!;
         if (L.demo >= 0 && named && !this.liveFlags.named) { this.setNames(S0); this.liveFlags.named = true; }
         // (a stage without a demo has no opening: its console string stays idle)
         if (L.demo < 0) this.strF = f.t;
-        while (this.strF < f.t && this.strF < (L.go >= 0 ? L.go + 400 : Infinity)) {
+        // the director's miss (STATE_UNK7: startAppearMiss)
+        const D0 = f.sim && f.sim.stage ? f.sim.stage.director : null;
+        const missAt = D0 && D0.state === 7 ? D0.enteredTick : -1;
+        if (missAt >= 0 && this.missAt !== missAt && f.t >= missAt) { this.missAt = missAt; str.startAppearMiss(); }
+        while (this.strF < f.t && (this.strF < (L.go >= 0 ? L.go + 400 : Infinity) || str.unk2B8 !== 0)) {
             const k = ++this.strF;
             if (k === L.demo && named) str.startAppearScenario();
             if (k === L.close) { if (named && str.unk2BC !== S.UNK1) str.unk2BC = S.UNK1; str.startCloseWipe(!named); }
@@ -392,6 +492,7 @@ export class GameHud {
             const t0 = performance.now();
             while (this.conF < cf && performance.now() - t0 < 30) { this.conF++; const q = L.go + this.conF; this.con.frame(this.consoleInput(f, S0, q, stage), q % 4 === 3); }
         }
+        this.drawTalk = stage && stage.world ? stage.world.talk : null;
         this.draw(S0, !this.con || cf - this.conF <= 8);
     }
     private clear() {
@@ -450,7 +551,67 @@ export class GameHud {
                 P.drawScreen(cx, str.big, base);
             }
         }
+        // TTalk2D2 (its CUE_DRAW in the director's talk mode)
+        if (this.talkView && this.show && this.drawTalk) {
+            const T = this.drawTalk;
+            this.drawTalk = null;
+            try { this.talkView.draw(cx, P, base, T); } catch (e) { console.warn('[hud] talk', e); }
+        }
         void seg;
+    }
+    /** the talk director to draw this frame (set by frame from the simulated stage) */
+    private drawTalk: any = null;
+    private overlayOn = false;
+    private wipe: Wipe | null = null;
+    /** the overlay: the fader's miss wipes, then the screen the live runner shows (a menu, a movie) */
+    private overlayFrame(f: HudFrame) {
+        const R: any = f.sim, c = this.overlay;
+        const scr = f.on && R && R.screen ? R.screen : null;
+        const st = f.on && R && R.stage ? R.stage : null, D = st ? st.director : null;
+        const mw = f.live && D && D.missWipe ? D.missWipe : null;
+        if (!this.ready || (!scr && !mw)) {
+            if (this.overlayOn) { const g = c.getContext('2d'); if (g) { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); } c.hidden = true; this.overlayOn = false; }
+            this.wipe = null;
+            return;
+        }
+        const r = c.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const W = Math.max(1, Math.round(r.width * dpr)), H = Math.max(1, Math.round(r.height * dpr));
+        if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+        const cx = c.getContext('2d')!;
+        cx.setTransform(1, 0, 0, 1, 0, 0); cx.clearRect(0, 0, W, H);
+        c.hidden = false; this.overlayOn = true;
+        cx.imageSmoothingEnabled = true;
+        const sc = Math.min(H / 480, W / 600), base: M = [sc, 0, 0, sc, (W - 600 * sc) / 2, (H - 480 * sc) / 2];
+        // the wipe: frames of 4 ticks from its start, over the whole view
+        const leaving = !!(R && (R.pending || R.leaving || (scr && scr.kind !== 'pause')));
+        if (mw || (leaving && this.wipe)) {
+            if (mw && (!this.wipe || this.wipe.type !== mw.type || this.wipe.start !== mw.tick)) this.wipe = new Wipe(mw.type, mw.tick);
+            const w = this.wipe!;
+            const t = st ? st.qf : 0;
+            const n = Math.floor((t - w.start) / 4) + w.start;
+            cx.setTransform(W / HX_W, 0, 0, H / HX_H, 0, 0);
+            w.draw(cx, mw ? n : w.start + 100000, this.common.has('2d/wipe_gameover.bti') ? this.gameOverTex() : null);
+        } else this.wipe = null;
+        if (!scr) return;
+        const m = scr.menu;
+        if (scr.kind === 'movie') { m.draw(cx, this.subPainter || this.painter!, W, H, base); return; }
+        if (scr.kind === 'select') { m.draw(cx, this.selectPainter || this.painter!, base, (g: CanvasRenderingContext2D, x: number, y: number, size: number, alpha: number, empty: boolean, spin: number) => this.shineSprite(g, x, y, size, alpha, empty, spin)); return; }
+        m.draw(cx, this.painter!, base);
+    }
+    private goTex: Tex | null | undefined = undefined;
+    private gameOverTex() {
+        if (this.goTex === undefined) { const b = this.common.get('2d/wipe_gameover.bti'); try { this.goTex = b ? parseBTI(b) : null; } catch { this.goTex = null; } }
+        return this.goTex;
+    }
+    /** a Shine of the episode select (shine_menu.bmd stood in for by the HUD's Shine icon): its place, size, fade and spin */
+    private shineSprite(cx: CanvasRenderingContext2D, x: number, y: number, size: number, alpha: number, empty: boolean, spin: number) {
+        const img = this.painter!.image('shine_icon.bti', 0, empty ? 0xFFFFFF60 : 0xFFFFFFFF);
+        if (!img || alpha <= 0) return;
+        const t = this.texture('shine_icon.bti');
+        if (!t) return;
+        const w = size * Math.max(0.15, Math.abs(Math.cos((spin * Math.PI) / 180))), h = size * (t.h / t.w);
+        cx.globalAlpha = alpha * (empty ? 0.8 : 1);
+        cx.drawImage(img as any, x - w / 2, y - h / 2, w, h);
     }
     /** TConsoleStr::perform: GO!'s fading copies where the letters were */
     private drawGoTrails(cx: CanvasRenderingContext2D, base: M, str: ConsoleStr) {

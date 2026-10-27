@@ -199,7 +199,7 @@ export class PlayerMario extends TMarioSim {
             const c = playerHooks.makeCamera ? playerHooks.makeCamera(this.world, this) : makePlayerCamera(this.world, this as any);
             this.simCamera = c; this.camera = c; this.cameraApprox = false;
             const G = this.mWaterGun as any;
-            if (G && G.cameraHook && (c as any).isLButtonCamera) G.cameraHook = { isLButtonCamera: () => (c as any).isLButtonCamera(), isJetCoaster1stCamera: () => false, pitch: () => ((c as any).unk256 | 0) };
+            if (G && G.cameraHook && (c as any).isLButtonCamera) G.cameraHook = { isLButtonCamera: () => (c as any).isLButtonCamera(), isJetCoaster1stCamera: () => false, pitch: () => { const t = (c as any).cur; return t ? t.pitch | 0 : 0; } };   // (gpCamera->getCurrentTarget().mPitch: lha 0xa4 @0x8014c510)
             if ((c as any).setWaterGun && G) (c as any).setWaterGun(G);
         } catch (e) { console.warn('[player] camera', e); }
     }
@@ -402,6 +402,10 @@ export class PlayerMario extends TMarioSim {
     mCapModel = 1;
     /** TMario::isWearingCap */
     isWearingCap() { return (this.mCapModel & 1) !== 0; }
+    /** TMario::setDivHelm (MarioDraw.cpp): the helmet model on (mCap->setModelActive(E_CAP_MODEL_HELMET); emitGetEffect, MSD_SE_MA_HELMET) */
+    setDivHelm() { this.mCapModel |= 2; }
+    /** TMario::isWearingHelm */
+    isWearingHelm() { return (this.mCapModel & 2) !== 0; }
     /**
      * thinkParams (0x8012e324) out of the water: without his hat (taken by a Doro Hane / Hamu Kuri)
      * the sun takes 1 HP every mHotTimer ticks (and his invincibility for unk55C)
@@ -1777,7 +1781,33 @@ export class PlayerMario extends TMarioSim {
     get diving() { return this.mStatus === S.JUMP_CATCH || this.mStatus === S.DIVE; }
     get marioFlags() { return this.mFlag; }
     get anim() { return this.mAnimationId; }
-    get phase() { const f = this.getMotionFrameCtrl(); return f.end > 0 ? f.frame / f.end : 0; }
+    /**
+     * the motion's place in its BCK, 0..1 (the ghost's phase: x 4096, rounded). A once-mode BCK held
+     * at its end sits at end - 0.001 (J3DFrameCtrl::update), which x 4096 rounds to 4096 and would
+     * wrap to the first frame (a roll jump or the hip drop's turn stuck at their end drawn from
+     * their start): capped at the last step.
+     */
+    get phase() { const f = this.getMotionFrameCtrl(); return f.end > 0 ? Math.min(f.frame / f.end, 4095 / 4096) : 0; }
+    /**
+     * the upper body's own motion as the model draws it (M3UModelMario unk24[1]: on while unk3 isn't
+     * 0xff, the chest down on its BCK at fc[1]'s frame): the pump, a held object's, the run's damage
+     * flinch (setUpperDamageRun). null: the body's BCK alone.
+     */
+    get upperAnim(): { bck: number; frame: number } | null {
+        const M = this.mModel;
+        return M.upperCalc !== -1 && M.anm[1] >= 0 && !this.onYoshi() ? { bck: M.anm[1], frame: M.fc[1].frame } : null;
+    }
+    /**
+     * where the model is drawn: mPosition, but on a pole or tree (calcBaseMtxPole) the base TR's
+     * translation, the holder's getRadiusAtY out from its axis toward him (mPosition stays on the axis).
+     */
+    get drawPos(): V3 {
+        if (this.checkStatusType(S.FLAG_UNK100000) && this.mStatus !== S.TOROCCO) {
+            const b = this.mModel.baseTR;
+            return new V3(b[3], b[7], b[11]);
+        }
+        return this.pos;
+    }
     get emitted() { return !!this.mWaterGun && this.mWaterGun.getEmittedWaterCount() > 0; }
     /** FLUDD as the ghost records it (for the viewer and the actors that read the proxy's) */
     get fludd(): MarioSample['fludd'] {

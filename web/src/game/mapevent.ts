@@ -184,17 +184,54 @@ export class PollutionObj {
     minS = 0; maxS = 0; minT = 0; maxT = 0;
     /** the GPU count (pollution.ts countObjDegree), each frame once registerPollutionObj'd; else 0 */
     mCounter = 0;
-    constructor(public layer: Layer, public jointIndex: number, public min: number[], max: number[]) {
+    /**
+     * TPollutionObj::initAreaInfo: the joint's box in texels, clamped as the game does (a low edge
+     * under 0 zeroes the high one). joint: its TJointObj (kill / alive hide and show its shapes).
+     */
+    constructor(public layer: Layer, public jointIndex: number, public min: number[], max: number[], public joint: JointObj | null = null, private world: World | null = null) {
         this.minS = layer.texS(min[0]); this.maxS = layer.texS(max[0]);
         this.minT = layer.texT(min[2]); this.maxT = layer.texT(max[2]);
+        if (this.minS < 0) this.maxS = 0;
+        if (this.minT < 0) this.maxT = 0;
+        if (this.maxS > layer.pos.w) this.maxS = layer.pos.w;
+        if (this.maxT > layer.pos.h) this.maxT = layer.pos.h;
     }
     isCleaned() { return this.mCounter < sinkStatics.mCleanedDegree; }
-    kill() { this.dead = true; }
-    alive() { this.dead = false; }
-    /** TODO: updateDepthMap (the object's depths into its layer's height map) */
-    updateDepthMap() { }
+    /** TJointObj::kill / alive (the joint and its children: their shapes hidden / shown) */
+    kill() { this.dead = true; if (this.joint) this.joint.kill(); }
+    alive() { this.dead = false; if (this.joint) this.joint.alive(); }
+    /**
+     * getDepthFromMap (0x801f0318): the ground at the texel's four corners (5 out), all within 30 of
+     * each other in turn: the depth (worldToDepth) of the ground at its centre; else 0xFF (prohibited).
+     */
+    getDepthFromMap(x: number, z: number) {
+        const L = this.layer, col = this.world!.col, t = L.pos.texel;
+        const wx = fr(L.minX + fr(x * t)), wz = fr(L.minZ + fr(z * t));
+        const x0 = fr(wx - 5), x1 = fr(5 + fr(wx + t)), z0 = fr(wz - 5), z1 = fr(5 + fr(wz + t));
+        const h00 = col.checkGround(x0, 9999999, z0)[0], h10 = col.checkGround(x1, 9999999, z0)[0];
+        const h01 = col.checkGround(x0, 9999999, z1)[0], h11 = col.checkGround(x1, 9999999, z1)[0];
+        const near = (a: number, b: number) => fr(a - 30) <= b && b <= fr(30 + a);
+        if (near(h00, h01) && near(h01, h10) && near(h10, h11)) {
+            const half = fr(0.5 * t);
+            return L.pos.worldToDepth(col.checkGround(fr(wx + half), 9999999, fr(wz + half))[0]) & 0xFF;
+        }
+        return 0xFF;
+    }
+    /** updateDepthMap: the box's depths from the map as it is now (a building risen out of the goop) */
+    updateDepthMap() {
+        if (!this.world) return;
+        for (let z = this.minT; z < this.maxT; ++z) for (let x = this.minS; x < this.maxS; ++x) this.layer.pos.setDepth(x, z, this.getDepthFromMap(x, z));
+        this.layer.dirty = true;
+    }
 }
 const pollutionObjs = new WeakMap<Layer, PollutionObj[]>();
+const pollutionJointModels = new WeakMap<Layer, MapJointModel>();
+/**
+ * The goop layer's TJointModel (map/pollution/<name>.bmd): its joints' shown state as the map
+ * events leave it (TMapEventSinkInPollutionReset kills the goop object it doesn't show), for the
+ * viewer to hide the killed joints' shapes; null while no event has asked for its objects.
+ */
+export function pollutionJoints(L: Layer): MapJointModel | null { return pollutionJointModels.get(L) || null; }
 /** gpPollution->getLayer(l)->getObj(i) */
 export function getPollutionObj(w: World, l: number, i: number): PollutionObj | null {
     const L = w.pollution?.layers[l];
@@ -202,7 +239,8 @@ export function getPollutionObj(w: World, l: number, i: number): PollutionObj | 
     let objs = pollutionObjs.get(L);
     if (!objs) {
         const jm = new MapJointModel(w.files.scene(`map/pollution/${L.name}.bmd`));
-        objs = jm.children.map((c) => new PollutionObj(L, c.index, c.min, c.max));
+        pollutionJointModels.set(L, jm);
+        objs = jm.children.map((c) => new PollutionObj(L, c.index, c.min, c.max, c, w));
         pollutionObjs.set(L, objs);
     }
     return objs[i] || null;

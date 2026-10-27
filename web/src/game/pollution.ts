@@ -15,6 +15,8 @@ import { VertexAttributeInput } from '../../noclip/gx/gx_displaylist.js';
 import { GfxFormat, FormatTypeFlags, getFormatTypeFlags, getFormatComponentCount, getFormatFlags, FormatFlags } from '../../noclip/gfx/platform/GfxPlatformFormat.js';
 
 const fr = Math.fround;
+const s16 = (v: number) => (v << 16) >> 16;
+const clampI = (v: number, n: number) => (v < 0 ? 0 : v >= n ? n - 1 : v);
 
 export const POLLUTION_TYPE = { SINK: 0, FIRE: 1, SLIP: 2, GLASS_WALL: 3, ELECTRIC: 4, INSTAKILL: 5, SAFE: 6, UNK7: 7, UNK8: 8, UNK10: 10 };
 export const FLAG_CAN_SPREAD = 0x1, FLAG_DECAY = 0x2;
@@ -72,6 +74,8 @@ class Pos {
     index(x: number, z: number) { return (z & 3) * 8 + ((x >> 3) + ((z >> 2) << (this.lw - 3))) * 0x20 + (x & 7); }
     inArea(x: number, z: number) { return !(x < 0 || this.w <= x || z < 0 || this.h <= z); }
     getDepth(x: number, z: number) { return this.depth[this.index(x, z)]; }
+    /** setDepth (TPollutionObj::updateDepthMap) */
+    setDepth(x: number, z: number, d: number) { this.depth[this.index(x, z)] = d & 0xFF; }
     worldToDepth(v: number) { return Math.trunc(fr(fr(v - this.vofs) * 0.025)); }
     worldToTexSize(v: number) { return Math.trunc(fr(v * this.inv)); }
     depthToWorld(v: number) { return fr(this.vofs + fr(v * this.texel)); }
@@ -256,19 +260,28 @@ export class Layer {
             const list = this.tasks[type], img = this.mgr.stampTex[type];
             if (!img || !list.length) continue;
             for (const t of list) {
-                const lo = Math.max(0, t.y - this.unk48), hi = Math.min(255, t.y + this.unk48);
-                const half = Math.trunc(t.size / 2), x1 = t.x - half, z1 = t.z - half, x2 = t.x + half, z2 = t.z + half;
+                // (u8) of the clamped depth window: the TEV's A0 / A1
+                const lo = Math.max(0, t.y - this.unk48) & 0xFF, hi = Math.min(255, t.y + this.unk48) & 0xFF;
+                // the quad's corners as s16 (the task's u16 x / z less or plus size / 2): a stamp centred
+                // just off the layer's low edge (its u16 texel wrapped) still reaches the edge texels
+                const half = t.size >> 1, x1 = s16(t.x - half), z1 = s16(t.z - half), x2 = s16(t.x + half), z2 = s16(t.z + half);
                 if (x2 <= x1 || z2 <= z1) continue;
+                const W = img.w, H = img.h, cleanType = this.mgr.stampKind(type) === 0;
                 for (let z = Math.max(0, z1); z < Math.min(P.h, z2); z++) {
-                    // texel centres across the quad: its stamp texture coordinate, nearest texel
-                    const v = Math.min(img.h - 1, Math.floor(((z + 0.5 - z1) / (z2 - z1)) * img.h));
+                    // the stamp shape (TEX0: 0..1 over the quad) at the pixel centre, GX_LINEAR / CLAMP
+                    // (the stamp BTIs' filter) in the 7-bit fixed point of Dolphin's TextureSampler
+                    const T = Math.trunc(((z + 0.5 - z1) / (z2 - z1)) * H * 128) - 64;
+                    const ft = T & 0x7F, t0 = clampI(T >> 7, H), t1 = clampI((T >> 7) + 1, H);
                     for (let x = Math.max(0, x1); x < Math.min(P.w, x2); x++) {
                         const k = P.index(x, z), hgt = P.depth[k];
                         if (!(hgt > lo && hi > hgt)) continue;
-                        const u = Math.min(img.w - 1, Math.floor(((x + 0.5 - x1) / (x2 - x1)) * img.w));
-                        const a = img.a[v * img.w + u];
+                        const S = Math.trunc(((x + 0.5 - x1) / (x2 - x1)) * W * 128) - 64;
+                        const fs = S & 0x7F, s0 = clampI(S >> 7, W), s1 = clampI((S >> 7) + 1, W);
+                        const w00 = (128 - fs) * (128 - ft), w10 = fs * (128 - ft), w01 = (128 - fs) * ft, w11 = fs * ft;
+                        const i00 = t0 * W + s0, i10 = t0 * W + s1, i01 = t1 * W + s0, i11 = t1 * W + s1;
+                        const a = (img.a[i00] * w00 + img.a[i10] * w10 + img.a[i01] * w01 + img.a[i11] * w11) >> 14;
                         if (!a) continue;
-                        const c = this.mgr.stampKind(type) === 0 ? img.i[v * img.w + u] : 255;
+                        const c = cleanType ? (img.i[i00] * w00 + img.i[i10] * w10 + img.i[i01] * w01 + img.i[i11] * w11) >> 14 : 255;
                         // GX_BL_SRCALPHA / INVSRCALPHA in 8 bits
                         M[k] = (c * a + M[k] * (255 - a) + 127) / 255 | 0;
                     }
@@ -758,6 +771,9 @@ export class Pollution {
     /** Stamp shapes by stamp type: 0 clean (common/map/clean.bti), 1 pollute (pollute.bti), 2+ registered by enemies. */
     stampTex: (Img | null)[] = [];
     private stampTypes: number[] = [0, 1];
+    /** each stamp type's queue: its capacity (registerTexStamp's) and the tasks in it this frame */
+    private taskCap: number[] = [0xFF, 0xFF];
+    private taskNum: number[] = [0, 0];
     private modelTaskNum = 0;
     constructor(public files: Files, map: number, stage: number, common: (p: string) => Uint8Array | null) {
         const ymp = files.scene('map/ymap.ymp');
@@ -775,7 +791,8 @@ export class Pollution {
             L.initLayerInfo(v.getUint16(o), v.getUint16(o + 2), v.getFloat32(o + 0x10), v.getFloat32(o + 0x14), v.getFloat32(o + 0x18), v.getFloat32(o + 0x1C));
             const lw = v.getUint16(o + 0x20), lh = v.getUint16(o + 0x22);
             const hm = v.getUint32(o + 0x28);
-            L.pos.init(v.getFloat32(o + 8), v.getFloat32(o + 0xC), ymp.subarray(hm, hm + (1 << lw) * (1 << lh)), lw, lh);
+            // (a copy: TPollutionObj::updateDepthMap writes it, and the game reloads the file with the stage)
+            L.pos.init(v.getFloat32(o + 8), v.getFloat32(o + 0xC), ymp.slice(hm, hm + (1 << lw) * (1 << lh)), lw, lh);
             // the texture: the layer model's texture 0 (the wave layer: its own .bti); I8 in the same tiles
             const tex = plane === 6 ? null : bmdTexture0(files.scene(`map/pollution/${names[i]}.bmd`) || new Uint8Array(0));
             L.map = new Uint8Array((1 << lw) * (1 << lh));
@@ -787,13 +804,26 @@ export class Pollution {
         this.stampTex[0] = bti('map/clean.bti');
         this.stampTex[1] = bti('map/pollute.bti');
     }
-    /** TPollutionCounterLayer::registerTexStamp: another stamp shape (an enemy's mark). Its stamp type. */
-    registerTexStamp(kind: number, img: Img | null) { this.stampTypes.push(kind); this.stampTex.push(img); for (const L of this.layers) L.tasks.push([]); return this.stampTypes.length - 1; }
+    /**
+     * TPollutionCounterLayer::registerTexStamp(kind, capacity, tex): another stamp shape (an enemy's
+     * mark; TSmallEnemyManager passes its mCapacity). Its stamp type.
+     */
+    registerTexStamp(kind: number, img: Img | null, capacity = 0xFF) {
+        this.stampTypes.push(kind); this.stampTex.push(img); this.taskCap.push(capacity); this.taskNum.push(0);
+        for (const L of this.layers) L.tasks.push([]);
+        return this.stampTypes.length - 1;
+    }
     stampIsCleanType(type: number) { return this.stampTypes[type] === 0; }
     stampKind(type: number) { return this.stampTypes[type]; }
+    /**
+     * TPollutionTexStamp::pushTask: one queue per stamp type for all the layers (each task names its
+     * layer; doTask draws a layer's own), full at the type's capacity (0xFF for clean and pollute)
+     * until the frame's draw empties it (resetTask).
+     */
     pushStampTask(type: number, L: Layer, size: number, x: number, z: number, y: number) {
         const q = L.tasks[type];
-        if (!q || q.length >= 0xFF) return;
+        if (!q || this.taskNum[type] >= this.taskCap[type]) return;
+        this.taskNum[type]++;
         q.push({ x: x & 0xFFFF, z: z & 0xFFFF, size: size & 0xFFFF, y: (y << 16) >> 16 });
     }
     stamp(type: number, x: number, y: number, z: number, size: number) { for (const L of this.layers) L.stamp(type, x, y, z, size); }
@@ -844,6 +874,7 @@ export class Pollution {
         for (const o of this.counterObjs) o.mCounter = countObjDegree(o, this.files);
         for (const L of this.layers) L.countTexDegree();
         for (const L of this.layers) { for (const q of L.tasks) q.length = 0; L.modelTasks.length = 0; }
+        this.taskNum.fill(0);
         this.modelTaskNum = 0;
     }
 }

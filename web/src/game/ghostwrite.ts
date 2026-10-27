@@ -24,14 +24,19 @@ function crc32(b: Uint8Array, z0: number, z1: number) {
     return (c ^ 0xffffffff) >>> 0;
 }
 
-/** One stage of the run: its route and frames (run QFs: the first stage's from its tick 0, later ones after it). */
-export interface GhostSegment { area: number; episode: number; frames: GhostFrame[]; }
+/**
+ * One stage of the run: its route and frames (run QFs: the first stage's from its tick 0, later ones
+ * after it); startQf: the run QF of the stage's tick 0 (the first stage's is 0).
+ */
+export interface GhostSegment { area: number; episode: number; frames: GhostFrame[]; startQf?: number; }
 
 /**
- * The run, a segment a stage. The first segment's first sample is its first frame's pose at QF 0
- * (Moonshine holds the first observable pose from the run's start: ghost.cpp startEpochSamples);
- * a later segment starts at its first frame (its anchor is that QF). Then one sample a frame.
- * A plain frame list is one segment of the header's route.
+ * The run, a segment a stage. A segment's first sample is its first frame's pose copied back to the
+ * stage's tick 0 (the first segment's QF 0: Moonshine holds the first observable pose from the run's
+ * start, ghost.cpp startEpochSamples; a later one's startQf, so a replay starts that stage as long
+ * before its first frame as the live run did: runner.ts stageStartCopy). Then one sample a frame.
+ * A later segment without a startQf starts at its first frame (its anchor is that QF), as Moonshine's
+ * do. A plain frame list is one segment of the header's route.
  */
 export function writeSmsGhost(run: GhostFrame[] | GhostSegment[], o: { area: number; episode: number; region: number; name?: string; author?: string }): ArrayBuffer {
     const segs: GhostSegment[] = (run.length && !('frames' in (run[0] as any)) ? [{ area: o.area, episode: o.episode, frames: run as GhostFrame[] }] : (run as GhostSegment[])).filter((g) => g.frames.length);
@@ -41,9 +46,10 @@ export function writeSmsGhost(run: GhostFrame[] | GhostSegment[], o: { area: num
     const samples: GhostFrame[] = [], segInfo: { first: number; count: number; start: number; end: number; area: number; episode: number }[] = [];
     segs.forEach((g, k) => {
         const first = samples.length;
-        if (k === 0) samples.push({ ...g.frames[0], qf: startQf });
+        const s0 = k === 0 ? startQf : g.startQf !== undefined && g.startQf < g.frames[0].qf ? g.startQf : -1;
+        if (s0 >= 0) samples.push({ ...g.frames[0], qf: s0 });
         samples.push(...g.frames);
-        segInfo.push({ first, count: samples.length - first, start: k === 0 ? startQf : g.frames[0].qf, end: g.frames[g.frames.length - 1].qf, area: g.area, episode: g.episode });
+        segInfo.push({ first, count: samples.length - first, start: s0 >= 0 ? s0 : g.frames[0].qf, end: g.frames[g.frames.length - 1].qf, area: g.area, episode: g.episode });
     });
     const nS = samples.length, nI = frames.length, nSeg = segInfo.length;
     const HDR = 0x100, segOff = HDR, sampleOff = segOff + 0x20 * nSeg, sampleSize = nS * 16;

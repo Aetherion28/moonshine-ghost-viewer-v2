@@ -57,6 +57,9 @@ export class MarioModel {
     public parts: J3DModelInstanceSimple[] = [];
     public hands: Record<string, J3DModelInstanceSimple> = {};
     public cap: J3DModelInstanceSimple | null = null;
+    /** TMarioCap's unk10[1] (ma_cap3: his hair, drawn in place of the cap once he's lost it) and unk10[2] (the diving helmet) */
+    public capless: J3DModelInstanceSimple | null = null;
+    public helmet: J3DModelInstanceSimple | null = null;
     public fludd: J3DModelInstanceSimple | null = null;
     public nozzles: Record<string, J3DModelInstanceSimple> = {};
     private anim = new PinnedAnimationController(30);
@@ -84,6 +87,10 @@ export class MarioModel {
                 if (m) this.hands[id + side] = m;
             }
         this.cap = load('bmd/ma_cap1.bmd');
+        this.capless = load('bmd/ma_cap3.bmd');
+        this.helmet = load('watergun2/body/diver_helm.bmd');
+        if (this.capless) this.capless.visible = false;
+        if (this.helmet) this.helmet.visible = false;
         this.fludd = load('watergun2/body/wg_mdl1.bmd');
         if (this.fludd) this.fluddNozzleCenter = this.fludd.modelData.bmd.jnt1.joints.findIndex((j) => j.name === 'nozzle_center');
         for (const n of ['normal_wg', 'hover_wg', 'rocket_wg', 'back_wg']) {
@@ -94,7 +101,7 @@ export class MarioModel {
         // (MarioDraw.cpp / MarioCap.cpp, setResTIMG(0, body texture 0)); FLUDD's nozzles take
         // FLUDD's second (TWaterGun::init, SMS_ChangeTextureAll).
         const bodyTex0 = this.body.materialInstanceState.textureMappings[0];
-        for (const m of [...Object.values(this.hands), this.cap]) {
+        for (const m of [...Object.values(this.hands), this.cap, this.capless]) {
             if (m) for (const r of mappingsNamed(m, 'H_ma_main_dummy')) r.copy(bodyTex0);
         }
         if (this.fludd) {
@@ -105,7 +112,7 @@ export class MarioModel {
         }
         // A clean Mario: TMario::addDirty puts mDirty (0 until goop gets on him) in the alpha of
         // konst colour 0 on the body's, hands' and cap's materials (TMarioCap::addDirty), which blends in the goop texture.
-        for (const m of [this.body, ...Object.values(this.hands), ...(this.cap ? [this.cap] : [])])
+        for (const m of [this.body, ...Object.values(this.hands), ...(this.cap ? [this.cap] : []), ...(this.capless ? [this.capless] : [])])
             for (const md of m.modelMaterialData.materialData || []) {
                 const k = md.material.colorConstants[0];
                 if (k) md.material.colorConstants[0] = { r: k.r, g: k.g, b: k.b, a: 0 };
@@ -120,7 +127,7 @@ export class MarioModel {
                 if (tex.includes('h_watergun_mask_i4')) for (const si of mi.shapeInstances) si.visible = false;
             });
         }
-        this.parts = [...Object.values(this.hands), ...(this.cap ? [this.cap] : []), ...(this.fludd ? [this.fludd] : []), ...Object.values(this.nozzles)];
+        this.parts = [...Object.values(this.hands), ...(this.cap ? [this.cap] : []), ...(this.capless ? [this.capless] : []), ...(this.helmet ? [this.helmet] : []), ...(this.fludd ? [this.fludd] : []), ...Object.values(this.nozzles)];
         this.all = [this.body, ...this.parts];
         // Shape 10 is the Hawaiian shirt, only once Mario buys it (TMario::thinkAloha).
         if (this.body.shapeInstances.length > 10) this.body.setShapeVisible(10, false);
@@ -135,6 +142,8 @@ export class MarioModel {
     }
 
     public setVisible(v: boolean) { for (const m of this.all) m.visible = v; }
+    /** a joint of the body by name (-1: none) */
+    public jointIndex(name: string) { const j = this.joint[name]; return j === undefined ? -1 : j; }
 
     private eyeTex: number | null = null;
     private eyeSlots: [any, number][] | null = null;

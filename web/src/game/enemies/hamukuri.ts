@@ -19,9 +19,9 @@
 //
 // Not here: football chasing
 // (setSearchHamuKuri) needs the map objects' footballs, which aren't simulated either (no
-// footballs: the manager's list is empty, as in a stage without them). Mario's cap is only
-// simulated for どろハムクリ (selectCapHolder / makeCapFly, its own releaseCap / setAfterDeadEffect);
-// the plain ハムクリ's releaseCap / setAfterDeadEffect keep their stubs (it never gets one).
+// footballs: the manager's list is empty, as in a stage without them). Mario's cap: どろハムクリ
+// knocks it off (selectCapHolder / makeCapFly), ドロハネクリ takes it (attackToMario); whichever has
+// it (unk198) drops it as the mario_cap item where it dies (THamuKuri::setAfterDeadEffect).
 
 import { fr, V3, MsMtxSetRotRPH, mtx, mtxMultVec, Mtx, MsSin, MsCos, MsClamp, MsGetRotFromZaxis, MsRandF, JMASSin, s16 } from '../math.js';
 import { frsqrte } from '../math.js';
@@ -184,9 +184,20 @@ export class HamuKuri extends WalkerEnemy {
         n.x = p.x; n.z = p.z;
         this.posDelta.set(V3.sub(n, this.pos));
     }
+    /**
+     * THamuKuri::releaseCap: a held cap (どろハムクリ's) is put down where it stands, dead
+     * (setAfterDeadEffect brings it back); unk198 stays (a ドロハネクリ holds none, only unk198)
+     */
     releaseCap() {
-        // (only one holding Mario's cap: not simulated)
-        this.unk198 = false;
+        const h = this.held as LiveActor | null;
+        if (h && h.receiveMessage(this, MSG.PUT)) {
+            h.holder = null;
+            h.offLiveFlag(LF.HIDDEN);
+            h.pos.set(this.pos); h.pos.y = this.groundHeight;
+            h.offHitFilter(HF.NO_COLLISION);
+            (h as any).makeObjDead();
+            this.held = null;
+        }
     }
     behaveToWater(_a: HitActor) {
         const c = this.spine!.current;
@@ -263,8 +274,15 @@ export class HamuKuri extends WalkerEnemy {
         if (this.spine!.current === WalkerNerves.generate && this.unk1A1) return mVGenerateGravityY;
         return this.gravity;
     }
+    /** THamuKuri::setAfterDeadEffect: with Mario's cap, the cap appears on the ground there */
     setAfterDeadEffect() {
-        if (this.unk198) { this.unk198 = false; this.hmgr.unk70 = null; }
+        if (this.unk198) {
+            const im = itemManager(this.world);
+            const obj = im ? im.makeObjAppearAt(this.pos.x, this.pos.y, this.pos.z, AT.MARIO_CAP, true) : null;
+            if (obj) { this.unk200.set(this.pos.x, this.groundHeight, this.pos.z); this.world.effect('capDrop', this.unk200); }
+            this.unk198 = false;
+            this.hmgr.unk70 = null;
+        }
         this.world.effect(this.isBckAnm(BCK_CRASH) ? 'enemyDisappearW' : 'enemyDisappear', this.pos, this.scale);
     }
     endHitWaterJump() { if (!this.isFindMario(1.3)) this.unk1A2 = true; }
@@ -693,11 +711,12 @@ void HANE_BCK_CRASH;
 // The goop-winged Goomba (ドロハネクリ, /scene/hanekuri's dorohane.bmd): a はねハムクリ that, hitting
 // Mario while he wears his cap, takes it (onHaveCap: unk198, its moustache TDoroHige then shows
 // the cap) and rises up to 800 over the ground with it (TNerveDoroHaneRise) — no longer chasing him
-// (isFindMario) — until it loses it (releaseCap, on dying). Sprayed it drops to the ground and
+// (isFindMario) — until it dies, dropping it (setAfterDeadEffect: the mario_cap item, which gives
+// it back to Mario when he touches it). Sprayed it drops to the ground and
 // spins for 300 ticks (TNerveDoroHaneHitWater). Pushed by a map object while attacking, it is
 // thrown back 5 times its step.
 // Not here: the moustache / cap model (TDoroHige, a TSharedParts: drawing), the particle and the
-// attack sound. Mario's cap isn't simulated: he is taken as wearing it unless one of these holds it.
+// attack sound.
 
 export class DoroHaneKuriManager extends HaneHamuKuriManager {
     constructor(w: World, name = 'ドロハネクリマネージャー') { super(w, name); }
@@ -711,8 +730,12 @@ export class DoroHaneKuriManager extends HaneHamuKuriManager {
     }
     createModelData() { this.createModelDataArray(['dorohane.bmd']); }
     createEnemyInstance() { return new DoroHaneKuri(this.world); }
-    /** (gpMarioOriginal->isWearingCap: the cap isn't simulated; worn unless one of these has it) */
-    isMarioWearingCap() { return !(this.objs as DoroHaneKuri[]).some((o) => o.unk198); }
+    /** gpMarioOriginal->isWearingCap (a ghost replay's Mario: worn unless one of these has it) */
+    isMarioWearingCap() {
+        const m = this.world.mario as any;
+        if (typeof m.isWearingCap === 'function') return m.isWearingCap() as boolean;
+        return !(this.objs as DoroHaneKuri[]).some((o) => o.unk198);
+    }
 }
 
 export class DoroHaneKuri extends HaneHamuKuri {
@@ -805,11 +828,13 @@ const rangeI = (lo: number, hi: number) => lo + Math.trunc(fr((hi - lo) * MsRand
 /** gpItemManager */
 const itemManager = (w: World) => mapObjGlobals(w).itemManager as { makeObjAppearAt(x: number, y: number, z: number, t: number, onGround: boolean): any; objs: HitActor[] } | null;
 /**
- * gpMarioOriginal->isWearingCap. TODO: Mario's cap isn't simulated on his side; he is taken as
- * wearing it while no mario_cap item is out (knocked off, flying or held: it's alive until he
- * touches it again, TItem::taken).
+ * gpMarioOriginal->isWearingCap: the player Mario's (live play). A ghost replay's Mario has no cap
+ * state: he is taken as wearing it while no mario_cap item is out (knocked off, flying or held:
+ * it's alive until he touches it again, TItem::taken).
  */
 function isMarioWearingCap(w: World) {
+    const m = w.mario as any;
+    if (typeof m.isWearingCap === 'function') return m.isWearingCap() as boolean;
     const im = itemManager(w);
     return !im || !im.objs.some((o) => o.isActorType(AT.MARIO_CAP) && !(o as LiveActor).checkLiveFlag(LF.DEAD));
 }
@@ -1277,29 +1302,6 @@ export class DoroHamuKuri extends HamuKuri {
         if (this.spine!.current === HamuNerves.jitabata) {
             if (this.pos.y + 10 > this.world.mario.pos.y) this.forceRoll(this.world.mario.pos.clone(), false);
         } else selectCapHolder(this);
-    }
-    /** THamuKuri::releaseCap: the cap is put down where it stands, dead (setAfterDeadEffect brings it back) */
-    releaseCap() {
-        const h = this.held as LiveActor | null;
-        if (h && h.receiveMessage(this, MSG.PUT)) {
-            h.holder = null;
-            h.offLiveFlag(LF.HIDDEN);
-            h.pos.set(this.pos); h.pos.y = this.groundHeight;
-            h.offHitFilter(HF.NO_COLLISION);
-            (h as any).makeObjDead();
-            this.held = null;
-        }
-    }
-    /** THamuKuri::setAfterDeadEffect: with the cap, it appears on the ground there */
-    setAfterDeadEffect() {
-        if (this.unk198) {
-            const im = itemManager(this.world);
-            const obj = im ? im.makeObjAppearAt(this.pos.x, this.pos.y, this.pos.z, AT.MARIO_CAP, true) : null;
-            if (obj) this.unk200.set(this.pos.x, this.groundHeight, this.pos.z);
-            this.unk198 = false;
-            this.hmgr.unk70 = null;
-        }
-        this.world.effect(this.isBckAnm(BCK_CRASH) ? 'enemyDisappearW' : 'enemyDisappear', this.pos, this.scale);
     }
     setBehavior() {
         const man = this.hmgr;
