@@ -121,7 +121,7 @@ export abstract class MarioRun extends MarioPhysics {
         }
         if (turn < -0x4000 || turn > 0x4000) this.mForwardVel = fmul(this.mForwardVel, -1);
     }
-    /** doSliding (the DOL's float operations; its in-water friction test reads mStatusState's bits 0x30000, never set) */
+    /** doSliding (the DOL's float operations) */
     doSliding(stop: number) {
         let stopped = false;
         let cs = JMASCos(s16(this.mIntendedYaw - this.unk9E));
@@ -137,7 +137,11 @@ export abstract class MarioRun extends MarioPhysics {
         else if (this.onYoshi()) fric = this.mSlipParamsYoshi.mSlipFriction;
         else {
             fric = this.mSlipParamsNormal.mSlipFriction;
-            if (this.mStatus === S.CATCH && this.mStatusState === 1) fric = this.mDeParams.mWasOnWaterSlip;
+            if (this.mStatus === S.CATCH) {
+                if (this.mStatusState === 1) fric = this.mDeParams.mWasOnWaterSlip;
+                // (@0x8013b2ec: mFlag's IN_ANY_WATER bits, the shallows included)
+                if (this.mFlag & MF.IN_ANY_WATER) fric = this.mDeParams.mInWaterSlip;
+            }
         }
         const old = MsSqrtf(fadd(fmul(this.mSlideVelX, this.mSlideVelX), fmul(this.mSlideVelZ, this.mSlideVelZ)));
         const mult = fmadd(fr(0.02), fmul(fmul(this.mIntendedMag, 0.03125), cs), fric);

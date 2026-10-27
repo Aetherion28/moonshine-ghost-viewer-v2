@@ -144,7 +144,17 @@ export function frsqrte(v: number): number {
 export function MsSqrtfHW(x: number): number {
     if (!(x > 0)) return x;
     const e = frsqrte(x);
-    return fr(x * ((0.5 * e) * (3 - x * (e * e))));
+    // (fnmsub f0, x, e*e, 3: fused in double, one rounding)
+    return fr(x * ((0.5 * e) * dnmsub64(x, e * e, 3)));
+}
+/** c - a * b with one double rounding (the Gekko's fnmsub) */
+function dnmsub64(a: number, b: number, c: number): number {
+    const p = a * b;
+    let t = 134217729 * a; const ah = t - (t - a), al = a - ah;
+    t = 134217729 * b; const bh = t - (t - b), bl = b - bh;
+    const e = ((ah * bh - p) + ah * bl + al * bh) + al * bl;
+    const s = c - p, bb = s - c, err = (c - (s - bb)) + (-p - bb);
+    return s + (err - e);
 }
 /** matan(x, y): atan2(y, x) as a signed 16-bit binary angle. */
 export function matan(x: number, y: number): number {
