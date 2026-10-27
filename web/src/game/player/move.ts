@@ -1,7 +1,8 @@
 // Player/MarioMove.cpp: statuses and their entry speeds, the controller, the planes he stands in,
 // the per-tick thinking (situation, water surface, height), and playerControl.
 
-import { V3, fr, s16, JMASSin, JMASCos, matan, psMtxMultVec, psMtxInverse, mtx, MsMtxSetTRS } from '../math.js';
+import { V3, fr, s16, JMASSin, JMASCos, matan, psMtxMultVec, psMtxInverse, mtx, MsMtxSetTRS, jgNormalize } from '../math.js';
+import { sqrtf as stdSqrtf, fmadd as fmaddS } from './fmath.js';
 import { HitActor, MSG } from '../engine.js';
 import { DONT_MOVE_XZ } from '../collision.js';
 import { AT } from '../actortypes.js';
@@ -153,8 +154,9 @@ export abstract class MarioMove extends MarioBase {
         if (this.mForwardVel > 0) {
             const slope = s16(this.mSlopeAngle + 0x8000);
             const a = s16(this.mFaceAngle.y - slope);
-            const x = fr(this.mForwardVel * JMASSin(a)), z = fr(this.mForwardVel * JMASCos(a) * 0.75);
-            this.setPlayerVelocity(MsSqrtf(x * x + z * z));
+            // (inlined in changePlayerJumping @0x80132fc4: z is fmuls(0.75, fmuls(fv, cos)); the sum fmadds(x, x, z * z))
+            const x = fr(this.mForwardVel * JMASSin(a)), z = fr(0.75 * fr(this.mForwardVel * JMASCos(a)));
+            this.setPlayerVelocity(MsSqrtf(fmaddS(x, x, fr(z * z))));
             this.mFaceAngle.y = s16(slope + matan(z, x));
         }
         this.dropObject();
@@ -275,12 +277,13 @@ export abstract class MarioMove extends MarioBase {
         return status;
     }
     throwMario(v: V3, power: number) {
+        // (@0x801335f0: the length check, JGeometry's normalize, then std::sqrtf of fmadds(z, z, x * x))
         const t = v.clone();
-        if (t.squared() <= 3.8146973e-6) t.y = 1;
-        t.normalize();
+        if (fr(fr(fr(t.x * t.x) + fr(t.y * t.y)) + fr(t.z * t.z)) <= fr(3.8146973e-6)) t.y = 1;
+        jgNormalize(t);
         this.mFaceAngle.y = s16(matan(t.z, t.x) + 0x8000);
         this.mModelFaceAngle = this.mFaceAngle.y;
-        this.mForwardVel = fr(power * -sqrtf(t.x * t.x + t.z * t.z));
+        this.mForwardVel = fr(power * -stdSqrtf(fmaddS(t.z, t.z, fr(t.x * t.x))));
         this.mVel.y = fr(t.y * power);
     }
     changePlayerStatus(status: number, arg: number, force: boolean): number {
@@ -370,8 +373,8 @@ export abstract class MarioMove extends MarioBase {
         const C = this.mControllerParams;
         const zero = C.mAnalogLRToZeroVal, mid = C.mAnalogLRToMiddleVal, max = C.mAnalogLRToMaxVal, ml = C.mAnalogLRMiddleLevel;
         if (level < zero) return 0;
-        if (level < mid) return fr(ml * (level - zero) / (mid - zero));
-        if (level < max) return fr(ml + (1 - ml) * (level - mid) / (max - mid));
+        if (level < mid) return fr(fr(ml * fr(level - zero)) / fr(mid - zero));   // (fsubs, fmuls, fsubs, fdivs: inlined in checkController)
+        if (level < max) return fr(ml + fr(fr(fr(1 - ml) * fr(level - mid)) / fr(max - mid)));
         return 1;
     }
     /** checkController: the player's pad. (TEnemyMario has its own.) */

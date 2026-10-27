@@ -291,10 +291,10 @@ export abstract class MarioSpecial extends MarioSwim {
                 // (newPos is left uninitialized by the game when neither branch applies: the position here)
                 const np = new V3(this.pos.x, this.pos.y, this.pos.z);
                 if (yawDiff > 0x400 && yawDiff < 0x71c7) {
-                    np.x = fr(this.pos.x - sp * (this.mIntendedMag * wall.n[2])); np.y = this.pos.y; np.z = fr(this.pos.z + sp * (this.mIntendedMag * wall.n[0]));
+                    np.x = fr(this.pos.x - sp * fr(this.mIntendedMag * wall.n[2])); np.y = this.pos.y; np.z = fr(this.pos.z + sp * fr(this.mIntendedMag * wall.n[0]));   // (fnmsubs / fmadds of fmuls(mag, n))
                 }
                 if (yawDiff > -0x71c7 && yawDiff < -0x400) {
-                    np.x = fr(this.pos.x + sp * (this.mIntendedMag * wall.n[2])); np.y = this.pos.y; np.z = fr(this.pos.z - sp * (this.mIntendedMag * wall.n[0]));
+                    np.x = fr(this.pos.x + sp * fr(this.mIntendedMag * wall.n[2])); np.y = this.pos.y; np.z = fr(this.pos.z - sp * fr(this.mIntendedMag * wall.n[0]));
                 }
                 const rec3 = wallRecord(np.x, fr(10 + np.y), np.z, 50, 1, 0);
                 this.isTouchedWallsAndMoveXZ(rec3);
@@ -394,7 +394,7 @@ export abstract class MarioSpecial extends MarioSwim {
                 if (camDelta > -0x4000 && camDelta < 0x4000) { nz = wall.n[0]; nx = -wall.n[2]; }
                 else { nx = wall.n[2]; nz = -wall.n[0]; }
                 const sh = fr(0.015625 * this.unk108.mStickH);
-                np.x = fr(np.x + nx * sh * sp); np.z = fr(np.z + nz * sh * sp);
+                np.x = fr(np.x + fr(nx * sh) * sp); np.z = fr(np.z + fr(nz * sh) * sp);   // (fmadds(fmuls(n, sh), sp, p))
                 const sf = new V3(fr(np.x + 0.5 * fr(50 * JMASSin(this.mFaceAngle.y))), np.y, fr(np.z + 0.5 * fr(50 * JMASCos(this.mFaceAngle.y))));
                 const sf2 = new V3(sf.x, sf.y, sf.z);
                 const w1 = this.checkWallPlane(sf, 20, 50);

@@ -195,7 +195,7 @@ export abstract class MarioRun extends MarioPhysics {
         let wa = 0, d = 0;
         if (this.mWallPlane) { wa = this.getWallAngle(); d = s16(wa - this.mFaceAngle.y); }
         if (!this.mWallPlane || d < -0x71C7 || d > 0x71C7) { this.setAnimation(A.PUSH, 1); this.startVoice(SE.MV16_EXERT_CONT_01); return; }
-        const rate = fr(2 * MsSqrtf(dx * dx + dz * dz));
+        const rate = fr(2 * MsSqrtf(fmadd(dx, dx, fmul(dz, dz))));
         this.setAnimation(d < 0 ? A.SWLKR : A.SWLKL, rate);
         this.mFaceAngle.x = 0;
         this.mModelFaceAngle = s16(wa + 0x8000);
@@ -364,7 +364,7 @@ export abstract class MarioRun extends MarioPhysics {
                 if (this.isSlipStart()) {
                     if (this.mWallPlane) {
                         const wa = matan(this.mWallPlane.n[2], this.mWallPlane.n[0]);
-                        let m = MsSqrtf(this.mSlideVelX * this.mSlideVelX + this.mSlideVelZ * this.mSlideVelZ);
+                        let m = MsSqrtf(fadd(fmul(this.mSlideVelX, this.mSlideVelX), fmul(this.mSlideVelZ, this.mSlideVelZ)));
                         m = fr(m * 0.9);
                         if (m < 4) m = 4;
                         this.unk9E = s16(wa - s16(this.unk9E - wa) + 0x8000);
@@ -437,8 +437,8 @@ export abstract class MarioRun extends MarioPhysics {
         if (-1 < this.mVel.x && this.mVel.x < 1 && -1 < this.mVel.z && this.mVel.z < 1) { this.setPlayerVelocity(0); return this.changePlayerStatus(S.WAIT, 0, false); }
         if (this.world.pollution) this.world.pollution.stamp(1, this.pos.x, this.pos.y, this.pos.z, D.mPolSizeRun);
         { const r = s16(D.mSlipRotate); this.mFaceAngle.y = s16(this.mIntendedYaw - iconv(s16(this.mIntendedYaw - this.mFaceAngle.y), 0, r, r)); }
-        this.mVel.x = fr(this.mVel.x + this.mIntendedMag * JMASSin(this.mFaceAngle.y) * D.mSlipRunSp);
-        this.mVel.z = fr(this.mVel.z + this.mIntendedMag * JMASCos(this.mFaceAngle.y) * D.mSlipRunSp);
+        this.mVel.x = fr(this.mVel.x + fr(this.mIntendedMag * JMASSin(this.mFaceAngle.y)) * D.mSlipRunSp);   // (fmadds(fmuls(mag, sin), sp, v))
+        this.mVel.z = fr(this.mVel.z + fr(this.mIntendedMag * JMASCos(this.mFaceAngle.y)) * D.mSlipRunSp);
         this.mDirtyTimer--;
         if (this.mDirtyTimer <= 0) { this.mDirtyTimer = 0; this.mOilBrake = 0; }
         this.mVel.x = fr(this.mVel.x * this.mOilBrake); this.mVel.z = fr(this.mVel.z * this.mOilBrake);
@@ -455,7 +455,7 @@ export abstract class MarioRun extends MarioPhysics {
         this.mDirtyTimer--;
         if (this.mDirtyTimer <= 0) { this.mDirtyTimer = 0; this.mOilBrake = 0; this.changePlayerStatus(S.CATCH, 0, false); }
         if (this.world.pollution) this.world.pollution.stamp(1, this.pos.x, this.pos.y, this.pos.z, D.mPolSizeSlip);
-        this.mForwardVel = fr(this.mForwardVel + this.mIntendedMag * JMASCos(s16(this.mFaceAngle.y - this.mIntendedYaw)) * D.mSlipCatchSp);
+        this.mForwardVel = fr(this.mForwardVel + fr(this.mIntendedMag * JMASCos(s16(this.mFaceAngle.y - this.mIntendedYaw))) * D.mSlipCatchSp);
         this.mForwardVel = fr(this.mForwardVel * this.mOilBrake);
         this.setPlayerVelocity(this.mForwardVel);
         if (-1 < this.mForwardVel && this.mForwardVel < 1) { this.setPlayerVelocity(0); return this.changePlayerStatus(S.CATCH_LOST, 0, false); }

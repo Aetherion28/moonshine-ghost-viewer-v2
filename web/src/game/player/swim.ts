@@ -12,10 +12,10 @@ export abstract class MarioSwim extends MarioWait {
         const W = this.mSwimParams;
         if (this.mInput & 0x8000) { this.changePlayerStatus(S.SWIM_DIVE, 0, false); return; }
         if (this.mFloorPosition.y + W.mEndDepth > this.mFloorPosition.z) { this.changePlayerStatus(S.WAIT, 0, false); return; }
-        this.mForwardVel = fr(this.mForwardVel + this.mIntendedMag * W.mMoveSp * 0.03125);
+        this.mForwardVel = fr(0.03125 * fr(this.mIntendedMag * W.mMoveSp) + this.mForwardVel);   // (fmadds(0.03125, fmuls(mag, mMoveSp), fv))
         this.mForwardVel = fr(this.mForwardVel * W.mMoveBrake);
         const [mn, mx] = this.isUpperPumpingStyle() ? [W.mPumpingRotSpMin, W.mPumpingRotSpMax] : [W.mSwimmingRotSpMin, W.mSwimmingRotSpMax];
-        const rot = s16(fr(this.mForwardVel * (mx - mn) * (1 / 32) + mn));
+        const rot = s16(fr(0.03125 * fr(this.mForwardVel * fr(mx - mn)) + mn));   // (fmadds(0.03125, fmuls(fv, max - min), min))
         this.mFaceAngle.y = s16(this.mIntendedYaw - IConverge(s16(this.mIntendedYaw - this.mFaceAngle.y), 0, rot, rot));
         this.setPlayerVelocity(this.mForwardVel);
         this.mVel.y = fr(this.mVel.y - W.mGravity);

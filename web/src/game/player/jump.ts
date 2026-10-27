@@ -10,7 +10,8 @@ import { SE } from '../soundids.js';
 import { AT } from '../actortypes.js';
 
 /** s16 += f32 (the game converts the sum) */
-const addAngle = (a: number, f: number) => s16(Math.trunc(a + f));
+/** angle += f as the DOL does it: fmadds into the angle as a float (one f32 rounding of the sum), then fctiwz; f is the exact product */
+const addAngle = (a: number, f: number) => s16(Math.trunc(fr(a + f)));
 
 export abstract class MarioJump extends MarioRun {
     /** the L trigger (checkFrameMeaning(MEANING_L)) on his pad */
@@ -26,8 +27,8 @@ export abstract class MarioJump extends MarioRun {
         this.mForwardVel = fr(this.mForwardVel * this.mJumpParams.mJumpSpeedBrake);
         if (this.mInput & 1) {
             const d = (this.mIntendedYaw - this.mFaceAngle.y) & 0xFFFF, inc = fr(0.03125 * this.mIntendedMag);
-            this.mForwardVel = fr(this.mForwardVel + inc * JMASCos(d) * this.getJumpAccelControl());
-            this.mFaceAngle.y = addAngle(this.mFaceAngle.y, fr(inc * JMASSin(d) * this.getJumpSlideControl()));
+            this.mForwardVel = fr(this.mForwardVel + fr(inc * JMASCos(d)) * this.getJumpAccelControl());
+            this.mFaceAngle.y = addAngle(this.mFaceAngle.y, fr(inc * JMASSin(d)) * this.getJumpSlideControl());
         }
         if (this.mForwardVel > 32) this.mForwardVel = fr(this.mForwardVel - 0.2);
         if (this.mForwardVel < -16) this.mForwardVel = fr(this.mForwardVel + 0.4);
@@ -290,9 +291,9 @@ export abstract class MarioJump extends MarioRun {
         if (!(this.mInput & 1)) this.mForwardVel = fr(FConverge(this.mForwardVel, 0, 0.35, 0.35));
         if (this.mInput & 1) {
             const d = (this.mIntendedYaw - this.mFaceAngle.y) & 0xFFFF;
-            const inc = fr(0.03125 * this.mIntendedMag * this.mJumpParams.mFireDownControl);
+            const inc = fr(fr(0.03125 * this.mIntendedMag) * this.mJumpParams.mFireDownControl);
             this.mForwardVel = fr(this.mForwardVel + inc * JMASCos(d));
-            this.mFaceAngle.y = addAngle(this.mFaceAngle.y, fr(1024 * (inc * JMASSin(d))));
+            this.mFaceAngle.y = addAngle(this.mFaceAngle.y, 1024 * fr(inc * JMASSin(d)));
             if (this.mForwardVel < 0) { this.mFaceAngle.y = s16(this.mFaceAngle.y + 0x8000); this.mForwardVel = fr(this.mForwardVel * -1); }
             if (this.mForwardVel > 32) this.mForwardVel = fr(this.mForwardVel - 2);
         }
@@ -310,8 +311,8 @@ export abstract class MarioJump extends MarioRun {
     }
     thrownDowning() {
         const d = (this.mIntendedYaw - this.mFaceAngle.y) & 0xFFFF, inc = fr(0.03125 * this.mIntendedMag);
-        this.mForwardVel = fr(this.mForwardVel + inc * JMASCos(d) * this.mJumpParams.mThrownAccel);
-        this.mFaceAngle.y = addAngle(this.mFaceAngle.y, fr(inc * JMASSin(d) * this.mJumpParams.mThrownSlide));
+        this.mForwardVel = fr(this.mForwardVel + fr(inc * JMASCos(d)) * this.mJumpParams.mThrownAccel);
+        this.mFaceAngle.y = addAngle(this.mFaceAngle.y, fr(inc * JMASSin(d)) * this.mJumpParams.mThrownSlide);
         this.mForwardVel = fr(this.mForwardVel * this.mJumpParams.mThrownBrake);
         this.mVel.x = this.mSlideVelX = fr(this.mForwardVel * JMASSin(this.mFaceAngle.y));
         this.mVel.z = this.mSlideVelZ = fr(this.mForwardVel * JMASCos(this.mFaceAngle.y));

@@ -32,9 +32,37 @@ export const MsRandI = (l: number, r: number) => 1 + l + Math.trunc(rand() * (1 
 
 // ---------------------------------------------------------------- sine table (JMath)
 const SIN_SHIFT = 16 - 12;
-// JMANewSinTable: sinf(2pi / size * i) for size + size / 4 entries; the cosine table is the same one a quarter in.
+// JMANewSinTable (JMath.cpp): MSL's sinf of fmuls(fdivs(2pi, size), i) for size + size / 4 entries;
+// the cosine table is the same one a quarter in. MSL's sinf (trigf.c, single precision: a Cody-Waite
+// reduction by __four_over_pi_m1 and a degree-9 polynomial, all fused multiply-adds) is often an ulp
+// or two off the true sine, so the table is built with it, not Math.sin.
+function fmaS(a: number, b: number, c: number) {
+    const p = a * b, s = p + c, bb = s - p, e = (p - (s - bb)) + (c - bb);
+    let r = fr(s);
+    if (e !== 0) {
+        const d = s - r, nx = fr(r + (d > 0 ? 1 : -1) * Math.abs(r) * 2 ** -23), half = (nx - r) / 2;
+        if (half !== 0 && d === half && (e > 0) === (half > 0)) r = nx;
+    }
+    return r;
+}
+const SINF_A = [0.25, 0.023239374, 0.00000017055572, 1.867365e-11].map(fr);
+const SINF_C = [3.52876168108196e-06, 3.0897470537638583e-07, -0.0003259365039411932, -3.65723499271553e-05, 0.015854323282837868,
+    0.002490393118932843, -0.3084251284599304, -0.08074551075696945, 1.0, 0.7853981852531433].map(fr);
+const SINF_Q = [0, 1, 1, 0, 0, -1, -1, 0];
+/** MSL sinf (trigf.c) as the DOL has it (@0x80087104) */
+export function mslSinf(x: number): number {
+    x = fr(x);
+    const z = fr(fr(0.63661975) * x), n = Math.trunc(x < 0 ? fr(z - 0.5) : fr(z + 0.5));
+    let f = fr(x - fr(n * 2));
+    for (const a of SINF_A) f = fmaS(a, x, f);
+    const q = n & 3, C = SINF_C, T = SINF_Q;
+    if (Math.abs(f) < fr(3.45266983e-4)) return fmaS(C[9], fr(f * T[2 * q + 1]), T[2 * q]);
+    const xx = fr(f * f);
+    if (q & 1) return fr(fmaS(xx, fmaS(xx, fmaS(xx, fmaS(C[0], xx, C[2]), C[4]), C[6]), C[8]) * T[2 * q]);
+    return fr(fr(f * fmaS(xx, fmaS(xx, fmaS(xx, fmaS(C[1], xx, C[3]), C[5]), C[7]), C[9])) * T[2 * q + 1]);
+}
 const sinAll = new Float32Array(4096 + 1024);
-for (let i = 0; i < sinAll.length; i++) sinAll[i] = Math.sin(fr(fr(Math.PI * 2) / 4096) * i);
+{ const step = fr(fr(6.2831855) / 4096); for (let i = 0; i < sinAll.length; i++) sinAll[i] = mslSinf(fr(step * i)); }
 const sinT = sinAll.subarray(0, 4096), cosT = sinAll.subarray(1024);
 /** (s16) of a float, as fctiwz then a 16-bit truncation does it. */
 export const s16 = (v: number) => (Math.trunc(v) << 16) >> 16;
@@ -168,6 +196,21 @@ export function matan(x: number, y: number): number {
         else r = x < y ? 0xC000 + atanT(y, x) : 0x0000 - atanT(x, y);
     }
     return ((r & 0xFFFF) << 16) >> 16;
+}
+
+/** JGeometry::TUtil<f32>::inv_sqrt (@0x8006cd70): frsqrte rounded to f32 and one single-precision Newton step (fnmsubs); 0 for x <= 0 */
+export function jgInvSqrt(x: number): number {
+    if (!(x > 0)) return 0;
+    const e = fr(frsqrte(x));
+    return fr(fr(0.5 * e) * fmaS(-x, fr(e * e), 3));
+}
+/** JGeometry::TVec3<f32>::normalize: the length squared (fmuls, fadds, fadds), zero when it is at most 2^-18, else times inv_sqrt */
+export function jgNormalize(v: { x: number; y: number; z: number }) {
+    const sq = fr(fr(fr(v.x * v.x) + fr(v.y * v.y)) + fr(v.z * v.z));
+    if (sq <= fr(3.8146973e-6)) { v.x = 0; v.y = 0; v.z = 0; return v; }
+    const k = jgInvSqrt(sq);
+    v.x = fr(v.x * k); v.y = fr(v.y * k); v.z = fr(v.z * k);
+    return v;
 }
 
 // ---------------------------------------------------------------- vectors (JGeometry::TVec3<f32>)
