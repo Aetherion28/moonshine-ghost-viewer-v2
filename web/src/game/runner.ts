@@ -299,7 +299,8 @@ export class ReplayHistory {
     push(qf: number, P: PlayerMario) {
         const dp = P.drawPos;   // (the drawn place: on a pole or tree his base matrix's, off its axis)
         this.qf.push(qf); this.pos.push(dp.x, dp.y, dp.z); this.yaw.push(P.mModelFaceAngle);
-        this.anim.push(P.mAnimationId); this.phase.push(Math.round(P.phase * 4096) & 4095);
+        const FA = P.followAnim;   // (following the ghost: its animation)
+        this.anim.push(FA ? FA.anim : P.mAnimationId); this.phase.push(Math.round((FA ? FA.phase : P.phase) * 4096) & 4095);
         const f = P.fludd;
         this.fludd.push(f ? (f.nozzle & 7) | (f.spraying ? 0x10 : 0) : -1);
         this.slip.push(P.slipFx); P.slipFx = 0;

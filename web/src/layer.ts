@@ -22,6 +22,7 @@ import { createSwapChainForWebGL2, GfxPlatformWebGL2Config } from '../noclip/gfx
 import { GfxDevice, GfxSwapChain } from '../noclip/gfx/platform/GfxPlatform.js';
 import { ColorKind } from '../noclip/gx/gx_render.js';
 import { Color } from '../noclip/Color.js';
+import { PlayerMario } from './game/player/player.js';
 import { GameFS, openDisc, openFolder, rememberHandle, rememberedHandle, forgetHandle } from './disc.js';
 import { parseStageArc, sceneForRoute } from './stagearc.js';
 import { SMSPass, SunshineRenderer, SunshineSceneDesc } from './sms_scene.js';
@@ -1325,4 +1326,5 @@ function setAmbient(models: J3DModelInstanceSimple[], amb: { r: number, g: numbe
 
 (window as any).GameLayer = GameLayer;
 (window as any).GameDisc = { openDisc, openFolder, rememberHandle, rememberedHandle, forgetHandle };
+(window as any).GameSim = { setCorrectDrift(on: boolean) { PlayerMario.correctDrift = !!on; } };
 (window as any).V1Data = V1Data;

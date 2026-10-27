@@ -1751,6 +1751,9 @@ export class PlayerMario extends TMarioSim {
     drift = { firstQf: -1, firstErr: 0, maxErr: 0, frames: 0, synced: 0, warned: false, corrections: 0 };
     /** put the input replay back on the ghost when it drifts (checkDrift) */
     static correctDrift = true;
+    /** following the ghost (checkDrift's snap back), and the animation it shows meanwhile */
+    following = false;
+    followAnim: { anim: number; phase: number } | null = null;
     /** the ghost's sample at the end of each frame: how far the sim is from it */
     checkDrift() {
         const q = this.world.tickCount;
@@ -1771,16 +1774,28 @@ export class PlayerMario extends TMarioSim {
             d.firstQf = q; d.firstErr = e;
             if (!d.warned) { d.warned = true; console.warn(`[player] input replay drifted from the ghost at stage QF ${q} (${(q / 120).toFixed(2)} s) by ${e.toFixed(2)} units`); }
         }
-        // (a fit, not the game's: the input replay put back on the ghost when it's more than a unit off,
-        // its position and its ground speed from the ghost's last frame; counted in drift.corrections)
-        if (PlayerMario.correctDrift && e > 1) {
-            const p = this.track!.at(q - 4);
-            this.pos.set(s.x, s.y, s.z);
-            if (p) {
-                const dx = s.x - p.x, dz = s.z - p.z, h = Math.hypot(dx, dz);
-                if (this.mForwardVel !== 0 || h > 0.5) this.mForwardVel = this.mForwardVel < 0 ? -h : h;
+        // (a fit, not the game's: the input replay put back on the ghost.) More than a unit off, Mario
+        // follows the ghost's own place, facing and animation; the next frame the ghost stands on the
+        // floor (right on the ground under him, not rising or falling, not on Yoshi) the inputs take
+        // him again from there, standing or running at the ghost's speed. Each takeover is counted in
+        // drift.corrections.
+        if (PlayerMario.correctDrift) {
+            if (!this.following && e > 1) { this.following = true; d.corrections++; }
+            if (this.following) {
+                const p = this.track!.at(q - 4);
+                this.pos.set(s.x, s.y, s.z);
+                this.mFaceAngle.y = s.yaw; this.mModelFaceAngle = s.yaw;
+                this.followAnim = { anim: s.anim, phase: s.phase };
+                const [gy] = this.world.checkGround(s.x, s.y + 50, s.z);
+                if (p && !s.yoshi && !p.yoshi && Math.abs(s.y - gy) < 1 && Math.abs(s.y - p.y) < 0.5) {
+                    const h = Math.hypot(s.x - p.x, s.z - p.z);
+                    this.mVel.set(0, 0, 0);
+                    this.mForwardVel = h;
+                    this.changePlayerStatus(h > 1 ? S.RUN : S.WAIT, 0, true);
+                    this.pos.set(s.x, s.y, s.z);
+                    this.following = false; this.followAnim = null;
+                }
             }
-            d.corrections++;
         }
     }
 

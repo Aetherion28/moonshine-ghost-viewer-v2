@@ -501,6 +501,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <div class="discLine">Disc: <span class="discInfo" id="discInfo">none loaded</span> <span class="discInfo" id="padInfo" hidden></span> <span class="discInfo" id="padRec" hidden></span></div>
       <label title="The game's HUD from the disc (life meter, coins, Shines, blue and red coins, FLUDD's tank) and the stage's opening words"><input type="checkbox" id="optHud" checked disabled> Show HUD</label>
       <label title="With a ghost that recorded its controller: Mario is played by the game's own code from those inputs (the camera too), instead of following the ghost's recorded positions. Where the replay drifts from the ghost is shown here."><input type="checkbox" id="optReplay" checked disabled> Input replay <span class="discInfo" id="replayInfo"></span></label>
+      <label title="When the input replay drifts more than a unit from the ghost, Mario follows the ghost's own position and animation until the ghost next stands on the ground, then the inputs take over again from there."><input type="checkbox" id="optSnap" checked> Snap Mario back to the ghost</label>
       <label title="Read the game from an extracted game folder instead of a disc image"><button type="button" id="pickFolder" class="linkBtn">Use an extracted game folder…</button></label>
       <label title="Load zones, cutscene and warp triggers, area cylinders and the camera, area, flow, wire, shadow, mirror, sound and draw-distance cubes, and enemies' own trigger zones (the Monty Mole cannon's), as see-through volumes with labels."><input type="checkbox" id="optTriggers"> Show invisible triggers</label>
       <label><input type="checkbox" id="optNames"> Show model names</label>
@@ -5601,8 +5602,8 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   // The input replay's own Yoshi (SimRunner.history.yoshiAt: the sim's TYoshi), where the replay has
   // run: ridden or free (hatched by the egg, waiting by it), his BCK, frame, walk blend and juice.
   function simYoshiAt(d, t) { const H = replayOf(d); return H && H.yoshiAt ? H.yoshiAt(t) : undefined; }
-  function poseYoshi(g, s, time) {
-    const d = g.data, sim = simYoshiAt(d, time);
+  function poseYoshi(g, s, time, simOverride) {
+    const d = g.data, sim = simOverride !== undefined ? simOverride : simYoshiAt(d, time);
     const colour = sim !== undefined ? (sim ? sim.type + 1 : 0) : d.yoshi ? d.yoshi[s.i] : 0;
     if (!colour || (s.gap && !sim) || !g.visible) { if (g.yoshiNode) g.yoshiNode.root.visible = false; return; }
     const Y = yoshiFor(g, colour);
@@ -6203,6 +6204,10 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     const rig = m.userData.rig;
     MarioRig.pose(rig, a.id, a.yoshi, a.phase);
     poseSimUpper(rig, H.upperAt ? H.upperAt(q) : null);
+    // his Yoshi as the sim has him (ridden, or hatched and waiting), hung from Mario like a ghost's
+    { const yg = m.userData.liveYoshi || (m.userData.liveYoshi = { marker: m, visible: true, data: null, yoshiNode: null });
+      const ys = H.yoshiAt ? H.yoshiAt(q) : null;
+      poseYoshi(yg, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, i: 0, gap: false }, q, ys === undefined ? null : ys); }
     // MarioWaistCtrl (chn_chest's callback: the chest bent by the gun angle aiming down, or the L
     // camera's pitch), as the sim's calcAnim applied it: the joint's local matrix times that rotation
     { const g0 = liveGunAt(H, q), w = g0 && g0.wc, b = w && rig.bones ? rig.bones[w.j] : null;
@@ -9593,6 +9598,7 @@ void main() {
     if (list.length) GameDisc.openFolder(list).then(useDisc, (err) => showNotice(err.message || String(err)));
     e.target.value = '';
   };
+  $('optSnap').onchange = (e) => { if (window.GameSim) window.GameSim.setCorrectDrift(e.target.checked); };
   $('optReplay').onchange = (e) => { layerSlots.forEach((s) => { if (s.layer && s.layer.sim) s.layer.sim.inputReplay = e.target.checked; }); update(); };
   // the disc kept from last time opens by itself; else the button for the one picked last time
   if (gameLayer) DiscStore.get().then(async (f) => {
