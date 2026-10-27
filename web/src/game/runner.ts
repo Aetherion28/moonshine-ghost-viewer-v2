@@ -10,7 +10,7 @@ import type { GameFS } from '../disc.js';
 import { Stage, StageFiles, GameCamera } from './scene.js';
 import { MarioSample, MarioTrack } from './mario.js';
 import { LiveActor, NameRef, World, calcKeyCode } from './engine.js';
-import { rngCtx } from './math.js';
+import { rngCtx, srand } from './math.js';
 import './npc/manager.js';
 import './enemies/pakkun.js';
 import './enemies/sambo.js';
@@ -537,6 +537,8 @@ export class SimRunner {
             const seed = stageSeed(g, segI);
             try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, seed ?? 0, 0, intro); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
+            // V9: rand()'s state at the first recorded pose (the stage's QF 0, after its lead frames)
+            if (segI === 0 && g.header && g.header.initialRng !== undefined) srand(g.header.initialRng);
             const st0 = this.stage;
             const C0: any = st0.player && st0.player.simCamera;
             if (C0 && demoName) C0.stageDemoName = demoName(st0.world.flags);

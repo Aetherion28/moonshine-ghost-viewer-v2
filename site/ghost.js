@@ -59,7 +59,7 @@ function parseSmsGhost(buffer) {
   const magic = String.fromCharCode(...bytes.subarray(0, 4));
   if (magic !== 'SGHF') fail('Not a Moonshine ghost (missing SGHF header).');
   const version = dv.getUint16(4);
-  if (version > 8) fail(`Ghost version ${version} is newer than this viewer supports (5–8). The viewer needs an update for it.`);
+  if (version > 9) fail(`Ghost version ${version} is newer than this viewer supports (5–9). The viewer needs an update for it.`);
   // The viewer plays a run from its controller inputs (SGTI, V5+); older ghosts recorded none.
   if (version < 5) fail(`This ghost is format v${version}, recorded before Moonshine saved controller inputs. The viewer plays ghosts from their inputs, so it needs v5 or newer — re-record the run with a current Moonshine.`);
   const fileSize = dv.getUint32(8);
@@ -118,6 +118,8 @@ function parseSmsGhost(buffer) {
       route: { area: bytes[o + 0x14], episode: bytes[o + 0x15], parentArea: bytes[o + 0x16], flags: bytes[o + 0x17], variant: dv.getInt32(o + 0x10) },
     };
     seg.routeLabel = ghostRouteLabel(seg.route);
+    // V9: segment 0's reserved words are the game's rand() state at the first recorded pose (provenance 1)
+    if (version >= 9 && s === 0 && dv.getUint32(o + 0x1c) === 1) header.initialRng = dv.getUint32(o + 0x18) >>> 0;
     if (seg.firstSample + seg.sampleCount > n) fail('Ghost segment table is out of bounds.');
     let t = seg.startQf;
     for (let i = seg.firstSample; i < seg.firstSample + seg.sampleCount; i++) {
