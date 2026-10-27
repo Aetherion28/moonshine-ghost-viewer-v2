@@ -14,7 +14,7 @@ import { fr, V3, JMASSin, JMASCos, s16, rand, JMAHermiteInterpolation, MsSin, Ms
 import { World, SpineEnemy, EnemyManager, LF, HF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, MActor, readParams, SPINE_PARAMS, PSchema, CUE_MOVE, CUE_CALC_ANIM, NameRef, ANM_BRK, ANM_BTK, ANM_FRAME_RATE, MoveCollision, PathNode, LiveActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SE } from '../soundids.js';
-import '../sound.js';
+import { holdKey } from '../sound.js';
 import { Walker } from './walker.js';
 import { mapObjGlobals } from '../mapobj/base.js';
 import type { ItemManager } from '../mapobj/item.js';
@@ -108,6 +108,9 @@ export class PolDrop extends HitActor {
                 const p = { x: n.x, z: n.z };
                 if (w.isTouchedOneWallAndMoveXZ(p, n.y, 80)) this.unk80 = 0;
                 n.x = p.x; n.z = p.z;
+                // (startSoundActorWithInfo, by its fall speed: not here)
+                w.sound(SE.BS_BSPAKU_POLLUT_IMI, this.pos, { hold: holdKey(this, 'imi') });
+                w.sound(SE.BS_BSPAKU_POLLUT_FLY, this.pos, { hold: holdKey(this, 'fly') });
             }
         } else if (this.unk80 === 2 && this.stamp.mactor!.curAnmEndsNext(ANM_BCK)) this.unk80 = 0;
         this.pos.set(n);
@@ -216,6 +219,7 @@ export class Tornado extends HitActor {
     perform(cue: number) {
         const o = this.owner, P = o.P;
         if (o.checkLiveFlag(LF.DEAD) || this.unk98 === 0) return;
+        if (cue & CUE_CALC_ANIM) o.world.sound(SE.BS_BSPAKU_TORNADO, this.pos, { hold: holdKey(this, 'tornado') });   // (by its distance to Mario: not here)
         if (cue & CUE_MOVE) {
             if (this.unk98 === 2) {
                 this.pos.add(this.unk88);

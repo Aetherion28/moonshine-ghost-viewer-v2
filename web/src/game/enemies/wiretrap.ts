@@ -13,6 +13,8 @@ import { register } from '../scene.js';
 import { waitForever } from './launcher.js';
 import { calcToDirMatrix } from './kazekun.js';
 import { installMapWires, MapWireManager, MapWire } from '../mapwire.js';
+import { SE } from '../soundids.js';
+import { holdKey } from '../sound.js';
 
 /** TWireTrapParams */
 const WIRE_TRAP_PARAMS = { ...SPINE_PARAMS, mInWaterPowerRate: ['f', 0.9], mScaleTimerMax: ['i', 60], mGoTimerMax: ['i', 90] } satisfies PSchema;
@@ -112,6 +114,7 @@ export class WireTrap extends SpineEnemy {
     }
     behaveHitWater(_sender: HitActor) {
         this.world.effect('enemyWaterHit', this.pos);
+        this.world.sound(SE.EN_COMMON_W_HIT_OK, this.pos);
         this.waterTimer = 30;
         const fromMario = V3.sub(this.pos, this.world.mario.pos);
         const dir = this.getWireDir().clone().scale(this.moveDir);
@@ -155,6 +158,7 @@ export class WireTrap extends SpineEnemy {
         this.updateCollision();
         this.checkHitActors();
         LiveActor.prototype.moveObject.call(this);
+        this.world.sound(SE.EN_WIRETRAP_WAIT, this.pos, { hold: holdKey(this, 'wait') });
     }
     calcMomentum() {
         const m = this.getWireDir().clone();

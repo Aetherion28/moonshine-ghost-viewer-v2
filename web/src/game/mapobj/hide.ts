@@ -80,6 +80,7 @@ export class WaterHitPictureHideObj extends HideObjBase {
     constructor(w: World, name = 'オブジェ出現の絵') { super(w, name); }
     getObjAppearPos(): V3 { return this.pos; }
     afterFinishedAnim() {
+        if (this.isActorType(AT.POSTER_TERESA)) { this.world.sound(SE.OBJ_POSTER_RIP2, this.pos); this.world.sound(SE.SY_CLEAR_SIGN_BIG); }
         this.removeMapCollision();
         this.onHitFilter(HF.NO_DAMAGE);
         this.appearObjFromPoint(this.getObjAppearPos());
@@ -94,6 +95,8 @@ export class WaterHitPictureHideObj extends HideObjBase {
     touchWater(a: HitActor) {
         const v = this.getWaterSpeed(a), m = this.rootMtx();
         if (m[2] * v.x + m[6] * v.y + m[10] * v.z > 0) return 0;
+        const w = this.world, id = MapObjBase.getWaterID(a);
+        if (w.water && id >= 0 && (w.water.flag[id] & 0xF) === 1) { w.effect('ms_enm_wathit', a.pos); w.sound(SE.EN_COMMON_W_HIT_OK, this.pos); }
         this.forward(this.sprayProgressSpeed);
         return 1;
     }
@@ -179,6 +182,7 @@ export class HideObjPictureTwin extends WaterHitPictureHideObj {
             o.vel.set(fr(m[2] * this.appearSpeed), fr(fr(m[6] * this.appearSpeed) + this.appearYSpeed), fr(m[10] * this.appearSpeed));
             o.offLiveFlag(LF.UNK10);
             if (MapObjBase.isCoin(o)) { (o as Coin).container = this; (o as Coin).unk14C = this.unk148; }
+            this.world.sound(SE.SY_TIMECOIN_APPEAR);
             this.world.events.push({ t: this.world.tickCount, kind: 'demoCamera', data: { name: this.camera, p: o.pos.clone() } });
             if (this.world.talk) this.world.talk.fireStartDemoCamera(this.camera, o.pos.clone());
         }

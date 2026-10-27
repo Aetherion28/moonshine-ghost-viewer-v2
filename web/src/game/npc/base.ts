@@ -14,6 +14,7 @@ import { World, Stream, HitActor, TakeActor, LiveActor, LiveManager, SpineEnemy,
 import { AT } from '../actortypes.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
+import { NPC_BAS_TABLES } from '../bastables.js';
 import { CLBDegToShortAngle, chaseSpeedF, chaseSpeedS, chaseFrameF } from '../camera/lib.js';
 import { newAndRegisterObjByEventID } from '../mapobj/item.js';
 import { mapObjGlobals, MapObjBase } from '../mapobj/base.js';
@@ -354,6 +355,23 @@ export class BaseNPC extends SpineEnemy {
     isJellyFishMare() { return this.is(T.NPC_MARE_WA, T.NPC_MARE_MA); }
     isSunflower() { return this.is(T.NPC_SUNFLOWER_L, T.NPC_SUNFLOWER_S); }
     isChild() { return this.scale.x < fr(0.7) && this.scale.y < fr(0.7) && this.scale.z < fr(0.7); }
+    /** TBaseNPC::getBasNameTable (NpcSound.cpp): the table by kind, a child's own for some */
+    getBasNameTable(): (string | null)[] | null {
+        const c = this.isChild(), N = NPC_BAS_TABLES;
+        if (this.isNormalMonteM()) return N[c ? 'monteMCommon_bas_c_table' : 'monteMCommon_bastable'] || null;
+        if (this.isNormalMonteW()) return N[c ? 'monteWCommon_bas_c_table' : 'monteWCommon_bastable'] || null;
+        const k: Record<number, string | [string, string]> = {
+            [T.NPC_MONTE_ME]: 'monteME_bastable', [T.NPC_MONTE_MF]: 'monteMF_bastable', [T.NPC_MONTE_MG]: 'monteMG_bastable', [T.NPC_MONTE_MH]: 'monteMH_bastable',
+            [T.NPC_MONTE_WC]: 'monteWC_bastable', [T.NPC_MARE_M]: ['mareM_bas_c_table', 'mareM_bastable'], [T.NPC_MARE_MA]: 'mareMA_bastable',
+            [T.NPC_MARE_MB]: 'mareMB_bastable', [T.NPC_MARE_MC]: 'mareMC_bastable', [T.NPC_MARE_MD]: 'mareMD_bastable',
+            [T.NPC_MARE_W]: ['mareW_bas_c_table', 'mareW_bastable'], [T.NPC_MARE_WA]: 'mareWA_bastable', [T.NPC_MARE_WB]: 'mareWB_bastable',
+            [T.NPC_KINOPIO]: 'kinopio_bastable', [T.NPC_KINOJII]: 'kinojii_bastable', [T.NPC_PEACH]: 'peach_bastable',
+            [T.NPC_RACCOON_DOG]: 'raccoonDog_bastable', [T.NPC_SUNFLOWER_L]: 'sunflowerL_bastable', [T.NPC_SUNFLOWER_S]: 'sunflowerS_bastable',
+        };
+        const e = k[this.actorType];
+        if (!e) return null;
+        return N[typeof e === 'string' ? e : e[c ? 0 : 1]] || null;
+    }
     isSmallNpc() { return this.isChild() || this.isMare() || this.is(T.NPC_KINOPIO, T.NPC_KINOJII); }
     isPollutionNpc() { return this.is(T.NPC_MONTE_M, T.NPC_MONTE_MA, T.NPC_MONTE_MC, T.NPC_MONTE_W, T.NPC_MONTE_WA, T.NPC_MARE_M, T.NPC_MARE_W, T.NPC_KINOPIO); }
     isBeTrampledNpc() { return !this.isJellyFishMare() && (this.isMonte() || this.isMare() || this.is(T.NPC_KINOPIO, T.NPC_KINOJII)); }

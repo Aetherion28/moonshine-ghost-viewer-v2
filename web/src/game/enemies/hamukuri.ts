@@ -35,6 +35,8 @@ import { register } from '../scene.js';
 import { newAndRegisterObj, mapObjGlobals } from '../mapobj/base.js';
 import { MTXConcat } from '../mapobj/lib.js';
 import { isHideObj } from '../mapobj/fruit.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 /** THamuKuriSaveLoadParams */
 const HAMU_PARAMS = {
@@ -239,9 +241,10 @@ export class HamuKuri extends WalkerEnemy {
         }
         this.vel.set(this.calcVelocityToJumpToY(a.pos, 1, this.getGravityY()));
         this.onLiveFlag(LF.AIRBORNE);
+        this.world.sound(SE.EN_DOROKURI_JUMP, this.pos);
     }
     canGoForSearchActor() { const c = this.spine!.current; return c === WalkerNerves.attack || c === WalkerNerves.graphWander; }
-    behaveToFindMario() { super.behaveToFindMario(); }
+    behaveToFindMario() { super.behaveToFindMario(); this.world.sound(SE.EN_HMKRI_VO_ATTACK, this.pos); }
     attackToMario() {
         if (this.spine!.current === HamuNerves.jitabata) {
             if (this.pos.y + 10 > this.world.mario.pos.y) this.forceRoll(this.world.mario.pos.clone(), false);
@@ -284,6 +287,7 @@ export class HamuKuri extends WalkerEnemy {
             this.hmgr.unk70 = null;
         }
         this.world.effect(this.isBckAnm(BCK_CRASH) ? 'enemyDisappearW' : 'enemyDisappear', this.pos, this.scale);
+        this.world.sound(SE.EN_COMMON_SMOKE, this.pos);
     }
     endHitWaterJump() { if (!this.isFindMario(1.3)) this.unk1A2 = true; }
     setGenerateAnm() { this.setBckAnm(BCK_SET); }
@@ -402,6 +406,7 @@ HamuNerves.wallDie = nerve<HamuKuri>('TNerveHamuKuriWallDie', (spine: S) => {
     if (spine.time === 0) {
         self.setCrashAnm();
         self.setWallDeadEffect();
+        self.world.sound(SE.EN_HAMUKURI_CRUSHED, self.pos);
         self.onHitFilter(HF.NO_COLLISION);
         self.hitPoints = 0;
     } else {
@@ -570,7 +575,8 @@ export class HaneHamuKuri extends HamuKuri {
                             else this.scale.y = MsClamp(fr(0.8 * this.scale.x), fr(0.5 * bs), fr(1.3 * bs));
                         } else {
                             this.unk21C = 0; this.unk214 = 0; this.unk210 = 0; this.unk234 = 0; this.unk20C = 0;
-                            // (PARTICLE_MS_HIPDROP_C, rumble, MSD_SE_MA_HIP_ATTACK)
+                            // (PARTICLE_MS_HIPDROP_C, rumble)
+                            this.world.sound(SE.MA_HIP_ATTACK, this.pos);
                             this.setGoalPath(new PathNode(this.world.mario));
                             this.spine!.pushNerve(HaneNerves.upWait);
                         }
@@ -609,7 +615,7 @@ export class HaneHamuKuri extends HamuKuri {
         this.posDelta.y = fr(this.posDelta.y + fr(this.unk234 + this.unk210));
     }
     isReachedToGoal() { const t = V3.sub(this.goal104.point(), this.pos); t.y = 0; return t.squared() < 100; }
-    attackToMario() { this.sendAttackMsgToMario(); /* (MSD_SE_EN_HANEKURI_ATTACK) */ }
+    attackToMario() { this.world.sound(SE.EN_HANEKURI_ATTACK, this.pos); this.sendAttackMsgToMario(); }
     setMActorAndKeeper() { this.mactor = this.createMActorByName('hanekuri.bmd'); }
     setWaitAnm() { this.setBckAnm(HANE_BCK_WAIT); }
     setWalkAnm() { this.setBckAnm(HANE_BCK_WAIT); }
@@ -756,8 +762,9 @@ export class DoroHaneKuri extends HaneHamuKuri {
     }
     attackToMario() {
         const mgr = this.manager as DoroHaneKuriManager;
-        if (!mgr.isMarioWearingCap()) { this.world.mario.receiveMessage(this, MSG.ATTACK); return; }
+        if (!mgr.isMarioWearingCap()) { if (this.world.mario.receiveMessage(this, MSG.ATTACK)) this.world.sound(SE.EN_HANEKURI_ATTACK, this.pos); return; }
         if (this.world.mario.receiveMessage(this, MSG.ATTACK)) {
+            this.world.sound(SE.EN_HANEKURI_ATTACK, this.pos);
             this.spine!.pushNerve(DoroNerves.rise);
             this.unk198 = true;   // onHaveCap (and the moustache's owner)
             // (unk200: joint unk1AC's place, for the particle)
@@ -1024,6 +1031,7 @@ export class DangoHamuKuri extends HamuKuri {
         if (msg === MSG.UNKD) { this.hitPoints = 0; this.onLiveFlag(LF.DEAD); this.onHitFilter(HF.NO_COLLISION); }
         if (msg === MSG.SPRAYED_BY_WATER) {
             this.world.effect('enemyWaterHit', sender.pos);
+            this.world.sound(SE.EN_COMMON_W_HIT_OK, this.pos);
             if (this.sprayCooldown === 0) {
                 this.sprayCooldown = 1;
                 if (!this.changeByJuice()) { this.decHpByWater(sender); this.behaveToWater(sender); }
@@ -1071,7 +1079,7 @@ export class DangoHamuKuri extends HamuKuri {
         } else if (!this.mPrev.unk230) {
             this.unk230 = true;
             this.unk210 = 1;
-            // (MSD_SE_EN_DANGOKURI_TURN)
+            this.world.sound(SE.EN_DANGOKURI_TURN, this.pos);
         }
     }
     swingBody() {
@@ -1244,13 +1252,13 @@ export class FireHamuKuri extends HamuKuri {
         this.unk210 = false; this.unk1A2 = true;
         this.unk150 |= 2; this.unk150 &= ~1;
         this.unk214 = 1;
-        // (MSD_SE_EN_MOEKURI_COOL, PARTICLE_MS_MOE_FIRE_OFF)
+        this.world.sound(SE.EN_MOEKURI_COOL, this.pos);   // (PARTICLE_MS_MOE_FIRE_OFF)
     }
     sendAttackMsgToMario() { this.world.mario.receiveMessage(this, this.unk210 ? MSG.BURN : MSG.ATTACK); }
     /** changeTevColor: only its fade counter (the colours are drawing) */
     changeTevColor() {
         if (!this.unk210) { if (this.unk218 < 30) this.unk218 += 1; }
-        else if (this.unk218 > 0) this.unk218 -= 1;   // (MSD_SE_EN_MOEKURI_FLAME)
+        else { this.world.sound(SE.EN_MOEKURI_FLAME, this.pos); if (this.unk218 > 0) this.unk218 -= 1; }
     }
 }
 

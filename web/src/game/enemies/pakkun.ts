@@ -12,6 +12,8 @@ import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, smallParams, SmallEnemyNerves, SmallParams } from './smallEnemy.js';
 import { emitInfo, EmitInfo } from '../water.js';
 import { register } from '../scene.js';
+import { SE } from '../soundids.js';
+import { holdKey } from '../sound.js';
 import type { BGCheckData, WallCheck } from '../collision.js';
 
 const SEED_HIDE = 0, SEED_APPEAR = 1, SEED_SET = 2, SEED_SHOOT = 3, SEED_CIRCLE = 4;
@@ -101,7 +103,7 @@ export class Pakkun extends SmallEnemy {
         const m = this.manager as SmallEnemyManager;
         if (this.world.pollution) this.world.pollution.stamp(m.unk58, p.x, p.y, p.z, 32 * (m.saveParams as SmallParams).mSLStampRange * this.unk158);
     }
-    createPakkunSmoke(p: V3) { this.world.effect('pakkunSmoke', p); }
+    createPakkunSmoke(p: V3) { this.world.sound(SE.EN_PAKKUN_SEED_SINK, p); this.world.effect('pakkunSmoke', p); }
     onShootLiner(dir: V3) {
         const goal = this.pos.clone();
         goal.x += 200 * dir.x; goal.z += 200 * dir.z;
@@ -172,7 +174,7 @@ export class StayPakkun extends Pakkun {
         const max = this.maxHitPoints();
         this.unk1B2a = Math.trunc((this.hitPoints * 255) / max) & 0xFF;
         this.unk1B8 = fr(1 + (mRootExplosionScaleRate * (255 - this.unk1B2a)) / 255);
-        if (this.hitPoints < 2) { this.hitPoints = 1; this.kill(); }
+        if (this.hitPoints < 2) { this.world.sound(SE.EN_PAKKUN_RIP, this.pos); this.hitPoints = 1; this.kill(); }
     }
     isHitValid(msg: number) {
         if (msg === MSG.UNKB) { this.onLiveFlag(LF.DEAD); this.onLiveFlag(LF.UNK20000); return true; }
@@ -247,6 +249,7 @@ export class PakkunSeed extends SpineEnemy {
         if (host.unk199) {
             this.unk150 = 0; this.unk158 = 0; this.onHitFilter(HF.NO_COLLISION);
             host.seedPollute(this.pos);
+            this.world.sound(SE.EN_PAKKUN_SEED_SINK, this.pos);
             return;
         }
         ++this.unk158;
@@ -312,7 +315,7 @@ export class PakkunSeed extends SpineEnemy {
             this.rot.x *= 0.8;
         }
     }
-    calcRootMatrix() { this.calcRootMatrixBasic(); }
+    calcRootMatrix() { this.world.sound(SE.EN_PAKKUN_SEED_FLY, this.pos, { hold: holdKey(this, 'fly') }); this.calcRootMatrixBasic(); }
     perform(cue: number) {
         if (this.unk150 === 0) { if (cue & CUE_CALC_ANIM) this.behaveToHost(); return; }
         if (cue & CUE_MOVE) this.moveObject();

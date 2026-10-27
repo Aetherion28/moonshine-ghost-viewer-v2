@@ -13,6 +13,8 @@ import { WalkerEnemy, WalkerNerves, Walker, walkerParams } from './walker.js';
 import { Launcher, LauncherManager } from './launcher.js';
 import { resetSRTV } from './generator.js';
 import { register } from '../scene.js';
+import { SE } from '../soundids.js';
+import { holdKey } from '../sound.js';
 import type { BGCheckData, WallCheck } from '../collision.js';
 
 /** TNameKuriSaveLoadParams */
@@ -184,6 +186,7 @@ export class NameKuri extends WalkerEnemy {
         super.moveObject();
         const c = this.spine!.current, NP = this.NP;
         if (this.vel.y < 0 && (c === WalkerNerves.graphWander || c === WalkerNerves.escape) && this.pos.y - this.groundHeight > NP.mSLLandHeight) this.spine!.pushNerve(NameKuriNerves.land);
+        if (!this.isAirborne() && this.isBckAnm(7)) this.world.sound(SE.EN_NAMEKURI_WALK, this.pos, { hold: holdKey(this, 'walk') });
         if (!this.checkLiveFlag(LF.HIDDEN)) {
             ++this.unk194;
             const alive = NP.mSLAliveTime;
@@ -212,6 +215,7 @@ export class NameKuri extends WalkerEnemy {
     setWalkAnm() { this.setBckAnm(7); }
     setDeadAnm() {
         this.setBckAnm(0);
+        this.world.sound(SE.EN_NAMEKURI_DOWN, this.pos);
         this.world.effect('namekuriDead', this.pos, this.scale);
         this.vel.set(0, 0, 0);
         this.onLiveFlag(LF.UNK10);
@@ -226,6 +230,7 @@ export class NameKuri extends WalkerEnemy {
         this.world.effect('namekuriMelt', this.pos, this.scale);
         this.vel.set(0, 0, 0);
         this.onLiveFlag(LF.UNK10);
+        this.world.sound(SE.EN_NAMEKURI_DOWN_WT, this.pos);
     }
     setMActorAndKeeper() { this.mactor = this.createMActorByName('name.bmd'); }
     reset() {

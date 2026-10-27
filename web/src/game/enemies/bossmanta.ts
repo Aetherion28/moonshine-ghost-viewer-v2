@@ -28,8 +28,7 @@
 // For the viewer: the walk BCK (3) is motion-blended toward BCK 4 by the turn (updateAnimBlend);
 // the joints are worked out here with that blend (`locals`), and the extra collisions read them.
 //
-// Not here: particles (the damage / split / death .jpa), the looped swim sounds (BS_MANTA_DRAW_LV
-// and _DRAW_DEMO, started every tick), the BGM, the shadow / EFB alpha drawing and the manta color
+// Not here: particles (the damage / split / death .jpa), the BGM, the shadow / EFB alpha drawing and the manta color
 // (getMantaColor, drawing only: its unk84 ramp too). Balloons and the demo camera are
 // 'balloon:<id>' / 'demo:<name>' effects. MSF_MANTA_SPAWNED is read from world.flags: sirena0's event
 // script (map/sp/appearmanta.sb, eventwatcher.ts) sets it once Mario's talk to モンテＡ ends, which
@@ -41,7 +40,7 @@ import { World, Stream, HitActor, LiveActor, LiveManager, SpineEnemy, EnemyManag
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
-import '../sound.js';
+import { holdKey } from '../sound.js';
 import { mat4 } from 'gl-matrix';
 import { Skeleton, parseBCK, jointMatricesBlend } from '../skeleton.js';
 import { jNormalize } from './jgeom.js';
@@ -112,7 +111,7 @@ MantaNerves.move = nerve<BossManta>('TNerveMantaMove', (spine: MS) => {
         lerpToMario(w, pt, 1);
         self.unk158.set(pt);
     }
-    // (gen < 3: BS_MANTA_DRAW_LV, a looped sound started every tick)
+    if (self.mGeneration < 3) w.sound(SE.BS_MANTA_DRAW_LV, self.pos, { hold: holdKey(self, 'draw') });   // (a looped sound asked for every tick)
     if (self.mGeneration === 5 && time % 96 === self.instanceIndex) w.sound(SE.BS_MANTA_ATTACK, self.pos);   // (startSoundSet)
     if (Math.sqrt(sqd(self.pos, self.unk158)) < 500 || time % 150 === 0) {
         const pt = graph.point(Math.trunc(MsRandF() * graph.count));
@@ -179,9 +178,9 @@ MantaNerves.appearDemo = nerve<BossManta>('TNerveMantaAppearDemo', (spine: MS) =
         self.unk158.set(0, 0, -10000);
         self.startWalkAnim();
     }
-    // (time 0x2D0: MSBgm::startBGM(0x8001002B))
+    if (time === 0x2D0) self.world.events.push({ t: self.world.tickCount, kind: 'bgm', data: { id: 0x8001002B, stay: true } });   // (MSBgm::startBGM: the boss music)
     if (time === 0x690) return true;
-    // (BS_MANTA_DRAW_DEMO every tick)
+    self.world.sound(SE.BS_MANTA_DRAW_DEMO, self.pos, { hold: holdKey(self, 'demo') });   // (every tick)
     self.unk190 = self.MP.mSLAppearDemoWalkSpeed;
     return false;
 });

@@ -12,6 +12,8 @@ import { World, SpineEnemy, EnemyManager, LF, HF, HC, MSG, Stream, HitActor, PSc
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { getFarOutEnemy, throwOut } from './generator.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 /** TLauncherParams */
 export const LAUNCHER_PARAMS = { ...SPINE_PARAMS, mSLLaunchPeriod: ['i', 180] } satisfies PSchema;
@@ -40,6 +42,7 @@ export class Launcher extends SpineEnemy {
         if (this.state === STATE_DIE) return false;
         if (sender.actorType === AT.WATER && msg === MSG.SPRAYED_BY_WATER) {
             this.world.effect('enemyWaterHit', sender.pos);
+            this.world.sound(SE.EN_COMMON_W_HIT_OK, this.pos);
             if (this.state === STATE_HITBYWATER) return true;
             this.changeState(STATE_HITBYWATER);
             return true;

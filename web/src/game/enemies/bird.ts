@@ -8,6 +8,8 @@ import { World, SpineEnemy, EnemyManager, LiveManager, PathNode, LF, HF, MSG, ne
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { RATE, AnimalBase, SMS_Eular2Quat, quatRotate, clamp, ItemRef, itemByEventID, appearItem } from './animal.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 export const BIRD_PARAMS = {
     ...SPINE_PARAMS,
@@ -102,7 +104,7 @@ export class AnimalBird extends SpineEnemy {
     checkNotAppear(_id: number) { }
     receiveMessage(sender: HitActor, msg: number): boolean {
         if (this.checkLiveFlag(LF.DEAD)) return false;
-        if (msg === MSG.SPRAYED_BY_WATER) { this.world.effect('ms_enm_wathit', sender.pos); this.behaveHitWater(); return true; }
+        if (msg === MSG.SPRAYED_BY_WATER) { this.world.effect('ms_enm_wathit', sender.pos); this.world.sound(SE.EN_COMMON_W_HIT_OK, this.pos); this.behaveHitWater(); return true; }
         if (msg === MSG.TAKE && !this.holder) { this.onHitFilter(HF.NO_COLLISION); this.holder = sender as TakeActor; this.world.effect('ms_enm_wathit', sender.pos); return true; }
         if ((msg === MSG.PUT || msg === MSG.THROWN) && this.holder === sender) { this.holder = null; this.offHitFilter(HF.NO_COLLISION); return true; }
         if (msg === MSG.UNKB) {
@@ -259,6 +261,7 @@ BirdNerves.takeoff = nerve<AnimalBird>('TNerveAnimalBirdTakeoff', (spine: S) => 
     if (spine.getTime() === 0) {
         b.setBckAnm(BIRD_ANM.START);
         b.setParamsOnFloating();
+        b.world.sound(SE.OBJ_BIRD_DOL_TO_FLY1, b.pos);   // (behind gpMSound->gateCheck)
         const c = b.mactor!.getFrameCtrl(ANM_BCK);
         if (c) c.rate = fr(3 * c.rate);
     }

@@ -7,6 +7,8 @@
 // animations once at the end). Drawing is the viewer's: this only works out where everything is,
 // which animation it plays at which frame, and what's visible.
 
+import { AnmSound, loadBas } from './anmsound.js';
+import { BAS_TABLES } from './bastables.js';
 import { FlagManager } from './flags.js';
 import { SplineRail } from './spline.js';
 import { psVecMag } from './camera/lib.js';
@@ -727,10 +729,36 @@ export class LiveActor extends TakeActor {
         this.calcRidePos();
     }
     kill() { this.liveFlag |= LF.DEAD | LF.UNK40; }
-    updateAnmSound() { }
+    // ---- the animation sounds (anmsound.ts: TLiveActor::setAnmSound / setCurAnmSound / updateAnmSound)
+    anmSoundPath: string | null = null;
+    anmSound: AnmSound | null = null;
+    /** the BCK index setCurAnmSound last looked at (the sim sets the sound on each BCK change, as the game's ports of it do) */
+    private anmSoundBck = -2;
+    /** getBasNameTable: the class's table (bastables.ts, by the class or the nearest one it extends) */
+    getBasNameTable(): (string | null)[] | null {
+        for (let c: any = this.constructor; c && c !== Object; c = Object.getPrototypeOf(c)) { const t = BAS_TABLES[c.name]; if (t) return t; }
+        return null;
+    }
+    getBas(i: number) { const t = this.getBasNameTable(); return t && i >= 0 ? t[i] ?? null : null; }
+    setAnmSound(path: string | null) {
+        this.anmSoundPath = path;
+        this.anmSound = path ? new AnmSound(loadBas(this.world, path)) : null;
+    }
+    setCurAnmSound() { const i = this.mactor ? this.mactor.getCurAnmIdx(ANM_BCK) : -1; this.anmSoundBck = i; this.setAnmSound(this.getBas(i)); }
+    updateAnmSound() {
+        if (!this.mactor) return;
+        // (an actor with a table: its sound follows its BCK, as setBckAnm / setCurAnmSound set it)
+        if (this.anmSoundAuto) { const i = this.mactor.getCurAnmIdx(ANM_BCK); if (i !== this.anmSoundBck && this.getBasNameTable()) this.setCurAnmSound(); }
+        if (!this.anmSoundPath || !this.anmSound) return;
+        const fc = this.mactor.getFrameCtrl(ANM_BCK);
+        if (fc) this.anmSound.loop(this.world, this.pos, fc.frame, fc.rate);
+    }
+    /** false: the port sets its sound itself (setAnmSound) */
+    anmSoundAuto = true;
     perform(cue: number) {
         if (this.liveFlag & (LF.UNK200 | LF.DEAD)) return;
         if (cue & CUE_MOVE) this.moveObject();
+        if (cue & CUE_CALC_ANIM) this.updateAnmSound();
         if (this.mactor) {
             if (cue & CUE_CALC_ANIM) this.mactor.frameUpdate();
             if (!(this.liveFlag & (LF.HIDDEN | LF.CLIPPED_OUT)) && (cue & CUE_CALC_ANIM)) this.calcRootMatrix();

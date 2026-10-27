@@ -14,13 +14,15 @@
 // camera shake, the TEV colour packets (mBodyColor...: always black) and the animation sounds.
 
 import { fr, V3, Quat, mtx } from '../math.js';
-import { World, Stream, HitActor, LF, HF, MSG, ANM_BCK, nerve, Spine, Params } from '../engine.js';
+import { World, Stream, HitActor, LF, HF, MSG, ANM_BCK, nerve, Spine, Params, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH } from './smallEnemy.js';
 import { WalkerEnemy, walkerParams } from './walker.js';
 import { sendToMario } from '../mapobj/lib.js';
 import type { Rocket } from './rocket.js';
+import { SE } from '../soundids.js';
+import { holdKey } from '../sound.js';
 
 // ---------------------------------------------------------------- params
 /** TCoasterEnemyParams + TCoasterKillerSaveLoadParams (/enemy/coasterkiller.prm) */
@@ -133,7 +135,12 @@ export class CoasterKiller extends CoasterEnemy {
         this.offLiveFlag(LF.UNK800);
         // (mBodyColor, mNoseColor, mEyesColor, mBaseColor: black)
     }
-    // perform: TCoasterEnemy's, plus the smoke and the flying sound (not here)
+    // perform: TCoasterEnemy's, plus the smoke (not here) and the flying sound
+    perform(cue: number) {
+        super.perform(cue);
+        if ((cue & CUE_CALC_ANIM) && !this.checkLiveFlag(LF.DEAD) && this.spine!.current !== CoasterKillerNerves.explosion)
+            this.world.sound(SE.EN_KILLER_FLY_KUPPA, this.pos, { hold: holdKey(this, 'fly') });   // (startSoundActorWithInfo: by its distance to Mario)
+    }
     setMActorAndKeeper() {
         this.mKillerModel = this.createMActorByName('killer_model1.bmd');
         this.mDownModel = this.createMActorByName('downkiller_model1.bmd');

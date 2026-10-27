@@ -22,6 +22,8 @@ import { mapObjGlobals } from '../mapobj/base.js';
 import { sendToMario } from '../mapobj/lib.js';
 import type { WaterHitActor } from '../water.js';
 import type { mat4 } from 'gl-matrix';
+import { SE } from '../soundids.js';
+import { holdKey } from '../sound.js';
 
 /** THino2Params */
 const HINO2_PARAMS = {
@@ -98,6 +100,8 @@ class Hino2Mask {
 
 export class Hinokuri2 extends SpineEnemy {
     unk158 = 0; mCurrentBck = -1; mWaitTimer = 0; unk164 = 0; unk168 = 0;
+    /** THinokuri2::updateAnmSound: its own, and while unk158 > 0 the seed level loop */
+    updateAnmSound() { super.updateAnmSound(); if (this.unk158 > 0) this.world.sound(SE.BS_HINO_SEED_LQ_LEV, this.pos, { hold: holdKey(this, 'seed') }); }
     mHead: Hino2Hit; mBody: Hino2Hit; unk174: Hino2Hit; unk178: Hino2Hit;
     jointIdxMessageCameFrom = 0; unk180 = 0; unk184 = 0; unk188 = 0; unk18C = 0; unk190 = 0; unk194 = 1; unk198 = 0;
     unk1A4: Hino2Mask | null = null; mLevel = 0;

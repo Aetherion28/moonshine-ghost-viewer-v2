@@ -30,7 +30,7 @@ import { World, Stream, HitActor, LiveActor, LiveManager, SpineEnemy, EnemyManag
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
-import '../sound.js';
+import { holdKey } from '../sound.js';
 import type { mat4 } from 'gl-matrix';
 import { sendToMario } from '../mapobj/lib.js';
 import { CoasterKiller, CoasterKillerManager } from './coasterkiller.js';
@@ -153,6 +153,7 @@ export class TinKoopaFlame extends HitActor {
         if (o.spine!.current !== TinKoopaNerves.wait) return;
         if (o.mTimers[TIMER_FLAME_REVIVAL] > 0) { this.unk6C = fr(this.unk6C - 0.05); if (this.unk6C < 0.3) this.unk6C = 0.3; }
         else { this.unk6C = fr(this.unk6C + 0.05); if (this.unk6C > 1) this.unk6C = 1; }
+        o.world.sound(SE.BS_MKP_FIRE, this.pos, { hold: holdKey(this, 'fire') });
     }
 }
 

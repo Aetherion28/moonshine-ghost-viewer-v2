@@ -19,6 +19,8 @@ import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, WalkerNerves, walkerParams } from './walker.js';
 import { register } from '../scene.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 /** TTelesaSaveLoadParams (TWalkerEnemyParams + the Boo's own) */
 const TELESA_PARAMS = {
@@ -68,7 +70,7 @@ export class TelesaManager extends SmallEnemyManager {
     telesaForceKill() {
         let any = false;
         for (const t of this.objs as Telesa[]) if (!t.checkLiveFlag(LF.DEAD)) { t.kill(); any = true; }
-        if (any) this.world.effect('se:telesaDisappear', this.objs[0].pos);
+        if (any) this.world.sound(SE.EN_TELESA_DISAPPEAR, this.objs[0].pos);
     }
     generatePetBottle(t: Telesa) {
         this.unk61 += 1;
@@ -311,7 +313,7 @@ export class Telesa extends WalkerEnemy {
         this.onLiveFlag(LF.HIDDEN);
         this.mactor!.getFrameCtrl(ANM_BCK)!.frame = 0;
         this.headHeight = 250;
-        this.world.effect('se:telesaAppear', this.pos);
+        this.world.sound(SE.EN_TELESA_APPEAR, this.pos);
     }
     initItemAttacker(a: HitActor) {
         this.reset();
@@ -325,7 +327,7 @@ export class Telesa extends WalkerEnemy {
         this.unk150 &= ~0x40;
         this.mactor!.getFrameCtrl(ANM_BCK)!.frame = 0;
         this.headHeight = 250;
-        this.world.effect('se:telesaAppear', this.pos);
+        this.world.sound(SE.EN_TELESA_APPEAR, this.pos);
     }
     setAttacker() {
         this.reset();
@@ -480,7 +482,7 @@ TelesaNerves.imitate = nerve<Telesa>('TNerveTelesaImitate', (spine: S) => {
             self.imitated = null;
             self.setFlyParam(1);
             spine.pushAfterCurrent(WalkerNerves.graphWander);
-            self.world.effect('se:kmTelesaReveal', self.pos);
+            self.world.sound(SE.EN_KM_TELSA_REVEAL, self.pos);
             return true;
         }
     }

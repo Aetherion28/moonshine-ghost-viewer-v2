@@ -20,7 +20,7 @@ const stubs = {
 const opts = {
   entryPoints: [path.join(here, 'src/layer.ts')], bundle: true, format: 'iife', target: 'es2022',
   outfile: path.join(here, '../site/game.js'), sourcemap: true, minify: !process.argv.includes('--dev'),
-  plugins: [stubs], logLevel: 'warning', metafile: true, define: { 'process.env.NODE_ENV': '"production"' },
+  plugins: [stubs], keepNames: true, logLevel: 'warning', metafile: true, define: { 'process.env.NODE_ENV': '"production"' },
 };
 import fs from 'node:fs';
 fs.copyFileSync(path.join(here, 'viewer.html'), path.join(here, '../site/index.html'));

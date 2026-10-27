@@ -19,6 +19,8 @@ import { SmallEnemyManager } from './smallEnemy.js';
 import { WalkerEnemy, walkerParams } from './walker.js';
 import { register } from '../scene.js';
 import { sendToMario, marioGroundPlane } from '../mapobj/lib.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 /** TChuuHanaSaveLoadParams */
 const CHUUHANA_PARAMS = {
@@ -206,6 +208,7 @@ export class ChuuHana extends WalkerEnemy {
             if (this.sprayCooldown === 0) { this.sprayCooldown = 1; this.behaveToWater(sender); }
             this.unk165 = true;
             this.world.effect('enemyWaterHit', sender.pos);
+            this.world.sound(SE.EN_COMMON_W_HIT_OK, this.pos);
             return true;
         }
         return false;

@@ -13,6 +13,8 @@ import { SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand
 import { WalkerEnemy, WalkerNerves, walkerParams } from './walker.js';
 import { emitInfo, EmitInfo } from '../water.js';
 import { register } from '../scene.js';
+import { SE } from '../soundids.js';
+import { holdKey } from '../sound.js';
 import type { WallCheck } from '../collision.js';
 
 /** TPopoSaveLoadParams */
@@ -186,6 +188,7 @@ export class Popo extends WalkerEnemy {
         const pressure = pumpPressure(w);
         if (pressure > 20) {
             this.unk1BC = 1;
+            w.sound(SE.EN_POPO_GROW, this.pos, { pitch: this.unk198 });
             this.sprayCooldown = 0;
             this.unk165 = true;
             this.unk198 = fr(this.unk198 + fr(pressure * P.mSLPumpRate));
@@ -203,6 +206,7 @@ export class Popo extends WalkerEnemy {
         }
         if (mLevelShootSw && this.unk198 < maxScale - 0.1 && this.unk198 > 1) this.unk198 = fr(this.unk198 * P.mSLScaleRate);
         if (pressure < 20 && (this.unk1CC || this.unk198 > P.mSLLevelLimit)) {
+            w.sound(SE.EN_POPO_POP, this.pos);
             w.effect('popoPop', this.pos);
             this.onHitFilter(HF.NO_COLLISION);
             this.unk23C.offHitFilter(HF.NO_COLLISION);
@@ -361,6 +365,7 @@ export class Popo extends WalkerEnemy {
         }
         const man = this.manager as PopoManager;
         if (man.unk64 && this.world.water) { man.unk64.pos = [p.x, p.y, p.z]; this.world.water.emitRequest(man.unk64); }
+        this.world.sound(SE.EN_POPO_FLY, this.pos, { hold: holdKey(this, 'fly') });
     }
     explosion() {
         if (this.unk198 > 1) this.unk198 = fr(this.unk198 * 0.9);
@@ -389,6 +394,7 @@ export class Popo extends WalkerEnemy {
         this.offLiveFlag(LF.UNK10);
         this.unk1B8 = 90;
         this.unk1B4 = 1;
+        this.world.sound(SE.EN_POPO_STUCK, this.pos);
         this.world.effect('popoStuck', this.pos);
         this.unk1CC = 0; this.unk1CD = 0;
     }

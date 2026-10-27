@@ -11,6 +11,8 @@ import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, smallParams } from './smallEnemy.js';
 import { register } from '../scene.js';
 import { qRotate, mtxToQuat, setLength, isZero, jNormalize, tolerantStream } from './jgeom.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 /** TKazekunParams */
 const KAZEKUN_PARAMS = {
@@ -172,7 +174,7 @@ KazekunNerves.turn = nerve<Kazekun>('TNerveKazekunTurn', (spine: S) => {
 });
 KazekunNerves.preAttack = nerve<Kazekun>('TNerveKazekunPreAttack', (spine: S) => {
     const self = spine.body, P = self.PZ;
-    if (spine.time === 0) self.doAttackPose(true);
+    if (spine.time === 0) { self.doAttackPose(true); self.world.sound(SE.EN_KAZEKUN_READY, self.pos); self.setAnmSound(null); }
     if (fr(P.mPoseTime * P.mDicideTiming) < spine.time) self.setGoalPath(new PathNode(null, self.world.mario.pos.clone()));
     self.doAttackPose(false);
     if (P.mPoseTime < spine.time) { spine.pushAfterCurrent(KazekunNerves.attack); return true; }
@@ -201,7 +203,7 @@ KazekunNerves.wait = nerve<Kazekun>('TNerveKazekunWait', (spine: S) => {
 });
 KazekunNerves.hitWater = nerve<Kazekun>('TNerveKazekunHitWater', (spine: S) => {
     const self = spine.body;
-    if (spine.time === 0) self.changeBck('kazekun_hit');
+    if (spine.time === 0) { self.changeBck('kazekun_hit'); self.world.sound(SE.EN_KAZEKUN_DOWN, self.pos); }
     if (self.checkCurAnmEnd(ANM_BCK)) { spine.pushAfterCurrent(KazekunNerves.disappear); self.unk1B0 = self.PZ.mResetTimeHitting; return true; }
     self.vel.zero();
     return false;

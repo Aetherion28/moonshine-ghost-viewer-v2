@@ -161,6 +161,7 @@ export class TamaNoko extends WalkerEnemy {
         if (msg === MSG.UNKD) { this.hitPoints = 0; this.onLiveFlag(LF.DEAD); this.onHitFilter(HF.NO_COLLISION); }
         if (msg === MSG.SPRAYED_BY_WATER) {
             this.world.effect('enemyWaterHit', sender.pos);
+            this.world.sound(SE.EN_COMMON_W_HIT_OK, this.pos);
             if (this.sprayCooldown === 0) {
                 this.sprayCooldown = 1;
                 if (!this.changeByJuice()) { this.decHpByWater(sender); this.behaveToWater(sender); }
@@ -205,6 +206,7 @@ export class TamaNoko extends WalkerEnemy {
     }
     setAfterDeadEffect() {
         super.setAfterDeadEffect();
+        this.world.sound(SE.EN_COMMON_SMOKE, this.pos);
         if (this.unk19C) { this.unk19C.unk34 = 1; this.unk19C.setBckAnm(BCK_FLOWER_GROW); }
     }
     getGravityY() {

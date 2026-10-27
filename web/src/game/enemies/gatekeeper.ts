@@ -15,6 +15,8 @@ import { register } from '../scene.js';
 import { stampModel } from './igaiga.js';
 import type { Gorogoro } from './igaiga.js';
 import { mat4 } from 'gl-matrix';
+import { SE } from '../soundids.js';
+import { holdKey } from '../sound.js';
 
 const GK_PARAMS = { ...SPINE_PARAMS, mSLDiveTimer: ['i', 480], mSLLoop2Dive: ['i', 5], mSLLaunchTimerNormal: ['i', 600], mSLLaunchTimerDamage: ['i', 600] } satisfies PSchema;
 
@@ -37,6 +39,7 @@ class GKHitObj extends HitActor {
         if (sender.isActorType(AT.WATER) && msg === MSG.SPRAYED_BY_WATER) {
             if (this.vulnerable) this.owner.unk154++;
             this.owner.world.effect('enemyWaterHit', sender.pos);
+            this.owner.world.sound(SE.EN_COMMON_W_HIT_OK, sender.pos);
             return true;
         }
         return this.owner.receiveMessage(sender, msg);
@@ -133,6 +136,7 @@ export class GateKeeper extends SpineEnemy {
         if (sender.isActorType(AT.WATER)) {
             if (this.vulnerable && msg === MSG.SPRAYED_BY_WATER) this.unk154++;
             this.world.effect('enemyWaterHit', sender.pos);
+            this.world.sound(SE.EN_COMMON_W_HIT_OK, sender.pos);
             return true;
         }
         return false;
@@ -198,6 +202,7 @@ export class GateKeeper extends SpineEnemy {
             if (this.unk17E > 0) this.unk17E--;
             this.controlCollision();
         }
+        if (cue & CUE_CALC_ANIM) this.world.sound(SE.EN_GATEKEEPER_BASE, this.pos, { hold: holdKey(this, 'base') });
         this.head!.perform(cue);
         this.obstacle!.perform(cue);
         // TGateKeeperBase::perform
@@ -324,6 +329,7 @@ GKNerves.die = nerve<GateKeeper>('TNerveBGKDie', (spine: S) => {
             self.world.effect('gkpaDead', self.pos);
         }
     }
+    if (spine.time === 0x154) self.world.sound(SE.DM_OSEN_DISAPPEAR, self.pos);   // (with GATEKEEPER_JPA_MS_GKPA_KEMURI and the rumble)
     if (self.mactor!.curAnmEndsNext(ANM_BCK)) {
         if (twice && self.unk296 === 0) {
             self.unk296 += 1;

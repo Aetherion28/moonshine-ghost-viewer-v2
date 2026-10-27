@@ -17,7 +17,7 @@
 // - TPinnaCoaster: the roller coaster car, riding the root joint of CoasterRail.bmd's BCK;
 // - TBasketReverse: the upside-down basket (MapObjTown.cpp): killed, it breaks.
 //
-// Not here: particles (told as effects), the anm sounds (amiking_sleep1.bas), the BGM's volume and
+// Not here: particles (told as effects), the BGM's volume and
 // pitch (becomeCalmlyCallback's MSound unk80), the demo cameras (told as 'demoCamera' events; the
 // demo's callback is called at once: TODO, the director calls it when the demo is done), the
 // shells' joints rolling on top of the playing BCK (the viewer's joint locals replace the
@@ -480,6 +480,7 @@ export class AmiKing extends MapObjBase {
     initMapObj() {
         super.initMapObj();
         if (this.mactor) this.mactor.setBck('amiking_sleep1');
+        this.setAnmSound('/scene/mapObj/amiking_sleep1.bas');
         this.offLiveFlag(LF.UNK10);
     }
     moveObject() {
@@ -511,6 +512,7 @@ export class AmiKing extends MapObjBase {
                 this.unk138 = 1;
                 this.vel.set(5, 10, -10); this.offLiveFlag(LF.UNK10);   // setVelocityAndFlag10
                 if (a) a.setBck('amiking_flying1_start');
+                this.setAnmSound(null);
                 demoCamera(w, '観覧車ボス撃沈カメラ', this.pos);
             }
         }

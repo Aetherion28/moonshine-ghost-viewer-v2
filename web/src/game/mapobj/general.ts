@@ -7,6 +7,7 @@ import { World, HitActor, TakeActor, LF, HF, HC, MSG } from '../engine.js';
 import { AT as AT_ } from '../actortypes.js';
 import type { WallCheck } from '../collision.js';
 import { MapObjBase, MOF, STATE_DEAD, STATE_NORMAL } from './base.js';
+import { SE } from '../soundids.js';
 import { register } from '../scene.js';
 import { marioThrowPower } from './lib.js';
 
@@ -233,7 +234,8 @@ export class MapObjGeneral extends MapObjBase {
         if (ph && Math.abs(this.vel.y) > this.phys(3)) {
             p.y = fr(p.y - this.vel.y);
             this.vel.y = fr(this.vel.y * -this.phys(1));
-            this.startSound(4);
+            if (MapObjBase.isCoin(this)) this.world.sound(SE.SY_COIN_BOUND, this.pos, { vol: Math.min(1, Math.abs(this.vel.y)) });
+            else this.startSound(4);
         } else {
             this.offLiveFlag(LF.AIRBORNE);
             this.vel.zero();

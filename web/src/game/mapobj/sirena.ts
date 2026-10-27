@@ -513,7 +513,7 @@ export class Closet extends SirenaRollMapObj {
         super.moveObject();
         if (this.unk16C && this.mactor && !this.mactor.checkCurAnm('closetopen', ANM_BCK)) {
             this.unk16D = (this.unk16D + 1) & 0xFF;
-            if (this.unk16D === 60) this.mactor.setBck('closetopen');   // (setAnmSound closetopen.bas)
+            if (this.unk16D === 60) { this.mactor.setBck('closetopen'); this.setAnmSound('/scene/mapObj/closetopen.bas'); }
             return;
         }
         for (let i = 0; i < this.unk148; i++) {

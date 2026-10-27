@@ -11,6 +11,8 @@ import { AT } from '../actortypes.js';
 import type { WaterHitActor } from '../water.js';
 import type { WallCheck } from '../collision.js';
 import { parseBTI } from '../pollution.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 /** TSmallEnemyParams */
 export const SMALL_PARAMS = {
@@ -161,7 +163,7 @@ export class SmallEnemy extends SpineEnemy {
             }
         }
     }
-    setAfterDeadEffect() { this.world.effect('enemyDisappear', this.pos, this.scale); }
+    setAfterDeadEffect() { this.world.effect('enemyDisappear', this.pos, this.scale); this.world.sound(SE.EN_COMMON_SMOKE, this.pos); }
     generateItem() {
         const r = rangeRand(0, 100);
         const P = this.P;
@@ -222,6 +224,7 @@ export class SmallEnemy extends SpineEnemy {
         if (msg === MSG.UNKD) { this.hitPoints = 0; this.onLiveFlag(LF.DEAD); this.onHitFilter(HF.NO_COLLISION); }
         if (msg === MSG.SPRAYED_BY_WATER) {
             this.world.effect('enemyWaterHit', sender.pos);
+            this.world.sound(SE.EN_COMMON_W_HIT_OK, this.pos);
             if (this.sprayCooldown === 0) {
                 this.sprayCooldown = 1;
                 if (!this.changeByJuice()) { this.decHpByWater(sender); this.behaveToWater(sender); }
@@ -266,9 +269,11 @@ export class SmallEnemy extends SpineEnemy {
     generateEffectColumWater() {
         if (this.checkLiveFlag(LF.CLIPPED_OUT)) return;
         const e = this.world.conductor.makeOneEnemyAppear(this.pos, 'エフェクト水柱マネージャー', 0) as any;
-        if (e && e.generate) e.generate(this.pos, this.scale);
+        if (!e || !e.generate) return;
+        e.generate(this.pos, this.scale);
+        this.world.sound(SE.EN_TOBIPUKU_TOWATER, this.pos);
     }
-    setBckAnm(i: number) { this.currentBck = i; this.mactor!.setBckFromIndex(i); }
+    setBckAnm(i: number) { this.currentBck = i; this.mactor!.setBckFromIndex(i); this.setCurAnmSound(); }   // (setAnmSound(getBas(index)))
     isBckAnm(i: number) { return this.currentBck === i; }
     unsetUnk165() { const r = this.unk165; if (r) this.unk165 = false; return r; }
     expandCollision() {

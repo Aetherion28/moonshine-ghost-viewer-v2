@@ -298,6 +298,9 @@ export class LiveDirector extends PlayerDirector {
                 f.setFlag(MSF.GOLD_COIN_COUNT, 0);
                 f.decFlag(MSF.LIFE_COUNT, 1);
                 this.lastLife = f.getFlag(MSF.LIFE_COUNT) < 0;
+                // (MSBgm::startBGM: the miss jingle (MSD_BGM_BOSS, the decomp's name) with lives left, else the game over's (MSD_BGM_BOSSHANA_2ND3RD))
+                const w = this.mario.world;
+                w.events.push({ t: w.tickCount, kind: 'bgm', data: { id: this.lastLife ? 0x80010028 : 0x8001000C } });
             }
         }
     }

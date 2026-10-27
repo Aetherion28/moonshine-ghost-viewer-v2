@@ -30,6 +30,8 @@ import { marioVel } from './koopa.js';
 import { mapObjGlobals } from '../mapobj/base.js';
 import { MsMtxSetRotY } from '../mapobj/lib.js';
 import type { WallCheck } from '../collision.js';
+import { SE } from '../soundids.js';
+import { holdKey } from '../sound.js';
 
 /** TFlyEnemyParams */
 export const FLY_PARAMS = {
@@ -293,8 +295,8 @@ export class Killer extends FlyEnemy {
                 }
             }
         }
-        // (airborne: the fly sound and the smoke particle)
-        if (this.isAirborne()) this.rot.x = MsClamp(this.rot.x, -25, 90);
+        // (airborne: the smoke particle)
+        if (this.isAirborne()) { this.world.sound(SE.EN_KILLER_FLY, this.pos, { hold: holdKey(this, 'fly') }); this.rot.x = MsClamp(this.rot.x, -25, 90); }
     }
     calcRootMatrix() {
         // (TMarDirector flag 0xF: taken as never set; the colours: drawing only)

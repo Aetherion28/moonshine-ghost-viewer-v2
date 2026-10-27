@@ -10,6 +10,8 @@ import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, smallParams } from './smallEnemy.js';
 import { register } from '../scene.js';
 import { qRotate, qEulerX, qEulerY, eulerToQuat, chase, setLength, tolerantStream } from './jgeom.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 /** TKukkuParams */
 const KUKKU_PARAMS = {
@@ -208,6 +210,7 @@ export class Kukku extends SmallEnemy {
         // (the game looks up joint "null_osen" and doesn't use it: the goop starts at the bird)
         b.startToMove(this.pos, v);
         this.shootTimer = this.PK.mShootInterval;
+        this.world.sound(SE.EN_TORI_SHIT, this.pos);
     }
     /** Scatter a few coins around the bird, and a 1-up once ten have dropped. */
     dropCoins() {

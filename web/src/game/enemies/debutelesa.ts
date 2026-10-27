@@ -17,6 +17,8 @@ import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, smallParams } from './smallEnemy.js';
 import { isInOtherFastCube } from './animal.js';
 import { register } from '../scene.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 export class DebuTelesaManager extends SmallEnemyManager {
     constructor(w: World, name = 'デブテルサマネージャー') { super(w, name); }
@@ -62,7 +64,7 @@ export class DebuTelesa extends SmallEnemy {
     // calcRootMatrix: TSpineEnemy's (then emitEffects: particles)
     receiveMessage(sender: HitActor, msg: number): boolean {
         if (msg === MSG.TRAMPLE || msg === MSG.HIP_DROP || msg === MSG.PUNCH) return false;
-        // (MSG.UNKB, eaten: its sound)
+        if (msg === MSG.UNKB) this.world.sound(SE.EN_DB_TELSA_EATEN, this.pos);
         return super.receiveMessage(sender, msg);
     }
     behaveToWater(_a: HitActor) { }

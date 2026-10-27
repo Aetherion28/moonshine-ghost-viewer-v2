@@ -26,6 +26,8 @@ import { WalkerEnemy, WalkerNerves, walkerParams } from './walker.js';
 import { EnemyAttachment } from './gesso.js';
 import { mapObjGlobals } from '../mapobj/base.js';
 import type { BGCheckData } from '../collision.js';
+import { SE } from '../soundids.js';
+import { holdKey } from '../sound.js';
 
 /** TMsRange<s32>::rand */
 const rangeRandI = (lo: number, hi: number) => lo + Math.trunc(fr((hi - lo) * MsRandF()));
@@ -137,6 +139,7 @@ export class ElecCarapace extends EnemyAttachment {
         r.y = fr(r.y + this.unk188);
         super.calcRootMatrix();
         r.y = saved;
+        this.world.sound(SE.EN_DENNOKO_SPARK2, this.pos, { hold: holdKey(this, 'spark') });
     }
     sendMessage() {
         for (const a of this.collisions.slice()) {
@@ -276,7 +279,12 @@ export class ElecNokonoko extends WalkerEnemy {
         this.spine!.pushNerve(ElecNerves.attack);
     }
     /** calcRootMatrix: TSpineEnemy's (the spark and shock particles aside) */
-    calcRootMatrix() { SpineEnemy.prototype.calcRootMatrix.call(this); }
+    calcRootMatrix() {
+        SpineEnemy.prototype.calcRootMatrix.call(this);
+        const c = this.spine!.current;
+        if (this.hasCarapace() && c !== ElecNerves.freeze && c !== SmallEnemyNerves.die && c !== ElecNerves.collect)
+            this.world.sound(SE.EN_DENNOKO_SPARK1, this.pos, { hold: holdKey(this, 'spark') });
+    }
     sendAttackMsgToMario() { this.world.mario.receiveMessage(this, this.unk1A4 === 0 ? MSG.ELECTRIC_SHOCK : MSG.ATTACK); }
     receiveMessage(sender: HitActor, msg: number): boolean {
         if (msg === MSG.UNKD || msg === MSG.UNKB) { this.onLiveFlag(LF.DEAD); this.kill(); }

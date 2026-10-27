@@ -189,10 +189,10 @@ export function stageBgm(area: number, ep: number): number {
         case 4: return ep !== 2 ? M(0x03) : M(0x0D);
         case 5: return M(0x04);
         case 6: return M(0x08);
-        case 7: return M(0x13);
+        case 7: return ep === 3 ? M(0x16) : M(0x13);
         case 8: return ep === 5 ? M(0x22) : M(0x07);
         case 9: return M(0x14);
-        case 13: return M(0x05);
+        case 13: return ep === 7 ? -1 : ep === 0 || ep === 4 ? M(0x16) : M(0x05);   // (setMSoundEnterStage)
         case 14: return M(0x1E);
         case 15: return M(0x10);
         case 16: return M(0x06);

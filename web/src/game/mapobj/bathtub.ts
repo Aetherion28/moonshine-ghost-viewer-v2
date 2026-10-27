@@ -28,7 +28,7 @@ import { fr, V3, Mtx, mtx, Quat, matan, MsMtxSetRotRPH, JMASSin, JMASCos, s16 } 
 import { World, Stream, HitActor, LiveActor, TakeActor, LF, MSG, ANM_BCK, ANM_FRAME_RATE, readParams, PSchema } from '../engine.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
-import '../sound.js';
+import { holdKey } from '../sound.js';
 import type { mat4 } from 'gl-matrix';
 import { MapObjBase, MOF } from './base.js';
 import { ObjCollision, KIND_MOVE } from './objcol.js';
@@ -285,7 +285,7 @@ export class Bathtub extends MapObjBase {
             }
             // (the shine's particles: PARTICLE_MS_SHINE_SENKO / KIRA)
             const sm = this.getShineMtx();
-            if (sm) { this.unk200.set(sm[3], sm[7], sm[11]); this.world.sound(SE.SHINE_EXIST, this.unk200); }
+            if (sm) { this.unk200.set(sm[3], sm[7], sm[11]); this.world.sound(SE.SHINE_EXIST, this.unk200, { hold: holdKey(this, 'shine') }); }
             this.calcRootMatrix();
             this.calcBathtubData();
             this.removeCollisions_();

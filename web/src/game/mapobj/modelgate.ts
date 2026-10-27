@@ -14,6 +14,7 @@ import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, matan, MsRand
 import { World, Stream, Actor, HitActor, TakeActor, MActor, AnmData, HF, HC, MSG, CUE_MOVE, CUE_CALC_ANIM, ANM_BPK, ANM_BTK, ANM_BRK } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
+import { SE } from '../soundids.js';
 import { MTXConcat, getWaterPos } from './lib.js';
 
 const gateMActorNames = ['05_gate01', '05_gate02rico', '05_gate03manma', '05_gate04monte', '05_gate05mare'];
@@ -145,6 +146,7 @@ export class ModelGate extends TakeActor {
                     if (this.unkCA > 0) {
                         // (the wind particles and the gate's light / wave sounds)
                         this.unkCA = s16(this.unkCA - 1); this.unkCC = s16(this.unkCC + 1);
+                        this.world.sound(SE.OBJ_GATE_LIGHT, this.pos); this.world.sound(SE.OBJ_GATE_WAVE, this.pos);
                     } else {
                         this.unkCA = 0; this.unkCC = 0;
                         this.unkD0 = fr(this.unkD0 - this.unkD8);

@@ -14,6 +14,8 @@ import { WalkerEnemy, walkerParams } from './walker.js';
 import { emitInfo, EmitInfo } from '../water.js';
 import { register } from '../scene.js';
 import type { AreaCylinderManager } from './bosspakkun.js';
+import { SE } from '../soundids.js';
+import { holdKey } from '../sound.js';
 
 /** TRollEnemySaveLoadParams */
 const ROLL_PARAMS = { mSLGenerateInterval: ['i', 300], mSLExpandRate: ['f', 1], mSLExpandMax: ['f', 1.5], mSLBoundVYMax: ['f', 15], mSLGroundOffsetY: ['f', 150] } as const;
@@ -104,8 +106,10 @@ export class RollEnemy extends WalkerEnemy {
                 this.onLiveFlag(LF.AIRBORNE);
                 this.pos.y = fr(this.pos.y + 5);
                 this.unk1A0 = 0;
+                this.boundSE();
             }
         }
+        if (this.pos.y < this.groundHeight + 30) this.rollSE();
         if (this.unk128 > 300) { this.onLiveFlag(LF.UNK10000); this.kill(); }
     }
     behaveToWater(_a: HitActor) {
@@ -159,6 +163,8 @@ export class RollEnemy extends WalkerEnemy {
     setAfterDeadEffect() { }
     bound() { }
     isRolling() { return false; }
+    rollSE() { }
+    boundSE() { }
 }
 
 // ---------------------------------------------------------------- TIgaiga
@@ -280,6 +286,9 @@ export class Igaiga extends RollEnemy {
         this.walkBehavior(2, 1);
     }
     bound() { if (this.unk1A0 > 5) this.setBckAnm(2); }
+    /** (startSoundActorSpecial: its pitch / volume by its scale and march speed: not here) */
+    rollSE() { this.world.sound(SE.EN_IGAIGA_ROLL, this.pos, { hold: holdKey(this, 'roll') }); }
+    boundSE() { this.world.sound(SE.EN_IGAIGA_BOUND, this.pos); }
     waterExplosion() {
         const m = this.manager as IgaigaManager;
         if (!m.unk68 || !this.world.water) return;
@@ -466,14 +475,17 @@ export class Gorogoro extends RollEnemy {
             this.kill();
         }
     }
-    setDeadAnm() { this.world.effect('pkhFumi', this.pos, this.scale); this.setBckAnm(0); }
+    setDeadAnm() { this.world.effect('pkhFumi', this.pos, this.scale); this.setBckAnm(0); this.world.sound(SE.BS_KRPAKU_DOWN, this.pos); }
     setMeltAnm() {
         this.setBckAnm(1);
         this.unk130 = 0;
         this.onLiveFlag(LF.UNK1000);
         this.world.effect('pkhToke', new V3(this.pos.x, this.groundHeight, this.pos.z), this.scale);
+        this.world.sound(SE.BS_KRPAKU_SINK, this.pos);
     }
     bound() { (this.manager as GorogoroManager).requestPolluteModel(this.pos, this.scale); }
+    rollSE() { this.world.sound(SE.BS_KRPAKU_ROLL, this.pos, { hold: holdKey(this, 'roll') }); }
+    boundSE() { this.world.sound(SE.BS_KRPAKU_GND, this.pos); }
     isRolling() { return this.spine!.current === GorogoroNerves.rollOnGraph || this.isBckAnm(1); }
     setGenerateGraphIdx(i: number) {
         const g = this.tracer.graph!;

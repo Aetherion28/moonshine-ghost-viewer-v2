@@ -11,6 +11,8 @@ import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { quatEulerX, quatEulerY, mtxGetQuat, mtxSetSQT, jnormalize, clamp, ItemRef, itemByEventID, itemByName, appearItem } from './animal.js';
 import { Realoid, RealoidActor, RF_UNK2, RF_UNK4, RF_UNK2_OR_UNK4 } from './boid.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 export const BEEHIVE_PARAMS = {
     ...SPINE_PARAMS,
@@ -20,6 +22,8 @@ export const BEEHIVE_PARAMS = {
 type BeeHiveParams = { [K in keyof typeof BEEHIVE_PARAMS]: number };
 
 /** cAngleLimit: it falls once it swings further than this. */
+/** JGeometry::TUtil<f32>::epsilon() */
+const EPS = 1.1920929e-7;
 const ANGLE_LIMIT = fr(Math.PI * 0.375);
 const HALF_PI = fr(Math.PI / 2);
 
@@ -132,6 +136,7 @@ export class BeeHive extends Realoid {
             case MSG.SPRAYED_BY_WATER: {
                 this.setShakePower(V3.sub(this.pos, this.world.mario.pos));
                 this.world.effect('ms_enm_wathit', sender.pos);
+                this.world.sound(SE.EN_COMMON_W_HIT_OK, sender.pos);
                 return true;
             }
             case MSG.TRAMPLE: case MSG.HIP_DROP: case MSG.PUNCH:
@@ -194,7 +199,7 @@ export class BeeHive extends Realoid {
     }
     /** Swing like a pendulum; true once it swings so far it falls. */
     doWait() {
-        const P = this.P;
+        const P = this.P, prevSpeed = this.swingSpeed;
         this.swingSpeed = fr(this.swingSpeed + this.swingAngle * -P.mRebound);
         this.swingSpeed = fr(this.swingSpeed * P.mDecay);
         this.swingAngle = fr(this.swingAngle + this.swingSpeed);
@@ -202,8 +207,10 @@ export class BeeHive extends Realoid {
             this.swingLimit = clamp(fr(this.swingLimit + P.mAngleMaxAdd), 0, HALF_PI);
             this.swingAngle = clamp(this.swingAngle, -this.swingLimit, this.swingLimit);
             this.swingSpeed = 0;
-            // (MSD_SE_EN_BEENEST_SWING; also each time it turns back)
+            // (startSoundActorWithInfo: louder the further it swings: not here)
+            this.world.sound(SE.EN_BEENEST_SWING, this.pos);
         }
+        if (Math.abs(this.swingSpeed) > EPS && prevSpeed * this.swingSpeed <= 0) this.world.sound(SE.EN_BEENEST_SWING, this.pos);
         this.swingDir = this.swingDir.clone().slerp(this.swingDir, this.swingDirGoal, 0.01).normalize();
         const r = P.mSearchRange;
         if (V3.sub(this.world.mario.pos, this.pos).squared() <= r * r) this.setBoidParamOnAttacking();
@@ -213,6 +220,7 @@ export class BeeHive extends Realoid {
     prepareFall() {
         this.offLiveFlag(LF.UNK10);
         this.onLiveFlag(LF.AIRBORNE);
+        this.world.sound(SE.EN_BEENEST_OFF, this.pos);
         const d = this.swingDir.getZDir();
         this.swingSpeed = this.P.mFallAngularVel;
         this.vel.set(d).fround();
@@ -244,6 +252,7 @@ export class BeeHive extends Realoid {
         this.onHitFilter(HF.NO_COLLISION);
         this.world.effect('ms_enm_disap_a', this.pos, new V3(2, 2, 2));
         this.world.effect('ms_enm_disap_b', this.pos, new V3(2, 2, 2));
+        this.world.sound(SE.EN_BEENEST_LAND, this.pos);
     }
     prepareVanish() { this.onLiveFlag(LF.HIDDEN); }
     prepareReset() { this.reset(); this.offLiveFlag(LF.HIDDEN); this.scale.set(0, 0, 0); }

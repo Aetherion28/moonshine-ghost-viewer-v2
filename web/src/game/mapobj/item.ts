@@ -17,7 +17,7 @@ import { MapObjGeneral, GS } from './general.js';
 import { marioOnYoshi } from './lib.js';
 import { SE } from '../soundids.js';
 import { MSF } from '../flags.js';
-import '../sound.js';
+import { holdKey } from '../sound.js';
 
 export interface ItemCounts { gold: number; red: number; blue: number[]; shines: number[]; }
 const COUNTS = new WeakMap<World, ItemCounts>();
@@ -254,20 +254,23 @@ export class Shine extends Item {
         if (this.isStateTimerEngaged()) return;
         this.unk16C = 7; this.stateTimer = this.unk178; this.state = SHS.UNKF;
     }
+    /** MSD_SE_SHINE_EXIST: the Shine's hum, asked for each frame it's about */
+    shineExist() { this.world.sound(SE.SHINE_EXIST, this.pos, { hold: holdKey(this, 'exist') }); }
     control() {
         if (!this.isState(SHS.UNK10)) super.control();
         if (this.isState(SHS.UNK10)) { this.pos.set(this.world.mario.pos); return; }
         switch (this.state) {
-            case STATE_NORMAL: this.rot.y = fr(this.rot.y + this.unk16C); break;
+            case STATE_NORMAL: this.rot.y = fr(this.rot.y + this.unk16C); this.shineExist(); break;
             case SHS.UNKB:
                 if (this.isStateTimerEngaged()) break;
                 this.offMapObjFlag(MOF.UNK8000000 | MOF.NO_ANIMATIONS);
                 this.stateTimer = this.unk170; this.state = SHS.MOVING_UP;
                 break;
-            case SHS.MOVING_UP: this.movingUp(); break;
-            case SHS.MOVING_DOWN: this.movingDown(); break;
-            case SHS.MOVING_CIRCLE: this.movingCircle(); break;
+            case SHS.MOVING_UP: this.shineExist(); this.movingUp(); break;
+            case SHS.MOVING_DOWN: this.shineExist(); this.movingDown(); break;
+            case SHS.MOVING_CIRCLE: this.shineExist(); this.movingCircle(); break;
             case SHS.UNKF:
+                this.shineExist();
                 if (this.pos.y > this.initialPos.y) { this.pos.y = fr(this.pos.y + this.unk188); this.unk188 = fr(this.unk188 * SHINE_SPEED_DOWN_RATE); }
                 else this.pos.y = this.initialPos.y;
                 this.unk16C = this.unk16C > 2 ? fr(this.unk16C - 0.1) : 2;
@@ -276,7 +279,7 @@ export class Shine extends Item {
                 this.offHitFilter(HF.NO_COLLISION);
                 this.state = SHS.UNK11;
                 break;
-            case SHS.UNK11: this.rot.y = fr(this.rot.y + this.unk16C); break;
+            case SHS.UNK11: this.rot.y = fr(this.rot.y + this.unk16C); this.shineExist(); break;
             case SHS.FLY_AWAY:
                 // (fabricated: flyAway's flight, unk188 its rise a tick)
                 this.unk188 = fr(this.unk188 + SHINE_FLY_ACCEL);

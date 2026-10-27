@@ -10,6 +10,8 @@ import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, walkerParams } from './walker.js';
 import { register } from '../scene.js';
+import { SE } from '../soundids.js';
+import '../sound.js';
 
 // ---------------------------------------------------------------- TEffectModel
 export class EffectModel extends SpineEnemy {
@@ -190,6 +192,7 @@ export class EffectEnemy extends WalkerEnemy {
     }
     setDeadAnm() {
         this.world.effect('ms_moe_fire_off', this.pos);
+        this.world.sound(SE.BS_WANWAN_TO_COOL, this.pos);
         this.onLiveFlag(LF.UNK20000);
     }
     emitEffect() {

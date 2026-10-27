@@ -325,7 +325,7 @@ export class MareCork extends MapObjBase {
     moveObject() {
         const c = this.unk138;
         if (c && typeof c.isObject === 'function' && c.isObject() && !this.unk154) {
-            if (this.mactor) this.mactor.setBck('marecork');
+            if (this.mactor) { this.mactor.setBck('marecork'); this.setAnmSound('/scene/mapObj/marecork.bas'); }
             this.removeMapCollision();
             this.unk154 = 1;
         }
@@ -340,6 +340,10 @@ export class MareCork extends MapObjBase {
                 this.unk148.set(2773, 8618, 7006);
                 this.emit('ms_m_sphipd_hit_b', this.unk148);
             }
+        }
+        if (this.unk154 && this.mactor) {
+            const fc = this.mactor.getFrameCtrl(ANM_BCK);
+            if (fc && fc.frame > 250) { this.unk148.set(2773, 8618, 7006); this.world.sound(SE.ENV_FALL_JET_LEVEL, this.unk148); }
         }
         super.calcRootMatrix();
     }

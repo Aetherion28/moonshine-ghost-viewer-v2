@@ -480,7 +480,8 @@ export class LeanMirror extends MapObjBase {
         if (st.unk73) {
             const h = w.search('居眠りボスハナチャン') as any;
             if (h && typeof h.startFall === 'function') h.startFall(st.pos.x, fr(st.pos.y + 1100), st.pos.z);
-            demoCamera(w, 'demohanatyan_cam01', null);   // (startCameraShakeSE: OBJ_QUAKE at the mirror)
+            demoCamera(w, 'demohanatyan_cam01', null);
+            w.sound(SE.OBJ_QUAKE, this.pos);   // (startCameraShakeSE, the demo camera's callback, at the mirror)
         } else demoCamera(w, '太陽石点灯カメラ', st.pos, LeanMirror.mDemoLightTime);
         this.stateTimer = LeanMirror.mDemoLightTime;
         this.state = LMS.LIGHT_DEMO;

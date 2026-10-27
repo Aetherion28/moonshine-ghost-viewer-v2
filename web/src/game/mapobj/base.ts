@@ -3,7 +3,7 @@
 // flags come from its entry in sObjDataTable (objdata.ts), found by the individual name scene.bin
 // gives it; its manager (named by that entry) performs it.
 //
-// Not here: the animation sounds (soundBas), particles (emit*: told as world events), the BCK-driven
+// Not here: soundBas (the sound tables' animation-sound callback), particles (emit*: told as world events), the BCK-driven
 // movement (TMapObjMoveData: none in Bianco Hills), hold data's taking model, mirror actors and
 // the static draw buffers (drawing only).
 
@@ -331,6 +331,7 @@ export class MapObjBase extends LiveActor {
         this.activeAnimIndex = 0xFFFF;
     }
     startAnim(index: number) {
+        if (this.anmSound) this.setAnmSound(null);
         const anim = this.anim();
         if (!this.mactor && anim && anim.num !== 0) this.mactor = this.getMActor(anim.entries[0].bmd);
         if (!anim || index >= anim.num) return;
@@ -346,6 +347,7 @@ export class MapObjBase extends LiveActor {
             this.offMapObjFlag(MOF.NO_ANIMATIONS);
             this.mactor.setAnimation(d.anm, d.type);
             if (this.checkMapObjFlag(MOF.TURN_OFF_ANIMATIONS_AT_END)) this.offMapObjFlag(MOF.NO_ANIMATIONS);
+            if (d.bas) this.setAnmSound(d.bas);
         }
     }
     startControlAnim(i: number) {
