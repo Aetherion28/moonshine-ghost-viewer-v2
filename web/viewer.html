@@ -5940,7 +5940,9 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     if (m.userData.zzz) m.userData.zzz.forEach((sp) => { sp.visible = dozing; });
     // FLUDD's water as the replay draws it: the live sim's water manager (drops, wet spots, splashes)
     const st = livePad.runner && livePad.runner.stage, W = st && st.world && st.world.water;
-    if (W) drawSimWater(L, W); else { L.water.visible = false; L.puddles.visible = false; }
+    // (redrawn when the sim has moved on: the display runs faster than the game's 30 frames)
+    if (W) { if (L.simW !== W || L.simTick !== W.tick) { L.simW = W; L.simTick = W.tick; drawSimWater(L, W); } }
+    else { L.water.visible = false; L.puddles.visible = false; L.simW = null; }
     return true;
   }
   // Poses the live Mario (place, facing, animation, FLUDD) at QF q of the live sim's history, the
@@ -6009,7 +6011,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   }
   function liveFxOff() {
     if (!liveFx) return;
-    liveFx.visible = false; liveFx.water.visible = false; liveFx.puddles.visible = false; liveFx.jpa = null; liveFx.jpaRuns = null; liveFx.jpaAt = undefined;
+    liveFx.visible = false; liveFx.water.visible = false; liveFx.puddles.visible = false; liveFx.jpa = null; liveFx.simW = null; liveFx.jpaRuns = null; liveFx.jpaAt = undefined;
   }
   const fxOwners = () => (liveFx && liveFx.visible ? [...ghosts, liveFx] : ghosts);
   // jpaJoints for live play: the joints at frame e, the live Mario posed there
@@ -7204,7 +7206,7 @@ void main() {
       const res = JPA_RES[slot.res];
       if (!res) return;
       const seed = (c) => Math.imul(si + 1, 0x9e3779b1) ^ Math.imul(c + 1, 0x85ebca6b);
-      const r = runs[si] = jpaHoldRun(runs[si], f0, (e) => slot.on(g, e), (c) => JPA.makeEmitter(res, seed(c)), (e, r) => slot.mat(g, e, r));
+      const r = runs[si] = jpaHoldRun(runs[si], f0, (e) => slot.on(g, e), (c) => JPA.makeEmitter(res, seed(c)), (e, r) => slot.mat(g, e, r), undefined, !!g.live);
       all.push(...r.dying);
       if (r.em) all.push(r.em);
     });
@@ -7216,8 +7218,11 @@ void main() {
   // count of calcs it has had since it came on (so its particles are the ones of one unbroken run,
   // wherever the start is). Frames sharing a start carry the run on a frame at a time as it plays;
   // anywhere else it is run again. r: the run so far (after frame r.e).
-  function jpaHoldRun(r, f0, on, make, mat, frames) {
-    const B = frames || JPA_SIM_FRAMES, G = B / 2, S0 = Math.max(0, Math.floor((f0 - B) / G) * G);
+  // cont (live play, whose time only goes on): a run that has reached the frame before carries on
+  // as it is, instead of starting over every G frames (a spike of B frames' particles each time).
+  function jpaHoldRun(r, f0, on, make, mat, frames, cont) {
+    const B = frames || JPA_SIM_FRAMES, G = B / 2;
+    const S0 = cont && r && r.e <= f0 && f0 - r.e <= B ? r.S0 : Math.max(0, Math.floor((f0 - B) / G) * G);
     if (!r || r.S0 !== S0 || r.e > f0) {
       // (where the bit was last seen coming on, and how far it has stayed on since: frames [c0, c1])
       const seen = r ? r.seen : null;
@@ -7262,14 +7267,7 @@ void main() {
   // water slide's wake, ms_m_watslide_a) refracting a copy of the screen (gpScreenTexture).
   let jpaBatches = null, jpaScene1 = null, jpaScene3 = null, jpaScreen = null;
   const JPA_GROUP3 = new Set(['watslide_a', 'bw_yugami']);
-  function drawJpa() {
-    if (typeof JPA === 'undefined' || typeof JPA_RES === 'undefined') return;
-    const list = [];
-    fxOwners().forEach((g) => { if (g.visible && g.jpa && g.jpa.length) list.push(...g.jpa); });
-    objNodes.forEach((o) => { if (o.visible && o.userData.bwJpa && o.userData.bwJpa.length) list.push(...o.userData.bwJpa); });
-    objNodes.forEach((o) => { if (o.userData.bg && o.userData.bgJpa && o.userData.bgJpa.length) list.push(...o.userData.bgJpa); });
-    objNodes.forEach((o) => { if (o.visible && o.userData.sfxList && o.userData.sfxList.length) list.push(...o.userData.sfxList); });
-    if (!list.length && !jpaBatches) return;
+  function ensureJpaBatches() {
     if (!jpaBatches) {
       jpaScreen = new THREE.DataTexture(new Uint8Array(3), 1, 1, THREE.RGBFormat);
       jpaScene1 = new THREE.Scene(); jpaScene3 = new THREE.Scene();
@@ -7282,6 +7280,36 @@ void main() {
       jpaBatches.set(JPA_RES[k], b);
       (JPA_GROUP3.has(k) || (k.startsWith('gesosurf') && JPA_RES[k].bs && JPA_RES[k].bs.projection) ? jpaScene3 : jpaScene1).add(b.mesh);
     });
+  }
+  // The water's and the particles' shaders, compiled ahead (WebGL compiles a program the first time
+  // it draws with it: half a second or more of a stopped picture the first time FLUDD sprays or an
+  // effect first shows), once the game layer is up and again when more effects come in.
+  let fxWarmKey = '';
+  function warmFx() {
+    if (!gameLive || typeof JPA === 'undefined' || typeof JPA_RES === 'undefined') return;
+    const n = Object.keys(JPA_RES).length, key = String(n);
+    if (!n || key === fxWarmKey) return;
+    fxWarmKey = key;
+    ensureJpaBatches();
+    // (each in the scene it's drawn in: a program depends on the scene's lights and shadows; the
+    // scene's other programs are already there)
+    const temp = [[waterScene, dropMat], [waterScene, splashMat], [scene, spotMat]].map(([S, m]) => { const o = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), m); o.frustumCulled = false; S.add(o); return o; });
+    const was = [];
+    [jpaScene1, jpaScene3].forEach((S) => S.children.forEach((o) => { was.push([o, o.visible]); o.visible = true; }));
+    try { renderer.compile(waterScene, camera); renderer.compile(scene, camera); renderer.compile(jpaScene1, camera); renderer.compile(jpaScene3, camera); }
+    catch (e) { console.warn('[fx] shader warm-up', e); }
+    was.forEach(([o, v]) => { o.visible = v; });
+    temp.forEach((o) => { o.parent.remove(o); o.geometry.dispose(); });
+  }
+  function drawJpa() {
+    if (typeof JPA === 'undefined' || typeof JPA_RES === 'undefined') return;
+    const list = [];
+    fxOwners().forEach((g) => { if (g.visible && g.jpa && g.jpa.length) list.push(...g.jpa); });
+    objNodes.forEach((o) => { if (o.visible && o.userData.bwJpa && o.userData.bwJpa.length) list.push(...o.userData.bwJpa); });
+    objNodes.forEach((o) => { if (o.userData.bg && o.userData.bgJpa && o.userData.bgJpa.length) list.push(...o.userData.bgJpa); });
+    objNodes.forEach((o) => { if (o.visible && o.userData.sfxList && o.userData.sfxList.length) list.push(...o.userData.sfxList); });
+    if (!list.length && !jpaBatches) return;
+    ensureJpaBatches();
     camera.updateMatrixWorld();
     const V = camera.matrixWorldInverse.elements;
     jpaBatches.forEach((b) => b.begin());
@@ -7907,6 +7935,7 @@ void main() {
     updateSleeper();
     if (splitOn()) renderSplit(dt, now);
     else viewStep(dt, now, true);
+    if (gameLive && loopFrame % 30 === 0) warmFx();   // (after the frame: the stage is on screen first)
     clipFrame();
     requestAnimationFrame(loop);
   }

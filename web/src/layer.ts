@@ -231,7 +231,7 @@ export class GameLayer {
     private simMirrors = new Map<LiveActor, SimMirror>();
     private simPlaces = new Set<string>();
     /** the goop layers' models (TPollutionLayer: map/pollution/pollutionNN.bmd, texture 0 the goop map) */
-    private goop: { stage: any; frame: number; insts: (J3DModelInstanceSimple | null)[] } | null = null;
+    private goop: { stage: any; frame: number; insts: (J3DModelInstanceSimple | null)[]; bufs: { last: Uint8Array; rgba: Uint8Array; sent: boolean }[] } | null = null;
 
     constructor(public canvas: HTMLCanvasElement) {
         const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: false, depth: false, stencil: false });
@@ -833,7 +833,7 @@ export class GameLayer {
                 return inst;
             });
             if (made.length) { swapTextures(this.device, this.renderer!.renderHelper.renderInstManager.gfxRenderCache, this.renderer!.rarc, made); this.renderer!.modelInstances.push(...made); }
-            this.goop = { stage: st, frame: -1, insts };
+            this.goop = { stage: st, frame: -1, insts, bufs: [] };
         }
         const G = this.goop;
         for (const g of G.insts) if (g) g.visible = this.live;
@@ -845,8 +845,12 @@ export class GameLayer {
             const tex = ((inst as any).tex1Data || (inst as any).modelMaterialData?.tex1Data);
             const gfx = tex && (tex as any).gfxTextures ? (tex as any).gfxTextures[0] : null;
             if (!gfx) return;
-            const w = 1 << L.pos.lw, h = 1 << L.pos.lh;
-            const rgba = new Uint8Array(w * h * 4), m = L.map as Uint8Array;
+            const w = 1 << L.pos.lw, h = 1 << L.pos.lh, m = L.map as Uint8Array;
+            // (only a layer whose texels changed since its last upload goes to the GPU again, from buffers kept per layer)
+            const kept = G.bufs[i] && G.bufs[i].last.length === m.length ? G.bufs[i] : (G.bufs[i] = { last: new Uint8Array(m.length), rgba: new Uint8Array(w * h * 4), sent: false });
+            if (kept.sent && sameBytes(kept.last, m)) return;
+            kept.last.set(m); kept.sent = true;
+            const rgba = kept.rgba;
             // I8: 8x4 texel blocks
             let o = 0;
             for (let by = 0; by < h; by += 4) for (let bx = 0; bx < w; bx += 8)
@@ -993,6 +997,19 @@ export class GameLayer {
         this.drawn = true;
         return true;
     }
+}
+
+/** whether two byte arrays of the same length hold the same bytes (compared 4 at a time where they line up) */
+function sameBytes(a: Uint8Array, b: Uint8Array) {
+    const n = a.length;
+    if (!(a.byteOffset & 3) && !(b.byteOffset & 3)) {
+        const a4 = new Uint32Array(a.buffer, a.byteOffset, n >> 2), b4 = new Uint32Array(b.buffer, b.byteOffset, n >> 2);
+        for (let k = 0; k < a4.length; k++) if (a4[k] !== b4[k]) return false;
+        for (let k = a4.length * 4; k < n; k++) if (a[k] !== b[k]) return false;
+        return true;
+    }
+    for (let k = 0; k < n; k++) if (a[k] !== b[k]) return false;
+    return true;
 }
 
 /** One of the viewer's NPC colour specs ([material, mode, a, b, kind, c0, c1], tools/build_objects.py npc_colour): SMS_InitChangeNpcColor's registers. */
