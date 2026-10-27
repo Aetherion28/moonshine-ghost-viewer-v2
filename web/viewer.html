@@ -293,6 +293,13 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
 /* Delfino Ghosts browser */
 dialog.browse { width: min(720px, calc(100vw - 32px)); max-height: min(80vh, 760px); padding: 0; border: 0; border-radius: 6px; background: var(--panel); color: var(--fg); box-shadow: 0 0 0 2px var(--trim), 4px 5px 0 2px var(--drop); }
 dialog.browse::backdrop { background: rgba(0,0,0,.45); }
+.ctrls .ctrlNote { margin: 0; padding: 10px 14px; font-size: 12px; color: var(--muted, inherit); border-bottom: 1px solid var(--line); }
+.ctrls .ctrlGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 6px 10px; padding: 10px 14px; overflow: auto; align-items: center; }
+.ctrls .ctrlGrid .h { font-weight: 800; font-size: 12px; }
+.ctrls .ctrlGrid button { font: inherit; font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 5px 8px; }
+.ctrls .ctrlGrid button.wait { outline: 2px solid var(--accent); }
+.ctrls footer { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.ctrls footer span { flex: 1; }
 .browse form { display: flex; flex-direction: column; max-height: inherit; }
 .browse header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 2px solid var(--trim-light); position: static; background: var(--accent); color: var(--accent-ink); }
 .browse header h2 { margin: 0; font: 800 15px var(--display); flex: 1; }
@@ -342,6 +349,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
     </div>
     <button id="pickDisc" title="Draw the stages, objects and Mario with the game's own models and renderer, read from your Super Mario Sunshine disc image (.iso / .gcm) or extracted game folder. Nothing is uploaded.">Game disc</button>
     <button id="reopenDisc" hidden></button>
+    <button id="forgetDisc" class="tool" hidden title="Remove the copy of your disc image this browser keeps, so it isn't opened automatically next time">Forget disc</button>
     <input type="file" id="isoFile" accept=".iso,.gcm" hidden>
     <input type="file" id="folderFile" webkitdirectory hidden>
     <button id="browseGhosts" title="Browse ghosts shared on Delfino Ghosts">Browse</button>
@@ -423,6 +431,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <button id="back" title="Back one frame (,)" aria-label="Back one frame">&minus;1f</button>
       <button id="play" class="primary" aria-label="Play">Play</button>
       <button id="delSave" hidden aria-label="Delete save file">Delete save</button>
+      <button id="ctrlBtn" class="tool" hidden title="Keyboard and controller buttons for live play">Controls</button>
       <button id="fwd" title="Forward one frame (.)" aria-label="Forward one frame">+1f</button>
       <button id="shareBtn" class="tool" title="Copy a link to this view (ghost, time and camera)">Share</button>
       <button id="clipBtn" class="tool" title="Make a clip: pick a stretch around this moment and save it as a video">Clip</button>
@@ -440,6 +449,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
   </div>
 
 
+  <dialog class="browse ctrls" id="ctrlDlg" aria-labelledby="ctrlTitle">
+    <form method="dialog">
+      <header><h2 id="ctrlTitle">Controls</h2><button value="close" aria-label="Close">&times;</button></header>
+      <p class="ctrlNote">Click a box, then press the key or controller button for it. Esc cancels, Backspace clears. Sticks and analog triggers on a controller stay on their usual axes; a GameCube adapter keeps its own layout.</p>
+      <div class="ctrlGrid" id="ctrlGrid"></div>
+      <footer><button type="button" id="ctrlReset">Reset to defaults</button><span></span><button value="close" class="primary">Done</button></footer>
+    </form>
+  </dialog>
   <dialog class="browse" id="browseDlg" aria-labelledby="browseTitle">
     <form method="dialog">
       <header><h2 id="browseTitle">Delfino Ghosts</h2>
@@ -5867,8 +5884,79 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
       }
       setHidden(rl, !want);
     }
-    setText(el, livePad.on ? '· gamepad: ' + (livePad.id ? livePad.id.replace(/\s*\(.*$/, '').slice(0, 40) || livePad.id.slice(0, 40) : 'searching…') + (ghosts.length ? ' (off: a ghost is loaded)' : '') : '');
+    setText(el, livePad.on ? '· gamepad: ' + (livePad.id ? livePad.id.replace(/\s*\(.*$/, '').slice(0, 40) || livePad.id.slice(0, 40) : 'none, keyboard (Controls)') + (ghosts.length ? ' (off: a ghost is loaded)' : '') : '');
   }
+  // ---------------------------------------------------------------- live play controls (the Controls dialog)
+  // Keyboard keys (KeyboardEvent.code) and standard-mapping gamepad buttons for each GameCube input,
+  // kept in this browser.
+  const CTRL_BITS = { A: 0x100, B: 0x200, X: 0x400, Y: 0x800, Z: 0x10, Start: 0x1000, dup: 0x8, ddown: 0x4, dleft: 0x1, dright: 0x2 };
+  const CTRL_ROWS = [['up', 'Stick up'], ['down', 'Stick down'], ['left', 'Stick left'], ['right', 'Stick right'], ['walk', 'Walk (half tilt)'],
+    ['A', 'A'], ['B', 'B'], ['X', 'X'], ['Y', 'Y'], ['Z', 'Z'], ['L', 'L'], ['R', 'R (spray)'], ['Start', 'Start'],
+    ['cup', 'C-stick up'], ['cdown', 'C-stick down'], ['cleft', 'C-stick left'], ['cright', 'C-stick right'],
+    ['dup', 'D-pad up'], ['ddown', 'D-pad down'], ['dleft', 'D-pad left'], ['dright', 'D-pad right']];
+  const CTRL_DEFAULT = {
+    key: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', walk: 'KeyV', A: 'Space', B: 'KeyE', X: 'KeyQ', Y: 'KeyF', Z: 'Tab', L: 'KeyC', R: 'ShiftLeft', Start: 'Enter',
+      cup: 'ArrowUp', cdown: 'ArrowDown', cleft: 'ArrowLeft', cright: 'ArrowRight', dup: 'Digit1', ddown: 'Digit2', dleft: 'Digit3', dright: 'Digit4' },
+    pad: { A: 0, B: 2, X: 1, Y: 3, Z: 5, L: 6, R: 7, Start: 9, dup: 12, ddown: 13, dleft: 14, dright: 15 },
+  };
+  const CTRL = (() => {
+    const c = JSON.parse(JSON.stringify(CTRL_DEFAULT));
+    try { const v = JSON.parse(localStorage.getItem('ghostViewer.controls') || 'null'); if (v) { Object.assign(c.key, v.key || {}); Object.assign(c.pad, v.pad || {}); } } catch (e) { }
+    return c;
+  })();
+  const saveCtrl = () => { try { localStorage.setItem('ghostViewer.controls', JSON.stringify(CTRL)); } catch (e) { } };
+  const keysDown = new Set();
+  let ctrlWait = null;   // { kind: 'key' | 'pad', id, el }
+  const keyName = (c) => !c ? '—' : c.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Arrow(.*)$/, '$1 arrow').replace(/(Left|Right)$/, ' $1').replace(/^Space$/, 'Space');
+  const padName = (i) => i == null || i < 0 ? '—' : (['A / Cross', 'B / Circle', 'X / Square', 'Y / Triangle', 'LB', 'RB', 'LT', 'RT', 'Back', 'Start', 'L3', 'R3', 'D-pad up', 'D-pad down', 'D-pad left', 'D-pad right', 'Home'][i] || 'Button ' + i);
+  function ctrlGrid() {
+    const g = $('ctrlGrid'); g.textContent = '';
+    for (const h of ['Input', 'Keyboard', 'Controller']) { const d = document.createElement('div'); d.className = 'h'; d.textContent = h; g.append(d); }
+    for (const [id, label] of CTRL_ROWS) {
+      const l = document.createElement('div'); l.textContent = label; g.append(l);
+      for (const kind of ['key', 'pad']) {
+        const usable = kind === 'key' || CTRL_DEFAULT.pad[id] !== undefined;
+        const b = document.createElement('button'); b.type = 'button';
+        if (!usable) { b.disabled = true; b.textContent = 'stick'; g.append(b); continue; }
+        b.textContent = kind === 'key' ? keyName(CTRL.key[id]) : padName(CTRL.pad[id]);
+        b.onclick = () => { if (ctrlWait) ctrlWait.el.classList.remove('wait'); ctrlWait = { kind, id, el: b, pressed: new Set(pads().flatMap((p) => p.buttons.map((x, i) => (x.pressed ? p.index + ':' + i : '')).filter(Boolean))) }; b.classList.add('wait'); b.textContent = kind === 'key' ? 'press a key…' : 'press a button…'; };
+        g.append(b);
+      }
+    }
+  }
+  $('ctrlBtn').addEventListener('click', () => { ctrlWait = null; ctrlGrid(); $('ctrlDlg').showModal(); });
+  $('ctrlDlg').addEventListener('close', () => { ctrlWait = null; });
+  $('ctrlReset').addEventListener('click', () => { const d = JSON.parse(JSON.stringify(CTRL_DEFAULT)); CTRL.key = d.key; CTRL.pad = d.pad; saveCtrl(); ctrlWait = null; ctrlGrid(); });
+  window.addEventListener('keydown', (e) => {
+    if (ctrlWait) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (e.code === 'Escape') { ctrlWait = null; ctrlGrid(); return; }
+      const clear = e.code === 'Backspace';
+      if (ctrlWait.kind === 'key') { CTRL.key[ctrlWait.id] = clear ? '' : e.code; }
+      else if (clear) CTRL.pad[ctrlWait.id] = -1;
+      else return;
+      saveCtrl(); ctrlWait = null; ctrlGrid();
+      return;
+    }
+    if (livePad.active && !typingIn(e.target)) {
+      keysDown.add(e.code);
+      if (Object.values(CTRL.key).includes(e.code)) e.preventDefault();
+    }
+  }, true);
+  window.addEventListener('keyup', (e) => { keysDown.delete(e.code); }, true);
+  window.addEventListener('blur', () => keysDown.clear());
+  // a controller button for the waiting box: the first one newly pressed
+  (function ctrlPadPoll() {
+    requestAnimationFrame(ctrlPadPoll);
+    const w = ctrlWait;
+    if (!w || w.kind !== 'pad') return;
+    for (const p of pads()) p.buttons.forEach((x, i) => {
+      const k = p.index + ':' + i;
+      if (!x.pressed) { w.pressed.delete(k); return; }
+      if (w.pressed.has(k) || ctrlWait !== w) return;
+      CTRL.pad[w.id] = i; saveCtrl(); ctrlWait = null; ctrlGrid();
+    });
+  })();
   const isGcAdapter = (p) => p.mapping !== 'standard' && /gamecube|0337|mayflash|wup-028/i.test(p.id);
   // PADClamp (dolphin pad/Padclamp.c): ClampRegion { 30, 180, 15, 72, 40, 15, 59, 31 }
   function clampStick(x, y, max, xy, min) {
@@ -5888,10 +5976,11 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     const P = { button: 0, stickX: 0, stickY: 0, substickX: 0, substickY: 0, triggerLeft: 0, triggerRight: 0, analogA: 0, analogB: 0 };
     let p = livePad.index >= 0 ? pads().find((x) => x.index === livePad.index) : null;
     if (!p) { findPad(); p = livePad.index >= 0 ? pads().find((x) => x.index === livePad.index) : null; }
-    if (!p) return P;
-    const B = (i) => !!(p.buttons[i] && p.buttons[i].pressed), V = (i) => (p.buttons[i] ? p.buttons[i].value || (p.buttons[i].pressed ? 1 : 0) : 0), A = (i) => p.axes[i] || 0;
-    let rx, ry, cx, cy, tl, tr, dl, dr, bits = 0;
-    if (isGcAdapter(p)) {
+    const B = (i) => !!(p && i >= 0 && p.buttons[i] && p.buttons[i].pressed), V = (i) => (p && i >= 0 && p.buttons[i] ? p.buttons[i].value || (p.buttons[i].pressed ? 1 : 0) : 0), A = (i) => (p && p.axes[i]) || 0;
+    let rx = 0, ry = 0, cx = 0, cy = 0, tl = 0, tr = 0, dl = false, dr = false, bits = 0;
+    const G = CTRL.pad;
+    if (!p) { }
+    else if (isGcAdapter(p)) {
       // a GameCube adapter in PC mode (Mayflash / WUP-028 as DirectInput): 1 A, 2 B, 0 X, 3 Y,
       // 7 Z, 9 Start, 4/5 L/R digital, 12-15 D-pad; axes 0/1 the stick, 5/2 the C-stick, 3/4 L/R
       rx = A(0) * 127; ry = -A(1) * 127; cx = A(5) * 127; cy = -A(2) * 127;
@@ -5899,13 +5988,25 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
       if (B(1)) bits |= 0x100; if (B(2)) bits |= 0x200; if (B(0)) bits |= 0x400; if (B(3)) bits |= 0x800;
       if (B(7)) bits |= 0x10; if (B(9)) bits |= 0x1000;
     } else {
-      // the standard mapping (XInput-style): A→A, X→B, B→X, Y→Y, RB/LB→Z, LT/RT→L/R, Start
+      // the standard mapping (XInput-style), as the Controls dialog has it (default: A→A, X→B,
+      // B→X, Y→Y, RB→Z, LT/RT→L/R, Start)
       rx = A(0) * 100; ry = -A(1) * 100; cx = A(2) * 100; cy = -A(3) * 100;
-      tl = V(6) * 255; tr = V(7) * 255; dl = V(6) >= 0.95; dr = V(7) >= 0.95;
-      if (B(0)) bits |= 0x100; if (B(2)) bits |= 0x200; if (B(1)) bits |= 0x400; if (B(3)) bits |= 0x800;
-      if (B(5) || B(4)) bits |= 0x10; if (B(9)) bits |= 0x1000;
+      tl = V(G.L) * 255; tr = V(G.R) * 255; dl = V(G.L) >= 0.95; dr = V(G.R) >= 0.95;
+      for (const [k, bit] of Object.entries(CTRL_BITS)) if (B(G[k])) bits |= bit;
     }
-    if (B(12)) bits |= 0x8; if (B(13)) bits |= 0x4; if (B(14)) bits |= 0x1; if (B(15)) bits |= 0x2;
+    if (p && isGcAdapter(p)) { if (B(12)) bits |= 0x8; if (B(13)) bits |= 0x4; if (B(14)) bits |= 0x1; if (B(15)) bits |= 0x2; }
+    // the keyboard (Controls dialog): its stick at full tilt (or the walk key's half), its L / R full presses
+    {
+      const K = CTRL.key, d = (k) => !!K[k] && keysDown.has(K[k]);
+      for (const [k, bit] of Object.entries(CTRL_BITS)) if (d(k)) bits |= bit;
+      const t = d('walk') ? 45 : 100;
+      const kx = (d('right') ? 1 : 0) - (d('left') ? 1 : 0), ky = (d('up') ? 1 : 0) - (d('down') ? 1 : 0);
+      if (kx || ky) { const n = kx && ky ? Math.SQRT1_2 : 1; rx = kx * t * n; ry = ky * t * n; }
+      const qx = (d('cright') ? 1 : 0) - (d('cleft') ? 1 : 0), qy = (d('cup') ? 1 : 0) - (d('cdown') ? 1 : 0);
+      if (qx || qy) { cx = qx * 100; cy = qy * 100; }
+      if (d('L')) dl = true;
+      if (d('R')) dr = true;
+    }
     if (dl) { bits |= 0x40; tl = 255; }
     if (dr) { bits |= 0x20; tr = 255; }
     [P.stickX, P.stickY] = clampStick(s8(rx), s8(ry), 72, 40, 15);
@@ -5951,7 +6052,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     const on = !!livePad.active, b = $('play');
     if (on === playRestart) return;
     playRestart = on;
-    $('delSave').hidden = !on;
+    $('delSave').hidden = !on; $('ctrlBtn').hidden = !on;
     if (on) { b.textContent = 'Restart level'; b.setAttribute('aria-label', 'Restart level'); b.dataset.wasDisabled = b.disabled ? '1' : ''; b.disabled = false; }
     else { b.disabled = b.dataset.wasDisabled === '1'; setPlaying(playing); }
   }
@@ -8951,7 +9052,7 @@ void main() {
   const typingIn = (el) => el && el.closest && el.closest('input, select, textarea, dialog');
   window.addEventListener('keydown', (e) => {
     fastMove = e.shiftKey;
-    if (MOVE_KEYS[e.code] && !typingIn(e.target) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (MOVE_KEYS[e.code] && !livePad.active && !typingIn(e.target) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       heldKeys.add(e.code); e.preventDefault();
       if (isFollow()) setCameraMode('free');
     }
@@ -9090,6 +9191,7 @@ void main() {
 
   window.addEventListener('keydown', (e) => {
     if (e.target.closest('input[type=text], input[type=search], select, dialog')) return;
+    if (livePad.active) return;   // (live play: the keys are the pad's)
     if (e.key === ' ') { e.preventDefault(); setPlaying(!playing); }
     else if (e.key === ',') step(-1);
     else if (e.key === '.') step(1);
@@ -9425,16 +9527,55 @@ void main() {
       update();
     } catch (e) { $('discInfo').textContent = ''; showNotice(e && e.message ? e.message : String(e)); console.error(e); }
   }
+  // ---------------------------------------------------------------- the disc kept in this browser
+  // A copy of the disc image in the browser's private file storage (the origin private file system:
+  // it never leaves the computer), so the next visit opens it without asking. Only on browsers that
+  // can write there from the page; a disc that doesn't fit in the browser's storage isn't kept.
+  const DiscStore = {
+    NAME: 'disc.iso', KEY: 'ghostViewer.discSaved',
+    async dir() { try { return navigator.storage && navigator.storage.getDirectory ? await navigator.storage.getDirectory() : null; } catch (e) { return null; } },
+    async get() {
+      let want = 0; try { want = +(localStorage.getItem(this.KEY) || 0); } catch (e) { }
+      if (!want) return null;
+      const d = await this.dir(); if (!d) return null;
+      try { const f = await (await d.getFileHandle(this.NAME)).getFile(); return f.size === want ? f : null; } catch (e) { return null; }
+    },
+    async put(file) {
+      if (!file || !file.stream || file.size < 0x1000000) return;
+      try { if (+(localStorage.getItem(this.KEY) || 0) === file.size && (await this.get())) return; } catch (e) { }
+      const d = await this.dir(); if (!d) return;
+      try {
+        if (navigator.storage.persist) await navigator.storage.persist();
+        const est = navigator.storage.estimate ? await navigator.storage.estimate() : null;
+        if (est && est.quota && est.quota - (est.usage || 0) < file.size + 64e6) return;
+        const h = await d.getFileHandle(this.NAME, { create: true });
+        if (!h.createWritable) return;
+        try { localStorage.removeItem(this.KEY); } catch (e) { }
+        const w = await h.createWritable();
+        await file.stream().pipeTo(w);
+        try { localStorage.setItem(this.KEY, String(file.size)); } catch (e) { }
+        $('forgetDisc').hidden = false;
+      } catch (e) { console.warn('[disc] not kept', e); }
+    },
+    async forget() {
+      try { localStorage.removeItem(this.KEY); } catch (e) { }
+      const d = await this.dir(); if (d) try { await d.removeEntry(this.NAME); } catch (e) { }
+      $('forgetDisc').hidden = true;
+    },
+  };
+  $('forgetDisc').onclick = () => { DiscStore.forget().then(() => showNotice('The saved disc is removed from this browser.')); };
   function useDiscFile(f) {
     if (!gameLayer) { showNotice('This browser can\'t run the game renderer (it needs WebGL 2).'); return; }
-    GameDisc.openDisc(f).then(useDisc, (e) => showNotice(e.message || String(e)));
+    GameDisc.openDisc(f).then((d) => { const r = useDisc(d); DiscStore.put(f); return r; }, (e) => showNotice(e.message || String(e)));
   }
   $('pickDisc').onclick = async () => {
     if (!gameLayer) { showNotice('This browser can\'t run the game renderer (it needs WebGL 2).'); return; }
     if (window.showOpenFilePicker) {
       try {
         const [h] = await window.showOpenFilePicker({ types: [{ description: 'GameCube disc image', accept: { 'application/octet-stream': ['.iso', '.gcm'] } }] });
-        await useDisc(await GameDisc.openDisc(await h.getFile()));
+        const hf = await h.getFile();
+        await useDisc(await GameDisc.openDisc(hf));
+        DiscStore.put(hf);
         GameDisc.rememberHandle(h);
         $('reopenDisc').hidden = true;
         return;
@@ -9453,7 +9594,14 @@ void main() {
     e.target.value = '';
   };
   $('optReplay').onchange = (e) => { layerSlots.forEach((s) => { if (s.layer && s.layer.sim) s.layer.sim.inputReplay = e.target.checked; }); update(); };
-  if (gameLayer) GameDisc.rememberedHandle().then((h) => {
+  // the disc kept from last time opens by itself; else the button for the one picked last time
+  if (gameLayer) DiscStore.get().then(async (f) => {
+    if (f) {
+      $('forgetDisc').hidden = false;
+      try { await useDisc(await GameDisc.openDisc(f)); return true; } catch (e) { console.warn('[disc] saved copy', e); await DiscStore.forget(); }
+    }
+    return false;
+  }).then((opened) => opened ? null : GameDisc.rememberedHandle()).then((h) => {
     if (!h) return;
     const b = $('reopenDisc'), gb = $('gateReopen');
     b.hidden = false; gb.hidden = false;
@@ -9463,7 +9611,9 @@ void main() {
       try {
         if ((await h.queryPermission({ mode: 'read' })) !== 'granted' && (await h.requestPermission({ mode: 'read' })) !== 'granted') return;
         b.hidden = true; gb.hidden = true;
-        await useDisc(await GameDisc.openDisc(await h.getFile()));
+        const hf = await h.getFile();
+        await useDisc(await GameDisc.openDisc(hf));
+        DiscStore.put(hf);
       } catch (e) { GameDisc.forgetHandle(); b.hidden = true; gb.hidden = true; showNotice(e.message || String(e)); }
     };
   }).catch(() => {});
