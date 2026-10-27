@@ -765,6 +765,8 @@ export class TalkDirector {
                     this.unk126 = 3;
                     // (the console's shine-get banner, the jingle and the BGM fade are not simulated)
                     w.flags.setBool(true, MSF_GOT_SHINE_IN_PREV_STAGE);
+                    // (MSBgm: the Shine-get jingle, MSD_BGM_GET_SHINE: told to the audio as a 'bgm' event)
+                    w.events.push({ t: w.tickCount, kind: 'bgm', data: { name: 'MSD_BGM_GET_SHINE' } });
                     const sh: any = this.shine;
                     if (sh && typeof sh.eventId === 'number') w.flags.setShineFlag(sh.eventId);
                     // live play's free roam is for Delfino Plaza only (map 1): a course's Shine goes back to the plaza

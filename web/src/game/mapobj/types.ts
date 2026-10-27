@@ -12,6 +12,8 @@ export interface MapObjPhysicalInfo { data: number[]; wall: number; }
 export interface MapObjData {
     name: string | null; type: number; manager: string | null; group: string | null;
     anim: MapObjAnimDataInfo | null; hit: MapObjHitInfo | null; col: MapObjCollisionInfo | null;
+    /** TMapObjSoundInfo: the sound IDs by startSound's index (-1: none); null: TMapObjGeneral::mDefaultSound */
+    sound: number[] | null;
     physical: MapObjPhysicalInfo | null; sink: { sink: number; recover: number } | null;
     hold: { bmd: string; joint: string } | null; move: { bck: string } | null;
     unk30: number; flags: number;

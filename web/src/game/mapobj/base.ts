@@ -3,7 +3,7 @@
 // flags come from its entry in sObjDataTable (objdata.ts), found by the individual name scene.bin
 // gives it; its manager (named by that entry) performs it.
 //
-// Not here: sounds (startSound / soundBas), particles (emit*: told as world events), the BCK-driven
+// Not here: the animation sounds (soundBas), particles (emit*: told as world events), the BCK-driven
 // movement (TMapObjMoveData: none in Bianco Hills), hold data's taking model, mirror actors and
 // the static draw buffers (drawing only).
 
@@ -16,6 +16,9 @@ import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { OBJ_DATA } from './objdata.js';
 import type { MapObjData } from './types.js';
+import '../sound.js';
+/** TMapObjGeneral::mDefaultSound (index 1 MSD_SE_IT_COMMON_APPEAR, 8 MSD_SE_IT_APPEAR) */
+const DEFAULT_SOUND = [-1, 0x3802, -1, -1, -1, -1, -1, -1, 0x3812, -1];
 import { ObjCollisionManager, KIND_STATIC, KIND_MOVE, COL_UNK4000, COL_UNK8000, MsMtxSetTRS } from './objcol.js';
 
 /** MAP_OBJ_FLAG_* */
@@ -351,7 +354,12 @@ export class MapObjBase extends LiveActor {
         if (a && i < a.num && this.mactor) { const fc = this.mactor.getFrameCtrl(a.entries[i].type); if (fc) fc.rate = 0; }
     }
     startBck(name: string) { this.offMapObjFlag(MOF.NO_ANIMATIONS); if (this.mactor) this.mactor.setBck(name); }
-    startSound(i: number) { if (this.activeSoundIndex !== i) this.activeSoundIndex = i; }
+    /** TMapObjBase::startSound: the object's sound table's (TMapObjGeneral::mDefaultSound without one) ID at i, at its position */
+    startSound(i: number) {
+        if (this.activeSoundIndex !== i) this.activeSoundIndex = i;
+        const id = (this.data.sound || DEFAULT_SOUND)[this.activeSoundIndex];
+        if (id !== undefined && id !== -1) this.world.sound(id >>> 0, this.pos);
+    }
 
     // ------------------------------------------------------------ states
     makeObjDefault() {

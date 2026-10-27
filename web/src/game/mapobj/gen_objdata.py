@@ -24,6 +24,13 @@ for m in re.finditer(r'\b([A-Z][A-Z0-9_]*)\s*=\s*([^,\n}]+)', at):
         pass
 
 
+# ---- the sound effect IDs (MSound/SoundEffects.hpp)
+se = open(root + '/include/MSound/SoundEffects.hpp', encoding='utf-8').read()
+se = re.sub(r'//[^\n]*', '', se)
+for m in re.finditer(r'\b(MSD_SE_[A-Z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)', se):
+    consts[m.group(1)] = int(m.group(2), 0)
+
+
 def s32(v):
     v &= 0xFFFFFFFF
     return v - 0x100000000 if v & 0x80000000 else v
@@ -156,6 +163,16 @@ def hold(r):
     return {'bmd': d[0], 'joint': d[1]}
 
 
+def sound(r):
+    if r is None:
+        return None
+    n, data = get(r['ref'])
+    d = get(data['ref']) if data else None
+    if d and len(d) == 1 and isinstance(d[0], list):
+        d = d[0]
+    return [s32(x) if isinstance(x, int) else -1 for x in (d or [])][:n]
+
+
 def move(r):
     if r is None:
         return None
@@ -169,7 +186,7 @@ for ref in get('sObjDataTable'):
     table.append({
         'name': d[0], 'type': s32(d[1]) if d[1] is not None else 0, 'manager': d[2], 'group': d[3],
         'anim': anim_info(d[4]), 'hit': hit_info(d[5]), 'col': col_info(d[6]),
-        'physical': phys_info(d[8]), 'sink': sink(d[9]), 'hold': hold(d[10]), 'move': move(d[11]),
+        'sound': sound(d[7]), 'physical': phys_info(d[8]), 'sink': sink(d[9]), 'hold': hold(d[10]), 'move': move(d[11]),
         'unk30': float(d[12]), 'flags': d[13],
     })
 

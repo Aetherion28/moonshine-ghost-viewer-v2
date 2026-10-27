@@ -9275,6 +9275,7 @@ void main() {
       return Math.random();
     };
   }
+  const liveMusic = { st: null, q0: 0, n: 0 };
   function audioFrame() {
     if (!gameAudio) return;
     const g = ghosts.find((x) => x.data && x.marker && x.marker.parent);
@@ -9294,6 +9295,12 @@ void main() {
       if (s && a) f.mario = { x: s.x, y: s.y, z: s.z, anim: a.id, phase: a.phase / 4096 };
       f.marioChanges = liveMarioChanges(H, q);
       f.marioVoice = { random: Math.random };
+      // the stage's music: the live sim's stage (world.map: the area, world.stage: the episode), from when it began
+      const ls = gameLayer && gameLive && gameLayer.sim ? gameLayer.sim.stage : null;
+      if (ls && ls.world) {
+        if (liveMusic.st !== ls) { liveMusic.st = ls; liveMusic.q0 = q; liveMusic.n++; }
+        f.area = ls.world.map; f.episode = ls.world.stage; f.segStart = liveMusic.q0; f.segKey = 'live|' + liveMusic.n;
+      }
     }
     const st = gameLayer && gameLive && gameLayer.sim ? gameLayer.sim.stage : null;
     if (st && st.world) { f.events = st.world.events; f.eventsKey = st; f.tick = st.world.tickCount; }

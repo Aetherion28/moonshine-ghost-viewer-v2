@@ -38,6 +38,11 @@ export interface AudioFrame {
     /** what Mario's voice lines need (health, JALCalc's random numbers) */
     marioVoice?: VoiceContext;
 }
+/** the jingles the stage's game code starts (MSound/BackgroundMusic.hpp), and about how long they hold the stage's music off (seconds) */
+const JINGLES: Record<string, [number, number]> = {
+    MSD_BGM_GET_SHINE: [0x80010009, 6], MSD_BGM_FANFARE_RACE: [0x80010025, 4], MSD_BGM_FANFARE_CASINO: [0x80010024, 4],
+    MSD_BGM_SHINE_APPEAR: [0x8001002C, 4], MSD_BGM_MISS: [0x8001000B, 4], MSD_BGM_GAMEOVER: [0x80010027, 6],
+};
 const QF_PER_SECOND = 120000 / 1001;
 /** a game frame (30 per second) in QF */
 const QF_PER_FRAME = QF_PER_SECOND / 30;
@@ -70,6 +75,8 @@ export class GameAudio {
     private ready = false;
     private gestured = false;
     private bgmKey = ''; private bgmStartedAt = 0; private bgmSeek = 0; private bgmRunning = false;
+    /** a jingle playing: the stage's music waits until then (performance.now seconds) */
+    private jingleUntil = 0;
     private lastT = -1; private paused = true; private lastWall = 0; private lastMusicT = 0;
     /** held sounds: key -> the playback time it was last asked for */
     private held = new Map<string, number>();
@@ -180,7 +187,7 @@ export class GameAudio {
             this.bgmKey = key; this.bgmRunning = false;
             if (id < 0) this.post({ type: 'stopBgm' });
         }
-        if (id >= 0 && audible) {
+        if (id >= 0 && audible && now >= this.jingleUntil) {
             const dWall = now - this.lastWall, dMusic = musicT - this.lastMusicT;
             const jumped = dMusic < -0.05 || dMusic > dWall * 1.5 + 0.5;
             const drift = this.bgmSeek + (now - this.bgmStartedAt) - musicT;
@@ -194,9 +201,16 @@ export class GameAudio {
         if (f.eventsKey !== this.evKey) { this.evKey = f.eventsKey; this.evDone = f.events ? f.events.length : 0; }
         if (f.events) {
             if (f.events.length < this.evDone) this.evDone = 0;
-            if (audible && this.sfx) for (let i = this.evDone; i < f.events.length; i++) {
+            if (audible && (this.sfx || this.music)) for (let i = this.evDone; i < f.events.length; i++) {
                 const e = f.events[i];
-                if (e.kind !== 'sound') continue;
+                if (e.kind === 'bgm') {
+                    const j = JINGLES[e.data && e.data.name];
+                    if (!j || !this.music || (f.tick !== undefined && e.t !== undefined && e.t < f.tick - 3)) continue;
+                    this.post({ type: 'bgm', id: j[0], seek: 0 });
+                    this.jingleUntil = now + j[1]; this.bgmRunning = false;
+                    continue;
+                }
+                if (e.kind !== 'sound' || !this.sfx) continue;
                 if (f.tick !== undefined && e.t !== undefined && e.t < f.tick - 3) continue;
                 this.playAt(e.data.id, e.data.p, f, 1, 1, 'ev:' + e.data.id);
             }

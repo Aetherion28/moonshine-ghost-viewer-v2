@@ -1239,7 +1239,7 @@ export class GameLayer {
             const S = this.marioShadow, st = this.wireStage, col = st && st.world ? st.world.col : null;
             S.begin();
             if (col && this.shadowLight) {
-                if (st.world.stage != null) S.setStage(st.world.stage);
+                if (st.world.map != null) S.setStage(st.world.map);   // (mCurrArea.getStage(): the area)
                 const e = cam.matrixWorld.elements, eye = [e[12], e[13], e[14]];
                 for (const mo of marios) {
                     const rig = mo.rig;
