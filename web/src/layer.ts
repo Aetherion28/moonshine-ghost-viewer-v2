@@ -469,6 +469,12 @@ export class GameLayer {
         if (!group) return;
         const seen = new Set<any>(), made: J3DModelInstanceSimple[] = [];
         group.traverse((o: any) => {
+            // (the page's own copy of the goop layer (scene.bin's Pollution: the layer's .bmd with its
+            // starting map baked in) is left out: syncGoop draws the goop as the stage's game code leaves it)
+            if (o.userData && o.userData.type === 'Pollution') {
+                o.traverse((x: any) => { if (x.isMesh) for (const m of [].concat(x.material) as any[]) { if (m.colorWrite) m.colorWrite = false; this.proxiedMario.add(m); } });
+                return;
+            }
             const key = o.userData && o.userData.mi;
             if (key === undefined || key === null) return;
             seen.add(o);
