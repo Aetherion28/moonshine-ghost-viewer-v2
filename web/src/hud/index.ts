@@ -65,6 +65,13 @@ export interface HudFrame {
     sim: any;
     /** a demo camera at QF q (the Shine get demo) */
     demoAt?: (q: number) => boolean;
+    /**
+     * Live play: the stage's opening as its director runs it (stage ticks, -1 not yet / none): the
+     * tick STATE_UNK1's demo started (startAppearScenario on a named stage), the console's close
+     * wipe started (startCloseWipe) and the game began (STATE_UNK4: startAppearGo after a demo,
+     * the console from there). key: the live stage.
+     */
+    live?: { key: string; demo: number; close: number; go: number };
 }
 
 /** TWaterGun's tank after a movement tick (player/watergun.ts's WaterGunRecord, in World.waterGunLog) */
@@ -311,6 +318,7 @@ export class GameHud {
             if (!this.loading) this.loading = this.load().catch((e) => { this.status = 'HUD: ' + (e && e.message ? e.message : e); console.warn('[hud]', e); });
             this.clear(); return;
         }
+        if (f.live) { this.liveFrame(f, f.live); return; }
         const seg = this.segAt(f.ghost, f.api, f.t);
         if (!seg) { this.clear(); return; }
         if (!this.seg || this.seg.key !== seg.key) this.newState(seg);
@@ -344,6 +352,47 @@ export class GameHud {
         }
         // (still replaying the segment after a seek: the console shows once it has caught up)
         this.draw(seg, !this.con || cf - this.conF <= 8);
+    }
+    /**
+     * Live play: TConsoleStr and TGCConsole2 driven by the live director (TMarDirector's
+     * changeState / nextStateInitialize, MarDirectorDirect.cpp): entering STATE_UNK1 shows a named
+     * stage's names between their bars (startAppearScenario), the demo's end closes the bars
+     * (startCloseWipe, without the names on a stage whose demo only has the opening wipe), their
+     * hold done the halves open (startOpenWipe), and STATE_UNK4 starts GO! and the console.
+     * Live play only moves forward: the HUD carries on a tick at a time.
+     */
+    private liveFlags = { named: false };
+    private liveFrame(f: HudFrame, L: { key: string; demo: number; close: number; go: number }) {
+        const r = f.ghost.segments[0].route, named = NAMED_STAGES.has(r.area);
+        const seg: Seg = { key: L.key, q0: 0, qIn: L.go >= 0 ? L.go : Infinity, area: r.area, episode: r.episode, intro: L.demo >= 0 };
+        if (!this.seg || this.seg.key !== seg.key || f.t < this.strF) { this.newState(seg); this.liveFlags.named = false; }
+        const S0 = this.seg!;
+        S0.qIn = seg.qIn; S0.intro = seg.intro;
+        const str = this.str!;
+        if (L.demo >= 0 && named && !this.liveFlags.named) { this.setNames(S0); this.liveFlags.named = true; }
+        // (a stage without a demo has no opening: its console string stays idle)
+        if (L.demo < 0) this.strF = f.t;
+        while (this.strF < f.t && this.strF < (L.go >= 0 ? L.go + 400 : Infinity)) {
+            const k = ++this.strF;
+            if (k === L.demo && named) str.startAppearScenario();
+            if (k === L.close) { if (named && str.unk2BC !== S.UNK1) str.unk2BC = S.UNK1; str.startCloseWipe(!named); }
+            if (k === L.go && L.demo >= 0) str.startAppearGo();
+            str.frame();
+            if (str.unk2BC === S.UNK4) str.startOpenWipe();
+        }
+        if (this.strF < f.t) this.strF = f.t;
+        const stage = this.simStage(f.sim, S0);
+        const cf = L.go >= 0 ? f.t - L.go : -1;
+        if (cf >= 0) {
+            if (!this.con) {
+                this.con = new Console(this.screen('standard_1.blo'), this.consoleInput(f, S0, L.go, stage));
+                this.conF = -1;
+                for (const n of this.nozzles) n.acc = 0;
+            }
+            const t0 = performance.now();
+            while (this.conF < cf && performance.now() - t0 < 30) { this.conF++; const q = L.go + this.conF; this.con.frame(this.consoleInput(f, S0, q, stage), q % 4 === 3); }
+        }
+        this.draw(S0, !this.con || cf - this.conF <= 8);
     }
     private clear() {
         if (!this.drawn) return;

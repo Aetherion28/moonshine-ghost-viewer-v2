@@ -170,6 +170,7 @@ class MarioMirror {
         if (on) {
             mat4.copy(M.body.modelMatrix, rig.root.matrixWorld.elements as any);
             for (const [k, s] of Object.entries(rig.bodyShapes as Record<string, any>)) if (M.body.shapeInstances[+k]) M.body.setShapeVisible(+k, worldVisible(s));
+            M.setEyes(typeof rig.eyeTex === 'number' ? rig.eyeTex : null);   // (the viewer's marioEyes: asleep, waking)
             const part = (m: J3DModelInstanceSimple | null, node: any) => {
                 if (!m) return;
                 m.visible = !!node && worldVisible(node);

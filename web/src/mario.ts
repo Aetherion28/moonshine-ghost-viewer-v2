@@ -136,6 +136,27 @@ export class MarioModel {
 
     public setVisible(v: boolean) { for (const m of this.all) m.visible = v; }
 
+    private eyeTex: number | null = null;
+    private eyeSlots: [any, number][] | null = null;
+    /**
+     * The eyes' texture-pattern frame (ma_*_tx.btp: TEX1 index, both eyes alike; 8 is H_ma_eye4,
+     * shut, the whole of sleep / sleep_wait), null for the model's own open eyes.
+     */
+    public setEyes(tex: number | null) {
+        if (tex === this.eyeTex) return;
+        this.eyeTex = tex;
+        if (!this.eyeSlots) {
+            // the material slots that show an eye texture (H_ma_eye*)
+            const tex1 = this.body.tex1Data.tex1, out: [any, number][] = [];
+            for (const mi of this.body.materialInstances) mi.materialData.material.textureIndexes.forEach((t, i) => {
+                if (t >= 0 && tex1.samplers[t] && /^H_ma_eye/.test(tex1.samplers[t].name)) out.push([mi, i]);
+            });
+            this.eyeSlots = out;
+        }
+        const n = this.body.tex1Data.tex1.samplers.length;
+        for (const [mi, i] of this.eyeSlots) mi.texNoCalc[i] = tex !== null && tex >= 0 && tex < n ? { calcTextureIndex: () => tex } : null;
+    }
+
     /**
      * Pose for a ghost sample: position, yaw (s16), the ghost's animation ID and phase (0..4095 of
      * the loop), riding Yoshi or not, FLUDD's nozzle name (or null without FLUDD).

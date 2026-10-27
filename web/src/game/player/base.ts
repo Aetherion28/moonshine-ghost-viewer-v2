@@ -156,7 +156,7 @@ export abstract class MarioBase extends TakeActor {
     unk104 = 0;
     unk108 = new ControllerWork(); unk10C = 0; unk110 = 0;
     unk114 = 0; mFlag = 0; mPrevFlag = 0;
-    /** viewer only (not game state): the last frontSlipEffect's choice since the history read it: 0 none, 1 watslide, 2 slip smoke, 3 sand */
+    /** viewer only (not game state): the last frontSlipEffect's choice since the history read it: 0 none, 1 watslide, 2 slip smoke, 3 sand; below 0 surfingEffect at a scale of -slipFx */
     slipFx = 0;
     mHealth = 8; mHotTimer = 0; mHotTimerMax = 0; unk122 = 0;
     mAir = 0; mMaxAir = 0; mDirty = 0; mOilBrake = 1; mDirtyTimer = 0; unk140 = 0;

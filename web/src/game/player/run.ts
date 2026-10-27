@@ -373,6 +373,20 @@ export abstract class MarioRun extends MarioPhysics {
                 return;
         }
     }
+    /**
+     * MarioParticle.cpp surfingEffect (doSurfing on the water, swimPaddle with FLUDD putting out
+     * water at the surface): ms_gesosurf_a on his root joint, b / c / d on unk1F0 (his place and
+     * mModelFaceAngle), all at a scale from mScaleMin to mScaleMax by mForwardVel. Only that it does
+     * and the scale (the viewer draws them): slipFx -scale.
+     */
+    surfingEffect() {
+        const P = this.getSurfingParamsWater(), v = this.mForwardVel;
+        let scale = 1;
+        if (v < P.mScaleMinSpeed) scale = P.mScaleMin;
+        if (P.mScaleMinSpeed <= v && v <= P.mScaleMaxSpeed) scale = P.mScaleMin + ((P.mScaleMax - P.mScaleMin) * (v - P.mScaleMinSpeed)) / (P.mScaleMaxSpeed - P.mScaleMinSpeed);
+        if (P.mScaleMaxSpeed < v) scale = P.mScaleMax;
+        this.slipFx = -Math.max(1e-3, scale);
+    }
     /** MarioParticle.cpp frontSlipEffect: only which emitters it picks (the viewer draws them) */
     frontSlipEffect() {
         if (bg.isWetGround(this.mGroundPlane) || (this.mStatus === S.CATCH && this.mStatusState === 1)) { this.slipFx = 1; return; }
@@ -550,7 +564,7 @@ export abstract class MarioRun extends MarioPhysics {
         const rotSp = s16(Math.trunc(fmadd(fdiv(fsub(want, powMin), fsub(powMax, powMin)), fsub(rotMax, rotMin), rotMin)));
         this.mFaceAngle.y = s16(this.mIntendedYaw - IConverge(s16(this.mIntendedYaw - this.mFaceAngle.y), 0, rotSp, rotSp));
         this.slopeProcess();
-        // (surfingEffect on the water)
+        if (below.isWaterSurface()) this.surfingEffect();
     }
     /**
      * surfing (0x80139588): frozen for mStatusTimer at the start, A: the board jump (0x281089A), else

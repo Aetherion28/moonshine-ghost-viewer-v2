@@ -2489,6 +2489,15 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     wireMeshes.forEach((w) => { setWire(w, w === target ? hangedWire(w, hit) : w.def); w.mesh.visible = !layerDraws; });
     if (gameLayer && gameLayer.staticWires !== undefined) gameLayer.staticWires = wireMeshes.map((w) => w.cur.flat());
   }
+  // Every drawn frame (update() only runs when the time moves: not in live play, nor once the game
+  // layer comes in on a paused replay): while the game layer draws the wires (its depth-tested
+  // prism, through the sim's TMapWire points when the stage is simulated) these overlay meshes,
+  // which no wall hides, are left out.
+  function wireOverlay() {
+    if (!wireMeshes.length) return;
+    const show = !(gameLayer && gameLive && gameLayer.drawsWires);
+    wireMeshes.forEach((w) => { if (w.mesh.visible !== show) w.mesh.visible = show; });
+  }
 
   // First time each pickup is touched by a ghost: Mario's damage cylinder against the item's
   // hit cylinder (radius/height from the decomp's TMapObjHitInfo), only while the ghost is in
@@ -5592,10 +5601,11 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
       else fluddPlay(bones, s1, (st.spray - fluddLen(s0)) % fluddLen(s1), false);
     } else fluddPlay(bones, s2, st.since === null ? fluddLen(s2) : st.since, true);
   }
-  // unk1CEC over time (game frames): 1 when the stage starts; pumping takes it down 0.1 a frame;
-  // 360 frames (unk1CF8) after the last pump it rises 0.005 a frame (unk1CF4) back to 1.
+  // unk1CEC over time (movement ticks: calcAnimation runs in every one, so QF): 1 when the stage
+  // starts; pumping takes it down 0.1 a tick; 360 ticks (unk1CF8) after the last pump it rises
+  // 0.005 a tick (unk1CF4) back to 1.
   function fluddHousing(runs, time) {
-    const fr = (q) => q / QF_PER_FRAME;
+    const fr = (q) => q;
     let h = 1, last = null;   // last: when pumping last stopped (QF), null if never
     const idle = (from, to) => {   // h after idling from QF `from` (pump stopped at `last`) to `to`
       if (last === null) return h;
@@ -5627,7 +5637,9 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     return (g.sprayRuns = runs);
   }
   function fluddState(g, time, nozzle, power, pump = null) {
-    const runs = sprayRuns(g), af = (q) => (q / QF_PER_FRAME) * 2;   // 60 fps animations at 30 fps
+    // (TMario::perform calcs FLUDD's animations every movement tick, 4 a frame, at the frame rate of
+    // 2: SMSGetAnmFrameRate's 60 / 30; QF are those ticks)
+    const runs = sprayRuns(g), af = (q) => q * 2;
     let lo = 0, hi = runs.length - 1, k = -1;
     while (lo <= hi) { const m = (lo + hi) >> 1; if (runs[m][0] <= time) { k = m; lo = m + 1; } else hi = m - 1; }
     const h = fluddHousing(runs, time);
@@ -5640,6 +5652,8 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   function marioEyes(m, shut) {
     if (m.userData.eyesShut === shut) return;
     m.userData.eyesShut = shut;
+    // (the game layer draws him from his own model: it sets that TEX1 index on the eyes' materials)
+    if (m.userData.rig) m.userData.rig.eyeTex = shut === true ? 8 : typeof shut === 'number' ? shut : null;
     m.traverse((o) => { if (o.isMesh) [].concat(o.material).forEach((mt) => {
       let tx = shut === true ? mt.userData.eyeShut : mt.userData.eyeOpen;
       if (typeof shut === 'number' && mt.userData.eyes && mt.userData.eyeOpen) {
@@ -5667,6 +5681,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
         });
       });
       sleepMario.userData.rig = MarioRig.attach(body);
+      sleepMario.userData.rig.eyeTex = 8;   // (shut, as the materials above, for the game layer's model)
       fluddBones(sleepMario.userData.rig, body);
       sleepMario.add(body);
       scene.add(sleepMario);
@@ -5861,7 +5876,31 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     const st = livePad.runner.stage;
     if (st && livePad.frames - st.frame > 4) livePad.frames = st.frame + 4;
     if (gameLive) gameLayer.advanceSim(liveSimInput());
+    liveGunCapture();
     liveStageChange();
+  }
+  // FLUDD as the live sim animates it (its TWaterGun: the body's and the out nozzle's BCK and frame,
+  // calcAnimation / TNozzleBase::animation every movement tick), kept by history QF: the frame just
+  // run is the drawn one; the frames before it pose the joints the particles start from.
+  const liveGun = { H: null, q: [], v: [] };
+  function liveGunCapture() {
+    const R = livePad.runner, H = R && R.history, P = R && R.stage && R.stage.player, G = P && P.mWaterGun;
+    if (!H || !G || H.last < 0 || !G.drawState) return;
+    if (liveGun.H !== H) { liveGun.H = H; liveGun.q.length = 0; liveGun.v.length = 0; }
+    const Q = liveGun.q;
+    if (Q.length && Q[Q.length - 1] >= H.last) return;
+    const B = G.mFluddModel, A = G.getCurrentNozzle().mMActor;
+    Q.push(H.last);
+    liveGun.v.push({ bb: B.bckName(), bf: B.fc.frame, nb: A ? A.bckName() : null, nf: A ? A.fc.frame : 0 });
+    if (Q.length > 4000) { Q.splice(0, 1000); liveGun.v.splice(0, 1000); }
+  }
+  // the sim's FLUDD at history QF q (the latest kept at or before it), null when none is kept
+  function liveGunAt(H, q) {
+    const Q = liveGun.q;
+    if (liveGun.H !== H || !Q.length || q < Q[0]) return null;
+    let lo = 0, hi = Q.length - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (Q[m] <= q) lo = m; else hi = m - 1; }
+    return liveGun.v[lo];
   }
   // The live run left the stage (a warp, pipe, painting, the Shine, a miss): show the area it goes to
   // (the runner starts it once its scene is the one drawn) and what happened on the way.
@@ -5925,7 +5964,13 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
       if (parts.fludd_body && rig.chest) { m.updateMatrixWorld(true); if (parts.fludd_body.userData.rz0 === undefined) parts.fludd_body.userData.rz0 = parts.fludd_body.rotation.z; parts.fludd_body.rotation.z = (Math.abs(rig.chest.matrixWorld.elements[1]) - 1) * 0.589048623; }
       nm = spray ? 'normal_wg' : NOZZLE_PARTS[n].replace(/^nozzle_/, '');
       if (a.yoshi) poseFludd(rig, { spray: null, since: null, power: 0, nozzle: 'normal_wg', h: 1 });
-      else poseFludd(rig, liveFluddState(H, q, nm));
+      else {
+        const gs = liveGunAt(H, q);
+        if (gs && FLUDD_BCK[gs.bb] && (!gs.nb || (FLUDD_BCK[gs.nb] && (gs.nb.startsWith(nm + '_') || (nm === 'normal_wg' && gs.nb.startsWith('house_wg_')))))) {
+          fluddPlay(rig.fludd.body, gs.bb, gs.bf, true);
+          if (gs.nb) fluddPlay(rig.fludd.noz[nm], gs.nb, gs.nf, true);
+        } else poseFludd(rig, liveFluddState(H, q, nm));
+      }
     }
     m.updateMatrixWorld(true);
     return { s, a, nm };
@@ -5940,7 +5985,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
       if (!on && R.open !== null) { R.runs.push([R.open, qq]); R.open = null; }
     }
     const runs = R.open !== null && R.open <= q ? [...R.runs.filter((r) => r[0] <= q), [R.open, Infinity]] : R.runs.filter((r) => r[0] <= q);
-    const af = (x) => (x / QF_PER_FRAME) * 2, h = fluddHousing(runs, q), last = runs[runs.length - 1];
+    const af = (x) => x * 2, h = fluddHousing(runs, q), last = runs[runs.length - 1];   // (fluddState's rates)
     if (last && q < last[1]) return { spray: af(q - last[0]), since: null, power: 1, nozzle, h, pump: null };
     return { spray: null, since: last ? af(q - last[1]) : null, power: 0, nozzle, h, pump: null };
   }
@@ -6580,7 +6625,7 @@ void main() {
       waterScreen.generateMipmaps = false;
       dropMat.uniforms.tScreen.value = waterScreen;
     }
-    copyViewTo(waterScreen);
+    dropMat.uniforms.tScreen.value = copyViewTo(waterScreen);
     dropMat.uniforms.uView.value.copy(_wsz);
     renderer.autoClear = false;
     renderer.render(waterScene, camera);
@@ -6589,26 +6634,36 @@ void main() {
   const _wz0 = new THREE.Vector2(0, 0), _wvp = new THREE.Vector4();
   // What's been drawn under the view being drawn, into tex (the drawing buffer's size, at the same
   // place): one half of the comparison view copies its own half. The first copy (re)makes it whole.
+  // Returns the texture holding the copy: with the game layer under the view, its canvas goes to
+  // the GPU once a frame (the water's and the particles' copies are the same picture: the layer's
+  // canvas doesn't change between them), into the texture's storage when it is already that size.
+  let gameCopy = { frame: -1, tex: null }, loopFrame = 0;
   function copyViewTo(tex) {
     const P = renderer.properties.get(tex);
     if (gameLive) {   // (v2: what's under the viewer's drawing is the game layer's)
-      if (!P.__webglTexture) renderer.copyFramebufferToTexture(_wz0, tex);
+      const split = splitOn(), C = gameLayer.canvas;
+      if (!split && gameCopy.frame === loopFrame && gameCopy.tex && gameCopy.tex.image.width === tex.image.width && gameCopy.tex.image.height === tex.image.height) return gameCopy.tex;
+      const fresh = !P.__webglTexture;
+      if (fresh) renderer.copyFramebufferToTexture(_wz0, tex);
       const gl = renderer.getContext();
       renderer.state.activeTexture(gl.TEXTURE0);
       renderer.state.bindTexture(gl.TEXTURE_2D, renderer.properties.get(tex).__webglTexture);
-      if (splitOn()) { renderer.getCurrentViewport(_wvp); gameLayer.copyInto(gl, [_wvp.x, _wvp.y]); }
+      if (split) { renderer.getCurrentViewport(_wvp); gameLayer.copyInto(gl, [_wvp.x, _wvp.y]); }
+      else if (C && C.width === tex.image.width && C.height === tex.image.height) gameLayer.copyInto(gl, [0, 0]);   // (texSubImage2D: no new storage)
       else gameLayer.copyInto(gl);
       renderer.state.unbindTexture();
       P.viewCopy = null;
-      return;
+      gameCopy = split ? { frame: -1, tex: null } : { frame: loopFrame, tex };
+      return tex;
     }
-    if (!P.__webglTexture || P.viewCopy !== tex) { renderer.copyFramebufferToTexture(_wz0, tex); P.viewCopy = tex; return; }
+    if (!P.__webglTexture || P.viewCopy !== tex) { renderer.copyFramebufferToTexture(_wz0, tex); P.viewCopy = tex; return tex; }
     const gl = renderer.getContext();
     renderer.getCurrentViewport(_wvp);
     renderer.state.activeTexture(gl.TEXTURE0);
     renderer.state.bindTexture(gl.TEXTURE_2D, P.__webglTexture);
     gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, _wvp.x, _wvp.y, _wvp.x, _wvp.y, _wvp.z, _wvp.w);
     renderer.state.unbindTexture();
+    return tex;
   }
   function waterUpload(geo, n, parts) {   // the first n quads only (n > 0: a count of 0 means all to WebGL)
     parts.forEach(([k, w]) => { const a = geo.attributes[k]; a.updateRange.offset = 0; a.updateRange.count = n * w; a.needsUpdate = true; });
@@ -7111,7 +7166,29 @@ void main() {
     { res: 'watslide_b', on: (g, e) => jpaSlide(g, e) === 'wet', mat: (g, e) => jpaJoints(g, e).center },
     { res: 'watslide_c', on: (g, e) => jpaSlide(g, e) === 'wet', mat: (g, e) => jpaJoints(g, e).center },
     { res: 'slipsmoke', on: (g, e) => jpaSlide(g, e) === 'dry', mat: (g, e) => jpaJoints(g, e).mdl1 },
+    { res: 'gesosurf_a', on: (g, e) => jpaSurf(g, e) > 0, mat: (g, e, r) => jpaScaled(r, jpaSurf(g, e), jpaJoints(g, e).mdl1) },
+    { res: 'gesosurf_b', on: (g, e) => jpaSurf(g, e) > 0, mat: (g, e, r) => jpaScaled(r, jpaSurf(g, e), surfMtx(g, e)) },
+    { res: 'gesosurf_d', on: (g, e) => jpaSurf(g, e) > 0, mat: (g, e, r) => jpaScaled(r, jpaSurf(g, e), surfMtx(g, e)) },
+    { res: 'gesosurf_c', on: (g, e) => jpaSurf(g, e) > 0, mat: (g, e, r) => jpaScaled(r, jpaSurf(g, e), surfMtx(g, e)) },
   ];
+  // TMario::surfingEffect (the sim's: doSurfing on a Blooper over the water, swimPaddle with the
+  // Turbo putting out water at the surface): its scale at frame e (the history's slip below 0), else 0.
+  function jpaSurf(g, e) {
+    const q = e * QF_PER_FRAME, H = g.live ? g.H : replayOf(g.data), v = H && H.slipAt ? H.slipAt(q) : undefined;
+    return v !== undefined && v < 0 ? -v : 0;
+  }
+  // unk1F0: J3DGetTranslateRotateMtx(0, mModelFaceAngle, 0, his place)
+  function surfMtx(g, e) {
+    const q = e * QF_PER_FRAME, s = g.live ? g.H.sampleAt(q) : ghostSampleAt(g.data, q);
+    if (!s) return null;
+    const a = (s.yaw / 32768) * Math.PI, c = Math.cos(a), sn = Math.sin(a);
+    return [c, 0, -sn, 0, 0, 1, 0, 0, sn, 0, c, 0, s.x, s.y, s.z, 1];
+  }
+  // setGlobalScale on the frame's emitter (its dynamics and particle scale), then the matrix
+  function jpaScaled(r, sc, M) {
+    if (r && r.em && sc > 0) { r.em.dynScale[0] = r.em.dynScale[1] = r.em.dynScale[2] = sc; r.em.ptclScale[0] = r.em.ptclScale[1] = r.em.ptclScale[2] = sc; }
+    return M;
+  }
   // Rebuilds the ghost's live emitters for the shown frame from the frames before it, the same
   // every time (jpa.js reseeds its randoms per emitter and calc).
   function updateJpa(g) {
@@ -7127,7 +7204,7 @@ void main() {
       const res = JPA_RES[slot.res];
       if (!res) return;
       const seed = (c) => Math.imul(si + 1, 0x9e3779b1) ^ Math.imul(c + 1, 0x85ebca6b);
-      const r = runs[si] = jpaHoldRun(runs[si], f0, (e) => slot.on(g, e), (c) => JPA.makeEmitter(res, seed(c)), (e) => slot.mat(g, e));
+      const r = runs[si] = jpaHoldRun(runs[si], f0, (e) => slot.on(g, e), (c) => JPA.makeEmitter(res, seed(c)), (e, r) => slot.mat(g, e, r));
       all.push(...r.dying);
       if (r.em) all.push(r.em);
     });
@@ -7203,7 +7280,7 @@ void main() {
       if (jpaBatches.has(JPA_RES[k])) return;
       const b = new JPA.Batch(JPA_RES[k], k.startsWith('bw_') || k.startsWith('bg_') ? 2000 : 6000, jpaScreen);
       jpaBatches.set(JPA_RES[k], b);
-      (JPA_GROUP3.has(k) ? jpaScene3 : jpaScene1).add(b.mesh);
+      (JPA_GROUP3.has(k) || (k.startsWith('gesosurf') && JPA_RES[k].bs && JPA_RES[k].bs.projection) ? jpaScene3 : jpaScene1).add(b.mesh);
     });
     camera.updateMatrixWorld();
     const V = camera.matrixWorldInverse.elements;
@@ -7221,8 +7298,8 @@ void main() {
         jpaScreen.minFilter = jpaScreen.magFilter = THREE.LinearFilter;
         jpaScreen.generateMipmaps = false;
       }
-      copyViewTo(jpaScreen);
-      jpaScene3.children.forEach((m) => { m.material.uniforms.tMain.value = jpaScreen; m.material.uniforms.uView.value.copy(_wsz); });
+      const scr = copyViewTo(jpaScreen);
+      jpaScene3.children.forEach((m) => { m.material.uniforms.tMain.value = scr; m.material.uniforms.uView.value.copy(_wsz); });
       renderer.render(jpaScene3, camera);
     }
     renderer.autoClear = true;
@@ -7510,6 +7587,7 @@ void main() {
       return [L.drops.length, L.splashes.length, h, g.puddles ? g.puddles.geometry.drawRange.count : 0, !!g.water.visible]; }),
     jpa: ghosts.map((g) => (g.jpa || []).reduce((n, e) => n + (e.ptcl ? e.ptcl.length : 0), 0)),
     ends: ghosts.map((g) => (g.endShine ? [...g.endShine.entries()].map(([k, v]) => [k, v.i, v.q, v.p.map(Math.round), v.simple]) : null)),
+    wires: { meshes: wireMeshes.map((w) => w.mesh.visible), layer: !!(gameLayer && gameLive && gameLayer.drawsWires) },
     trig: { n: objTrig.length, enemy: objTrig.filter((t) => t[0] === 'enemy').length, drawn: trigGroup ? trigGroup.children.length : -1, key: trigGroup && trigGroup.userData.key },
     flights: shineFlights.map((fl) => ({ i: fl.i, q0: fl.q0, stopEnd: fl.stopEnd, L: fl.L, from: fl.from, to: fl.to, cams: (fl.cams || []).map((c) => [c.q, c.len, c.bck ? 'bck' : 'tool']) })) });
   let hudKey = null;   // what the readout shows
@@ -7808,6 +7886,7 @@ void main() {
   let playClock = null;
   let last = performance.now();
   function loop(now) {
+    loopFrame++;
     const dt = Math.min(0.1, (now - last) / 1000);
     updateTexAnims(now);
     last = now;
@@ -7873,13 +7952,17 @@ void main() {
   let debugView = null;
   // One view: camera (the Shine demo's, the follow camera's, or the user's), then the frame.
   function viewStep(dt, now, interactive) {
+    wireOverlay();
     // Follow: the run's recorded camera, where the ghost has one; else the Shine get demo camera
     // takes over the game's follow camera (not Fixed, not a drag).
     const sgLead = leadGhost(), sgDm = sgLead ? shineDemoAt(sgLead, t) : null;
     const rv = cameraMode === 'follow' ? recordedView(sgLead) : null, rp = rv ? recordedPhase(now) : null;
     // (else a demo camera of a boss Shine's: the boss's fall, then the Shine flying in)
     const iv = cameraMode === 'follow' && !(userCamUntil > now || camDragging) ? introView(sgLead, t) : null;
-    { const lw = livePad.active && livePad.runner && livePad.runner.wipe ? livePad.runner.wipe() : 0;   // (live play: the director's fades and the console's wipes)
+    { let lw = livePad.active && livePad.runner && livePad.runner.wipe ? livePad.runner.wipe() : 0;   // (live play: the director's fades and the console's wipes)
+      // (the HUD draws the console's wipes itself, the bars closing and the halves opening: only the fades are left here)
+      const LR = livePad.active && livePad.runner, LS = LR && LR.stage, LD = LS && LS.director;
+      if (lw && LD && !LR.pending && gameHud && gameHud.drawsWipe && gameLive && !splitOn() && ((LD.state === 1 && LD.closeTick >= 0 && LS.qf >= LD.closeTick) || LD.state === 3)) lw = 0;
       const w = iv && !(gameHud && gameHud.drawsWipe) ? Math.max(0, Math.min(1, iv.wipe)) : lw; if (introWipe.style.opacity !== String(w)) introWipe.style.opacity = String(w); }
     const sgCam = iv && iv.cam ? iv.cam : !rv && cameraMode === 'follow' && !(userCamUntil > now || camDragging) ? (sgDm ? shineDemoCam(sgDm, t) : flightCam(t)) : null;
     if (sgCam) {
@@ -7925,6 +8008,7 @@ void main() {
       if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); }
     }
     // (the hidden gamepad mode: the live sim's camera)
+    // (in a cutscene: drawn between the last two frames' views, by the time since the last was due: runner.ts LiveRunner.view)
     const lv = livePad.active && livePad.runner ? livePad.runner.view(livePad.clock * 29.97) : null;
     if (!lv) livePad.ease = null;
     { const u = lv && lv.up ? lv.up : [0, 1, 0]; if (camera.up.x !== u[0] || camera.up.y !== u[1] || camera.up.z !== u[2]) camera.up.set(u[0], u[1], u[2]).normalize(); }   // (a demo camera's roll)
@@ -8827,7 +8911,7 @@ void main() {
     const main = ghosts.find((g) => g.data && g.marker && g.marker.parent);
     const f = { t, on: gameLive && !splitOn(), ghost: main ? main.data : null, api: { ghostSampleAt, ghostAnimAt, ghostFluddAt },
       sim: gameLayer ? gameLayer.sim : null, demoAt: (q) => !!(main && shineDemoAt(main, q)) };
-    if (!main) { const L = liveHud(); if (L) { f.t = L.t; f.ghost = L.ghost; f.api = L.api; f.demoAt = () => false; } }
+    if (!main) { const L = liveHud(); if (L) { f.t = L.t; f.ghost = L.ghost; f.api = L.api; f.live = L.live; f.demoAt = () => L.demo; } }
     try { gameHud.frame(f); } catch (e) { console.warn('[hud]', e); }
   }
   // Live play's HUD: the HUD reads a ghost, so it is handed one segment standing for the live stage
@@ -8851,7 +8935,16 @@ void main() {
       liveHudCache = { key, ghost, api, H };
     }
     liveHudCache.H = H;
-    return { t: H.last, ghost: liveHudCache.ghost, api: liveHudCache.api };
+    // the opening as the live director runs it (LiveDirector: demoTick, closeTick; the first
+    // STATE_UNK4 seen: the tick it was entered), and its camera's demos (TGCConsole2 hides then)
+    const D = st.director, L = liveHudCache.live || (liveHudCache.live = { key, demo: -1, close: -1, go: -1 });
+    if (D) {
+      if (D.demoTick >= 0) L.demo = D.demoTick;
+      if (D.closeTick >= 0) L.close = D.closeTick;
+      if (L.go < 0 && D.state === 4) L.go = D.enteredTick;
+    } else if (L.go < 0) L.go = 0;
+    const C = st.player && st.player.simCamera, demo = !!(C && C.isDemoCamera && C.isDemoCamera());
+    return { t: H.last, ghost: liveHudCache.ghost, api: liveHudCache.api, live: L, demo };
   }
   // the game's sound (v2 audio/): music and sound effects from the disc, after a user gesture
   let gameAudio = null;

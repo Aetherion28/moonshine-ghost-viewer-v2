@@ -82,7 +82,10 @@ export abstract class MarioSwim extends MarioWait {
         this.setAnimation(A.PADDLE_SWIM, this.checkFlag(MF.FLUDD_EMITTING) ? 5 : 0.5);
         if (this.checkFlag(MF.FLUDD_EMITTING)) this.setPlayerVelocity(this.mDeParams.mDashMax);
         if (this.mIntendedMag === 0) this.changePlayerStatus(S.SWIM_PADDLE_END, 0, false);
-        this.doSwimming(); return this.swimmingStill() ? 0 : 1;
+        this.doSwimming();
+        if (!this.swimmingStill()) return 1;
+        if (this.checkFlag(MF.FLUDD_EMITTING) && !this.isUnderWater()) this.surfingEffect();   // (the Turbo's dash over the water)
+        return 0;
     }
     swimPaddleEnd() { this.setAnimation(A.PADDLE_END, 1); if (this.isLast1AnimeFrame()) return this.changePlayerStatus(S.SWIM_PADDLE_END_TO_WAIT, 0, false); this.doSwimming(); return this.swimmingStill() ? 0 : 1; }
     swimPaddleEndToWait() { this.setAnimation(A.PADDLE_TO_WAIT, 1); if (this.isLast1AnimeFrame()) return this.changePlayerStatus(S.SWIM_WAIT, 0, false); this.doSwimming(); return this.swimmingStill() ? 0 : 1; }

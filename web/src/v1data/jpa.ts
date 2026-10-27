@@ -99,7 +99,8 @@ export function parseJpa(data: Bytes) {
 }
 
 export const EFFECTS: Record<string, string> = { nozzlesmoke: 'ms_nozzlesmoke.jpa', watslide_a: 'ms_m_watslide_a.jpa', watslide_b: 'ms_m_watslide_b.jpa', watslide_c: 'ms_m_watslide_c.jpa',
-    slipsmoke: 'ms_m_slipsmoke.jpa', shine_promi: 'ms_shine_promi.jpa', shine_senko: 'ms_shine_senko.jpa', shine_kira: 'ms_shine_kira.jpa', shine_bow: 'ms_shine_bow.jpa' };
+    slipsmoke: 'ms_m_slipsmoke.jpa', shine_promi: 'ms_shine_promi.jpa', shine_senko: 'ms_shine_senko.jpa', shine_kira: 'ms_shine_kira.jpa', shine_bow: 'ms_shine_bow.jpa',
+    gesosurf_a: 'ms_gesosurf_a.jpa', gesosurf_b: 'ms_gesosurf_b.jpa', gesosurf_c: 'ms_gesosurf_c.jpa', gesosurf_d: 'ms_gesosurf_d.jpa' };
 export const BW_EFFECTS: Record<string, string> = Object.fromEntries(['hityuge', 'downyuge', 'deadyuge', 'kira', 'jump_rock', 'jump_smoke', 'hibana', 'yugami'].map((n) => [`bw_${n}`, `bwanwan/jpa/ms_bwan_${n}.jpa`]));
 export const BG_EFFECTS: Record<string, string> = Object.fromEntries(['attack_a', 'attack_b', 'attack_c', 'attack_d', 'blur', 'blur_f', 'blur_j', 'canon_a', 'canon_b', 'damage_a', 'damage_b',
     'hit_a', 'hit_b', 'hit_c', 'hitdown', 'jump', 'kizetsu', 'kizetsu_r', 'odanhit_a', 'odanhit_b', 'osen', 'ase', 'namida', 'kiseki', 'wash'].map((n) => [`bg_${n}`, `bgeso/jpa/ms_boge_${n}.jpa`]));
