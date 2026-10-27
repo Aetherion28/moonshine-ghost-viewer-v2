@@ -805,8 +805,11 @@ export class LiveRunner extends SimRunner {
             // (the game's own text in live play; Moonshine's Fast text while recording, as its replay reads the talks)
             if (T) T.fastText = !!this.recording;
             const roamed = T ? T.freeRoamTick : -1;
+            const carded = T ? T.cardSaveTick : -1;
             try { st.runFrame(null, pad); } catch (e) { this.error = e; console.warn('[live] frame', e); this.stage = null; return false; }
             this.snapCamera(st);
+            // (a Shine got: the game's card save after it (DIRECTOR_FLAG_CARD_SAVE_PENDING), here without its question)
+            if (T && T.cardSaveTick !== carded) this.save(st, 'Shine got: saved');
             if (T && T.freeRoamTick !== roamed) { this.notice = 'Free-roam Shine get: the game would go back to Delfino Plaza here (off while recording)'; this.noticeUntil = st.frame + 150; }
             else if (this.noticeUntil >= 0 && st.frame >= this.noticeUntil) { this.noticeUntil = -1; if (this.notice.startsWith('Free-roam') || /saved|Saved|nothing saved|could not be written/.test(this.notice)) this.notice = ''; }
             const D = st.director as LiveDirector | null;
@@ -894,8 +897,6 @@ export class LiveRunner extends SimRunner {
         } else next = w.nextArea ? { stage: w.nextArea.stage, scenario: w.nextArea.scenario } : { stage: 1, scenario: 0xFF };
         const movie = w.moviePending && w.nextArea ? w.nextArea.movie : undefined;
         // (a Shine got: the game's card save after it (DIRECTOR_FLAG_CARD_SAVE_PENDING): here without its question)
-        const T: any = w.talk;
-        if (T && (T.dflags & 0x8000) && D.state !== DIR.GAME_OVER) this.save(st, 'Shine got: saved');
         this.leaving = { cur, next, note: '', movie, step };
         this.leaveScreens(st, null);
     }

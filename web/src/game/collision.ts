@@ -218,6 +218,8 @@ export class MapCollision {
     private cell(grid: Cell[], x: number, z: number) {
         return grid[Math.trunc(f(x + this.ex) * (1 / 1024)) + Math.trunc(f(z + this.ez) * (1 / 1024)) * this.nx];
     }
+    /** TMap::isInArea */
+    isInArea(x: number, z: number) { return !this.outside(x, z); }
     private outside(x: number, z: number) { return x < -this.ex || this.ex <= x || z < -this.ez || this.ez <= z; }
 
     /** checkGroundList (its float operations as the DOL has them: fsubs, fmuls, fmsubs; the height fmuls, fmadds, fadds, fdivs) */

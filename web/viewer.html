@@ -7801,6 +7801,7 @@ void main() {
       return [L.drops.length, L.splashes.length, h, g.puddles ? g.puddles.geometry.drawRange.count : 0, !!g.water.visible]; }),
     jpa: ghosts.map((g) => (g.jpa || []).reduce((n, e) => n + (e.ptcl ? e.ptcl.length : 0), 0)),
     ends: ghosts.map((g) => (g.endShine ? [...g.endShine.entries()].map(([k, v]) => [k, v.i, v.q, v.p.map(Math.round), v.simple]) : null)),
+    goop: gameLayer && gameLayer.goopDebug ? gameLayer.goopDebug() : null,
     wires: { meshes: wireMeshes.map((w) => w.mesh.visible), layer: !!(gameLayer && gameLive && gameLayer.drawsWires) },
     trig: { n: objTrig.length, enemy: objTrig.filter((t) => t[0] === 'enemy').length, drawn: trigGroup ? trigGroup.children.length : -1, key: trigGroup && trigGroup.userData.key },
     flights: shineFlights.map((fl) => ({ i: fl.i, q0: fl.q0, stopEnd: fl.stopEnd, L: fl.L, from: fl.from, to: fl.to, cams: (fl.cams || []).map((c) => [c.q, c.len, c.bck ? 'bck' : 'tool']) })) });

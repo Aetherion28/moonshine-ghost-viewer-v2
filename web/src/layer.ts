@@ -30,6 +30,7 @@ import { swapTextures, npcDress, npcPartColours, npcGoop } from './actors.js';
 import { SimRunner, LiveRunner, DiscCommon, SimInput, fileMap, FileMap } from './game/runner.js';
 import { WireDraw, WireLine } from './wiredraw.js';
 import { MantaShadowQuads, mantaVolumeMaterials, setMantaVolumeAlpha } from './mantashadow.js';
+import { MarioShadow } from './marioshadow.js';
 import { BossMantaManager } from './game/enemies/bossmanta.js';
 import { MapWireConst } from './game/mapwire.js';
 import { CLASSES } from './game/scene.js';
@@ -335,7 +336,22 @@ export class GameLayer {
                 if (!this.live) return;
                 wd.prepare(dev, rim, vi, this.wireLines());
                 if (this.mantaColor && this.mantaDrawn) mq.prepare(dev, rim, vi, this.mantaColor);
+                if (this.marioShadow) this.marioShadow.prepare(dev, rim, vi);
             };
+            // Mario's shadow (marioshadow.ts: /common/shadowCircle.bmd and shadowCircleLow.bmd as volumes)
+            this.marioShadow = null;
+            const cf = this.common && this.common.common ? this.common.common.files : null;
+            const hiF = cf ? cf.get('shadowcircle.bmd') : null, loF = cf ? cf.get('shadowcirclelow.bmd') : null;
+            if (hiF && loF) try {
+                const cache = r.renderHelper.renderInstManager.gfxRenderCache;
+                const md = (f: any) => new J3DModelData(this.device, cache, BMD.parse(new ArrayBufferSlice(f.buffer as ArrayBuffer, f.byteOffset, f.byteLength)));
+                this.marioShadow = new MarioShadow(md(hiF), md(loF), (m) => { m.passMask = SMSPass.MAIN; r.modelInstances.push(m); });
+            } catch (e) { console.warn('[game layer] shadowCircle', e); }
+            let la: any = null;
+            const findAry = (o: any) => { if (la) return; if (o.type === 'Group') { if (o.klass === 'LightAry') la = o; else o.children.forEach(findAry); } };
+            if (r.sceneBin) findAry(r.sceneBin);
+            const l0 = la && la.children[0];
+            this.shadowLight = l0 ? [l0.x, l0.y, l0.z] : null;
         } catch (e) { this.onError(e); }
         finally { if (this.loading === name) { this.loading = ''; this.onStatus(''); } }
     }
@@ -917,6 +933,15 @@ export class GameLayer {
      * materials and animations, its texture 0 the layer's goop map (mPollutionMap, GX I8 tiles),
      * re-sent after every simulated frame.
      */
+    /** for the page's debug readout: the goop layers and what's drawn of them */
+    public goopDebug() {
+        const st = this.sim ? (this.sim as any).stage : null, P = st && st.world ? st.world.pollution : null;
+        const r = this.renderer;
+        return {
+            layers: P ? P.layers.map((L: any, i: number) => ({ name: L.name, plane: L.planeType, nz: L.map ? L.map.reduce((n: number, v: number) => n + (v ? 1 : 0), 0) : -1, inst: this.goop && this.goop.insts[i] ? this.goop.insts[i]!.visible : null })) : null,
+            models: r ? r.modelInstances.filter((m: any) => /pollut|goop|osen/i.test((m.modelData && m.modelData.bmd && m.modelData.bmd.name) || m.name || '')).map((m: any) => [m.name || (m.modelData.bmd && m.modelData.bmd.name), m.visible]) : null,
+        };
+    }
     private syncGoop(st: any) {
         const P = st.world.pollution;
         if (!P) return;
@@ -1104,6 +1129,9 @@ export class GameLayer {
 
     /** the Phantamanta's shadow: its full-screen passes, this frame's getMantaColor (null: no manta manager) and whether a manta's volume is drawn */
     private mantaQuads: MantaShadowQuads | null = null;
+    /** Mario's shadow (TMBindShadowManager for the Marios) and the light group's first light's position */
+    private marioShadow: MarioShadow | null = null;
+    private shadowLight: number[] | null = null;
     private mantaColor: number[] | null = null;
     private mantaDrawn = false;
     private mantaFrame = -1;
@@ -1201,6 +1229,20 @@ export class GameLayer {
         }
         this.syncSim(sim, group);
         this.wireStage = sim && this.sim ? this.sim.stage : null;
+        if (this.marioShadow) {
+            const S = this.marioShadow, st = this.wireStage, col = st && st.world ? st.world.col : null;
+            S.begin();
+            if (col && this.shadowLight) {
+                if (st.world.stage != null) S.setStage(st.world.stage);
+                const e = cam.matrixWorld.elements, eye = [e[12], e[13], e[14]];
+                for (const mo of marios) {
+                    const rig = mo.rig;
+                    if (!rig || !rig.bones || !worldVisible(rig.root) || rig.sinking) continue;
+                    const m = rig.root.matrixWorld.elements;
+                    S.addMario({ x: m[12], y: m[13], z: m[14] }, rig.bones, col, this.shadowLight, eye);
+                }
+            }
+        }
         this.syncFittings();
         this.syncObjects();
         mat4.copy(this.camera.worldMatrix, cam.matrixWorld.elements);

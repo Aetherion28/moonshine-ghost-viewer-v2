@@ -706,6 +706,8 @@ export class TalkDirector {
     /** the free-roam Shine get's demo is the one running (its end hands control back) */
     private freeRoamDemo = false;
     /** the tick a free-roam Shine get handed control back (-1 none yet) */
+    /** bumped when the director's card save would run (after a Shine get) */
+    cardSaveTick = 0;
     freeRoamTick = -1;
     /**
      * TMarDirector::fireGetStar (TMario::winDemo, once he lands): the Shine get pending and its demo
@@ -779,8 +781,9 @@ export class TalkDirector {
                 } else if (this.dflags & DF.DEMO_PENDING) {
                     this.unk126 = 3;
                 } else if (this.dflags & DF.CARD_SAVE_PENDING) {
-                    // (STATE_CARD_SAVE: not simulated)
+                    // (STATE_CARD_SAVE: no card question; live play writes the browser save here: LiveRunner)
                     this.dflags &= ~DF.CARD_SAVE_PENDING;
+                    this.cardSaveTick++;
                 } else if (this.dflags & DF.STAGE_TRANSITION_PENDING) {
                     // moveStage: the director goes to STATE_UNK9 (the fade out; the pad loses GAME_INPUT)
                     this.nextState = 9;
