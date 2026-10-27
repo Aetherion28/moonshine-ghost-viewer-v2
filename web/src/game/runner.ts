@@ -212,6 +212,8 @@ export interface ReplaySync {
     driftErr: number; maxErr: number;
     /** frames compared, and frames bit-exact (to the ghost's 1/8 unit) before the first drift */
     frames: number; exactFrames: number;
+    /** times the replay was put back on the ghost (PlayerMario.correctDrift) */
+    corrections?: number;
     /** the stick's camera: 'recorded' (v8 SGCA), 'hybrid' (the sim's, kept in the recorded one's yaw bucket), 'sim' (the game camera port), 'approx' (behind Mario) */
     camera: string;
     /** QF Mario lost a life (the run continues) */
@@ -578,7 +580,7 @@ export class SimRunner {
             if (st.player && this.history) this.history.push(q0 + st.qf, st.player);
             if (st.player && this.sync) {
                 const d = st.player.drift, S = this.sync;
-                S.firstDriftQf = d.firstQf >= 0 ? q0 + d.firstQf : -1; S.driftErr = d.firstErr; S.maxErr = d.maxErr; S.frames = d.frames; S.exactFrames = d.synced;
+                S.firstDriftQf = d.firstQf >= 0 ? q0 + d.firstQf : -1; S.driftErr = d.firstErr; S.maxErr = d.maxErr; S.frames = d.frames; S.exactFrames = d.synced; S.corrections = d.corrections;
                 // the first frame with a controllable tick (GAME_INPUT from the tick after gameTick) has
                 // no record: the inputs were recorded from a later frame
                 const D = st.director;

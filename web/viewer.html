@@ -9384,6 +9384,7 @@ void main() {
     if (R && R.inputReplay) {
       if (S && S.replay) {
         s = S.firstDriftQf < 0 ? 'in sync' : `drifted at ${ghostFormatTime(S.firstDriftQf)}s (by ${S.driftErr < 10 ? S.driftErr.toFixed(1) : Math.round(S.driftErr)} units)`;
+        if (S.corrections) s += ` · put back on the ghost ${S.corrections}×`;
         if (S.camera === 'approx') s += ' · camera approximate';
         // Moonshine before 2026-10 began the input records a frame after Mario got control: that
         // frame (a C-stick flick there turns the camera) is replayed neutral

@@ -1748,7 +1748,9 @@ export class PlayerMario extends TMarioSim {
     // ---------------------------------------------------------------- drift against the ghost
     /** the stage tick drift checks start after (the end of the opening demo) */
     driftFrom = 0;
-    drift = { firstQf: -1, firstErr: 0, maxErr: 0, frames: 0, synced: 0, warned: false };
+    drift = { firstQf: -1, firstErr: 0, maxErr: 0, frames: 0, synced: 0, warned: false, corrections: 0 };
+    /** put the input replay back on the ghost when it drifts (checkDrift) */
+    static correctDrift = true;
     /** the ghost's sample at the end of each frame: how far the sim is from it */
     checkDrift() {
         const q = this.world.tickCount;
@@ -1768,6 +1770,17 @@ export class PlayerMario extends TMarioSim {
         if (d.firstQf < 0 && e > 1) {
             d.firstQf = q; d.firstErr = e;
             if (!d.warned) { d.warned = true; console.warn(`[player] input replay drifted from the ghost at stage QF ${q} (${(q / 120).toFixed(2)} s) by ${e.toFixed(2)} units`); }
+        }
+        // (a fit, not the game's: the input replay put back on the ghost when it's more than a unit off,
+        // its position and its ground speed from the ghost's last frame; counted in drift.corrections)
+        if (PlayerMario.correctDrift && e > 1) {
+            const p = this.track!.at(q - 4);
+            this.pos.set(s.x, s.y, s.z);
+            if (p) {
+                const dx = s.x - p.x, dz = s.z - p.z, h = Math.hypot(dx, dz);
+                if (this.mForwardVel !== 0 || h > 0.5) this.mForwardVel = this.mForwardVel < 0 ? -h : h;
+            }
+            d.corrections++;
         }
     }
 
