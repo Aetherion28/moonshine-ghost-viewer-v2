@@ -7925,7 +7925,7 @@ void main() {
       if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); }
     }
     // (the hidden gamepad mode: the live sim's camera)
-    const lv = livePad.active && livePad.runner ? livePad.runner.view() : null;
+    const lv = livePad.active && livePad.runner ? livePad.runner.view(livePad.clock * 29.97) : null;
     if (!lv) livePad.ease = null;
     { const u = lv && lv.up ? lv.up : [0, 1, 0]; if (camera.up.x !== u[0] || camera.up.y !== u[1] || camera.up.z !== u[2]) camera.up.set(u[0], u[1], u[2]).normalize(); }   // (a demo camera's roll)
     if (lv) {

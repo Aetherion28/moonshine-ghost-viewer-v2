@@ -203,7 +203,11 @@ export class CoinBlue extends Coin {
 
 // ---------------------------------------------------------------- TShine
 const SHINE_CIRCLE_RATE_Y = 0.5, SHINE_SPEED_DOWN_RATE = fr(0.99);
-export const SHS = { UNKB: 0xB, MOVING_UP: 0xC, MOVING_CIRCLE: 0xD, MOVING_DOWN: 0xE, UNKF: 0xF, UNK10: 0x10, UNK11: 0x11, UNK12: 0x12 };
+export const SHS = { UNKB: 0xB, MOVING_UP: 0xC, MOVING_CIRCLE: 0xD, MOVING_DOWN: 0xE, UNKF: 0xF, UNK10: 0x10, UNK11: 0x11, UNK12: 0x12,
+    /** (fabricated: not a TShine state) live play's free-roam Shine get: Shine.flyAway */
+    FLY_AWAY: 0x40 };
+/** (fabricated) the free-roam Shine's flight: its ticks (1.5 s) and how much faster it rises each tick */
+const SHINE_FLY_TICKS = 180, SHINE_FLY_ACCEL = fr(0.15);
 export class Shine extends Item {
     unk154 = 0; unk158 = 0; unk15C = 0; unk160 = 0; unk164 = 0; unk168 = 0; unk16C = 2; unk170 = 0; unk174 = 0; unk178 = 0;
     unk17C = new V3(); unk188 = 0; unk18C = 0; unk190 = 0; unk1B4 = 0;
@@ -272,6 +276,14 @@ export class Shine extends Item {
                 this.state = SHS.UNK11;
                 break;
             case SHS.UNK11: this.rot.y = fr(this.rot.y + this.unk16C); break;
+            case SHS.FLY_AWAY:
+                // (fabricated: flyAway's flight, unk188 its rise a tick)
+                this.unk188 = fr(this.unk188 + SHINE_FLY_ACCEL);
+                this.pos.y = fr(this.pos.y + this.unk188);
+                this.rot.y = fr(this.rot.y + this.unk16C);
+                if (this.rot.y >= 360) this.rot.y = fr(this.rot.y - 360);
+                if (!this.isStateTimerEngaged()) { this.kill(); if (!this.checkLiveFlag(LF.DEAD)) this.makeObjDead(); }
+                break;
             case SHS.UNK12:
                 if (this.isStateTimerEngaged()) break;
                 this.appearWithDemo('シャイン（いきなり出現）カメラ');
@@ -335,6 +347,26 @@ export class Shine extends Item {
         this.onHitFilter(HF.NO_COLLISION);
     }
     /** appearWithDemo: its demo camera starts (taken as at once) and it appears over the demo's length */
+    /**
+     * (fabricated: live play's free-roam Shine get, talk.ts endFreeRoamShine; the game has no such
+     * state, its Shine get always ends the stage) the Shine leaves Mario's hand where the get's
+     * animation left it (its joint 2, the one TShine::calc puts the particles on), back on its
+     * shine_float animation, and flies up spinning (TShine::movingCircle's 7 degrees a tick, rising
+     * from mUpSpeed faster each tick) for FLY_TICKS, then is gone (kill: unk154 1, it stays dead).
+     */
+    flyAway() {
+        const M = this.mactor;
+        if (M) {
+            this.calcRootMatrix();
+            const a = M.anmMtx(2, this.baseTR, this.scale);
+            M.setBck('shine_float');
+            const b = M.anmMtx(2, this.baseTR, this.scale);
+            if (a && b) this.pos.set(fr(this.pos.x + (a[12] - b[12])), fr(this.pos.y + (a[13] - b[13])), fr(this.pos.z + (a[14] - b[14])));
+        }
+        this.onHitFilter(HF.NO_COLLISION);
+        this.unk16C = 7; this.unk188 = this.upSpeed;
+        this.stateTimer = SHINE_FLY_TICKS; this.state = SHS.FLY_AWAY;
+    }
     appearWithDemo(camera: string) {
         this.unk18C = demoLength(this.world, camera);
         this.world.events.push({ t: this.world.tickCount, kind: 'demoCamera', data: { name: camera, p: this.pos.clone(), frames: this.unk18C } });

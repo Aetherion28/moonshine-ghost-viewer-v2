@@ -659,6 +659,21 @@ export class TalkDirector {
     /** unk25C: the Shine got (fireGetStar) */
     shine: NameRef | null = null;
     /**
+     * Live play's free-roam Shine get (LiveRunner.freeRoamShine; never in a replay or a recording).
+     * NOT the game's behaviour: every Shine get in the game ends the stage (updateGameMode's
+     * DIRECTOR_FLAG_SHINE_GET_PENDING always sets DIRECTOR_FLAG_STAGE_TRANSITION_PENDING and
+     * decideNextStage, Delfino Plaza; no TShine state lets it go). With it on, the Shine still counts
+     * as the game counts it (setShineFlag, MSF_GOT_SHINE_IN_PREV_STAGE, DIRECTOR_FLAG_SHINE_TAKEN) and
+     * its demo camera plays out, but no stage change is asked for; when the demo is over the camera
+     * goes back to the game camera the game's way for a bck demo (endDemoCamera:
+     * changeCamModeSpecifyFrame_(-1, 1)), Mario back to waiting and the Shine flies off (Shine.flyAway).
+     */
+    freeRoamShine = false;
+    /** the free-roam Shine get's demo is the one running (its end hands control back) */
+    private freeRoamDemo = false;
+    /** the tick a free-roam Shine get handed control back (-1 none yet) */
+    freeRoamTick = -1;
+    /**
      * TMarDirector::fireGetStar (TMario::winDemo, once he lands): the Shine get pending and its demo
      * camera, the common camera_demo_shine_get_outside.bck (inside: the Shine's unk190) about Mario,
      * turned by the Shine's initial Y rotation.
@@ -672,6 +687,21 @@ export class TalkDirector {
     }
     /** TMarDirector::fireEndDemoCamera */
     fireEndDemoCamera() { this.dflags |= DF.END_DEMO_PENDING; }
+    /**
+     * (fabricated: live play's free roam) the Shine get's demo is over (the demo mode going back to 0,
+     * PAD_FLAG_NO_INPUT off): the bck demo's camera ended (the game's endDemoCamera for a demo queued
+     * untimed, as fireEndDemoCamera has it ended), Mario out of the Shine-get pose (TMario's
+     * MARIO_STATUS_WIN_DEMO never ends by itself) and the Shine sent off.
+     */
+    private endFreeRoamShine(C: any) {
+        this.freeRoamDemo = false;
+        this.freeRoamTick = this.world.tickCount;
+        if (C && C.isBckDemoCamera && C.isBckDemoCamera()) C.endDemoCamera();
+        const m = this.mario();
+        if (m && typeof m.changePlayerStatus === 'function') m.changePlayerStatus(MARIO_STATUS_WAIT, 0, true);
+        const sh: any = this.shine;
+        if (sh && typeof sh.flyAway === 'function') sh.flyAway();
+    }
     private startQueuedDemo() {
         const d = this.demoQueue[this.demoHead], C: any = this.camera();
         if (C && !C.bckSource) C.bckSource = (name: string) => this.demoBck(name);
@@ -701,10 +731,16 @@ export class TalkDirector {
                     w.flags.setBool(true, MSF_GOT_SHINE_IN_PREV_STAGE);
                     const sh: any = this.shine;
                     if (sh && typeof sh.eventId === 'number') w.flags.setShineFlag(sh.eventId);
-                    this.dflags |= DF.SHINE_TAKEN | DF.CARD_SAVE_PENDING | DF.STAGE_TRANSITION_PENDING;
-                    // decideNextStage: back to Delfino Plaza, its scenario picked by moveStage
-                    w.nextArea = { stage: 1, scenario: 0xFF };
-                    w.stageTransitionPending = true;
+                    if (this.freeRoamShine) {
+                        // (live play's free roam: the flags as the game sets them, but no stage change)
+                        this.dflags |= DF.SHINE_TAKEN | DF.CARD_SAVE_PENDING;
+                        this.freeRoamDemo = true;
+                    } else {
+                        this.dflags |= DF.SHINE_TAKEN | DF.CARD_SAVE_PENDING | DF.STAGE_TRANSITION_PENDING;
+                        // decideNextStage: back to Delfino Plaza, its scenario picked by moveStage
+                        w.nextArea = { stage: 1, scenario: 0xFF };
+                        w.stageTransitionPending = true;
+                    }
                 } else if (this.dflags & DF.DEMO_PENDING) {
                     this.unk126 = 3;
                 } else if (this.dflags & DF.CARD_SAVE_PENDING) {
@@ -738,6 +774,7 @@ export class TalkDirector {
                         this.dflags &= ~DF.DEMO_PENDING;
                         this.unk126 = this.unk124 === 4 ? 2 : 0;
                         if (endCamera && C) C.endDemoCamera();
+                        if (this.freeRoamDemo) this.endFreeRoamShine(C);
                     }
                 }
                 break;

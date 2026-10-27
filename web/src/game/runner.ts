@@ -605,7 +605,11 @@ export { calcKeyCode };
  * scene is the one handed in, the next stage starts with the save's flags carried over and Mario at
  * the entrance (decideMarioPosIdx). Recording keeps going: a segment a stage.
  */
-export interface LiveInput { area: number; episode: number; frames: number; pad: () => PadStatus; reset: number; record?: boolean; sleepPhase?: number | null }
+export interface LiveInput {
+    area: number; episode: number; frames: number; pad: () => PadStatus; reset: number; record?: boolean; sleepPhase?: number | null;
+    /** the free-roam Shine get (LiveRunner.freeRoamShine) when given, else the runner's own setting */
+    freeRoamShine?: boolean;
+}
 export class LiveRunner extends SimRunner {
     private liveKey = '';
     private resetSeen = NaN;
@@ -621,6 +625,15 @@ export class LiveRunner extends SimRunner {
     private qfBase = 0; private recFrom = -1;
     /** what the viewer shows about the run (a movie that would play, the end) */
     notice = '';
+    /**
+     * Live play's free-roam Shine get (talk.ts TalkDirector.freeRoamShine): a Shine got doesn't end
+     * the stage; after its Shine-get demo the Shine flies off and Mario plays on. On by default; never
+     * while recording (the recording would desync from its replay: the game, and the replay, leave the
+     * stage at the Shine get), so a recorded run always has the game's stage change.
+     */
+    freeRoamShine = true;
+    /** the frame the free-roam notice goes (-1: none showing) */
+    private noticeUntil = -1;
     /** the recording as a .smsghost (null: nothing recorded); recording stops */
     takeRecording(o: { area: number; episode: number; region: number; name?: string }): ArrayBuffer | null {
         const R = this.recording;
@@ -647,6 +660,7 @@ export class LiveRunner extends SimRunner {
         this.stage = st; this.area = area; this.episode = episode; this.sceneName = sceneName;
         this.history = st.player ? new ReplayHistory(null, 0) : null;
         this.recFrom = -1;
+        this.camPrev = this.camCur = null; this.camW = 0;
         if (this.recording) this.recording.push({ area, episode, frames: [] });
     }
     update(sceneName: string, scene: FileMap, inp: any, budgetMs = 20): boolean {
@@ -684,10 +698,17 @@ export class LiveRunner extends SimRunner {
         const st = this.stage!, t0 = performance.now();
         if (!st) return false;
         if (this.paused) { this.pauseMenu(st, L); if (this.paused) return true; }
+        this.wantFrames = L.frames;
         while (st.frame < L.frames && !this.pending && !this.paused) {
             st.camera = null;
             const pad = st.player ? L.pad() : null;
+            const T = st.world.talk;
+            if (T) T.freeRoamShine = (L.freeRoamShine ?? this.freeRoamShine) && !this.recording;
+            const roamed = T ? T.freeRoamTick : -1;
             try { st.runFrame(null, pad); } catch (e) { this.error = e; console.warn('[live] frame', e); this.stage = null; return false; }
+            this.snapCamera(st);
+            if (T && T.freeRoamTick !== roamed) { this.notice = 'Free-roam Shine get: the game would go back to Delfino Plaza here (off while recording)'; this.noticeUntil = st.frame + 150; }
+            else if (this.noticeUntil >= 0 && st.frame >= this.noticeUntil) { this.noticeUntil = -1; if (this.notice.startsWith('Free-roam')) this.notice = ''; }
             const D = st.director as LiveDirector | null;
             if (D && D.setMarioTick >= 0 && this.recFrom < 0) {
                 // Moonshine's first sample: the end of the frame after setMario's (changeState at a frame's
@@ -770,6 +791,41 @@ export class LiveRunner extends SimRunner {
         this.pending = { area: n.stage, episode: n.scenario, scene, key: `${n.stage}:${n.scenario}`, note };
         if (!scene || n.stage === 0xF) console.warn('[live] no scene for the next area', n);
     }
+    /** the camera's view at the end of the last two frames run (view's in-between), and the frames L.frames asked for */
+    private camPrev: LiveCamSnap | null = null; private camCur: LiveCamSnap | null = null;
+    private wantFrames = 0;
+    /** how much of a frame the view is drawn behind (0..1: 1 in a cutscene; eased in and out over CAM_EASE_FRAMES frames) */
+    private camW = 0;
+    private snapCamera(st: Stage) {
+        const v = super.view(), P = st.player, C: any = P && P.simCamera;
+        if (!v || !C) { this.camPrev = this.camCur = null; return; }
+        const T = st.world.talk, D = st.director;
+        // the cutscene's camera: Mario not the player's (a talk, a demo: the director's unk124; the stage's intro)
+        const cutscene = (!!T && T.unk124 !== 0) || (typeof C.isDemoCamera === 'function' && C.isDemoCamera()) || (!!D && D.state === DIR.DEMO);
+        this.camW = Math.max(0, Math.min(1, this.camW + (cutscene ? 1 : -1) / CAM_EASE_FRAMES));
+        this.camPrev = this.camCur;
+        this.camCur = { ...v, w: this.camW, cuts: C.cuts | 0, frame: st.frame };
+    }
+    /**
+     * The sim camera's view (SimRunner.view) drawn alpha (0..1) of the way from the frame before's to
+     * the last frame's (the viewer's time since that frame was due, in frames), in a cutscene only.
+     * The game draws 30 frames a second on a TV's even cadence; the page's frames come at its own
+     * rate (60, 120, 144 Hz...), so a 30 Hz view stepped on them comes 1, 2 or 3 page frames apart:
+     * a demo camera's sweep (a bck's 2 frames a game frame, moving up to ~250 units) judders where
+     * the game's is even. In between frames the view is drawn as the replays draw a demo (they sample
+     * the bck at the page's time). Not across a cut (a demo's start or end, a warp: the game cuts
+     * there), and not while Mario is the player's (he is drawn at the last frame: the camera with him).
+     * The view drawn is the last frame's at most: up to one frame behind while it is in between, that
+     * lag eased in as a cutscene starts and out as it ends (camW: a talk's camera is still easing back
+     * when Mario gets control again), so neither end is a jump.
+     */
+    view(alpha = 1): { pos: number[]; at: number[]; up: number[]; fov: number } | null {
+        const v = super.view(), a = this.camPrev, b = this.camCur, st = this.stage;
+        if (!v || !a || !b || !st || !(alpha < 1) || !(b.w > 0) || this.pending || st.frame < this.wantFrames || b.frame !== st.frame
+            || a.frame !== b.frame - 1 || a.cuts !== b.cuts) return v;
+        const t = 1 - b.w * (1 - Math.max(0, alpha)), L = (x: number[], y: number[]) => x.map((p, i) => p + (y[i] - p) * t);
+        return { pos: L(a.pos, b.pos), at: L(a.at, b.at), up: L(a.up, b.up), fov: a.fov + (b.fov - a.fov) * t };
+    }
     /** Mario isn't on the stage yet (before the director's setMario: the intro), or the run is between stages */
     marioHidden(): boolean {
         const st = this.stage, D = st && st.director;
@@ -782,6 +838,10 @@ export class LiveRunner extends SimRunner {
         return D && D.wipe ? D.wipe(st!.qf) : 0;
     }
 }
+
+interface LiveCamSnap { pos: number[]; at: number[]; up: number[]; fov: number; w: number; cuts: number; frame: number; }
+/** LiveRunner.view: the frames the in-between drawing eases in or out over (0.2 s) */
+const CAM_EASE_FRAMES = 6;
 
 /** A live frame as a ghost records it: the pad, Mario's pose and the FLUDD / Yoshi observation. */
 function liveFrame(qf: number, pad: PadStatus, P: PlayerMario): GhostFrame {

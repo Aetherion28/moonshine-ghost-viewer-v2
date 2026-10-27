@@ -247,6 +247,12 @@ export class PolarSubCamera implements SimCamera {
     cmd = { unk0: vec(), H: 0, V: 0, lastStatus: 0, sinceStatus: 0, unk1C: 0 };
     /** TCameraShake's roll (gpCameraShake->mRollAccum): no shakes are simulated */
     shakeRoll = 0;
+    /**
+     * (not the game's: for the viewer) how many cuts the view has had: a mode change in 1 frame
+     * (changeCamModeSub_: a demo's start and end, a fix camera's) or a warp (warpPosAndAt). The live
+     * viewer draws in between two frames' views only when none came between them (runner.ts view).
+     */
+    cuts = 0;
 
     save: KindSave[]; ex: ExSave; notice: NoticeSave;
     tables: CameraTables;
@@ -1126,6 +1132,7 @@ export class PolarSubCamera implements SimCamera {
         if (!force && this.mMode === mode) return;
         if (frames < 0) return;
         if (frames === 0) frames = 1;
+        if (frames === 1) this.cuts++;
         this.mPrevMode = this.mMode;
         if (pop) this.stackPop();
         else this.stackPush(this.mMode);
@@ -1398,6 +1405,7 @@ export class PolarSubCamera implements SimCamera {
 
     /** warpPosAndAt(const Vec&, const Vec&) */
     warpPosAndAt(pos: Vec, at: Vec) {
+        this.cuts++;
         if (this.mMode >= CM.REPRODUCE_DEMO) return;
         pos = vcopy(pos); at = vcopy(at);
         this.P.copySaveParam(this.save[this.mMode]);
