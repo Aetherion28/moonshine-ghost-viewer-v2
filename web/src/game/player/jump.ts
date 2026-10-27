@@ -1,6 +1,7 @@
 // Player/MarioJump.cpp: the jumps, the air control, landing on things, wall kicks, dives, the down
 // statuses in the air, and jumpMain.
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import { fr, s16, JMASSin, JMASCos, matan, FConverge, IConverge } from '../math.js';
 import { HitActor, MSG } from '../engine.js';
 import { MarioRun } from './run.js';
@@ -27,11 +28,11 @@ export abstract class MarioJump extends MarioRun {
         this.mForwardVel = fr(this.mForwardVel * this.mJumpParams.mJumpSpeedBrake);
         if (this.mInput & 1) {
             const d = (this.mIntendedYaw - this.mFaceAngle.y) & 0xFFFF, inc = fr(0.03125 * this.mIntendedMag);
-            this.mForwardVel = fr(this.mForwardVel + fr(inc * JMASCos(d)) * this.getJumpAccelControl());
+            this.mForwardVel = FMA(fr(inc * JMASCos(d)), this.getJumpAccelControl(), this.mForwardVel);
             this.mFaceAngle.y = addAngle(this.mFaceAngle.y, fr(inc * JMASSin(d)) * this.getJumpSlideControl());
         }
-        if (this.mForwardVel > 32) this.mForwardVel = fr(this.mForwardVel - 0.2);
-        if (this.mForwardVel < -16) this.mForwardVel = fr(this.mForwardVel + 0.4);
+        if (this.mForwardVel > 32) this.mForwardVel = fr(this.mForwardVel - fr(0.2));
+        if (this.mForwardVel < -16) this.mForwardVel = fr(this.mForwardVel + fr(0.4));
         this.mVel.x = this.mSlideVelX = fr(this.mForwardVel * JMASSin(this.mFaceAngle.y));
         this.mVel.z = this.mSlideVelZ = fr(this.mForwardVel * JMASCos(this.mFaceAngle.y));
     }
@@ -274,7 +275,7 @@ export abstract class MarioJump extends MarioRun {
         this.doSlipJumping();
         switch (this.jumpProcess(0)) {
             case 1:
-                if (this.mStatusState === 0 && this.mVel.y < 0 && this.mGroundPlane.n[1] >= 0.9848077) { this.mVel.y = fr(-this.mVel.y / 2); this.mStatusState = 1; }
+                if (this.mStatusState === 0 && this.mVel.y < 0 && this.mGroundPlane.n[1] >= fr(0.9848077)) { this.mVel.y = fr(-this.mVel.y / 2); this.mStatusState = 1; }
                 else this.changePlayerStatus(S.SLIP_FORE, 0, false);
                 break;
             case 2:
@@ -288,11 +289,11 @@ export abstract class MarioJump extends MarioRun {
     fireDowning() {
         if (this.mStatusTimer === 1) this.startVoice(SE.MV05_DAMAGE_FIRE_01);
         this.mStatusTimer += 1;
-        if (!(this.mInput & 1)) this.mForwardVel = fr(FConverge(this.mForwardVel, 0, 0.35, 0.35));
+        if (!(this.mInput & 1)) this.mForwardVel = fr(FConverge(this.mForwardVel, 0, fr(0.35), fr(0.35)));
         if (this.mInput & 1) {
             const d = (this.mIntendedYaw - this.mFaceAngle.y) & 0xFFFF;
             const inc = fr(fr(0.03125 * this.mIntendedMag) * this.mJumpParams.mFireDownControl);
-            this.mForwardVel = fr(this.mForwardVel + inc * JMASCos(d));
+            this.mForwardVel = FMA(inc, JMASCos(d), this.mForwardVel);
             this.mFaceAngle.y = addAngle(this.mFaceAngle.y, 1024 * fr(inc * JMASSin(d)));
             if (this.mForwardVel < 0) { this.mFaceAngle.y = s16(this.mFaceAngle.y + 0x8000); this.mForwardVel = fr(this.mForwardVel * -1); }
             if (this.mForwardVel > 32) this.mForwardVel = fr(this.mForwardVel - 2);
@@ -301,7 +302,7 @@ export abstract class MarioJump extends MarioRun {
         this.mVel.z = this.mSlideVelZ = fr(this.mForwardVel * JMASCos(this.mFaceAngle.y));
         switch (this.jumpProcess(0)) {
             case 1:
-                if (this.mStatusState < 2 && this.mVel.y < 0) { this.mVel.y = fr(0.4 * -this.mVel.y); this.setPlayerVelocity(fr(0.5 * this.mForwardVel)); this.mStatusState += 1; }
+                if (this.mStatusState < 2 && this.mVel.y < 0) { this.mVel.y = fr(fr(0.4) * -this.mVel.y); this.setPlayerVelocity(fr(0.5 * this.mForwardVel)); this.mStatusState += 1; }
                 else { this.startVoice(SE.MV07_DAMAGE_REACT_01); this.changePlayerStatus(S.FIRE_JUMP_END, 0, false); }
                 break;
             case 2: this.playerRefrection(0); break;
@@ -311,14 +312,14 @@ export abstract class MarioJump extends MarioRun {
     }
     thrownDowning() {
         const d = (this.mIntendedYaw - this.mFaceAngle.y) & 0xFFFF, inc = fr(0.03125 * this.mIntendedMag);
-        this.mForwardVel = fr(this.mForwardVel + fr(inc * JMASCos(d)) * this.mJumpParams.mThrownAccel);
+        this.mForwardVel = FMA(fr(inc * JMASCos(d)), this.mJumpParams.mThrownAccel, this.mForwardVel);
         this.mFaceAngle.y = addAngle(this.mFaceAngle.y, fr(inc * JMASSin(d)) * this.mJumpParams.mThrownSlide);
         this.mForwardVel = fr(this.mForwardVel * this.mJumpParams.mThrownBrake);
         this.mVel.x = this.mSlideVelX = fr(this.mForwardVel * JMASSin(this.mFaceAngle.y));
         this.mVel.z = this.mSlideVelZ = fr(this.mForwardVel * JMASCos(this.mFaceAngle.y));
         switch (this.jumpProcess(0)) {
             case 1:
-                if (this.mStatusState < 2 && this.mVel.y < 0) { this.mVel.y = fr(0.4 * -this.mVel.y); this.setPlayerVelocity(fr(0.5 * this.mForwardVel)); this.mStatusState += 1; }
+                if (this.mStatusState < 2 && this.mVel.y < 0) { this.mVel.y = fr(fr(0.4) * -this.mVel.y); this.setPlayerVelocity(fr(0.5 * this.mForwardVel)); this.mStatusState += 1; }
                 else return this.changePlayerStatus(S.THROWN_END, 0, false);
                 break;
             case 2: this.playerRefrection(0); break;
@@ -329,7 +330,7 @@ export abstract class MarioJump extends MarioRun {
     trample() { if (this.jumpingCommonEvents()) return 1; this.jumpingBasic(S.SEC_JUMP_SLIP, this.mAnimationId, 3); return 0; }
     missJumping() {
         if (this.mInput & 0x8000) return this.changePlayerStatus(S.JUMP_CATCH, 0, false);
-        this.setPlayerVelocity(fr(0.98 * this.mForwardVel));
+        this.setPlayerVelocity(fr(fr(0.98) * this.mForwardVel));
         switch (this.jumpProcess(0)) {
             case 1: this.changePlayerStatus(this.mForwardVel < 0 ? S.SLIP : S.JUMP_SLIP, 0, false); break;
             case 2: this.setPlayerVelocity(0); break;

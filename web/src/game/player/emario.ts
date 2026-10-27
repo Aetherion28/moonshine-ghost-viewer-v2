@@ -4,6 +4,7 @@
 // for the Bianco Hills chase, plays the recorded pads of map/map/pad (tutorial??.pad, TMarioInputReplay)
 // from graph node to graph node, linked by linkdata.bin, and falls down when he's sprayed enough.
 
+import { fmadd as fmaddF } from './fmath.js';
 import { fr, s16, V3, matan, IConverge, MsRandF, rand, mtx, Mtx, MsMtxSetRotRPH, JMASSin, JMASCos } from '../math.js';
 import {
     World, Stream, SpineEnemy, EnemyManager, LiveManager, LiveActor, HitActor, MActor, AnmData, ObjChara, Files, Params,
@@ -289,7 +290,7 @@ export class EnemyMario extends TMarioSim {
     // ---------------------------------------------------------------- the free AI (not the chase)
     emWaiting() {
         const d = s16(this.mAngleToMario - this.mFaceAngle.y);
-        if (d < -0x1555 || d > 0x1555) this.setStickToAngle(this.mAngleToMario, 0.2);
+        if (d < -0x1555 || d > 0x1555) this.setStickToAngle(this.mAngleToMario, fr(0.2));
         if (this.mDistanceToMario < 800) this.changeEMDoing(EM.RUN_AWAY);
         if (this.mDistanceToMario > 1500 || rand() < 0x88) this.changeEMWalkGraph();
     }
@@ -341,7 +342,7 @@ export class EnemyMario extends TMarioSim {
     emTurning() {
         const d = s16(this.mTargetAngle - this.mFaceAngle.y);
         if (rand() < 100) this.changeEMJumping();
-        else if (d < -0x1555 || d > 0x1555) this.setStickToAngle(this.mTargetAngle, 0.2);
+        else if (d < -0x1555 || d > 0x1555) this.setStickToAngle(this.mTargetAngle, fr(0.2));
         else this.changeEMDoing(EM.WAITING);
     }
     emHide() {
@@ -371,8 +372,8 @@ export class EnemyMario extends TMarioSim {
         this.onHitFilter(HF.NO_COLLISION); this.mEMario.onHitFilter(HF.NO_COLLISION);
         if (this.mEMDoingTimer === 0) { this.mDisappearPosition.set(this.mCenterPos); this.emEffect('kgm_change', this.mDisappearPosition); }
         if (this.mEMDoingTimer > 100) {
-            this.mDisappearPosition.y = fr(this.mDisappearPosition.y + fr(0.025 * this.mEMDoingTimer));
-            this.mDisappearPosition.z = fr(this.mDisappearPosition.z - fr(0.03 * this.mEMDoingTimer));
+            this.mDisappearPosition.y = fr(this.mDisappearPosition.y + fr(fr(0.025) * this.mEMDoingTimer));
+            this.mDisappearPosition.z = fr(this.mDisappearPosition.z - fr(fr(0.03) * this.mEMDoingTimer));
         }
         ++this.mEMDoingTimer;
     }
@@ -420,9 +421,9 @@ export class EnemyMario extends TMarioSim {
         const G = this.graph;
         const ni = G.findNearestNodeIndex(this.pos, -1);
         const cur = G.point(ni);
-        this.pos.x = fr(this.pos.x + 0.05 * fr(cur.x - this.pos.x));
-        this.pos.z = fr(this.pos.z + 0.05 * fr(cur.z - this.pos.z));
-        this.pos.y = fr(this.pos.y + 0.05 * fr(cur.y - this.pos.y));
+        this.pos.x = fmaddF(fr(0.05), fr(cur.x - this.pos.x), this.pos.x);
+        this.pos.z = fmaddF(fr(0.05), fr(cur.z - this.pos.z), this.pos.z);
+        this.pos.y = fmaddF(fr(0.05), fr(cur.y - this.pos.y), this.pos.y);
         if (this.mStatus !== S.WAIT) if (this.canJumpToNode()) return;
         this.pos.set(cur);
         this.resetReplayStatus();
@@ -795,7 +796,7 @@ export class TEMario extends SpineEnemy {
         const em = this.mEnemyMario = new EnemyMario(this.world, this);
         em.initValues();
         em.pos.set(this.pos); em.rot.set(this.rot); em.scale.set(this.scale);
-        em.mFaceAngle.y = s16(Math.trunc(fr(fr(this.rot.y * 0.0027777778) * 65536)));
+        em.mFaceAngle.y = s16(Math.trunc(fr(fr(this.rot.y * fr(0.0027777778)) * 65536)));
         em.initEnemyValues();
         em.onFlag(MF.NPC_TALKING);
     }

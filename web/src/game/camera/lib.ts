@@ -4,6 +4,7 @@
 // are stored in, and the Gekko's estimates (fres in matan, frsqrte in MsSqrtf / MsVECNormalize)
 // are the hardware's (math.ts).
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from '../player/fmath.js';
 import { fr, s16, matan, JMASSin, JMASCos, frsqrte, MsSqrtfHW } from '../math.js';
 
 /** A TVec3<f32> / Vec */
@@ -25,19 +26,19 @@ export const CLBRoundfInt = (v: number) => Math.trunc(fr(v + (v > 0 ? 0.5 : -0.5
 export const CLBDegToShortAngle = (deg: number) => CLBRoundfS16(fr(deg * fr(65536 / 360)));
 
 /** CLBLinearInbetween<f32>: fsubs, fmadds */
-export const lerpF = (a: number, b: number, f: number) => fr(f * fr(b - a) + a);
+export const lerpF = (a: number, b: number, f: number) => FMA(f, fr(b - a), a);
 /** CLBLinearInbetween<s16>: fmadds over the converted halfwords, fctiwz */
-export const lerpS = (a: number, b: number, f: number) => s16(fr(f * (b - a) + a));
+export const lerpS = (a: number, b: number, f: number) => s16(FMA(f, (b - a), a));
 /** CLBCalcRatio<f32> */
 export const ratioF = (a: number, b: number, c: number) => (a !== b ? fr(fr(c - a) * fr(1 / fr(b - a))) : 0);
 /** CLBCalcRatio<s16> / <s32> (integer differences, converted exactly) */
 export const ratioI = (a: number, b: number, c: number) => (a !== b ? fr(fr(c - a) * fr(1 / fr(b - a))) : 0);
 /** CLBTwoDegreeGeneralInbetween<f32>(a, b, t, k): fadds(a, fmadds(t, k*t, t*((b-a)-k))) */
-export const twoDegF = (a: number, b: number, t: number, k: number) => fr(a + fr(t * fr(k * t) + fr(t * fr(fr(b - a) - k))));
+export const twoDegF = (a: number, b: number, t: number, k: number) => fr(a + FMA(t, fr(k * t), fr(t * fr(fr(b - a) - k))));
 /** CLBEaseInInbetween<f32> */
 export const easeInF = (a: number, b: number, t: number) => twoDegF(a, b, t, fr(b - a));
 /** CLBTwoDegreeGeneralInbetween<s16> (the integers converted exactly) */
-export const twoDegS = (a: number, b: number, t: number, k: number) => s16(fr(a + fr(t * fr(k * t) + fr(t * fr((b - a) - k)))));
+export const twoDegS = (a: number, b: number, t: number, k: number) => s16(fr(a + FMA(t, fr(k * t), fr(t * fr((b - a) - k)))));
 /** CLBEaseInInbetween<s16> */
 export const easeInS = (a: number, b: number, t: number) => twoDegS(a, b, t, b - a);
 
@@ -46,7 +47,7 @@ export const clamp = (v: number, l: number, r: number) => (v > r ? r : v < l ? l
 /** CLBChaseConstantSpecifyFrame<f32>: returns the new value */
 export function chaseFrameF(v: number, d: number, frames: number) {
     if (frames < fr(0.001)) return d;
-    return fr(fr(1 / frames) * fr(d - v) + v);
+    return FMA(fr(1 / frames), fr(d - v), v);
 }
 /** CLBChaseConstantSpecifyFrame(s16*, s16, f32) */
 export function chaseFrameS(v: number, d: number, frames: number) {
@@ -83,7 +84,7 @@ export function chaseAngleDecrease(v: number, d: number, ratio: number): [number
 /** CLBChaseDecrease: [new value, still outside the threshold] */
 export function chaseDecrease(v: number, d: number, ratio: number, threshold = 0): [number, boolean] {
     if (ratio > 1) ratio = 1;
-    v = fr(ratio * fr(d - v) + v);
+    v = FMA(ratio, fr(d - v), v);
     const a = fr(v - d);
     return [v, !(Math.abs(a) <= Math.abs(threshold))];
 }
@@ -99,14 +100,14 @@ export function chaseSpecialDecrease(v: number, d: number, ratio: number, speed:
 export function crossToPolar(o: Vec, p: Vec): { r: number; pitch: number; yaw: number } {
     const dx = fr(p.x - o.x), dy = fr(p.y - o.y), dz = fr(p.z - o.z);
     const xx = fr(dx * dx), zz = fr(dz * dz);
-    const r = MsSqrtf(fr(zz + fr(dy * dy + xx)));
+    const r = MsSqrtf(fr(zz + FMA(dy, dy, xx)));
     const pitch = matan(MsSqrtf(fr(xx + zz)), dy);
     return { r, pitch, yaw: matan(dz, dx) };
 }
 /** The inline CLBCrossToPolar(origin, in, &pitch, &yaw) (an fmadds for the XZ distance, MsSqrtf called) */
 export function crossToPolar2(o: Vec, p: Vec): { pitch: number; yaw: number } {
     const dx = fr(p.x - o.x), dz = fr(p.z - o.z);
-    const pitch = matan(MsSqrtf(fr(dx * dx + fr(dz * dz))), fr(p.y - o.y));
+    const pitch = matan(MsSqrtf(FMA(dx, dx, fr(dz * dz))), fr(p.y - o.y));
     return { pitch, yaw: matan(dz, dx) };
 }
 /** CLBPolarToCross */
@@ -114,7 +115,7 @@ export function polarToCross(o: Vec, out: Vec, radius: number, v: number, h: num
     const cv = JMASCos(v), sh = JMASSin(h), ch = JMASCos(h), sv = JMASSin(v);
     const ox = o.x, oy = o.y, oz = o.z;
     out.x = fr(ox + fr(fr(radius * cv) * sh));
-    out.y = fr(radius * sv + oy);
+    out.y = FMA(radius, sv, oy);
     out.z = fr(oz + fr(fr(radius * cv) * ch));
     return out;
 }
@@ -132,7 +133,7 @@ export function revisionLookatByAngleX(vMin: number, vMax: number, o: Vec, io: V
  */
 export function msVecNormalize(v: Vec, out: Vec) {
     const xx = fr(v.x * v.x), yy = fr(v.y * v.y);
-    const s = fr(fr(v.z * v.z + xx) + yy);
+    const s = fr(FMA(v.z, v.z, xx) + yy);
     const e = force25(frsqrte(s));
     out.x = fr(v.x * e); out.y = fr(v.y * e); out.z = fr(v.z * e);
     return out;
@@ -143,21 +144,21 @@ export function msVecNormalize(v: Vec, out: Vec) {
  */
 export function psVecNormalize(v: Vec, out: Vec) {
     const xx = fr(v.x * v.x), yy = fr(v.y * v.y);
-    const s = fr(fr(v.z * v.z + xx) + yy);
+    const s = fr(FMA(v.z, v.z, xx) + yy);
     const e = frsqrte(s);
     const n0 = fr(e * force25(e)), n1 = fr(e * 0.5);
-    const n2 = fr(3 - n0 * s);
+    const n2 = FNMS(n0, s, 3);
     const r = fr(n2 * n1);
     out.x = fr(v.x * r); out.y = fr(v.y * r); out.z = fr(v.z * r);
     return out;
 }
 /** PSVECMag (the SDK's): the squared length times its refined reciprocal square root; 0 for 0 */
 export function psVecMag(v: Vec) {
-    const s = fr(fr(v.z * v.z + fr(v.x * v.x)) + fr(v.y * v.y));
+    const s = fr(FMA(v.z, v.z, fr(v.x * v.x)) + fr(v.y * v.y));
     if (!(s > 0)) return 0;
     const e = frsqrte(s);
     const n0 = fr(e * force25(e)), n1 = fr(e * 0.5);
-    const n2 = fr(3 - n0 * s);
+    const n2 = FNMS(n0, s, 3);
     const r = fr(n2 * n1);
     return fr(s * r);
 }
@@ -167,7 +168,7 @@ export function force25(d: number) { f64[0] = d; const b = i64[0]; i64[0] = (b &
 
 /** TVec3::normalize (JGeometry: setLength(one)) as the camera uses it for unk25C: a plain normalize */
 export function vnormalize(v: Vec) {
-    const l2 = fr(fr(v.x * v.x + fr(v.y * v.y)) + fr(v.z * v.z));
+    const l2 = fr(FMA(v.x, v.x, fr(v.y * v.y)) + fr(v.z * v.z));
     if (l2 <= 0) return v;
     const inv = fr(1 / Math.sqrt(l2));
     v.x = fr(v.x * inv); v.y = fr(v.y * inv); v.z = fr(v.z * inv);
@@ -181,17 +182,17 @@ export function isPointInCube(p: Vec, c: Vec, r: Vec, s: Vec) {
         if (r.z !== 0) {
             const a = CLBDegToShortAngle(-r.z), cz = JMASCos(a), sz = JMASSin(a);
             const t = fr(dy * sz);
-            dy = fr(dx * sz + fr(dy * cz)); dx = fr(dx * cz - t);
+            dy = FMA(dx, sz, fr(dy * cz)); dx = FMS(dx, cz, t);
         }
         if (r.y !== 0) {
             const a = CLBDegToShortAngle(-r.y), cy = JMASCos(a), sy = JMASSin(a);
             const t = fr(dz * sy);
-            dz = fr(-dx * sy + fr(dz * cy)); dx = fr(dx * cy + t);
+            dz = FMA(-dx, sy, fr(dz * cy)); dx = FMA(dx, cy, t);
         }
         if (r.x !== 0) {
             const a = CLBDegToShortAngle(-r.x), cx = JMASCos(a), sx = JMASSin(a);
             const t = fr(dz * sx);
-            dz = fr(dy * sx + fr(dz * cx)); dy = fr(dy * cx - t);
+            dz = FMA(dy, sx, fr(dz * cx)); dy = FMS(dy, cx, t);
         }
     }
     return fr(-s.x * 0.5) < dx && dx < fr(s.x * 0.5) && 0 < dy && dy < s.y && fr(-s.z * 0.5) < dz && dz < fr(s.z * 0.5);

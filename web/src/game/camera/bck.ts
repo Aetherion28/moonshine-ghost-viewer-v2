@@ -13,6 +13,7 @@
 // The bcks are the stage's /scene/map/camera/<name>.bck and, added to the same MActorAnmData,
 // /common/camera/camera_demo_shine_get_inside / _outside / camera_demo_gate_in.bck.
 
+import { fr } from '../math.js';
 import { mat4 } from 'gl-matrix';
 import type { ANK1 } from '../../../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
 import { JointTransformInfo } from '../../../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
@@ -64,7 +65,7 @@ class CameraBckDemo implements DemoBck {
         const end = this.anm.duration;
         let f = n * RATE;
         switch (this.anm.loopMode) {
-            case 0: if (f >= end) f = end - 0.001; break;          // ONCE
+            case 0: if (f >= end) f = end - fr(0.001); break;          // ONCE
             case 1: if (f >= end) f = 0; break;                     // ONCE_AND_RESET
             case 2: if (end > 0) f = f % end; break;               // LOOP (start 0, loop 0)
             case 3: case 4: {                                       // PING_PONG (MIRROR / MIRROR_LOOP)

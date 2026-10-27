@@ -1,12 +1,16 @@
 // Player/MarioSpecial.cpp: climbing bars (poles, trees, the fluff), hanging from ledges and roofs
 // (fence ceilings), climbing fences, being carried, pulling, the tightrope wires, and specMain.
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import { fr, s16, JMASSin, JMASCos, matan, IConverge, V3, Mtx, mtxMultVec, psMtxMultVec, frsqrte, rand } from '../math.js';
 import { HitActor, HF, MSG } from '../engine.js';
 import { WallCheck } from '../collision.js';
 import { MarioSwim } from './swim.js';
 import { S, A, MF, bg, Bg, wallRecord, ControllerWork } from './base.js';
 import { MsSqrtf } from './move.js';
+import { lengthJ, fmadd, fnmsub, fmsub, frsqrte as frsqrteF, fmul } from './fmath.js';
+/** JGeometry TUtil<f32>::sqrt of x > 0: frsqrte rounded, one single Newton step */
+const lengthOfSq = (x: number) => fmul(x, fmul(fmul(0.5, fr(frsqrteF(x))), fnmsub(x, fmul(fr(frsqrteF(x)), fr(frsqrteF(x))), 3)));
 import { AT } from '../actortypes.js';
 import { SE } from '../soundids.js';
 
@@ -27,8 +31,8 @@ export abstract class MarioSpecial extends MarioSwim {
     }
     /** wall jumping off backwards (A) */
     private barKick() {
-        this.pos.x = fr(this.pos.x - fr(200 * JMASSin(this.mFaceAngle.y)));
-        this.pos.z = fr(this.pos.z - fr(200 * JMASCos(this.mFaceAngle.y)));
+        this.pos.x = fnmsub(200, JMASSin(this.mFaceAngle.y), this.pos.x);
+        this.pos.z = fnmsub(200, JMASCos(this.mFaceAngle.y), this.pos.z);
         this.mFaceAngle.y = s16(this.mFaceAngle.y + 0x8000);
         return this.changePlayerStatus(S.WALL_JUMP, 0, false);
     }
@@ -57,8 +61,8 @@ export abstract class MarioSpecial extends MarioSwim {
         const C = this.unk108;
         if ((this.mInput & 0x8000) || this.mHolderHeightDiff <= 100) {
             this.setPlayerVelocity(-2);
-            this.pos.x = fr(this.pos.x - fr(200 * JMASSin(this.mFaceAngle.y)));
-            this.pos.z = fr(this.pos.z - fr(200 * JMASCos(this.mFaceAngle.y)));
+            this.pos.x = fnmsub(200, JMASSin(this.mFaceAngle.y), this.pos.x);
+            this.pos.z = fnmsub(200, JMASCos(this.mFaceAngle.y), this.pos.z);
             return this.changePlayerStatus(S.LAND_SAFE_DOWN, 0, false);
         }
         if (C.mStickV > 16) return this.changePlayerStatus(S.BAR_CLIMB, 0, false);
@@ -91,14 +95,14 @@ export abstract class MarioSpecial extends MarioSwim {
         const C = this.unk108;
         if (C.mStickV < 8) return this.changePlayerStatus(S.BAR_WAIT, 0, false);
         this.mVel.y = 0;
-        this.pos.y = fr(this.pos.y + fr(C.mStickV * this.mBarParams.mClimbSp));
+        this.pos.y = fmadd(C.mStickV, this.mBarParams.mClimbSp, this.pos.y);
         this.mHolderHeightDiff = fr(this.pos.y - h.pos.y);
         if (this.pos.y > fr(h.pos.y + h.damageHeight)) {
             this.setPlayerVelocity(0);
             this.changePlayerStatus(S.JUMP, 0, false);
             this.unk78 &= ~0x100;
         }
-        if (this.barProcess() === 0) this.setAnimation(A.TREE_CLIMB, fr(C.mStickV * this.mBarParams.mClimbAnmRate + 1));
+        if (this.barProcess() === 0) this.setAnimation(A.TREE_CLIMB, fmadd(C.mStickV, this.mBarParams.mClimbAnmRate, 1));
         this.barClamp();
         return 0;
     }
@@ -148,7 +152,7 @@ export abstract class MarioSpecial extends MarioSwim {
         this.mSlideVelX = fr(this.mForwardVel * JMASSin(this.mFaceAngle.y));
         this.mSlideVelZ = fr(this.mForwardVel * JMASCos(this.mFaceAngle.y));
         this.mVel.x = this.mSlideVelX; this.mVel.y = 0; this.mVel.z = this.mSlideVelZ;
-        const np = new V3(fr(this.pos.x - this.mVel.x * this.mRoofPlane.n[1]), this.pos.y, fr(this.pos.z - this.mVel.z * this.mRoofPlane.n[1]));
+        const np = new V3(fnmsub(this.mVel.x, this.mRoofPlane.n[1], this.pos.x), this.pos.y, fnmsub(this.mVel.z, this.mRoofPlane.n[1], this.pos.z));
         let code = this.hangingCheckRoof(np);
         if (code === 2) code = 0;
         else this.pos.set(np);
@@ -203,8 +207,8 @@ export abstract class MarioSpecial extends MarioSwim {
             }
         }
         if (this.mInput & 0x20) return this.changePlayerStatus(S.WAIT_ROOF, this.mStatusArg, false);
-        const dx = this.pos.x - this.mPrevPosition.x, dy = this.pos.y - this.mPrevPosition.y, dz = this.pos.z - this.mPrevPosition.z;
-        const dist = fr(fr(Math.sqrt(dx * dx + dy * dy + dz * dz)) * this.mHangRoofParams.mAnmMult);
+        const dx = fr(this.pos.x - this.mPrevPosition.x), dy = fr(this.pos.y - this.mPrevPosition.y), dz = fr(this.pos.z - this.mPrevPosition.z);
+        const dist = fr(lengthJ(dx, dy, dz) * this.mHangRoofParams.mAnmMult);   // (TVec3::length: JGeometry sqrt)
         this.setAnimation(this.mStatusArg & 1 ? A.LADDER_HANG_MOVE_L : A.LADDER_HANG_MOVE_R, dist);
         if (this.isLast1AnimeFrame()) this.mStatusArg = 1 - this.mStatusArg;
         return 0;
@@ -236,8 +240,8 @@ export abstract class MarioSpecial extends MarioSwim {
     // ---------------------------------------------------------------- ledges
     startHangLanding(st: number) {
         this.mVel.y = 0; this.mForwardVel = 0;
-        this.pos.x = fr(this.pos.x - 60 * JMASSin(this.mFaceAngle.y));
-        this.pos.z = fr(this.pos.z - 60 * JMASCos(this.mFaceAngle.y));
+        this.pos.x = fnmsub(60, JMASSin(this.mFaceAngle.y), this.pos.x);
+        this.pos.z = fnmsub(60, JMASCos(this.mFaceAngle.y), this.pos.z);
         const [gy] = this.checkGround(this.pos.x, this.pos.y, this.pos.z);
         if (gy < fr(this.pos.y - 100)) this.pos.y = fr(this.pos.y - 100);
         else this.pos.y = gy;
@@ -248,7 +252,7 @@ export abstract class MarioSpecial extends MarioSwim {
         for (const w of r.results) {
             const ang = s16(matan(w.n[2], w.n[0]) - (this.mFaceAngle.y + 0x8000));
             if (ang > -0x2000 && ang < 0x2000) {
-                const d = fr(w.n[0] * this.pos.x + w.n[1] * this.pos.y + w.n[2] * this.pos.z + w.d);
+                const d = fr(w.d + fmadd(w.n[2], this.pos.z, fmadd(w.n[0], this.pos.x, fr(w.n[1] * this.pos.y))));
                 if (d < 50) found = w;
             }
         }
@@ -271,9 +275,9 @@ export abstract class MarioSpecial extends MarioSwim {
         const wall = this.findNearestWall(rec);
         if (!wall) this.changePlayerStatus(S.LANDING, 0, false);
         if (wall && bg.isFence(wall)) {
-            this.pos.x = fr(this.pos.x - 40 * JMASSin(this.mFaceAngle.y));
+            this.pos.x = fnmsub(40, JMASSin(this.mFaceAngle.y), this.pos.x);
             this.pos.y = fr(this.pos.y - 160);
-            this.pos.z = fr(this.pos.z - 40 * JMASCos(this.mFaceAngle.y));
+            this.pos.z = fnmsub(40, JMASCos(this.mFaceAngle.y), this.pos.z);
             return this.changePlayerStatus(S.FENCE_CATCH, 0, false);
         }
         const rec2 = wallRecord(this.pos.x, fr(10 + this.pos.y), this.pos.z, 50, 1, 0);
@@ -291,23 +295,23 @@ export abstract class MarioSpecial extends MarioSwim {
                 // (newPos is left uninitialized by the game when neither branch applies: the position here)
                 const np = new V3(this.pos.x, this.pos.y, this.pos.z);
                 if (yawDiff > 0x400 && yawDiff < 0x71c7) {
-                    np.x = fr(this.pos.x - sp * fr(this.mIntendedMag * wall.n[2])); np.y = this.pos.y; np.z = fr(this.pos.z + sp * fr(this.mIntendedMag * wall.n[0]));   // (fnmsubs / fmadds of fmuls(mag, n))
+                    np.x = fnmsub(sp, fr(this.mIntendedMag * wall.n[2]), this.pos.x); np.y = this.pos.y; np.z = fmadd(sp, fr(this.mIntendedMag * wall.n[0]), this.pos.z);   // (fnmsubs / fmadds of fmuls(mag, n))
                 }
                 if (yawDiff > -0x71c7 && yawDiff < -0x400) {
-                    np.x = fr(this.pos.x + sp * fr(this.mIntendedMag * wall.n[2])); np.y = this.pos.y; np.z = fr(this.pos.z - sp * fr(this.mIntendedMag * wall.n[0]));
+                    np.x = fmadd(sp, fr(this.mIntendedMag * wall.n[2]), this.pos.x); np.y = this.pos.y; np.z = fnmsub(sp, fr(this.mIntendedMag * wall.n[0]), this.pos.z);
                 }
                 const rec3 = wallRecord(np.x, fr(10 + np.y), np.z, 50, 1, 0);
                 this.isTouchedWallsAndMoveXZ(rec3);
                 np.set(fr(rec3.center[0]), fr(rec3.center[1]), fr(rec3.center[2]));
                 const [gy] = this.checkGround(np.x, fr(50 + np.y), np.z);
                 if (fr(this.pos.y - 100) < gy && gy < fr(50 + this.pos.y)) {
-                    const rec4 = wallRecord(fr(np.x - 30 * JMASSin(this.mFaceAngle.y)), fr(gy - 20), fr(np.z - 30 * JMASCos(this.mFaceAngle.y)), 30, 4, 0);
+                    const rec4 = wallRecord(fnmsub(30, JMASSin(this.mFaceAngle.y), np.x), fr(gy - 20), fnmsub(30, JMASCos(this.mFaceAngle.y), np.z), 30, 4, 0);
                     this.isTouchedWallsAndMoveXZ(rec4);
                     const w2 = this.findNearestWall(rec4);
-                    if (w2 && this.mDeParams.mHangWallMovableAngle < wall.n[0] * w2.n[0] + wall.n[1] * w2.n[1] + wall.n[2] * w2.n[2]) {
+                    if (w2 && this.mDeParams.mHangWallMovableAngle < fmadd(wall.n[2], w2.n[2], fmadd(wall.n[0], w2.n[0], fr(wall.n[1] * w2.n[1])))) {
                         this.mFaceAngle.y = s16(matan(w2.n[2], w2.n[0]) + 0x8000);
-                        this.pos.x = fr(rec4.center[0] - 40 * w2.n[0]);
-                        this.pos.z = fr(rec4.center[2] - 40 * w2.n[2]);
+                        this.pos.x = fnmsub(40, w2.n[0], rec4.center[0]);
+                        this.pos.z = fnmsub(40, w2.n[2], rec4.center[2]);
                         this.pos.y = this.checkGround(this.pos.x, fr(160 + this.pos.y), this.pos.z)[0];
                         pulledUp = true;
                     }
@@ -323,7 +327,7 @@ export abstract class MarioSpecial extends MarioSwim {
         this.mModelFaceAngle = this.mFaceAngle.y;
         if (pulledUp) {
             const dx = fr(this.pos.x - this.mPrevPosition.x), dz = fr(this.pos.z - this.mPrevPosition.z);
-            const rate = fr(MsSqrtf(fr(dx * dx + dz * dz)) * H.mAnmRate);
+            const rate = fr(MsSqrtf(fmadd(dx, dx, fr(dz * dz))) * H.mAnmRate);
             this.setAnimation(yawDiff < 0 ? A.HMOV_L : A.HMOV_R, rate);
         } else if (this.mStatusTimer < H.mRapidTime) this.setAnimation(A.HANG, 1);
         else this.setAnimation(A.HANG, H.mAnmRapid);
@@ -359,7 +363,7 @@ export abstract class MarioSpecial extends MarioSwim {
 
     // ---------------------------------------------------------------- fences
     fenceFootCheck() {
-        const f = new V3(fr(this.pos.x + 0.8 * fr(50 * JMASSin(this.mFaceAngle.y))), this.pos.y, fr(this.pos.z + 0.8 * fr(50 * JMASCos(this.mFaceAngle.y))));
+        const f = new V3(fmadd(fr(0.8), fr(50 * JMASSin(this.mFaceAngle.y)), this.pos.x), this.pos.y, fmadd(fr(0.8), fr(50 * JMASCos(this.mFaceAngle.y)), this.pos.z));
         if (!this.checkWallPlane(f, 20, 50)) {
             this.mFaceAngle.y = s16(this.mFaceAngle.y + 0x8000);
             this.setPlayerVelocity(0); this.mVel.y = 0;
@@ -383,19 +387,19 @@ export abstract class MarioSpecial extends MarioSwim {
         return 0;
     }
     fenceMove() {
-        const front = new V3(fr(this.pos.x + 0.5 * fr(50 * JMASSin(this.mFaceAngle.y))), this.pos.y, fr(this.pos.z + 0.5 * fr(50 * JMASCos(this.mFaceAngle.y))));
+        const front = new V3(fmadd(0.5, fr(50 * JMASSin(this.mFaceAngle.y)), this.pos.x), this.pos.y, fmadd(0.5, fr(50 * JMASCos(this.mFaceAngle.y)), this.pos.z));
         const wall = this.checkWallPlane(front, 80, 50);
         const sp = this.mJumpParams.mFenceSpeed;
         if (wall) {
             if (this.mInput & 1) {
-                const np = new V3(this.pos.x, fr(this.pos.y + 0.015625 * this.unk108.mStickV * sp), this.pos.z);
+                const np = new V3(this.pos.x, fmadd(fr(0.015625 * this.unk108.mStickV), sp, this.pos.y), this.pos.z);
                 const camDelta = s16(this.mFaceAngle.y - this.cameraYaw());
                 let nx: number, nz: number;
                 if (camDelta > -0x4000 && camDelta < 0x4000) { nz = wall.n[0]; nx = -wall.n[2]; }
                 else { nx = wall.n[2]; nz = -wall.n[0]; }
                 const sh = fr(0.015625 * this.unk108.mStickH);
-                np.x = fr(np.x + fr(nx * sh) * sp); np.z = fr(np.z + fr(nz * sh) * sp);   // (fmadds(fmuls(n, sh), sp, p))
-                const sf = new V3(fr(np.x + 0.5 * fr(50 * JMASSin(this.mFaceAngle.y))), np.y, fr(np.z + 0.5 * fr(50 * JMASCos(this.mFaceAngle.y))));
+                np.x = fmadd(fr(nx * sh), sp, np.x); np.z = fmadd(fr(nz * sh), sp, np.z);   // (fmadds(fmuls(n, sh), sp, p))
+                const sf = new V3(fmadd(0.5, fr(50 * JMASSin(this.mFaceAngle.y)), np.x), np.y, fmadd(0.5, fr(50 * JMASCos(this.mFaceAngle.y)), np.z));
                 const sf2 = new V3(sf.x, sf.y, sf.z);
                 const w1 = this.checkWallPlane(sf, 20, 50);
                 const w2 = this.checkWallPlane(sf2, 140, 50);
@@ -415,17 +419,17 @@ export abstract class MarioSpecial extends MarioSwim {
             return this.changePlayerStatus(S.LANDING, 0, false);
         }
         this.mModelFaceAngle = this.mFaceAngle.y;
-        this.pos.x = fr(this.pos.x + 0.5 * fr(50 * JMASSin(this.mFaceAngle.y)));
-        this.pos.z = fr(this.pos.z + 0.5 * fr(50 * JMASCos(this.mFaceAngle.y)));
+        this.pos.x = fmadd(0.5, fr(50 * JMASSin(this.mFaceAngle.y)), this.pos.x);
+        this.pos.z = fmadd(0.5, fr(50 * JMASCos(this.mFaceAngle.y)), this.pos.z);
         this.mVel.set(0, 0, 0);
         switch (this.jumpProcess(1)) {
             case 1:
                 this.mFaceAngle.y = s16(this.mFaceAngle.y + 0x8000);
                 return this.changePlayerStatus(S.LANDING, 0, false);
             case 3:
-                this.pos.x = fr(this.pos.x + 50 * JMASSin(this.mFaceAngle.y));
+                this.pos.x = fmadd(50, JMASSin(this.mFaceAngle.y), this.pos.x);
                 this.pos.y = fr(1 + this.mFloorPosition.y);
-                this.pos.z = fr(this.pos.z + 50 * JMASCos(this.mFaceAngle.y));
+                this.pos.z = fmadd(50, JMASCos(this.mFaceAngle.y), this.pos.z);
                 this.setAnimation(A.HGUP, 1);
                 this.mInput &= ~4;
                 return this.changePlayerDropping(S.ASCEND, 0);
@@ -434,7 +438,7 @@ export abstract class MarioSpecial extends MarioSwim {
                     const roofY = this.mFloorPosition.x;
                     if (roofY < fr(160 + this.pos.y)) { this.pos.y = fr(roofY - 160); this.changePlayerStatus(S.FENCE_MOVE, 0, false); }
                 }
-                if (this.mInput & 2) { this.rumbleStart(0x15, this.mMotorParams.mMotorWall); return this.startJumpWall(); }
+                if (this.mInput & 2) { this.startSoundActor(0x193a); this.rumbleStart(0x15, this.mMotorParams.mMotorWall); return this.startJumpWall(); }
                 if (this.mInput & 0x8000) { this.mInput &= ~0x8000; return this.changePlayerStatus(S.FENCE_PUNCH, 0, false); }
                 if (this.mIntendedMag > 0) {
                     let hDot: number, vDiff: number, dist: number;
@@ -442,18 +446,20 @@ export abstract class MarioSpecial extends MarioSwim {
                         vDiff = fr(this.pos.y - this.mPrevPosition.y);
                         const fx = JMASSin(this.mFaceAngle.y), fz = JMASCos(this.mFaceAngle.y);
                         // side = (0,1,0) x front = (fz, 0, -fx)
-                        const dx = this.pos.x - this.mPrevPosition.x, dy = this.pos.y - this.mPrevPosition.y, dz = this.pos.z - this.mPrevPosition.z;
-                        hDot = fr(fz * dx - fx * dz);
-                        dist = fr(Math.sqrt(dx * dx + dy * dy + dz * dz));
+                        // (TVec3::sub; the side vector's dot product and the length squared fused as the DOL has them)
+                        const dx = fr(this.pos.x - this.mPrevPosition.x), dy = fr(this.pos.y - this.mPrevPosition.y), dz = fr(this.pos.z - this.mPrevPosition.z);
+                        const sx = fmsub(0, fx, fr(0 * fz));
+                        hDot = fmadd(fnmsub(1, fx, 0), dz, fmadd(fmsub(1, fz, 0), dx, fr(sx * dy)));
+                        const sq = fmadd(dz, dz, fmadd(dx, dx, fr(dy * dy)));
+                        dist = sq <= 0 ? sq : lengthOfSq(sq);
                     } else {
                         vDiff = fr(this.unk2F4.y - this.unk300.y);
                         hDot = fr(this.unk2F4.x - this.unk300.x);
-                        if (s16(Math.trunc(fr(182.04445 * this.unk30C) - this.mFaceAngle.y)) !== 0) hDot = -hDot;
-                        const dx = this.unk2F4.x - this.unk300.x, dy = this.unk2F4.y - this.unk300.y, dz = this.unk2F4.z - this.unk300.z;
-                        dist = fr(Math.sqrt(dx * dx + dy * dy + dz * dz));
+                        if (s16(fmsub(fr(182.04445), this.unk30C, this.mFaceAngle.y)) !== 0) hDot = -hDot;
+                        dist = lengthJ(fr(this.unk2F4.x - this.unk300.x), fr(this.unk2F4.y - this.unk300.y), fr(this.unk2F4.z - this.unk300.z));
                     }
                     const absH = Math.abs(hDot), absV = Math.abs(vDiff);
-                    if (absV > 5 * absH) this.setAnimation(vDiff > 0 ? A.FENCE_MOVE_UP : A.FENCE_MOVE_DOWN, dist);
+                    if (absV > fr(5 * absH)) this.setAnimation(vDiff > 0 ? A.FENCE_MOVE_UP : A.FENCE_MOVE_DOWN, dist);
                     else if (hDot > 0) this.setAnimation(A.FENCE_MOVE_L, dist);
                     else this.setAnimation(A.FENCE_MOVE_R, dist);
                 }
@@ -462,7 +468,7 @@ export abstract class MarioSpecial extends MarioSwim {
         }
     }
     fencePunch() {
-        const p = new V3(fr(this.pos.x + 0.5 * fr(50 * JMASSin(this.mFaceAngle.y))), this.pos.y, fr(this.pos.z + 0.5 * fr(50 * JMASCos(this.mFaceAngle.y))));
+        const p = new V3(fmadd(0.5, fr(50 * JMASSin(this.mFaceAngle.y)), this.pos.x), this.pos.y, fmadd(0.5, fr(50 * JMASCos(this.mFaceAngle.y)), this.pos.z));
         const wall = this.checkWallPlane(p, 80, 50);
         if (this.mInput & 2) { this.rumbleStart(0x15, this.mMotorParams.mMotorWall); return this.startJumpWall(); }
         if (wall) this.pos.set(p);
@@ -528,10 +534,10 @@ export abstract class MarioSpecial extends MarioSwim {
         const s = this.mWireStartPos, e = this.mWireEndPos;
         const x = fr(e.x - s.x), y = fr(e.y - s.y), z = fr(e.z - s.z);
         // TVec3::length inlined: (x*x + y*y fused) + z*z, then frsqrte and one single Newton step
-        let len = fr(fr(x * x + fr(y * y)) + fr(z * z));
+        let len = fr(fr(z * z) + fmadd(x, x, fr(y * y)));
         if (len > 0) {
             const g = fr(frsqrte(len));
-            len = fr(len * fr(fr(0.5 * g) * fr(3 - len * fr(g * g))));
+            len = fr(len * fr(fr(0.5 * g) * fnmsub(len, fr(g * g), 3)));
         }
         const delta = fr(d / len), margin = fr(100 / len);
         let clean = true;
@@ -555,7 +561,7 @@ export abstract class MarioSpecial extends MarioSwim {
         if (this.checkFlag(MF.UNK100) && this.mWireSag <= 0) {
             const r = this.wireLetGo();
             const W = this.mWireParams;
-            if (this.mWireBounceVel < 0) this.mVel.y = fr(this.mVel.y - W.mWireJumpMult * this.mWireBounceVel);
+            if (this.mWireBounceVel < 0) this.mVel.y = FNMS(W.mWireJumpMult, this.mWireBounceVel, this.mVel.y);
             this.mVel.y = fr(this.mVel.y + W.mWireJumpBase);
             const se = this.mWireBounceVel < this.mWireSfx1MinVel ? SE.MA_ROPE_JUMP_C : this.mWireBounceVel < this.mWireSfx0MinVel ? SE.MA_ROPE_JUMP_B : SE.MA_ROPE_JUMP_A;
             this.startSoundActor(se);
@@ -566,8 +572,8 @@ export abstract class MarioSpecial extends MarioSwim {
         if (this.mInput & 1) {
             const diff = s16(a - this.mIntendedYaw);
             if (diff > -0x2000 && diff < 0x2000) {
-                const rate = fr(0.05 * this.mIntendedMag);
-                if (this.wireMove(fr(0.1 * this.mIntendedMag))) this.setAnimation(this.mIntendedMag > 16 ? A.ROPE_RUN : A.ROPE_WALK, rate);
+                const rate = fr(fr(0.05) * this.mIntendedMag);
+                if (this.wireMove(fr(fr(0.1) * this.mIntendedMag))) this.setAnimation(this.mIntendedMag > 16 ? A.ROPE_RUN : A.ROPE_WALK, rate);
                 else this.setAnimation(A.ROPE_WAIT, 1);
             }
             if (diff < -0x2000) { this.startVoice(SE.MV30_FRIGHT_01); return this.changePlayerStatus(S.WIRE_WAIT_TO_S_WAIT_L, 0, false); }
@@ -583,7 +589,7 @@ export abstract class MarioSpecial extends MarioSwim {
         if (this.mInput & 2) this.onFlag(MF.UNK100);
         if (this.checkFlag(MF.UNK100) && this.mWireSag < 0) {
             const r = this.wireLetGo();
-            if (this.mWireBounceVel < 0) this.mVel.y = fr(this.mVel.y - 5 * this.mWireBounceVel);
+            if (this.mWireBounceVel < 0) this.mVel.y = FNMS(5, this.mWireBounceVel, this.mVel.y);
             return r;
         }
         if (this.mInput & 0x8000) { this.mWireBounceVel = 5; this.startVoice(SE.MV30_FRIGHT_01); return this.changePlayerStatus(S.WIRE_WAIT_TO_HANG, 0, false); }
@@ -711,7 +717,7 @@ export abstract class MarioSpecial extends MarioSwim {
         if (this.unkF6 < -max) this.unkF6 = s16(-max);
         if (this.unkF6 > max) this.unkF6 = max;
         this.mFaceAngle.x = s16(this.mFaceAngle.x + this.unkF6);
-        this.mWireSag = fr(0.1 * Math.abs(this.unkF6));
+        this.mWireSag = fr(fr(0.1) * Math.abs(this.unkF6));
         this.mWireBounceVel = 0;
         const x = this.mFaceAngle.x;
         if (a0 < -0x4000 && x > 0x4000) this.mStatusState |= 2;
@@ -823,7 +829,7 @@ export abstract class MarioSpecial extends MarioSwim {
         let result = 0;
         const W = this.mWireParams;
         this.mWireBounceVelPrev = this.mWireBounceVel;
-        this.mWireBounceVel = fr(this.mWireBounceVel - this.mWireSag * W.mSwingRate);
+        this.mWireBounceVel = FNMS(this.mWireSag, W.mSwingRate, this.mWireBounceVel);
         this.mWireSag = fr(this.mWireSag + this.mWireBounceVel);
         this.mWireSag = fr(this.mWireSag * W.mWireSwingBrake);
         if (this.mWireSag < -W.mWireSwingMax) this.mWireSag = -W.mWireSwingMax;

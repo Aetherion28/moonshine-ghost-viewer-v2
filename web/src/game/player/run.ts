@@ -1,6 +1,7 @@
 // Player/MarioRun.cpp: running, turning, braking, sliding and slipping, the down statuses, landing
 // slips, and moveMain.
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import { fr, s16, JMASSin, JMASCos, matan, IConverge, FConverge } from '../math.js';
 import { MarioPhysics } from './physics.js';
 import { MsSqrtf } from './move.js';
@@ -29,7 +30,7 @@ export abstract class MarioRun extends MarioPhysics {
         }
         return 0;
     }
-    isRunningSlipStart() { return (this.mInput & 8) !== 0 && (this.mForwardVel <= 0.1 || this.isFrontSlip(0)); }
+    isRunningSlipStart() { return (this.mInput & 8) !== 0 && (this.mForwardVel <= fr(0.1) || this.isFrontSlip(0)); }
     isRunningTurnning() {
         if (this.isUpperPumpingStyle()) return false;
         if (this.onYoshi()) return false;
@@ -45,17 +46,17 @@ export abstract class MarioRun extends MarioPhysics {
         for (let loop = true; loop;) {
             switch (this.mAnimationId) {
                 default: case A.RUN2:
-                    if (this.mForwardVel >= this.mDeParams.mDashMax - 1) { this.setAnimation(A.TURBO_DASH, 1); loop = false; }
+                    if (this.mForwardVel >= fr(this.mDeParams.mDashMax - 1)) { this.setAnimation(A.TURBO_DASH, 1); loop = false; }
                     else if (sp < R.mWalk2Soft) { this.setAnimation(A.SSTEP, 1); loop = false; }
                     else {
-                        let rate = fr(sp * R.mRunAnmSpeedMult + R.mRunAnmSpeedBase);
-                        if (this.isRunningInWater()) rate = fr(rate * (this.getRunningInWaterBrake() * R.mInWaterAnmBrake));
+                        let rate = FMA(sp, R.mRunAnmSpeedMult, R.mRunAnmSpeedBase);
+                        if (this.isRunningInWater()) rate = fr(rate * fr(this.getRunningInWaterBrake() * R.mInWaterAnmBrake));
                         this.setAnimation(A.RUN2, rate);
                         const lo = R.mMotBlendWalkSp, hi = R.mMotBlendRunSp;
                         let mix = 0;
                         if (rate < lo) mix = 0;
                         if (hi < rate) mix = 1;
-                        if (lo <= rate && rate <= hi) mix = fr((rate - lo) / (hi - lo));
+                        if (lo <= rate && rate <= hi) mix = fr(fr(rate - lo) / fr(hi - lo));
                         this.unk414.z = fr(1 - mix);
                         this.mModel.blendRatio = this.onYoshi() ? 0 : this.unk414.z;
                         loop = false;
@@ -63,11 +64,11 @@ export abstract class MarioRun extends MarioPhysics {
                     break;
                 case A.SSTEP:
                     if (sp > R.mSoft2Walk) { this.setAnimation(A.RUN2, 1); loop = false; }
-                    else { let r2 = sp; if (r2 < 0.1) r2 = 0.1; this.setAnimation(A.SSTEP, fr(r2 * R.mSoftStepAnmMult)); loop = false; }
+                    else { let r2 = sp; if (r2 < fr(0.1)) r2 = fr(0.1); this.setAnimation(A.SSTEP, fr(r2 * R.mSoftStepAnmMult)); loop = false; }
                     break;
                 case A.TURBO_DASH:
-                    if (this.mForwardVel < this.mDeParams.mDashMax - 1) { this.setAnimation(A.RUN2, 1); loop = false; }
-                    else { this.setAnimation(A.TURBO_DASH, fr(sp * R.mRunAnmSpeedMult + R.mRunAnmSpeedBase)); loop = false; }
+                    if (this.mForwardVel < fr(this.mDeParams.mDashMax - 1)) { this.setAnimation(A.RUN2, 1); loop = false; }
+                    else { this.setAnimation(A.TURBO_DASH, FMA(sp, R.mRunAnmSpeedMult, R.mRunAnmSpeedBase)); loop = false; }
                     break;
             }
         }
@@ -78,7 +79,7 @@ export abstract class MarioRun extends MarioPhysics {
         if (this.isForceSlip()) return this.mSlipParamsAll;
         if (bg.isSlider(g)) return this.mSlipParamsAllSlider;
         if (bg.isUnk2(g)) return this.mSlipParams45;
-        if (bg.isWetGround(g)) return g.n[1] > 0.99 ? this.mSlipParamsWaterGround : this.mSlipParamsWaterSlope;
+        if (bg.isWetGround(g)) return g.n[1] > fr(0.99) ? this.mSlipParamsWaterGround : this.mSlipParamsWaterSlope;
         return this.mSlipParamsNormal;
     }
     getSlopeNormalAccele(): [number, number] { const p = this.slipParamsFor(); return [p.mSlopeAcceleUp, p.mSlopeAcceleDown]; }
@@ -105,7 +106,7 @@ export abstract class MarioRun extends MarioPhysics {
         this.mSlideVelZ = fmul(this.mSlideVelZ, friction);
         this.unk9E = matan(this.mSlideVelZ, this.mSlideVelX);
         let turn = 0;
-        if (!(fr(-0.1) < this.mSlideVelX && this.mSlideVelX < fr(0.1) && fr(-0.1) < this.mSlideVelZ && this.mSlideVelZ < fr(0.1))) {
+        if (!(fr(-fr(0.1)) < this.mSlideVelX && this.mSlideVelX < fr(0.1) && fr(-fr(0.1)) < this.mSlideVelZ && this.mSlideVelZ < fr(0.1))) {
             turn = s16(this.mFaceAngle.y - this.unk9E);
             if (turn > 0 && turn <= 0x4000) { turn = Math.trunc(fsub(turn, this.getChangeAngleSpeed())); if (turn < 0) turn = 0; }
             else if (turn > -0x4000 && turn < 0) { turn = Math.trunc(fadd(turn, this.getChangeAngleSpeed())); if (turn > 0) turn = 0; }
@@ -159,8 +160,8 @@ export abstract class MarioRun extends MarioPhysics {
         const mag = sqrtf(fmadd(g.n[2], g.n[2], fmul(g.n[0], g.n[0])));
         const d = s16(this.mSlopeAngle - this.mFaceAngle.y);
         const [up, down] = this.getSlopeNormalAccele();
-        if (d > -0x4000 && d < 0x4000) this.mForwardVel = fr(this.mForwardVel + up * mag);
-        else this.mForwardVel = fr(-(down * mag - this.mForwardVel));
+        if (d > -0x4000 && d < 0x4000) this.mForwardVel = FMA(up, mag, this.mForwardVel);
+        else this.mForwardVel = FNMS(down, mag, this.mForwardVel);
         if (this.mForwardVel > this.mDeParams.mRunningMax) this.mForwardVel = this.mDeParams.mRunningMax;
         this.unk9E = this.mFaceAngle.y;
         this.mSlideVelX = fr(this.mForwardVel * JMASSin(this.mFaceAngle.y)); this.mSlideVelZ = fr(this.mForwardVel * JMASCos(this.mFaceAngle.y));
@@ -206,7 +207,7 @@ export abstract class MarioRun extends MarioPhysics {
         if (this.isRunningSlipStart()) return this.changePlayerStatus(S.SLIP, 0, false);
         const stopping = () => {
             if (this.mStatusState === 1) { this.mFaceAngle.y = s16(this.mStatusArg); return this.changePlayerStatus(0xC400209, 0, false); }
-            if (this.mStatusTimer > 0xF0 && this.mForwardVel >= 16 && this.mGroundPlane.n[1] >= 0.17364818) return this.changePlayerStatus(S.BRAKE, 0, false);
+            if (this.mStatusTimer > 0xF0 && this.mForwardVel >= 16 && this.mGroundPlane.n[1] >= fr(0.17364818)) return this.changePlayerStatus(S.BRAKE, 0, false);
             return this.changePlayerStatus(S.WALK_END, 0, false);
         };
         if (this.mInput & 0x10) return stopping();
@@ -328,7 +329,7 @@ export abstract class MarioRun extends MarioPhysics {
             case 2: this.setPlayerVelocity(0); break;
         }
         let rate = fr(this.mForwardVel / 4);
-        if (rate < 0.1) rate = 0.1;
+        if (rate < fr(0.1)) rate = fr(0.1);
         this.setAnimation(A.RUN1, rate);
         return 0;
     }
@@ -349,7 +350,7 @@ export abstract class MarioRun extends MarioPhysics {
         if (this.mInput & 1) this.mFaceAngle.y = s16(this.mIntendedYaw - iconv(s16(this.mIntendedYaw - this.mFaceAngle.y), 0, 0x600, 0x600));
         this.slopeProcess();
         if (!this.walkProcess()) this.changePlayerStatus(S.FIRE_LAND, 0, false);
-        this.setAnimation(A.FIREJMP, fr(0.1 * (0.5 * this.mForwardVel)));
+        this.setAnimation(A.FIREJMP, fr(fr(0.1) * (0.5 * this.mForwardVel)));
         return 0;
     }
     slippingBasic(onStop: number, onFall: number, anim: number) {
@@ -437,8 +438,8 @@ export abstract class MarioRun extends MarioPhysics {
         if (-1 < this.mVel.x && this.mVel.x < 1 && -1 < this.mVel.z && this.mVel.z < 1) { this.setPlayerVelocity(0); return this.changePlayerStatus(S.WAIT, 0, false); }
         if (this.world.pollution) this.world.pollution.stamp(1, this.pos.x, this.pos.y, this.pos.z, D.mPolSizeRun);
         { const r = s16(D.mSlipRotate); this.mFaceAngle.y = s16(this.mIntendedYaw - iconv(s16(this.mIntendedYaw - this.mFaceAngle.y), 0, r, r)); }
-        this.mVel.x = fr(this.mVel.x + fr(this.mIntendedMag * JMASSin(this.mFaceAngle.y)) * D.mSlipRunSp);   // (fmadds(fmuls(mag, sin), sp, v))
-        this.mVel.z = fr(this.mVel.z + fr(this.mIntendedMag * JMASCos(this.mFaceAngle.y)) * D.mSlipRunSp);
+        this.mVel.x = FMA(fr(this.mIntendedMag * JMASSin(this.mFaceAngle.y)), D.mSlipRunSp, this.mVel.x);   // (fmadds(fmuls(mag, sin), sp, v))
+        this.mVel.z = FMA(fr(this.mIntendedMag * JMASCos(this.mFaceAngle.y)), D.mSlipRunSp, this.mVel.z);
         this.mDirtyTimer--;
         if (this.mDirtyTimer <= 0) { this.mDirtyTimer = 0; this.mOilBrake = 0; }
         this.mVel.x = fr(this.mVel.x * this.mOilBrake); this.mVel.z = fr(this.mVel.z * this.mOilBrake);
@@ -455,7 +456,7 @@ export abstract class MarioRun extends MarioPhysics {
         this.mDirtyTimer--;
         if (this.mDirtyTimer <= 0) { this.mDirtyTimer = 0; this.mOilBrake = 0; this.changePlayerStatus(S.CATCH, 0, false); }
         if (this.world.pollution) this.world.pollution.stamp(1, this.pos.x, this.pos.y, this.pos.z, D.mPolSizeSlip);
-        this.mForwardVel = fr(this.mForwardVel + fr(this.mIntendedMag * JMASCos(s16(this.mFaceAngle.y - this.mIntendedYaw))) * D.mSlipCatchSp);
+        this.mForwardVel = FMA(fr(this.mIntendedMag * JMASCos(s16(this.mFaceAngle.y - this.mIntendedYaw))), D.mSlipCatchSp, this.mForwardVel);
         this.mForwardVel = fr(this.mForwardVel * this.mOilBrake);
         this.setPlayerVelocity(this.mForwardVel);
         if (-1 < this.mForwardVel && this.mForwardVel < 1) { this.setPlayerVelocity(0); return this.changePlayerStatus(S.CATCH_LOST, 0, false); }
@@ -473,9 +474,9 @@ export abstract class MarioRun extends MarioPhysics {
         const f = this.setAnimation(anim, 1);
         if (f < limit) {
             this.slopeProcess();
-            this.mForwardVel = fr(this.mForwardVel * 0.96);
+            this.mForwardVel = fr(this.mForwardVel * fr(0.96));
             if (this.mForwardVel * this.mForwardVel < 1) this.setPlayerVelocity(0);
-        } else this.setPlayerVelocity(this.mForwardVel >= 0 ? 0.1 : -0.1);
+        } else this.setPlayerVelocity(this.mForwardVel >= 0 ? fr(0.1) : -fr(0.1));
         if (!this.walkProcess()) this.changePlayerStatus(this.mForwardVel >= 0 ? S.JUMP_SHORT_FORE_DOWN : S.JUMP_SHORT_BACK_DOWN, arg, false);
         else if (this.isLast1AnimeFrame()) this.changePlayerStatus(S.WAIT, 0, false);
         return f;
@@ -490,7 +491,7 @@ export abstract class MarioRun extends MarioPhysics {
     catchDown() { this.downOnce(); this.downingCommon(A.SLDWN, 128, this.mStatusArg); return 0; }
     loserDown() {
         this.slopeProcess();
-        this.mForwardVel = fr(this.mForwardVel * 0.9);
+        this.mForwardVel = fr(this.mForwardVel * fr(0.9));
         if (this.mForwardVel * this.mForwardVel < 1) this.setPlayerVelocity(0);
         this.setAnimation(A.DIE, 1);
         switch (this.mStatusState) {
@@ -502,7 +503,7 @@ export abstract class MarioRun extends MarioPhysics {
         return 0;
     }
     jumpSlipCommon(anim: number, status: number) {
-        if (this.mInput & 1) { this.slopeProcess(); this.mForwardVel = fr(this.mForwardVel * 0.98); if (this.mForwardVel * this.mForwardVel < 1) this.setPlayerVelocity(0); }
+        if (this.mInput & 1) { this.slopeProcess(); this.mForwardVel = fr(this.mForwardVel * fr(0.98)); if (this.mForwardVel * this.mForwardVel < 1) this.setPlayerVelocity(0); }
         else if (this.mForwardVel >= 16) { this.mForwardVel = fr(FConverge(this.mForwardVel, 0, 4, 4)); this.slopeProcess(); }
         else this.mVel.y = 0;
         const wp = this.walkProcess();

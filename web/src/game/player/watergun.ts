@@ -30,12 +30,7 @@ import { Skeleton, parseBCK, jointMatrices } from '../skeleton.js';
 import { marioFile, ControllerWork } from './base.js';
 import { MF, S } from './tables.js';
 
-/** fmadds: a * b + c rounded once (a, b f32: the product is exact in double) */
-const fma = (a: number, b: number, c: number) => fr(a * b + c);
-/** fmsubs: a * b - c rounded once */
-const fms = (a: number, b: number, c: number) => fr(a * b - c);
-/** fnmsubs: c - a * b rounded once */
-const fnms = (a: number, b: number, c: number) => fr(c - a * b);
+import { fmadd as fma, fmsub as fms, fnmsub as fnms } from './fmath.js';
 /** 360 / 65536 (SHORTANGLE2DEG; exact in f32) */
 const S2D = 0.0054931640625;
 
@@ -506,7 +501,7 @@ export class TWaterGun {
     unk1CD8 = 0;
     unk1CE0 = 0;
     /** 0x1CEC: how far the spray nozzle is folded into its house (1: housed, 0: out) */
-    unk1CEC = 1; unk1CF0 = 0.1; unk1CF4 = 0.005;
+    unk1CEC = 1; unk1CF0 = fr(0.1); unk1CF4 = fr(0.005);
     /** 0x1CF8 / 0x1CFA: how long the pump pose holds after pumping (360 ticks) */
     unk1CF8 = 0x168; unk1CFA = 0;
     /** 0x1CFC: 0 spray .. 1 the second nozzle; 0x1D00: the switch's speed (+/- mChangeSpeed) */

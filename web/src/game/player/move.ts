@@ -1,6 +1,7 @@
 // Player/MarioMove.cpp: statuses and their entry speeds, the controller, the planes he stands in,
 // the per-tick thinking (situation, water surface, height), and playerControl.
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import { V3, fr, s16, JMASSin, JMASCos, matan, psMtxMultVec, psMtxInverse, mtx, MsMtxSetTRS, jgNormalize } from '../math.js';
 import { sqrtf as stdSqrtf, fmadd as fmaddS } from './fmath.js';
 import { HitActor, MSG } from '../engine.js';
@@ -63,7 +64,7 @@ export abstract class MarioMove extends MarioBase {
     warpRequest(p: V3, angle: number) { this.moveRequest(p); this.mFaceAngle.y = s16(angle * (65536 / 360)); this.mModelFaceAngle = this.mFaceAngle.y; this.changePlayerStatus(S.WAIT, 0, true); }
     flowMove(f: V3) { if (this.checkStatusType(0x2000)) this.pos.add(f); }
     windMove(f: V3) { this.pos.add(f); }
-    getGroundJumpPower() { return this.mGroundPlane ? fr(0.01 * bg.activeJumpPower(this.mGroundPlane)) : 0; }
+    getGroundJumpPower() { return this.mGroundPlane ? fr(fr(0.01) * bg.activeJumpPower(this.mGroundPlane)) : 0; }
     addVelocity(v: number) { this.mForwardVel = fr(this.mForwardVel + v); if (this.mForwardVel > 99) this.mForwardVel = 99; }
     considerRotateJumpStart() {
         const r = this.checkStickRotate();
@@ -89,7 +90,7 @@ export abstract class MarioMove extends MarioBase {
         if (this.isTouchedWallsAndMoveXZ(r)) {
             for (const w of r.results) {
                 if (w.actor && w.actor === this.unk2C0) { result = w; break; }
-                let d = fr(fr(w.n[2] * p.z + fr(w.n[0] * p.x + fr(w.n[1] * p.y))) + w.d);
+                let d = fr(FMA(w.n[2], p.z, FMA(w.n[0], p.x, fr(w.n[1] * p.y))) + w.d);
                 if (d < 0) d = -d;
                 if (d < best) { result = w; best = d; }
             }
@@ -108,7 +109,7 @@ export abstract class MarioMove extends MarioBase {
         const g = this.mGroundPlane;
         if (this.isForceSlip()) return true;
         if (bg.isSlider(g)) return true;
-        if (bg.isUnk2(g) && g.n[1] < 0.8660254) return true;
+        if (bg.isUnk2(g) && g.n[1] < fr(0.8660254)) return true;
         if (bg.isUnk3(g)) return false;
         return g.n[1] < this.mDeParams.mSlipStart;
     }
@@ -117,31 +118,31 @@ export abstract class MarioMove extends MarioBase {
         if (this.isForceSlip()) return this.mSlipParamsAll.mJumpEnable;
         if (bg.isSlider(g)) return this.mSlipParamsAllSlider.mJumpEnable;
         if (bg.isUnk2(g)) return this.mSlipParams45.mJumpEnable;
-        if (bg.isWetGround(g)) return g.n[1] > 0.99 ? this.mSlipParamsWaterGround.mJumpEnable : this.mSlipParamsWaterSlope.mJumpEnable;
+        if (bg.isWetGround(g)) return g.n[1] > fr(0.99) ? this.mSlipParamsWaterGround.mJumpEnable : this.mSlipParamsWaterSlope.mJumpEnable;
         return 1;
     }
     getSlideStopNormal() {
         const g = this.mGroundPlane;
         if (this.isForceSlip()) return this.mSlipParamsAll.mSlideStopNormal;
         if (bg.isSlider(g)) return this.mSlipParamsAllSlider.mSlideStopNormal;
-        if (bg.isUnk2(g) && g.n[1] < 0.8660254) return this.mSlipParams45.mSlideStopNormal;
-        if (bg.isWetGround(g) && g.n[1] > 0.99) return this.mSlipParamsWaterGround.mSlideStopNormal;
+        if (bg.isUnk2(g) && g.n[1] < fr(0.8660254)) return this.mSlipParams45.mSlideStopNormal;
+        if (bg.isWetGround(g) && g.n[1] > fr(0.99)) return this.mSlipParamsWaterGround.mSlideStopNormal;
         return this.mSlipParamsWaterSlope.mSlideStopNormal;
     }
     getSlideStopCatch() {
         const g = this.mGroundPlane;
         if (this.isForceSlip()) return this.mSlipParamsAll.mSlideStopCatch;
         if (bg.isSlider(g)) return this.mSlipParamsAllSlider.mSlideStopCatch;
-        if (bg.isUnk2(g) && g.n[1] < 0.8660254) return this.mSlipParams45.mSlideStopCatch;
-        if (bg.isWetGround(g)) return g.n[1] > 0.99 ? this.mSlipParamsWaterGround.mSlideStopCatch : this.mSlipParamsWaterSlope.mSlideStopCatch;
+        if (bg.isUnk2(g) && g.n[1] < fr(0.8660254)) return this.mSlipParams45.mSlideStopCatch;
+        if (bg.isWetGround(g)) return g.n[1] > fr(0.99) ? this.mSlipParamsWaterGround.mSlideStopCatch : this.mSlipParamsWaterSlope.mSlideStopCatch;
         return this.mSlipParamsNormal.mSlideStopCatch;
     }
     isJumpMiss(): number {
         const g = this.mGroundPlane;
         if (this.isForceSlip()) return this.mSlipParamsAll.mMissJump;
         if (bg.isSlider(g)) return this.mSlipParamsAllSlider.mMissJump;
-        if (bg.isUnk2(g) && g.n[1] < 0.8660254) return this.mSlipParams45.mMissJump;
-        if (bg.isWetGround(g)) return g.n[1] > 0.99 ? this.mSlipParamsWaterGround.mMissJump : this.mSlipParamsWaterSlope.mMissJump;
+        if (bg.isUnk2(g) && g.n[1] < fr(0.8660254)) return this.mSlipParams45.mMissJump;
+        if (bg.isWetGround(g)) return g.n[1] > fr(0.99) ? this.mSlipParamsWaterGround.mMissJump : this.mSlipParamsWaterSlope.mMissJump;
         return this.mSlipParamsNormal.mMissJump;
     }
     checkPlayerAround(off: number, dist: number) {
@@ -162,7 +163,7 @@ export abstract class MarioMove extends MarioBase {
         this.dropObject();
         this.changePlayerStatus(S.MISS_JUMP, 0, false);
     }
-    setPlayerJumpSpeed(mult: number, force: number) { this.mVel.y = fr(this.mForwardVel * mult + force); }
+    setPlayerJumpSpeed(mult: number, force: number) { this.mVel.y = FMA(this.mForwardVel, mult, force); }
     setStatusToJumping(status: number, arg: number) {
         let next = status;
         this.unk2BC = this.pos.y;
@@ -172,11 +173,11 @@ export abstract class MarioMove extends MarioBase {
         switch (status) {
             case S.JUMP: case 0x89C:
                 this.setPlayerJumpSpeed(0.25, 42);
-                this.mForwardVel = fr(this.mForwardVel * 0.8);
+                this.mForwardVel = fr(this.mForwardVel * fr(0.8));
                 if (!g.isIllegal()) {
-                    if (bg.isThing2(g)) { this.mVel.y = fr(0.01 * bg.activeJumpPower(g)); next = S.FORCE_JUMP; break; }
+                    if (bg.isThing2(g)) { this.mVel.y = fr(fr(0.01) * bg.activeJumpPower(g)); next = S.FORCE_JUMP; break; }
                     else if (bg.isThing3(g)) {
-                        this.mVel.y = fr(this.mVel.y + (-this.unkBC + this.getGroundJumpPower()));
+                        this.mVel.y = fr(this.mVel.y + fr(-this.unkBC + this.getGroundJumpPower()));
                         if (g.actor) (g.actor as HitActor).receiveMessage(this, MSG.TRAMPLE);
                         this.startVoice(SE.MV24_JUMP_SPECIAL_01);
                         next = S.FORCE_JUMP; break;
@@ -187,7 +188,7 @@ export abstract class MarioMove extends MarioBase {
             case S.SECOND_JUMP: this.setPlayerJumpSpeed(J.mSecJumpSpeedMult, J.mSecJumpForce); this.mForwardVel = fr(this.mForwardVel * J.mSecJumpXZMult); this.startVoice(SE.MV22_JUMP_MID_01); break;
             case S.ULTRA_JUMP: this.setPlayerJumpSpeed(J.mUltraJumpSpeedMult, J.mUltraJumpForce); this.mForwardVel = fr(this.mForwardVel * J.mUltraJumpXZMult); this.startVoice(SE.MV23_JUMP_LARGE_01); break;
             case S.FORCE_JUMP: this.mVel.y = this.getGroundJumpPower(); this.startVoice(SE.MV22_JUMP_MID_01); break;
-            case S.LEFT_ROTATE_JUMP: case S.RIGHT_ROTATE_JUMP: this.setPlayerJumpSpeed(0.25, J.mRotateJumpForceY); this.mForwardVel = fr(this.mForwardVel * 0.8); this.startVoice(SE.MV23_JUMP_LARGE_01); break;
+            case S.LEFT_ROTATE_JUMP: case S.RIGHT_ROTATE_JUMP: this.setPlayerJumpSpeed(0.25, J.mRotateJumpForceY); this.mForwardVel = fr(this.mForwardVel * fr(0.8)); this.startVoice(SE.MV23_JUMP_LARGE_01); break;
             case S.FIRE_JUMP: this.mVel.y = 31.5; this.mForwardVel = 8; break;
             case 0x281089A: {
                 this.startVoice(SE.MV21_JUMP_SMALL_01);
@@ -233,7 +234,7 @@ export abstract class MarioMove extends MarioBase {
                     case A.STEP2: this.startVoice(SE.MV22_JUMP_MID_01); this.setPlayerJumpSpeed(0.25, this.mDeParams.mTramplePowStep2); break;
                     case A.STEP3: this.startVoice(SE.MV23_JUMP_LARGE_01); this.setPlayerJumpSpeed(0.25, this.mDeParams.mTramplePowStep3); break;
                 }
-                this.mForwardVel = fr(this.mForwardVel * 0.8);
+                this.mForwardVel = fr(this.mForwardVel * fr(0.8));
                 break;
             case S.WIRE_JUMP: case S.PULL_JUMP:
                 this.setPlayerJumpSpeed(status === S.WIRE_JUMP ? 0.25 : 0, 42);
@@ -251,10 +252,10 @@ export abstract class MarioMove extends MarioBase {
         }
         if (this.isSinking()) {
             const G = this.mGraffitoParams;
-            const k = fr(1 - this.mSinkTimer / G.mSinkTime);
-            const sc = fr((G.mSinkJumpRateMax - G.mSinkJumpRateMin) * k + G.mSinkJumpRateMin);
+            const k = fr(1 - fr(this.mSinkTimer / G.mSinkTime));   // (@0x801341d0: fdivs, fsubs)
+            const sc = FMA(fr(G.mSinkJumpRateMax - G.mSinkJumpRateMin), k, G.mSinkJumpRateMin);
             this.mVel.y = fr(this.mVel.y * sc); this.mForwardVel = fr(this.mForwardVel * sc);
-            this.mSinkTimer = fr(this.mSinkTimer - k * (G.mSinkTime * G.mSinkRecover));
+            this.mSinkTimer = fr(this.mSinkTimer - fr(k * fr(G.mSinkTime * G.mSinkRecover)));   // (fmuls, fmuls, fsubs)
             if (this.mSinkTimer < 0) this.mSinkTimer = 0;
         }
         // on Yoshi: mJumpYoshiMult, and the flutter made ready (TYoshi::thinkHoldOut)
@@ -343,7 +344,7 @@ export abstract class MarioMove extends MarioBase {
     thinkHeight() {
         if (this.checkStatusType(0x800)) { const h = fr(this.pos.y - this.mFloorPosition.y); if (this.unk36C < h) this.unk36C = h; }
         else this.unk36C = 0;
-        const p = { x: fr(this.pos.x + this.unk15C * JMASSin(this.mFaceAngle.y)), y: this.pos.y, z: fr(this.pos.z + this.unk15C * JMASCos(this.mFaceAngle.y)) };
+        const p = { x: FMA(this.unk15C, JMASSin(this.mFaceAngle.y), this.pos.x), y: this.pos.y, z: FMA(this.unk15C, JMASCos(this.mFaceAngle.y), this.pos.z) };
         if (!this.checkWallPlane(p, 80, this.unk15C)) this.unk370 = fr(this.pos.y - this.checkPlayerAround(0, 100));
         else this.unk370 = 0;
     }
@@ -423,8 +424,10 @@ export abstract class MarioMove extends MarioBase {
         this.isTouchedWallsAndMoveXZ(r);
         if (!this.isInvincible()) {
             for (const w of r.results) if (bg.isThing5(w)) this.damageExecCode(w.data);
-            if (r.results.length === 2 && r.results[0].n[0] * r.results[1].n[0] + r.results[0].n[1] * r.results[1].n[1] + r.results[0].n[2] * r.results[1].n[2] < -0.9) {
-                const dist = (w: Bg) => fr(w.n[0] * this.pos.x + w.n[1] * this.pos.y + w.n[2] * this.pos.z + w.d);
+            // (@0x8012fc64: the normals' dot as fmadds(z, z', fmadds(x, x', y * y')); each wall's distance d + fmadds(z, pz, fmadds(x, px, y * py)))
+            const A = r.results[0], B = r.results[1];
+            if (r.results.length === 2 && A && B && fmaddS(A.n[2], B.n[2], fmaddS(A.n[0], B.n[0], fr(A.n[1] * B.n[1]))) < fr(-fr(0.9))) {
+                const dist = (w: Bg) => fr(w.d + fmaddS(w.n[2], this.pos.z, fmaddS(w.n[0], this.pos.x, fr(w.n[1] * this.pos.y))));
                 const d1 = dist(r.results[0]), d2 = dist(r.results[1]);
                 const mb = (w: Bg) => w.actor && w.actor.actorType === AT.MOVE_BLOCK;
                 if ((mb(r.results[0]) || mb(r.results[1])) && (d1 < 10 || d2 < 10)) this.floorDamageExec(this.mDeParams.mHPMax, 3, 0, this.mMotorParams.mMotorReturn);
@@ -460,7 +463,7 @@ export abstract class MarioMove extends MarioBase {
      */
     checkRideMovement() {
         let actor: any = null;
-        const p = { x: fr(this.pos.x + 0.8 * fr(50 * JMASSin(this.mFaceAngle.y))), y: this.pos.y, z: fr(this.pos.z + 0.8 * fr(50 * JMASCos(this.mFaceAngle.y))) };
+        const p = { x: fmaddS(fr(0.8), fr(50 * JMASSin(this.mFaceAngle.y)), this.pos.x), y: this.pos.y, z: fmaddS(fr(0.8), fr(50 * JMASCos(this.mFaceAngle.y)), this.pos.z) };
         const wall = this.checkWallPlane(p, 50, this.unk15C);
         const ga = this.mGroundPlane.actor;
         if (ga && !this.checkStatusType(0x800) && this.isTouchGround4cm()) actor = ga;
@@ -470,7 +473,7 @@ export abstract class MarioMove extends MarioBase {
             if (!this.unk2C0 || this.unk2C0 !== actor) { this.unk2C0 = actor; this.unk30C = actor.rot.y; this.checkRideReCalc(); }
             else {
                 psMtxMultVec(this.getRidingMtx(), this.unk2F4, this.pos);
-                this.mFaceAngle.y = s16(this.mFaceAngle.y + s16(fr((this.unk2C0.rot.y - this.unk30C) * 32768 / 180)));
+                this.mFaceAngle.y = s16(this.mFaceAngle.y + Math.trunc(fr(fr(32768 * fr(this.unk2C0.rot.y - this.unk30C)) / 180)));
                 this.unk30C = this.unk2C0.rot.y;
             }
         } else this.unk2C0 = null;
@@ -545,7 +548,7 @@ export abstract class MarioMove extends MarioBase {
         }
         let dy = fr(this.pos.y - this.mPrevPosition.y);
         if (dy > 0) dy = 0;
-        const [wy, wf] = this.checkGround(this.pos.x, fr(this.mFloorPosition.z - dy + this.mSwimParams.mWaterLevelCheckHeight), this.pos.z);
+        const [wy, wf] = this.checkGround(this.pos.x, fr(fr(this.mFloorPosition.z - dy) + this.mSwimParams.mWaterLevelCheckHeight), this.pos.z);
         this.mWaterFloor = wf;
         if (wf.isWaterSurface()) {
             this.mFloorPosition.z = wy;

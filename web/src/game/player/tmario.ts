@@ -2,6 +2,7 @@
 // MarioCollision.cpp a simulated Mario runs (decHP, dropObject, loserExec, floorDamageExec) and
 // MarioDraw.cpp's model placement (calcBaseMtx, calcAnim's body, setPositions).
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import { fr, s16, JMASSin, JMASCos, mtx, Mtx, V3, MsMtxSetRotRPH } from '../math.js';
 import { HitActor, MSG } from '../engine.js';
 import { MarioSpecial } from './special.js';
@@ -144,7 +145,7 @@ export abstract class TMarioSim extends MarioSpecial {
         const h = this.holder as any;
         const r = h ? fr(h.getRadiusAtY(this.pos.y)) : 0;
         const a = this.mModelFaceAngle & 0xFFFF;
-        j3dTRMtx(m, 0, this.mModelFaceAngle, 0, fr(this.pos.x - r * JMASSin(a)), this.pos.y, fr(this.pos.z - r * JMASCos(a)));
+        j3dTRMtx(m, 0, this.mModelFaceAngle, 0, FNMS(r, JMASSin(a), this.pos.x), this.pos.y, FNMS(r, JMASCos(a), this.pos.z));
     }
     calcBaseMtx(m: Mtx) {
         if (this.mStatus === S.TOROCCO) { this.calcBaseMtxTorocco(m); return; }
@@ -189,8 +190,8 @@ export abstract class TMarioSim extends MarioSpecial {
                 if (roll > rm) roll = rm;
                 if (roll < -rm) roll = s16(-rm);
                 const U = this.unk414;
-                U.y = fr(fr(pitch - U.y) * P.mAngleChangeRate + U.y);
-                U.x = fr(fr(roll - U.x) * P.mAngleChangeRate + U.x);
+                U.y = FMA(fr(pitch - U.y), P.mAngleChangeRate, U.y);
+                U.x = FMA(fr(roll - U.x), P.mAngleChangeRate, U.x);
                 const r = mtx();
                 MsMtxSetRotRPH(r, fr(0.0054931640625 * s16(Math.trunc(U.y))), 0, fr(0.0054931640625 * s16(Math.trunc(U.x))));
                 const a = Float64Array.from(m);

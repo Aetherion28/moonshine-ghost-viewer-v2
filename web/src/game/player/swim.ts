@@ -1,6 +1,7 @@
 // Player/MarioSwim.cpp: swimming on and under the water, and swimMain. (And the few demo statuses
 // from MarioAutodemo.cpp a simulated Mario uses: no motion, disappearing, sand.)
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import { fr, s16, matan, IConverge, JMASSin, JMASCos } from '../math.js';
 import { SE } from '../soundids.js';
 import { MarioWait } from './wait.js';
@@ -12,14 +13,14 @@ export abstract class MarioSwim extends MarioWait {
         const W = this.mSwimParams;
         if (this.mInput & 0x8000) { this.changePlayerStatus(S.SWIM_DIVE, 0, false); return; }
         if (this.mFloorPosition.y + W.mEndDepth > this.mFloorPosition.z) { this.changePlayerStatus(S.WAIT, 0, false); return; }
-        this.mForwardVel = fr(0.03125 * fr(this.mIntendedMag * W.mMoveSp) + this.mForwardVel);   // (fmadds(0.03125, fmuls(mag, mMoveSp), fv))
+        this.mForwardVel = FMA(0.03125, fr(this.mIntendedMag * W.mMoveSp), this.mForwardVel);   // (fmadds(0.03125, fmuls(mag, mMoveSp), fv))
         this.mForwardVel = fr(this.mForwardVel * W.mMoveBrake);
         const [mn, mx] = this.isUpperPumpingStyle() ? [W.mPumpingRotSpMin, W.mPumpingRotSpMax] : [W.mSwimmingRotSpMin, W.mSwimmingRotSpMax];
-        const rot = s16(fr(0.03125 * fr(this.mForwardVel * fr(mx - mn)) + mn));   // (fmadds(0.03125, fmuls(fv, max - min), min))
+        const rot = s16(FMA(0.03125, fr(this.mForwardVel * fr(mx - mn)), mn));   // (fmadds(0.03125, fmuls(fv, max - min), min))
         this.mFaceAngle.y = s16(this.mIntendedYaw - IConverge(s16(this.mIntendedYaw - this.mFaceAngle.y), 0, rot, rot));
         this.setPlayerVelocity(this.mForwardVel);
         this.mVel.y = fr(this.mVel.y - W.mGravity);
-        let k = fr((this.mFloorPosition.z - this.pos.y) / W.mFloatHeight);
+        let k = fr(fr(this.mFloorPosition.z - this.pos.y) / W.mFloatHeight);
         if (k < 0) k = 0;
         if (k > 1) k = 1;
         k = fr(k * (this.mAnimationId === A.SWIM_WAIT || this.mAnimationId === A.SWIM_START || this.mStatus === S.SWIM_WAIT ? W.mWaitBouyancy : W.mMoveBouyancy));
@@ -27,8 +28,8 @@ export abstract class MarioSwim extends MarioWait {
         switch (this.jumpProcess(1)) {
             case 2:
                 if (this.checkFlag(MF.FLUDD_EMITTING)) {
-                    if (this.isUnderWater()) { this.mForwardVel = fr(0.8 * -this.mForwardVel); this.changePlayerStatus(S.SWIM_P_DAMAGE, 0, true); }
-                    else { this.changePlayerStatus(S.JUMP_BACK_DOWN, 0, true); this.mForwardVel = fr(0.8 * -this.mForwardVel); this.mVel.y = 50; }
+                    if (this.isUnderWater()) { this.mForwardVel = fr(fr(0.8) * -this.mForwardVel); this.changePlayerStatus(S.SWIM_P_DAMAGE, 0, true); }
+                    else { this.changePlayerStatus(S.JUMP_BACK_DOWN, 0, true); this.mForwardVel = fr(fr(0.8) * -this.mForwardVel); this.mVel.y = 50; }
                 } else { this.setPlayerVelocity(0); this.mVel.y = 0; }
                 break;
         }
@@ -159,9 +160,9 @@ export abstract class MarioSwim extends MarioWait {
         if (this.isLast1AnimeFrame()) {
             const y = this.mFaceAngle.y & 0xFFFF;
             if (this.mAnimationId === A.DOOR_OPENR || this.mAnimationId === A.DOOR_OPENL || this.mAnimationId === A.DOOR_KICK) {
-                this.pos.x = fr(150 * JMASSin(y) + this.pos.x); this.pos.z = fr(150 * JMASCos(y) + this.pos.z);
+                this.pos.x = FMA(150, JMASSin(y), this.pos.x); this.pos.z = FMA(150, JMASCos(y), this.pos.z);
             } else {
-                this.pos.x = fr(this.pos.x - 150 * JMASSin(y)); this.pos.z = fr(this.pos.z - 150 * JMASCos(y));
+                this.pos.x = FNMS(150, JMASSin(y), this.pos.x); this.pos.z = FNMS(150, JMASCos(y), this.pos.z);
             }
             return this.changePlayerStatus(S.WAIT, 0, true);
         }

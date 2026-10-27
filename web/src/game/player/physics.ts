@@ -1,6 +1,7 @@
 // Player/MarioPhysics.cpp: walking and jumping against the map (walls, ground, roof), ledge grabs,
 // gravity.
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import { V3, fr, s16, JMASSin, JMASCos, matan } from '../math.js';
 import { HitActor, MSG } from '../engine.js';
 import { MarioMove, MsSqrtf } from './move.js';
@@ -58,8 +59,8 @@ export abstract class MarioPhysics extends MarioMove {
         const d = s16(wa - this.mFaceAngle.y);
         if (d > -0x4000 && d < 0x4000) {
             const dist = fr(20 + sp);
-            this.pos.x = fr(r.center[0] - dist * w.n[0]);
-            this.pos.z = fr(r.center[2] - dist * w.n[2]);
+            this.pos.x = FNMS(dist, w.n[0], r.center[0]);
+            this.pos.z = FNMS(dist, w.n[2], r.center[2]);
             this.mFaceAngle.y = s16(wa + 0x8000);
             this.changePlayerStatus(S.DESCEND, 0, false);
             this.setAnimation(A.HGDWN, 1);
@@ -97,7 +98,7 @@ export abstract class MarioPhysics extends MarioMove {
     walkProcess() {
         if (this.mGroundPlane.isIllegal()) return 2;
         const ny = this.mGroundPlane ? this.mGroundPlane.n[1] : 0;
-        const next = { x: fr(this.pos.x + fr(this.mVel.x / 4) * ny), y: this.pos.y, z: fr(this.pos.z + fr(this.mVel.z / 4) * ny) };
+        const next = { x: FMA(fr(this.mVel.x / 4), ny, this.pos.x), y: this.pos.y, z: FMA(fr(this.mVel.z / 4), ny, this.pos.z) };
         const r = this.checkGroundAtWalking(next);
         this.mFaceAngle.x = 0; this.mModelFaceAngle = this.mFaceAngle.y;
         return r === 3 ? 2 : r;
@@ -120,7 +121,7 @@ export abstract class MarioPhysics extends MarioMove {
     hangonCheck(wall: Bg, prev: P3, curr: P3) {
         if (this.mVel.y > 0) return false;
         if ((curr.x - prev.x) * this.mVel.x + (curr.z - prev.z) * this.mVel.z > 0) return false;
-        const nx = fr(curr.x - 60 * wall.n[0]), nz = fr(curr.z - 60 * wall.n[2]);
+        const nx = FNMS(60, wall.n[0], curr.x), nz = FNMS(60, wall.n[2], curr.z);
         const [ny, g] = this.checkGroundPlane(nx, fr(curr.y + 160), nz);
         if (ny - curr.y <= 100) return false;
         if (this.mFloorPosition.x < ny + 160) return false;
@@ -197,7 +198,7 @@ export abstract class MarioPhysics extends MarioMove {
         const sp = sqrtf(fadd(fmul(this.mVel.x, this.mVel.x), fmul(this.mVel.z, this.mVel.z)));
         const max = this.mJumpParams.mJumpingMax;
         if (sp > max) { this.mVel.x = fmul(this.mVel.x, fdiv(max, sp)); this.mVel.z = fmul(this.mVel.z, fdiv(max, sp)); }
-        const next = { x: fr(this.pos.x + 0.25 * this.mVel.x), y: fr(this.pos.y + 0.25 * this.mVel.y), z: fr(this.pos.z + 0.25 * this.mVel.z) };
+        const next = { x: FMA(0.25, this.mVel.x, this.pos.x), y: FMA(0.25, this.mVel.y, this.pos.y), z: FMA(0.25, this.mVel.z, this.pos.z) };
         const r = this.checkGroundAtJumping(next, flags);
         if (r !== 0) result = r;
         if (this.mVel.y >= 0) this.unk104 = this.pos.y;

@@ -2,6 +2,8 @@
 // in degrees, through 16-bit binary angles into a 4096-entry sine table (JMANewSinTable(12)),
 // and an arctangent table (matan); these are reproduced, since enemies' turns and paths follow
 // from them.
+import { fmadd as fmaddExact, fnmsub as FNMS, fmsub as FMS } from './player/fmath.js';
+const FMA = fmaddExact;
 
 export const fr = Math.fround;
 
@@ -26,7 +28,7 @@ export function randState() { return next; }
  * and add separately (fmuls, fadds: two roundings) — write those out at the call site
  * (enemies/smallEnemy.ts rangeRand); check each site's instructions after `bl rand` in main.dol.
  */
-export const MsRandF = (l = 0, r = 1) => fr(fr(rand() * (1 / 32768)) * fr(r - l) + l);
+export const MsRandF = (l = 0, r = 1) => FMA(fr(rand() * (1 / 32768)), fr(r - l), l);
 /** MsRandI */
 export const MsRandI = (l: number, r: number) => 1 + l + Math.trunc(rand() * (1 / 32768) * (r - l));
 
@@ -36,15 +38,8 @@ const SIN_SHIFT = 16 - 12;
 // the cosine table is the same one a quarter in. MSL's sinf (trigf.c, single precision: a Cody-Waite
 // reduction by __four_over_pi_m1 and a degree-9 polynomial, all fused multiply-adds) is often an ulp
 // or two off the true sine, so the table is built with it, not Math.sin.
-function fmaS(a: number, b: number, c: number) {
-    const p = a * b, s = p + c, bb = s - p, e = (p - (s - bb)) + (c - bb);
-    let r = fr(s);
-    if (e !== 0) {
-        const d = s - r, nx = fr(r + (d > 0 ? 1 : -1) * Math.abs(r) * 2 ** -23), half = (nx - r) / 2;
-        if (half !== 0 && d === half && (e > 0) === (half > 0)) r = nx;
-    }
-    return r;
-}
+/** fmadds: one rounding of the exact a * b + c */
+const fmaS = fmaddExact;
 const SINF_A = [0.25, 0.023239374, 0.00000017055572, 1.867365e-11].map(fr);
 const SINF_C = [3.52876168108196e-06, 3.0897470537638583e-07, -0.0003259365039411932, -3.65723499271553e-05, 0.015854323282837868,
     0.002490393118932843, -0.3084251284599304, -0.08074551075696945, 1.0, 0.7853981852531433].map(fr);
@@ -120,7 +115,7 @@ const ATN = new Uint16Array([0, 10, 20, 31, 41, 51, 61, 71, 81, 92, 102, 112, 12
     8110, 8115, 8120, 8125, 8131, 8136, 8141, 8146, 8151, 8156, 8161, 8166, 8172, 8177, 8182, 8187, 8192]);
 // The index is fctiwz(fmadds(1024, fmuls(b, fres(a)), 0.5)): __fres is the Gekko's reciprocal
 // estimate (about 12 bits), so the index is often one off what an exact 1 / a gives.
-const atanT = (a: number, b: number) => (a === 0 ? ATN[0] : ATN[Math.trunc(fr(fr(b * fres(a)) * 1024 + 0.5))]);
+const atanT = (a: number, b: number) => (a === 0 ? ATN[0] : ATN[Math.trunc(FMA(fr(b * fres(a)), 1024, 0.5))]);
 
 // ---------------------------------------------------------------- Gekko estimates (fres, frsqrte)
 // Bit-exact, as Dolphin has them from the hardware (Common/FloatUtils.cpp: ApproximateReciprocal,
@@ -286,8 +281,8 @@ export function MsMtxSetRotRPH(m: Mtx, r: number, p: number, h: number) {
     const sr = MsSin(r), sp = MsSin(p), sh = MsSin(h), cr = MsCos(r), cp = MsCos(p), ch = MsCos(h);
     const chsp = fr(ch * sp), shsp = fr(sh * sp);
     m[0] = fr(ch * cp); m[4] = fr(sh * cp); m[8] = -sp;
-    m[1] = fr(sr * chsp - fr(sh * cr)); m[5] = fr(sr * shsp + fr(ch * cr)); m[9] = fr(cp * sr);
-    m[2] = fr(cr * chsp + fr(sh * sr)); m[6] = fr(cr * shsp - fr(ch * sr)); m[10] = fr(cp * cr);
+    m[1] = FMS(sr, chsp, fr(sh * cr)); m[5] = FMA(sr, shsp, fr(ch * cr)); m[9] = fr(cp * sr);
+    m[2] = FMA(cr, chsp, fr(sh * sr)); m[6] = FMS(cr, shsp, fr(ch * sr)); m[10] = fr(cp * cr);
     m[3] = m[7] = m[11] = 0;
 }
 /**
@@ -299,7 +294,7 @@ export function MsMtxSetXYZRPH(m: Mtx, x: number, y: number, z: number, rd: numb
     const sr = JMASSin(r), sp = JMASSin(p), sh = JMASSin(h), cr = JMASCos(r), cp = JMASCos(p), ch = JMASCos(h);
     m[8] = -sp; m[0] = fr(ch * cp); m[4] = fr(sh * cp); m[9] = fr(cp * sr); m[10] = fr(cp * cr);
     const crsh = fr(cr * sh), srch = fr(sr * ch), srsh = fr(sr * sh), crch = fr(cr * ch);
-    m[1] = fr(srch * sp - crsh); m[6] = fr(crsh * sp - srch); m[2] = fr(crch * sp + srsh); m[5] = fr(srsh * sp + crch);
+    m[1] = FMS(srch, sp, crsh); m[6] = FMS(crsh, sp, srch); m[2] = FMA(crch, sp, srsh); m[5] = FMA(srsh, sp, crch);
     m[3] = fr(x); m[7] = fr(y); m[11] = fr(z);
 }
 export function mtxMultVec(m: Mtx, v: V3, out = new V3()) {
@@ -324,8 +319,8 @@ export function mtxInverse(m: Mtx, out: Mtx = new Float64Array(12)) {
 export function MsMtxSetTRS(m: Mtx, x: number, y: number, z: number, r: number, p: number, h: number, sx: number, sy: number, sz: number) {
     const sr = MsSin(r), sp = MsSin(p), sh = MsSin(h), cr = MsCos(r), cp = MsCos(p), ch = MsCos(h);
     m[0] = fr(fr(ch * cp) * sx); m[4] = fr(fr(sh * cp) * sx); m[8] = fr(-sp * sx);
-    m[1] = fr(fr(sr * fr(ch * sp) - fr(sh * cr)) * sy); m[5] = fr(fr(sr * fr(sh * sp) + fr(ch * cr)) * sy); m[9] = fr(fr(cp * sr) * sy);
-    m[2] = fr(fr(cr * fr(ch * sp) + fr(sh * sr)) * sz); m[6] = fr(fr(cr * fr(sh * sp) - fr(ch * sr)) * sz); m[10] = fr(fr(cp * cr) * sz);
+    m[1] = fr(FMS(sr, fr(ch * sp), fr(sh * cr)) * sy); m[5] = fr(FMA(sr, fr(sh * sp), fr(ch * cr)) * sy); m[9] = fr(fr(cp * sr) * sy);
+    m[2] = fr(FMA(cr, fr(ch * sp), fr(sh * sr)) * sz); m[6] = fr(FMS(cr, fr(sh * sp), fr(ch * sr)) * sz); m[10] = fr(fr(cp * cr) * sz);
     m[3] = x; m[7] = y; m[11] = z;
 }
 
@@ -336,7 +331,7 @@ export function MsMtxSetTRS(m: Mtx, x: number, y: number, z: number, r: number, 
  */
 export function psMtxMultVec(m: Mtx, v: V3, out = new V3()) {
     const x = fr(v.x), y = fr(v.y), z = fr(v.z);
-    const row = (i: number) => fr(fr(m[i + 2] * z + fr(m[i] * x)) + fr(m[i + 3] + fr(m[i + 1] * y)));
+    const row = (i: number) => fr(FMA(m[i + 2], z, fr(m[i] * x)) + fr(m[i + 3] + fr(m[i + 1] * y)));
     return out.set(row(0), row(4), row(8));
 }
 /**
@@ -348,18 +343,18 @@ export function psMtxMultVec(m: Mtx, v: V3, out = new V3()) {
  */
 export function psMtxInverse(m: Mtx, out: Mtx = new Float64Array(12)): boolean {
     const m00 = m[0], m01 = m[1], m02 = m[2], m10 = m[4], m11 = m[5], m12 = m[6], m20 = m[8], m21 = m[9], m22 = m[10];
-    const msub = (a: number, b: number, c: number) => fr(a * b - c);
+    const msub = (a: number, b: number, c: number) => FMS(a, b, c);
     const c11a = msub(m01, m12, fr(m11 * m02)), c11b = msub(m02, m10, fr(m12 * m00));
     const c13a = msub(m11, m22, fr(m21 * m12)), c13b = msub(m12, m20, fr(m22 * m10));
     const c12a = msub(m21, m02, fr(m01 * m22)), c12b = msub(m22, m00, fr(m02 * m20));
     const c10 = msub(m10, m21, fr(m11 * m20)), c9 = msub(m01, m20, fr(m00 * m21)), c8 = msub(m00, m11, fr(m01 * m10));
-    const det = fr(m20 * c11a + fr(m10 * c12a + fr(m00 * c13a)));
+    const det = FMA(m20, c11a, FMA(m10, c12a, fr(m00 * c13a)));
     if (det === 0) return false;
-    const r = fres(det), r2 = fr(fr(r + r) - det * fr(r * r));
+    const r = fres(det), r2 = FNMS(det, fr(r * r), fr(r + r));
     const i00 = fr(c13a * r2), i10 = fr(c13b * r2), i01 = fr(c12a * r2), i11 = fr(c12b * r2), i02 = fr(c11a * r2), i12 = fr(c11b * r2);
     const i20 = fr(c10 * r2), i21 = fr(c9 * r2), i22 = fr(c8 * r2);
     const tx = m[3], ty = m[7], tz = m[11];
-    const t = (a: number, b: number, c: number) => -fr(c * tz + fr(b * ty + fr(a * tx)));
+    const t = (a: number, b: number, c: number) => -FMA(c, tz, FMA(b, ty, fr(a * tx)));
     out[0] = i00; out[1] = i01; out[2] = i02; out[3] = t(i00, i01, i02);
     out[4] = i10; out[5] = i11; out[6] = i12; out[7] = t(i10, i11, i12);
     out[8] = i20; out[9] = i21; out[10] = i22; out[11] = t(i20, i21, i22);

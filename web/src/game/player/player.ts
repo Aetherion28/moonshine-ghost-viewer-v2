@@ -1125,7 +1125,7 @@ export class PlayerMario extends TMarioSim {
                     this.offFlag(MF.UNK100);
                     const d = V3.sub(this.mWireEndPos, this.mWireStartPos);
                     const toEnd = s16(matan(d.z, d.x) - this.mFaceAngle.y);
-                    this.mWireBounceVel = fr(0.2 * -this.mVel.y);
+                    this.mWireBounceVel = fr(fr(0.2) * -this.mVel.y);
                     this.mWireSag = 0;
                     // from below (rising, a roll jump, a dive): hanging, facing so the wire runs left to right
                     const hang = this.mStatus === S.WIRE_ROLL_JUMP || this.mStatus === S.JUMP_CATCH || !(this.mVel.y < 0);

@@ -265,7 +265,7 @@ export abstract class MarioBase extends TakeActor {
         this.mStatus = this.mPrevStatus = 0x133f;
         this.mAnimationId = 0xc3;
         this.mHealth = this.mDeParams.mHPMax;
-        this.mMaxAir = fr((this.mHealth + 1) - 1e-05);
+        this.mMaxAir = fr((this.mHealth + 1) - fr(1e-05));
         this.mAir = this.mMaxAir;
         this.mUpperState = 5;   // UPPER_STATE_IDLE
         this.mPlayerType = 6;   // PLAYER_TYPE_INVALID
@@ -342,8 +342,8 @@ export abstract class MarioBase extends TakeActor {
         if (id !== this.mAnimationId) {
             this.setAnimation(id, rate);
             const f0 = this.mModel.fc[0], f2 = this.mModel.fc[2];
-            f0.rate = fr(rate * -0.5); f0.frame = fr(f0.end - 0.1);
-            f2.rate = fr(rate * -0.5); f2.frame = fr(f2.end - 0.1);
+            f0.rate = fr(rate * -0.5); f0.frame = fr(f0.end - fr(0.1));
+            f2.rate = fr(rate * -0.5); f2.frame = fr(f2.end - fr(0.1));
         }
         return this.getCurrentFrame(0);
     }

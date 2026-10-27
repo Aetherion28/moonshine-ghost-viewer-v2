@@ -1,5 +1,6 @@
 // Player/MarioWait.cpp: standing, sleeping, squatting, the ends of jumps and slips, and waitMain.
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import { fr, s16, JMASSin, JMASCos, IConverge } from '../math.js';
 import { MarioJump } from './jump.js';
 import { S, MF, A } from './base.js';
@@ -16,7 +17,7 @@ export abstract class MarioWait extends MarioJump {
     }
     canPut() {
         const r = this.mHeldObject ? this.mHeldObject.damageRadius : 0;
-        if (this.isTouchedOneWall(fr(this.pos.x + 100 * JMASSin(this.mFaceAngle.y)), fr(10 + this.pos.y), fr(this.pos.z + 100 * JMASCos(this.mFaceAngle.y)), r)) return false;
+        if (this.isTouchedOneWall(FMA(100, JMASSin(this.mFaceAngle.y), this.pos.x), fr(10 + this.pos.y), FMA(100, JMASCos(this.mFaceAngle.y), this.pos.z), r)) return false;
         return !this.isTouchedOneWall(this.pos.x, fr(10 + this.pos.y), this.pos.z, r);
     }
     waitingCommonEvents() {
@@ -46,7 +47,7 @@ export abstract class MarioWait extends MarioJump {
     changeMontemanWaitingAnim() { if (this.mStatus !== S.WAIT) return; this.mStatusState |= 2; }
     waiting() {
         if (this.waitingCommonEvents()) return 1;
-        if (this.isMario() && this.mUpperState === 5 && this.canSleep() && this.mAnimationId === A.WAIT && this.isAnimeLoopOrStop() && this.mGroundPlane.n[1] > 0.99) {
+        if (this.isMario() && this.mUpperState === 5 && this.canSleep() && this.mAnimationId === A.WAIT && this.isAnimeLoopOrStop() && this.mGroundPlane.n[1] > fr(0.99)) {
             this.mStatusTimer += 1;
             if (this.mStatusTimer >= 10) return this.changePlayerStatus(S.SLEEPY, 0, false);
         }

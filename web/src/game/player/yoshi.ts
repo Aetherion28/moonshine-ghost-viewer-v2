@@ -17,6 +17,7 @@
 // J3D's with the BCK, the walk/run motion blend, the eat motion on joint 18 and YoshiHeadCtrl
 // on joint 21 (FLUDD's gun angle).
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import type { mat4 } from 'gl-matrix';
 import { fr, s16, V3, Mtx, mtx, JMASSin, JMASCos, matan, MsRandF, mtxMultVec, mtxInverse, MsMtxSetXYZRPH } from '../math.js';
 import { World, Files, AnmData, MActor, FrameCtrl, TakeActor, HitActor, MSG, HF, HC, ANM_BCK, FC_ONCE } from '../engine.js';
@@ -191,7 +192,7 @@ export class YoshiTongue extends TakeActor {
                 if (h && d < this.mMaxReach) {
                     const s = h.scale as V3;
                     let x = fmul(s.x, this.mElasticity), y = fmul(s.y, this.mElasticity), z = fmul(s.z, this.mElasticity);
-                    if (x < 0.01) x = y = z = fr(0.01);
+                    if (x < fr(0.01)) x = y = z = fr(0.01);
                     s.set(x, y, z);
                 }
                 if (d < this.mRetractedLength) {
@@ -669,7 +670,7 @@ export class Yoshi {
             case YS.HATCHING: case YS.DROWNING: case YS.UNMOUNTED: case YS.UNK7: case YS.UNK5:
                 j3dTRMtx(m, 0, this.mEggRotSpeed, 0, this.mTranslation.x, this.mTranslation.y, this.mTranslation.z); break;
             case YS.MOUNTED: this.thinkAnimation(); m.set(M.mModel.baseTR); break;
-            case YS.UNK1: j3dTRMtx(m, 0, this.mEggRotSpeed, 0, this.mTranslation.x, fr(this.mTranslation.y + 100 * this.unk2), this.mTranslation.z); break;
+            case YS.UNK1: j3dTRMtx(m, 0, this.mEggRotSpeed, 0, this.mTranslation.x, FMA(100, this.unk2, this.mTranslation.y), this.mTranslation.z); break;
         }
         if (!this.isHatched() || !this.mActor) return;
         this.thinkUpper();

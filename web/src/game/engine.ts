@@ -139,6 +139,9 @@ export class Params {
     has(name: string) { return this.raw.has(name); }
     get(name: string, t: PType, def: number | number[]): any {
         const r = this.raw.get(name);
+        // (the defaults are the f32 the constructor stores: PARAM_INIT's float literal)
+        if (t === 'f' && typeof def === 'number') def = Math.fround(def);
+        if (t === 'v3' && Array.isArray(def)) def = def.map(Math.fround);
         if (!r) return def;
         const v = new DataView(r.buffer, r.byteOffset, r.byteLength);
         // (TParamT<T>::load reads sizeof(T): the stored size says what's there)

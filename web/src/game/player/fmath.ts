@@ -4,12 +4,32 @@
 // The estimate tables are the hardware's, as Dolphin has them (Common/FloatUtils.cpp:
 // ApproximateReciprocal, ApproximateReciprocalSquareRoot).
 //
-// Products of two f32 are exact in double, so fmadds(a, b, c) = fr(a * b + c) (the double sum is
-// rounded first, which can differ from the hardware's single rounding only when that sum lands on
-// an f32 halfway point: about once in 2^29).
+// The fused operations round once: the exact a * b + c (as hi + lo, Dekker / Knuth) is rounded
+// to f32 directly, so a sum that lands on an f32 halfway point in double is still decided by the
+// low part, as the hardware does.
 
 export const fr = Math.fround;
 
+const f32b = new Float32Array(1), u32b = new Uint32Array(f32b.buffer);
+/** the f32 next to r (an f32) in the direction of t */
+function f32Toward(r: number, t: number): number {
+    if (r === 0) return t > 0 ? 1.401298464324817e-45 : -1.401298464324817e-45;
+    f32b[0] = r; u32b[0] += (t > r) === (r > 0) ? 1 : -1; return f32b[0];
+}
+/** hi + lo (|lo| <= half an ulp of hi) rounded once to f32 */
+function roundF32(hi: number, lo: number): number {
+    const r = fr(hi);
+    if (lo === 0 || r === hi || !isFinite(r)) return r;
+    const o = f32Toward(r, hi);
+    if (hi !== (r + o) / 2) return r;   // not a halfway point: the double rounding was harmless
+    return (lo > 0) === (o > r) ? o : r;
+}
+function fusedSum(a: number, b: number, c: number): number[] {
+    const [p, e] = twoProd(a, b);
+    const s = p + c, bb = s - p, err = (p - (s - bb)) + (c - bb);
+    const lo = err + e, hi = s + lo;
+    return [hi, lo - (hi - s)];
+}
 /** fmuls */
 export const fmul = (a: number, b: number) => fr(a * b);
 /** fadds */
@@ -19,13 +39,13 @@ export const fsub = (a: number, b: number) => fr(a - b);
 /** fdivs */
 export const fdiv = (a: number, b: number) => fr(a / b);
 /** fmadds: a * b + c */
-export const fmadd = (a: number, b: number, c: number) => fr(a * b + c);
+export function fmadd(a: number, b: number, c: number) { const [h, l] = fusedSum(a, b, c); return roundF32(h, l); }
 /** fmsubs: a * b - c */
-export const fmsub = (a: number, b: number, c: number) => fr(a * b - c);
+export const fmsub = (a: number, b: number, c: number) => fmadd(a, b, -c);
 /** fnmsubs: c - a * b */
-export const fnmsub = (a: number, b: number, c: number) => fr(c - a * b);
+export const fnmsub = (a: number, b: number, c: number) => -fmadd(a, b, -c);   // (-(a*b - c): -0 when they cancel)
 /** fnmadds: -(a * b + c) */
-export const fnmadd = (a: number, b: number, c: number) => fr(-(a * b + c));
+export const fnmadd = (a: number, b: number, c: number) => -fmadd(a, b, c);
 
 // ---------------------------------------------------------------- exact double fused multiply-add
 const SPLIT = 134217729;   // 2^27 + 1

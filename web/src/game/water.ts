@@ -6,6 +6,7 @@
 // wet spot lasts). Emission is TNozzle*::emit from what a ghost records of FLUDD each tick: the
 // nozzle, its power, the emit point and direction.
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './player/fmath.js';
 import { V3, fr, rand, MsRandF, JMASSin, JMASCos, frsqrte } from './math.js';
 import { sqrtf } from './player/fmath.js';
 import { HitActor, Params, PSchema, World, HC, MSG, ObjHitCheck, Files } from './engine.js';
@@ -89,13 +90,13 @@ export class Water {
         this.life[n] = e.alive; this.flag[n] = e.flag | 1; this.attack[n] = e.attack;
         this.pos[n].set(e.pos[0], e.pos[1], e.pos[2]);
         let x = rand11(), y = rand11(), z = rand11();
-        x = fr(x * e.dirTremble + e.dir[0]); y = fr(y * e.dirTremble + e.dir[1]); z = fr(z * e.dirTremble + e.dir[2]);
+        x = FMA(x, e.dirTremble, e.dir[0]); y = FMA(y, e.dirTremble, e.dir[1]); z = FMA(z, e.dirTremble, e.dir[2]);
         if (x === 0 && y === 0 && z === 0) y = -1;
         const l = Math.sqrt(x * x + y * y + z * z);
         x = fr(x / l); y = fr(y / l); z = fr(z / l);
-        const sc = fr(rand11() * e.powTremble + e.pow);
-        this.vel[n].set(fr(x * sc + e.v[0]), fr(y * sc + e.v[1]), fr(z * sc + e.v[2]));
-        this.size[n] = fr(rand11() * e.sizeTremble + e.size);
+        const sc = FMA(rand11(), e.powTremble, e.pow);
+        this.vel[n].set(FMA(x, sc, e.v[0]), FMA(y, sc, e.v[1]), FMA(z, sc, e.v[2]));
+        this.size[n] = FMA(rand11(), e.sizeTremble, e.size);
         this.type[n] = e.type;
         this.plane[n] = null; this.hit[n] = null;
     }
@@ -140,7 +141,7 @@ export class Water {
                 }
             }
             const dx = fr(mario.x - P.x), dz = fr(mario.z - P.z);
-            if (fr(dx * dx + fr(dz * dz)) > fr(this.far * this.far)) { this.life[i] = 0; continue; }
+            if (FMA(dx, dx, fr(dz * dz)) > fr(this.far * this.far)) { this.life[i] = 0; continue; }
             const hv = fr(fr(V.x * V.x) + fr(V.z * V.z)), sz = this.size[i];
             if (hv > fr(sz * sz)) {
                 const hl = sqrtf(hv);
@@ -154,9 +155,9 @@ export class Water {
                     break;
                 case 2: {
                     const pl = this.plane[i]!;
-                    V.x = fr(V.x * this.friction(pl) + pl.n[0]);
+                    V.x = FMA(V.x, this.friction(pl), pl.n[0]);
                     V.y = this.gravity(i);
-                    V.z = fr(V.z * this.friction(pl) + pl.n[2]);
+                    V.z = FMA(V.z, this.friction(pl), pl.n[2]);
                     P.x = fr(P.x + V.x); P.y = fr(P.y + V.y); P.z = fr(P.z + V.z);
                     break;
                 }
@@ -192,17 +193,17 @@ export class Water {
                     continue;
                 }
             }
-            const wc: WallCheck = { center: [P.x, fr(P.y + this.size[i] * 0.5), P.z], radius: this.size[i], maxResults: 1, flags: IGNORE_WATER_THROUGH, results: [] };
+            const wc: WallCheck = { center: [P.x, FMA(this.size[i], 0.5, P.y), P.z], radius: this.size[i], maxResults: 1, flags: IGNORE_WATER_THROUGH, results: [] };
             if (this.w.col.checkWalls(wc)) {
                 const wall = wc.results[0];
                 if ((this.flag[i] & 0xF) === 2) { this.life[i] = 0; continue; }
-                if (ground && ground.isLegal() && P.y < fr(this.size[i] * T.mMagnify + f31)) { this.life[i] = 0; continue; }
+                if (ground && ground.isLegal() && P.y < FMA(this.size[i], T.mMagnify, f31)) { this.life[i] = 0; continue; }
                 if (wall.actor) this.tell(wall.actor, i);
                 // (fmuls y, fmadds x, fmadds z; the normal scaled (TVec3::scale) then taken off)
-                const d = fr(wall.d + fr(P.z * wall.n[2] + fr(P.x * wall.n[0] + fr(P.y * wall.n[1]))));
+                const d = fr(wall.d + FMA(P.z, wall.n[2], FMA(P.x, wall.n[0], fr(P.y * wall.n[1]))));
                 P.x = fr(P.x - fr(wall.n[0] * d)); P.y = fr(P.y - fr(wall.n[1] * d)); P.z = fr(P.z - fr(wall.n[2] * d));
                 if ((this.flag[i] & 0xF) === 1) {
-                    if (MsRandF() < K[10]) this.splash(fr(P.x + wall.n[0] * this.size[i]), fr(P.y + wall.n[1] * this.size[i]), fr(P.z + wall.n[2] * this.size[i]));
+                    if (MsRandF() < K[10]) this.splash(FMA(wall.n[0], this.size[i], P.x), FMA(wall.n[1], this.size[i], P.y), FMA(wall.n[2], this.size[i], P.z));
                     this.size[i] = fr(this.size[i] * T.mMagnify);
                     if (MsRandF() < K[2]) this.flag[i] = (this.flag[i] & ~0xF) | 3;
                     else { this.life[i] = 0; continue; }
@@ -263,10 +264,10 @@ export class Water {
     private gap(i: number, j: number) {
         const a = this.pos[i], b = this.pos[j];
         const x = fr(a.x - b.x), y = fr(a.y - b.y), z = fr(a.z - b.z);
-        const sq = fr(fr(z * z) + fr(x * x + fr(y * y)));
+        const sq = fr(fr(z * z) + FMA(x, x, fr(y * y)));
         if (sq <= 0) return sq;
         const e = fr(frsqrte(sq));
-        return fr(sq * fr(fr(0.5 * e) * fr(3 - sq * fr(e * e))));
+        return fr(sq * fr(fr(0.5 * e) * FNMS(sq, fr(e * e), 3)));
     }
     private garbageCollect() {
         let j = 0;
@@ -335,7 +336,7 @@ export class Fludd {
             let num: number;
             if (burst) num = N.mNum;
             else if (kind === 'base') num = N.mNum;
-            else num = fr(u * (N.mNum - N.mNumMin) + N.mNumMin);
+            else num = FMA(u, (N.mNum - N.mNumMin), N.mNumMin);
             this.emitNum[n] = fr(this.emitNum[n] + num);
             const k = Math.trunc(this.emitNum[n]);
             if (k === 0) continue;
@@ -344,9 +345,9 @@ export class Fludd {
             I.attack = Math.trunc(u * (N.mAttack - N.mAttackMin) + N.mAttackMin);
             I.pow = burst ? N.mEmitPow : s.power;
             if (kind === 'deform') {
-                I.dirTremble = fr(u * (N.mDirTremble - N.mDirTrembleMin) + N.mDirTrembleMin);
+                I.dirTremble = FMA(u, (N.mDirTremble - N.mDirTrembleMin), N.mDirTrembleMin);
                 const l = u < N.mSizeMinPressure ? 0 : u < N.mSizeMaxPressure ? (u - N.mSizeMinPressure) / (N.mSizeMaxPressure - N.mSizeMinPressure) : 1;
-                I.size = fr(l * (N.mSize - N.mSizeMin) + N.mSizeMin);
+                I.size = FMA(l, (N.mSize - N.mSizeMin), N.mSizeMin);
             }
             I.flag = 0x40;
             made += this.water.emitRequest(I);

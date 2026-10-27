@@ -28,6 +28,7 @@
 // first camera key / input record), and directorState = 4 once play starts (TMarDirector mState:
 // the camera cubes and mode changes only run in state 4).
 
+import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from '../player/fmath.js';
 import { fr, s16, matan, JMASSin, JMASCos } from '../math.js';
 import { World, LF } from '../engine.js';
 import { BGCheckData, WallCheck } from '../collision.js';
@@ -216,7 +217,7 @@ function chaseFrameSA(v: number, d: number, frames: number) {
 export class PolarSubCamera implements SimCamera {
     // JDrama::TLookAtCamera
     mPosition = vcopy(CLBConstUpVec); mUp = vcopy(CLBConstUpVec); mTarget = vcopy(CLBConstUpVec);
-    mFovy = 0; mAspect = (640 * 0.9134614) / 448; mNear = 10; mFar = 300000;
+    mFovy = 0; mAspect = (640 * fr(0.9134614)) / 448; mNear = 10; mFar = 300000;
 
     mMode = -1; mPrevMode = -1; mSavedModeBeforeTalk = -1; mInitialMode = -1;
     /** unk60: the modes to go back to (CameraUnk60Struct, 4 deep) */
@@ -462,7 +463,7 @@ export class PolarSubCamera implements SimCamera {
         let y: number;
         if (this.isNormalDeadDemo()) y = 35;
         else {
-            y = fr(this.cur.ratio * this.P.mXRotRatioAtOffsetY + this.P.mAtOffsetY);
+            y = FMA(this.cur.ratio, this.P.mXRotRatioAtOffsetY, this.P.mAtOffsetY);
             if (this.marioStatus() === ST.KICK_ROOF_ROLL_UP) y = fr(y + 260);
             if (this.mMode === CM.DEFINITE_D2) y = fr(y + this.unk290);
         }
@@ -475,7 +476,7 @@ export class PolarSubCamera implements SimCamera {
         if (s === ST.HANGING || s === ST.ASCEND) { c.H = 0; c.V = 0; }
         else {
             const dx = fr(m.pos.x - m.mPrevPosition.x), dy = fr(m.pos.y - m.mPrevPosition.y), dz = fr(m.pos.z - m.mPrevPosition.z);
-            c.H = fr(dx * dx + fr(dz * dz)); c.V = fr(dy * dy);
+            c.H = FMA(dx, dx, fr(dz * dz)); c.V = fr(dy * dy);
             if (c.H > 100) c.H = 100;
             if (c.V > 100) c.V = 100;
         }
@@ -522,7 +523,7 @@ export class PolarSubCamera implements SimCamera {
     // ------------------------------------------------------------ CameraNormal.cpp
     private rotateX_ByStickY_(v: number) {
         if (this.openingDoor()) return;
-        this.cur.ratio = fr(this.cur.ratio - v * this.P.mXRotRatioManualSpeed);
+        this.cur.ratio = FNMS(v, this.P.mXRotRatioManualSpeed, this.cur.ratio);
         this.cur.ratio = isLButtonMode(this.mMode) ? clamp(this.cur.ratio, 0, 1) : clamp(this.cur.ratio, this.unk268, this.unk26C);
     }
     private rotateY_ByStickX_(v: number) {
@@ -611,7 +612,7 @@ export class PolarSubCamera implements SimCamera {
                     n.x = fr(n.x * fwd); n.y = fr(n.y * fwd); n.z = fr(n.z * fwd);
                     const smp = vec(fr(mp.x + n.x), fr(mp.y + n.y), fr(mp.z + n.z));
                     const tan = fr(JMASSin(maxAng) * fr(1 / JMASCos(maxAng)));
-                    const y = fr(fr(fwd * tan + 10) + mp.y);
+                    const y = fr(FMA(fwd, tan, 10) + mp.y);
                     const h = fr(this.world.col.checkGround(smp.x, y, smp.z, 1)[0] - grLevel);
                     let angle = 0;
                     if (h > 0) angle = matan(fwd, h);
@@ -631,7 +632,7 @@ export class PolarSubCamera implements SimCamera {
         const first = lerpF(this.P.mSecureViewDistXMin, this.P.mSecureViewDistXMax, this.cur.ratio);
         const cd = JMASCos(diff);
         const second = cd >= 0 ? 0 : lerpF(this.P.mSecureViewDistZMin, this.P.mSecureViewDistZMax, this.cur.ratio);
-        const sum = fr(first * JMASSin(diff) + fr(second * cd));
+        const sum = FMA(first, JMASSin(diff), fr(second * cd));
         const mag = -Math.abs(sum);
         const px = fr(mag * JMASSin(base)), pz = fr(mag * JMASCos(base));
         const d = s16(Math.abs(this.marioAngleY() - s16(this.M.unk9C || 0)));
@@ -647,7 +648,7 @@ export class PolarSubCamera implements SimCamera {
         const first = lerpF(this.P.mSecureViewDistXMin, this.P.mSecureViewDistXMax, this.cur.ratio);
         const cd = JMASCos(diff);
         const second = cd >= 0 ? 0 : lerpF(this.P.mSecureViewDistZMin, this.P.mSecureViewDistZMax, this.cur.ratio);
-        const mag = -Math.abs(fr(second * cd + fr(first * JMASSin(diff))));
+        const mag = -Math.abs(FMA(second, cd, fr(first * JMASSin(diff))));
         return [fr(mag * JMASSin(base)), fr(mag * JMASCos(base))];
     }
 
@@ -716,8 +717,8 @@ export class PolarSubCamera implements SimCamera {
                         if (this.isMarioRocketing()) xAngle = s16(ex.mSLLimitMaxAngleX - 0x1770);
                         else if (this.marioStatus() === ST.HIP_DROP) xAngle = 0x3E8;
                     }
-                    finalAt = vec(fr(cur.target.x - P.mOffsetLookatXZ * JMASSin(yAngle - 0x4000)), cur.target.y,
-                        fr(cur.target.z - P.mOffsetLookatXZ * JMASCos(yAngle - 0x4000)));
+                    finalAt = vec(FNMS(P.mOffsetLookatXZ, JMASSin(yAngle - 0x4000), cur.target.x), cur.target.y,
+                        FNMS(P.mOffsetLookatXZ, JMASCos(yAngle - 0x4000), cur.target.z));
                     if (this.mMode !== CM.MULTI_PLAYER) {
                         this.execSecureView_(yAngle, finalAt);
                         if (!isRailMode(this.mMode)) {
@@ -735,8 +736,8 @@ export class PolarSubCamera implements SimCamera {
                                     if (minDist < ex.mSLMinCushionXZ) minDist = ex.mSLMinCushionXZ;
                                     if (this.notUnderGround() && cushDist < minDist) {
                                         const d = fr(minDist - cushDist);
-                                        base.x = fr(d * JMASSin(n.yaw) + base.x);
-                                        base.z = fr(d * JMASCos(n.yaw) + base.z);
+                                        base.x = FMA(d, JMASSin(n.yaw), base.x);
+                                        base.z = FMA(d, JMASCos(n.yaw), base.z);
                                         n = crossToPolar(saveAt, base);
                                     }
                                     if (this.isMomentDefinite()) vset(cur.unk18, base);
@@ -747,19 +748,19 @@ export class PolarSubCamera implements SimCamera {
                             const sY = JMASSin(yAngle), cY = JMASCos(yAngle);
                             if (this.notUnderGround()) {
                                 const dx = fr(M.pos.x - cur.unk18.x), dz = fr(M.pos.z - cur.unk18.z);
-                                const d = MsSqrtf(fr(dx * dx + fr(dz * dz)));
+                                const d = MsSqrtf(FMA(dx, dx, fr(dz * dz)));
                                 let minD = ex.mSLMinCushionXZ;
                                 const dc = fr(dist * cushion);
                                 if (minD >= dc) minD = dc;
                                 if (d < minD) {
                                     const add = fr(minD - d);
-                                    cur.unk18.x = fr(sY * add + cur.unk18.x);
-                                    cur.unk18.z = fr(cY * add + cur.unk18.z);
+                                    cur.unk18.x = FMA(sY, add, cur.unk18.x);
+                                    cur.unk18.z = FMA(cY, add, cur.unk18.z);
                                 }
                             }
                             if (this.mMode !== CM.UNDER_GROUND && this.mMode !== CM.MARE_UNDER_GROUND) {
-                                cur.unk18.x = fr(cur.unk18.x - h.unk4 * sY);
-                                cur.unk18.z = fr(cur.unk18.z - h.unk4 * cY);
+                                cur.unk18.x = FNMS(h.unk4, sY, cur.unk18.x);
+                                cur.unk18.z = FNMS(h.unk4, cY, cur.unk18.z);
                             }
                             if (this.inb.isThing() && inputActive) {
                                 const d = lerpF(P.mDistMin, P.mDistMax, cur.ratio);
@@ -891,14 +892,14 @@ export class PolarSubCamera implements SimCamera {
                     if (!PolarSubCamera.clips(wall)) continue;
                     const posArg = vcopy(cur.pos), posCam = vcopy(posArg);
                     const [nx, ny, nz] = wall.n;
-                    const sd = fr(wall.d + fr(posCam.z * nz + fr(posCam.x * nx + fr(posCam.y * ny))));
+                    const sd = fr(wall.d + FMA(posCam.z, nz, FMA(posCam.x, nx, fr(posCam.y * ny))));
                     if (Math.abs(sd) < radius) {
                         moved = true;
                         const push = fr(radius - sd);
                         const pushSd = fr(push * this.ex.mSLWallRevisionRatio);
-                        posCam.x = fr(pushSd * nx + posCam.x); posCam.z = fr(pushSd * nz + posCam.z);
+                        posCam.x = FMA(pushSd, nx, posCam.x); posCam.z = FMA(pushSd, nz, posCam.z);
                         cur.pos.x = posCam.x; cur.pos.z = posCam.z;
-                        posArg.x = fr(push * nx + posArg.x); posArg.z = fr(push * nz + posArg.z);
+                        posArg.x = FMA(push, nx, posArg.x); posArg.z = FMA(push, nz, posArg.z);
                         out.x = posArg.x; out.z = posArg.z;
                     }
                 }
@@ -957,7 +958,7 @@ export class PolarSubCamera implements SimCamera {
         const tan = fr(JMASSin(half) * fr(1 / JMASCos(half)));
         const ny = fr(2 * fr(this.mNear * tan)), nx = fr(ny * this.mAspect);
         const pts = nearNinePos(this.unk124, this.unk148, this.getFinalAngleZ(), this.mNear, nx, ny);
-        for (let i = 0; i < 9; i++) pts.push(vec(fr(this.unk25C.x * this.unk2C4 + pts[i].x), fr(this.unk25C.y * this.unk2C4 + pts[i].y), fr(this.unk25C.z * this.unk2C4 + pts[i].z)));
+        for (let i = 0; i < 9; i++) pts.push(vec(FMA(this.unk25C.x, this.unk2C4, pts[i].x), FMA(this.unk25C.y, this.unk2C4, pts[i].y), FMA(this.unk25C.z, this.unk2C4, pts[i].z)));
         for (let i = 0; i < 9; i++) for (let j = 0; j < 2; j++) {
             let dy = 0;
             for (let k = 0; k < 2; k++) {
@@ -1020,7 +1021,7 @@ export class PolarSubCamera implements SimCamera {
         const near2 = fr(N.mRotateMinDistXZ * N.mRotateMinDistXZ), far2 = fr(N.mRotateFastMinDistXZ * N.mRotateFastMinDistXZ);
         if (dist2 > near2) {
             const d = msVecNormalize(vec(fr(m.x - t.x), fr(m.y - t.y), fr(m.z - t.z)), vec());
-            const dx = fr(d.x * 500 + m.x), dz = fr(d.z * 500 + m.z);
+            const dx = FMA(d.x, 500, m.x), dz = FMA(d.z, 500, m.z);
             const ang = matan(fr(dz - this.cur.target.z), fr(dx - this.cur.target.x));
             const ratio = fr(fr(2 / 65536) * Math.abs(s16(this.cur.yaw - ang)));
             const chase = dist2 > far2 ? 1 : ratioF(near2, far2, dist2);
@@ -1206,7 +1207,7 @@ export class PolarSubCamera implements SimCamera {
     }
     private onMoveApproach_() {
         const dx = fr(this.mPosition.x - this.mTarget.x), dy = fr(this.mPosition.y - this.mTarget.y), dz = fr(this.mPosition.z - this.mTarget.z);
-        const d = MsSqrtf(fr(dz * dz + fr(dy * dy + fr(dx * dx))));
+        const d = MsSqrtf(FMA(dz, dz, FMA(dy, dy, fr(dx * dx))));
         this.inb.unk44 = fr(d - lerpF(this.P.mDistMin, this.P.mDistMax, this.cur.ratio));
     }
     /** TCameraMapTool::calcPosAndAt */
@@ -1547,7 +1548,7 @@ export class PolarSubCamera implements SimCamera {
         if (this.mDeadDemoFovZoomTimer > 0) {
             this.mDeadDemoFovZoomTimer -= 1;
             const dx = fr(this.mTarget.x - this.mPosition.x), dy = fr(this.mTarget.y - this.mPosition.y), dz = fr(this.mTarget.z - this.mPosition.z);
-            const d = MsSqrtf(fr(fr(dx * dx + fr(dy * dy)) + fr(dz * dz)));
+            const d = MsSqrtf(fr(FMA(dx, dx, fr(dy * dy)) + fr(dz * dz)));
             if (d > fr(0.001)) this.mFovy = chaseFrameF(this.mFovy, clamp(fr(10500 * fr(1 / d)), 5, 80), fr(this.mDeadDemoFovZoomTimer));
         }
     }
@@ -1565,13 +1566,13 @@ function nearNinePos(o: Vec, at: Vec, roll: number, near: number, w: number, h: 
     const g: Vec[] = [];
     for (let i = 0; i < 9; i++) g.push(vec());
     const dir = vnormalize(vec(fr(at.x - o.x), fr(at.y - o.y), fr(at.z - o.z)));
-    g[4] = vec(fr(dir.x * near + o.x), fr(dir.y * near + o.y), fr(dir.z * near + o.z));
+    g[4] = vec(FMA(dir.x, near, o.x), FMA(dir.y, near, o.y), FMA(dir.z, near, o.z));
     const dx = fr(o.x - at.x), dz = fr(o.z - at.z);
-    const ex = s16(-matan(MsSqrtf(fr(dx * dx + fr(dz * dz))), fr(o.y - at.y))), ey = matan(dz, dx);
+    const ex = s16(-matan(MsSqrtf(FMA(dx, dx, fr(dz * dz))), fr(o.y - at.y))), ey = matan(dz, dx);
     const sX = JMASSin(ex), cX = JMASCos(ex), sY = JMASSin(ey), cY = JMASCos(ey);
     const rot = (v: Vec) => {
-        const t = fr(v.y * sX + fr(v.z * cX));
-        return vec(fr(v.x * cY + fr(t * sY)), fr(v.y * cX - fr(v.z * sX)), fr(-v.x * sY + fr(t * cY)));
+        const t = FMA(v.y, sX, fr(v.z * cX));
+        return vec(FMA(v.x, cY, fr(t * sY)), FMS(v.y, cX, fr(v.z * sX)), FMA(-v.x, sY, fr(t * cY)));
     };
     let up = rot(vec(0, 1, 0)), right = rot(vec(1, 0, 0));
     if (roll !== 0) {
@@ -1579,9 +1580,9 @@ function nearNinePos(o: Vec, at: Vec, roll: number, near: number, w: number, h: 
         up = rotateAbout(dir, -a, up); right = rotateAbout(dir, -a, right);
     }
     const hy = fr(h * 0.5), hx = fr(w * 0.5);
-    const sa = (s: number, b: Vec, d: Vec) => vec(fr(d.x * s + b.x), fr(d.y * s + b.y), fr(d.z * s + b.z));
+    const sa = (s: number, b: Vec, d: Vec) => vec(FMA(d.x, s, b.x), FMA(d.y, s, b.y), FMA(d.z, s, b.z));
     g[1] = sa(hy, g[4], up); g[7] = sa(-hy, g[4], up); g[3] = sa(-hx, g[4], right); g[5] = sa(hx, g[4], right);
-    const diag = MsSqrtf(fr(hy * hy + fr(hx * hx)));
+    const diag = MsSqrtf(FMA(hy, hy, fr(hx * hx)));
     const r = vec(fr(right.x * hx), fr(right.y * hx), fr(right.z * hx)), u = vec(fr(up.x * hy), fr(up.y * hy), fr(up.z * hy));
     let d = vnormalize(vec(fr(u.x - r.x), fr(u.y - r.y), fr(u.z - r.z)));
     g[0] = sa(diag, g[4], d); g[8] = sa(-diag, g[4], d);
