@@ -178,7 +178,10 @@ export class TalkView {
             g.putImageData(img, 0, 0);
             this.sweep.set(key, c);
         }
-        const m = mul(base, (b as any)._m as M);
+        // (bac is hidden while it sweeps in: its matrix from its line's)
+        const lm = (this.me[line] as any)._m as M | undefined;
+        if (!lm) return;
+        const m = mul(base, mul(lm, Painter.local(b, b.bounds.x1, b.bounds.y1)));
         cx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
         cx.globalAlpha = 1;
         cx.drawImage(c, 0, 0, W, H);

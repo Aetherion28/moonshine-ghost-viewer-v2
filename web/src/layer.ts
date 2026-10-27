@@ -29,6 +29,8 @@ import { MarioModel, YoshiModel, parseArchive, setPlayerLights } from './mario.j
 import { swapTextures, npcDress, npcPartColours, npcGoop } from './actors.js';
 import { SimRunner, LiveRunner, DiscCommon, SimInput, fileMap, FileMap } from './game/runner.js';
 import { WireDraw, WireLine } from './wiredraw.js';
+import { MantaShadowQuads, mantaVolumeMaterials, setMantaVolumeAlpha } from './mantashadow.js';
+import { BossMantaManager } from './game/enemies/bossmanta.js';
 import { MapWireConst } from './game/mapwire.js';
 import { CLASSES } from './game/scene.js';
 import { LiveActor, MActor } from './game/engine.js';
@@ -328,13 +330,18 @@ export class GameLayer {
             // (a WireDraw per scene: its program and vertex layout live in this renderer's cache, which
             // goes with the scene; one kept from the stage before drew nothing on the next)
             const wd = this.wireDraw = new WireDraw();
-            r.extraMain = (dev, rim, vi) => { if (this.live) wd.prepare(dev, rim, vi, this.wireLines()); };
+            const mq = this.mantaQuads = new MantaShadowQuads();
+            r.extraMain = (dev, rim, vi) => {
+                if (!this.live) return;
+                wd.prepare(dev, rim, vi, this.wireLines());
+                if (this.mantaColor && this.mantaDrawn) mq.prepare(dev, rim, vi, this.mantaColor);
+            };
         } catch (e) { this.onError(e); }
         finally { if (this.loading === name) { this.loading = ''; this.onStatus(''); } }
     }
 
     private destroyScene() {
-        if (this.renderer) { this.renderer.destroy(this.device); this.wireDraw.destroy(this.device); }
+        if (this.renderer) { this.renderer.destroy(this.device); this.wireDraw.destroy(this.device); if (this.mantaQuads) this.mantaQuads.destroy(this.device); this.mantaQuads = null; }
         this.gateStop();
         for (const v of this.bmtCache.values()) if (v) v.destroy(this.device);
         this.setLive(false);
@@ -622,6 +629,14 @@ export class GameLayer {
         // the game's models
         const seen = new Set<LiveActor>();
         const made: J3DModelInstanceSimple[] = [];
+        // getMantaColor: the manager's colour (to the angry one over 15 draws once the battle's state is 2)
+        const mm0 = st ? st.objects.find((o: any) => o instanceof BossMantaManager) as BossMantaManager | undefined : undefined;
+        this.mantaColor = null; this.mantaDrawn = false;
+        if (mm0 && mm0.saveParams) {
+            if (mm0.battleState === 2 && this.mantaFrame !== st.frame) { this.mantaFrame = st.frame; mm0.unk84 = Math.min(15, mm0.unk84 + 1); }
+            const P: any = mm0.MP, t = mm0.unk84 / 15, L = (a: number, b: number) => Math.trunc((1 - t) * a + t * b) & 0xFF;
+            this.mantaColor = [L(P.mSLMantaRed, P.mSLAngryMantaRed), L(P.mSLMantaGreen, P.mSLAngryMantaGreen), L(P.mSLMantaBlue, P.mSLAngryMantaBlue), L(P.mSLMantaAlpha, P.mSLAngryMantaAlpha)];
+        }
         for (const d of list) {
             const a = d.a;
             seen.add(a);
@@ -670,18 +685,35 @@ export class GameLayer {
                     }
                     (mm as any).parts = parts;
                 }
+                // the Phantamanta: its mesh as the shadow volume (mantashadow.ts): this instance its back
+                // faces, a twin on the same pose its front faces
+                if ((a as any).shadowOnly) {
+                    mantaVolumeMaterials(inst, true);
+                    const tw = new J3DModelInstanceSimple(inst.modelData);
+                    tw.passMask = inst.passMask; (tw as any).isPlayer = true;
+                    mantaVolumeMaterials(tw, false);
+                    (mm as any).twin = tw;
+                    made.push(tw); this.actorModels.push(tw);
+                }
                 this.simMirrors.set(a, mm);
                 made.push(inst);
                 this.actorModels.push(inst);
             }
             const inst = m.inst;
-            // (shadowOnly: the game draws no model for it, only its shadow: the Sirena mantas)
-            inst.visible = this.live && a.drawn() && !(a as any).shadowOnly;
+            inst.visible = this.live && a.drawn();
+            const twin = (m as any).twin as J3DModelInstanceSimple | undefined;
+            if (twin) twin.visible = inst.visible;
             const parts = (m as any).parts as { inst: J3DModelInstanceSimple; joint: number }[] | undefined;
             if (parts) for (const p of parts) p.inst.visible = inst.visible;
             if (!inst.visible) continue;
             const B = a.baseTR, sc = a.scale;
             mat4.set(inst.modelMatrix, B[0] * sc.x, B[4] * sc.x, B[8] * sc.x, 0, B[1] * sc.y, B[5] * sc.y, B[9] * sc.y, 0, B[2] * sc.z, B[6] * sc.z, B[10] * sc.z, 0, B[3], B[7], B[11], 1);
+            if (twin && this.mantaColor) {
+                mat4.copy(twin.modelMatrix, inst.modelMatrix);
+                const ka = this.mantaColor[3] / 255;
+                setMantaVolumeAlpha(inst, ka); setMantaVolumeAlpha(twin, ka);
+                this.mantaDrawn = true;
+            }
             // Boos (TTelesa): KCOLOR0 on every material is the fade colour (its alpha how visible),
             // the body's TEVREG0 the base colour (SMS_InitPacket_OneTevKColor / OneTevColorAndOneTevKColor)
             const fade = (a as any).fadeColor as number[] | undefined;
@@ -709,7 +741,7 @@ export class GameLayer {
             if (name !== m.bck) {
                 m.bck = name || '';
                 const f = name ? this.files.get((a.mactor!.data.folder + '/' + name + '.bck').toLowerCase()) : null;
-                try { if (f) inst.bindANK1(BCK.parse(f.buffer), m.pin); else inst.bindANK1(null as any); } catch { }
+                try { const k = f ? BCK.parse(f.buffer) : null; inst.bindANK1(k as any, m.pin); if (twin) twin.bindANK1(k as any, m.pin); } catch { }
             }
             const fc = a.mactor!.getFrameCtrl(0);
             if (fc) m.pin.setTimeInFrames(fc.frame);
@@ -1069,6 +1101,12 @@ export class GameLayer {
         for (const t of G.tex) this.device.destroyTexture(t);
         this.gate = null;
     }
+
+    /** the Phantamanta's shadow: its full-screen passes, this frame's getMantaColor (null: no manta manager) and whether a manta's volume is drawn */
+    private mantaQuads: MantaShadowQuads | null = null;
+    private mantaColor: number[] | null = null;
+    private mantaDrawn = false;
+    private mantaFrame = -1;
 
     /** A joint's index in one of FLUDD's nozzle models (watergun2/<nozzle>/<nozzle>.bmd), -1 if none: the viewer turns it as TWaterGun's joint callbacks do. */
     private nozzleJoints = new Map<string, string[]>();

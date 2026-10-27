@@ -25,6 +25,7 @@ import { TalkView } from './talkview.js';
 import { PauseMenu, GameOverMenu, SelectMenu } from './menus.js';
 import { Wipe, HX_W, HX_H } from './wipe.js';
 import { MovieScreen } from './moviescreen.js';
+import { loadSlot } from '../game/savefile.js';
 
 interface GameFS { has(p: string): boolean; read(p: string): Promise<ArrayBuffer>; }
 const store = {
@@ -176,8 +177,8 @@ export class GameHud {
     private archive2(name: string): Map<string, Uint8Array> | null | undefined {
         const v = this.more.get(name);
         if (v instanceof Promise) return undefined;
-        if (v !== undefined) return v;
         const fs = this.fs;
+        if (v !== undefined && (v !== null || !fs || !fs.has(`data/${name}`))) return v;
         if (!fs || !fs.has(`data/${name}`)) { this.more.set(name, null); return null; }
         this.more.set(name, fs.read(`data/${name}`).then((b) => { this.more.set(name, archive(b)); }, (e) => { console.warn('[hud]', name, e); this.more.set(name, null); }));
         return undefined;
@@ -458,10 +459,11 @@ export class GameHud {
      */
     private liveFlags = { named: false };
     private missAt = -1;
+    private strNow = -1; private strClock = 0;
     private liveFrame(f: HudFrame, L: { key: string; demo: number; close: number; go: number }) {
         const r = f.ghost.segments[0].route, named = NAMED_STAGES.has(r.area);
         const seg: Seg = { key: L.key, q0: 0, qIn: L.go >= 0 ? L.go : Infinity, area: r.area, episode: r.episode, intro: L.demo >= 0 };
-        if (!this.seg || this.seg.key !== seg.key || f.t < this.strF) { this.newState(seg); this.liveFlags.named = false; this.missAt = -1; }
+        if (!this.seg || this.seg.key !== seg.key || f.t < this.strF) { this.newState(seg); this.liveFlags.named = false; this.missAt = -1; this.strClock = f.t < 24 ? 0 : f.t; }
         const S0 = this.seg!;
         S0.qIn = seg.qIn; S0.intro = seg.intro;
         const str = this.str!;
@@ -472,7 +474,14 @@ export class GameHud {
         const D0 = f.sim && f.sim.stage ? f.sim.stage.director : null;
         const missAt = D0 && D0.state === 7 ? D0.enteredTick : -1;
         if (missAt >= 0 && this.missAt !== missAt && f.t >= missAt) { this.missAt = missAt; str.startAppearMiss(); }
-        while (this.strF < f.t && (this.strF < (L.go >= 0 ? L.go + 400 : Infinity) || str.unk2B8 !== 0)) {
+        // (the console string's ticks paced by the display clock, 120 a second as the game runs them, up
+        // to the sim's tick: the sim hands its ticks over 4 at a time, more when it catches up, which
+        // stepped the bars unevenly; it is never more than 24 ticks behind)
+        const now = performance.now(), dt = this.strNow >= 0 ? Math.min(0.1, (now - this.strNow) / 1000) : 0;
+        this.strNow = now;
+        this.strClock = Math.min(f.t, Math.max(this.strClock + dt * 120, f.t - 24, this.strF));
+        const tT = Math.floor(this.strClock);
+        while (this.strF < tT && (this.strF < (L.go >= 0 ? L.go + 400 : Infinity) || str.unk2B8 !== 0)) {
             const k = ++this.strF;
             if (k === L.demo && named) str.startAppearScenario();
             if (k === L.close) { if (named && str.unk2BC !== S.UNK1) str.unk2BC = S.UNK1; str.startCloseWipe(!named); }
@@ -480,7 +489,7 @@ export class GameHud {
             str.frame();
             if (str.unk2BC === S.UNK4) str.startOpenWipe();
         }
-        if (this.strF < f.t) this.strF = f.t;
+        if (this.strF < tT) this.strF = tT;
         const stage = this.simStage(f.sim, S0);
         const cf = L.go >= 0 ? f.t - L.go : -1;
         if (cf >= 0) {
@@ -566,7 +575,7 @@ export class GameHud {
     /** the overlay: the fader's miss wipes, then the screen the live runner shows (a menu, a movie) */
     private overlayFrame(f: HudFrame) {
         const R: any = f.sim, c = this.overlay;
-        const scr = f.on && R && R.screen ? R.screen : null;
+        let scr = R && R.screen ? R.screen : null;
         const st = f.on && R && R.stage ? R.stage : null, D = st ? st.director : null;
         const mw = f.live && D && D.missWipe ? D.missWipe : null;
         if (!this.ready || (!scr && !mw)) {

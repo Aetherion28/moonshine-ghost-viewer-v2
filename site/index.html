@@ -10,58 +10,83 @@ window.V2 = location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, '');
 </script>
 <title>Sunshine Ghost Viewer v2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: one-screen tool. Top bar (stage + ghosts), 3D stage fills the middle, transport strip at the bottom.
-   Wide screens get a right-hand ghost panel; phones stack it under the transport. */
+   Wide screens get a right-hand ghost panel; phones stack it under the transport.
+   Colours, font, buttons and trim follow the Moonshine site (dogecyanide.github.io/moonshine-site, style.css):
+   its "Delfino guidebook" paper, ink, teal-green selection and gold trim. */
 :root {
-  --bg: #eef2f5;
-  --panel: #ffffff;
-  --line: #d3dce3;
-  --fg: #14212b;
-  --muted: #5b6b77;
-  --accent: #d98a00;       /* Shine Sprite gold */
-  --accent-ink: #1b1300;
-  --water: #1c7fa6;
-  --scene-bg: #cfdde6;
-  --danger: #b3261e;
-  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --bg: #dcdbb2;           /* Moonshine --paper */
+  --panel: #efedcb;        /* --paper-hi */
+  --line: #a48340;         /* --rule */
+  --fg: #413019;           /* --ink */
+  --muted: #6c5830;
+  --value: #246b4e;
+  --accent: #316e4c;       /* --sel: the menu's "selected" green */
+  --accent-hi: #3a7d58;
+  --accent-ink: #fff8d1;   /* --sel-text */
+  --water: #1e5f45;        /* --link */
+  --trim: #bb8525; --trim-light: #ffeca2;
+  --cat: rgba(77,139,91,.2);
+  --drop: rgba(29,65,50,.55);
+  --focus: #0f5ad6;
+  --scene-bg: #bfe6ff;     /* --bg-fallback, the sky */
+  --danger: #9e2a23;
+  --display: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic UI", Meiryo, system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #0b141b; --panel: #111d26; --line: #23333f; --fg: #e3ecf2; --muted: #8fa1ae;
-  --accent: #f2b33d; --accent-ink: #1b1300; --water: #45b3d9; --scene-bg: #0e1b24; --danger: #ff8a80; color-scheme: dark; } }
+  --bg: #3a463b; --panel: #46544a; --line: #8a7038; --fg: #fff9db; --muted: #cfcdb2; --value: #99ebb5;
+  --accent: #2f6b4a; --accent-hi: #387955; --accent-ink: #fff8d1; --water: #a9f0c2; --trim: #bb8525; --trim-light: #e7cf86;
+  --cat: rgba(77,139,91,.22); --drop: rgba(0,0,0,.5); --focus: #ffd76a; --scene-bg: #0b2a4a; --danger: #ff988b; color-scheme: dark; } }
 :root[data-theme="dark"] {
-  --bg: #0b141b; --panel: #111d26; --line: #23333f; --fg: #e3ecf2; --muted: #8fa1ae;
-  --accent: #f2b33d; --accent-ink: #1b1300; --water: #45b3d9; --scene-bg: #0e1b24; --danger: #ff8a80; color-scheme: dark; }
+  --bg: #3a463b; --panel: #46544a; --line: #8a7038; --fg: #fff9db; --muted: #cfcdb2; --value: #99ebb5;
+  --accent: #2f6b4a; --accent-hi: #387955; --accent-ink: #fff8d1; --water: #a9f0c2; --trim: #bb8525; --trim-light: #e7cf86;
+  --cat: rgba(77,139,91,.22); --drop: rgba(0,0,0,.5); --focus: #ffd76a; --scene-bg: #0b2a4a; --danger: #ff988b; color-scheme: dark; }
 
 [hidden] { display: none !important; }
 html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--display); font-size: 14px; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--display); font-weight: 500; font-size: 14px; }
+a { color: var(--water); text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+a:hover { color: var(--value); }
 .app { height: 100%; display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: 1fr 300px;
   grid-template-areas: "top top" "stage side" "transport side"; }
+/* Title bar: Moonshine's book header (paper, rule underneath, green title line) with its tab-strip tint. */
 header { grid-area: top; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
-  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
-h1 { margin: 0; font-size: 16px; font-weight: 800; letter-spacing: 0.01em; display: flex; align-items: center; gap: 8px; }
-h1 .sun { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: linear-gradient(var(--cat), var(--cat)), var(--bg); }
+h1 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: 0.02em; display: flex; align-items: center; gap: 8px; color: var(--value); }
+h1 .sun { width: 14px; height: 14px; border-radius: 50%; background: var(--trim-light); box-shadow: 0 0 0 2px var(--trim), 0 0 0 4px color-mix(in srgb, var(--trim-light) 45%, transparent); }
 .field { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.field label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
-select, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+.field label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 800; }
+select, button { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--trim); border-radius: 8px; padding: 6px 10px; }
 select { max-width: 52vw; }
-button { cursor: pointer; font-weight: 700; }
-button:hover { border-color: var(--muted); }
-button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--water); outline-offset: 2px; }
-.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
-.primary:hover { filter: brightness(1.05); border-color: transparent; }
+button { cursor: pointer; font-weight: 800; }
+button:hover { border-color: var(--accent); background: var(--cat); }
+button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* Moonshine .btn: paper with a gold trim ring, a light inner ring and a hard drop shadow; it turns green on hover. */
+header button, header .btn, .primary, .discGateBtns button:not(.linkBtn) { border: 0; padding: 7px 12px;
+  box-shadow: 0 0 0 2px var(--trim), inset 0 0 0 2px var(--trim-light), 2px 3px 0 1px var(--drop); transition: transform .12s, background .12s; }
+header button:hover, header .btn:hover, .discGateBtns button:not(.linkBtn):hover { background: var(--accent); color: var(--accent-ink); transform: translateY(-1px); }
+.btn { display: inline-flex; align-items: center; gap: 5px; border-radius: 8px; background: var(--panel); color: var(--fg); font-weight: 800; text-decoration: none; white-space: nowrap; }
+.btn .ext { font-size: 0.85em; opacity: 0.8; }
+.primary { background: var(--accent); color: var(--accent-ink); }
+.primary:hover { background: var(--accent-hi); color: var(--accent-ink); }
 .spacer { flex: 1; }
-.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.seg button { border: 0; border-radius: 0; background: transparent; padding: 6px 10px; font-weight: 600; color: var(--muted); }
-.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+/* Moonshine .toggle: a paper pill ringed in gold; the pressed choice is green with a light inner ring. */
+.seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--panel); box-shadow: 0 0 0 2px var(--trim); }
+header .seg button { box-shadow: none; transform: none; }
+.seg button { border: 0; border-radius: 6px; background: transparent; padding: 5px 10px; font-weight: 800; color: var(--fg); }
+.seg button:hover { background: var(--cat); color: var(--fg); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); box-shadow: inset 0 0 0 2px var(--trim-light); }
+header .seg button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--trim-light); }
+.themeSeg button { min-width: 34px; padding: 5px 8px; }
+.siteLinks { display: flex; gap: 10px; }
 
 .stage { grid-area: stage; position: relative; min-height: 0; background: var(--scene-bg); }
 .stage canvas { display: block; width: 100%; height: 100%; touch-action: none; position: relative; }
 .stage canvas.gameLayer { position: absolute; inset: 0; pointer-events: none; }
-.v2tag { font-size: 11px; font-weight: 800; color: var(--accent-ink); background: var(--accent); border-radius: 4px; padding: 1px 5px; }
+.v2tag { font-size: 11px; font-weight: 800; color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 1px 7px; box-shadow: 0 0 0 1.5px var(--trim); }
 .discInfo { color: var(--muted); font-size: 12px; }
 .linkBtn { border: 0; background: none; padding: 0; color: var(--water); font-weight: 600; text-decoration: underline; cursor: pointer; }
 .sgOverlay { position: absolute; inset: 0; pointer-events: none; }
@@ -102,7 +127,8 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 8px 10px; }
 .discGate { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 16px; background: var(--bg); }
 .discGate[hidden] { display: none; }
-.discGateBox { max-width: 460px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; }
+.discGateBox { max-width: 460px; background: var(--panel); border: 0; border-radius: 6px; padding: 20px 22px; box-shadow: 0 0 0 2px var(--trim), 4px 5px 0 2px var(--drop); }
+.discGateBox h2 { color: var(--value); }
 .discGateBox h2 { margin: 0 0 8px; font-size: 18px; }
 .discGateBox p { margin: 0 0 14px; font-size: 13px; line-height: 1.5; }
 .discGateBtns { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
@@ -189,7 +215,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .speed #speedOut:focus { outline: none; border-color: var(--accent); background: var(--bg); }
 
 aside { grid-area: side; border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 14px 16px; display: grid; align-content: start; gap: 14px; }
-aside h2 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+aside h2 { margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--value); }
 .ghost { display: grid; grid-template-columns: 12px 1fr auto; gap: 4px 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); }
 .ghost:first-of-type { border-top: 0; }
 .swatch { width: 12px; height: 12px; border-radius: 50%; margin-top: 4px; }
@@ -226,6 +252,9 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
   header .field { flex: 1 1 100%; }
   header .field select { flex: 1 1 0; min-width: 0; max-width: none; }
   header h1, header .brand { font-size: 15px; }
+  .siteLinks { gap: 8px; order: 1; }
+  header .btn, header button { padding: 6px 10px; }
+  .siteLinks .long { display: none; }
   .hide-narrow { display: none; }
   .notice { top: auto; bottom: 10px; left: 10px; right: 10px; max-width: none; }
   .hud { font-size: 10px; padding: 5px 7px; }
@@ -239,15 +268,31 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
   aside { padding: 10px 12px; }
   .hud { font-size: 10px; }
 }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+/* Pixel sprites, as on the Moonshine site: two frames side by side in one PNG, swapped with steps()
+   about every 0.75 s. Our own drawings (web/make_sprites.py). Still under reduced motion. */
+.sprite { display: inline-block; flex: none; background: no-repeat 0 0 / 200% 100%; image-rendering: pixelated; }
+@keyframes pose { 0% { background-position: 0 0; } 50% { background-position: 100% 0; } }
+@keyframes lean { 0% { transform: skewX(-4deg); } 50% { transform: skewX(4deg); } }
+.sprite { animation: pose 1.5s steps(1) infinite; }
+.sp-sun { width: 32px; height: 36px; background-image: url(sprite-sun.png); transform-origin: 50% 100%; animation: lean 1.5s steps(1) infinite; }
+.sp-palm { width: 40px; height: 36px; background-image: url(sprite-palm.png); display: none; }
+@media (min-width: 1480px) { .sp-palm { display: inline-block; } }
+@media (max-width: 760px) { .sp-sun { width: 24px; height: 27px; } }
+.sp-fish { width: 48px; height: 48px; background-image: url(sprite-fish.png); }
+.sp-ship { width: 96px; height: 72px; background-image: url(sprite-ship.png); }
+.sp-hand { width: 48px; height: 32px; background-image: url(sprite-hand.png); animation-duration: .75s; }
+.sp-pad { width: 48px; height: 36px; background-image: url(sprite-pad.png); }
+.doodles { display: flex; align-items: flex-end; justify-content: center; gap: 10px; padding: 8px 0 0; }
+.app.full .doodles { display: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
 /* Delfino Ghosts browser */
-dialog.browse { width: min(720px, calc(100vw - 32px)); max-height: min(80vh, 760px); padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--fg); }
+dialog.browse { width: min(720px, calc(100vw - 32px)); max-height: min(80vh, 760px); padding: 0; border: 0; border-radius: 6px; background: var(--panel); color: var(--fg); box-shadow: 0 0 0 2px var(--trim), 4px 5px 0 2px var(--drop); }
 dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 .browse form { display: flex; flex-direction: column; max-height: inherit; }
-.browse header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); position: static; }
-.browse header h2 { margin: 0; font: 700 15px var(--display); flex: 1; }
-.browse header a { color: var(--water); font-size: 12px; }
+.browse header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 2px solid var(--trim-light); position: static; background: var(--accent); color: var(--accent-ink); }
+.browse header h2 { margin: 0; font: 800 15px var(--display); flex: 1; }
+.browse header a { color: var(--trim-light); font-size: 12px; }
 .browse .filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .browse .filters input[type=search] { flex: 1 1 180px; min-width: 0; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
 .browse .filters select { flex: 0 1 auto; max-width: 100%; }
@@ -277,7 +322,8 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 
 <div class="app">
   <header>
-    <h1><span class="sun" aria-hidden="true"></span>Sunshine Ghost Viewer <span class="v2tag">v2</span></h1>
+    <span class="sprite sp-sun" aria-hidden="true"></span>
+    <h1>Sunshine Ghost Viewer <span class="v2tag">v2</span></h1>
     <div class="field">
       <label for="mapSelect">World</label>
       <select id="mapSelect"></select>
@@ -297,6 +343,36 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
     <button id="browseGhosts" title="Browse ghosts shared on Delfino Ghosts">Browse</button>
     <button class="primary" id="addGhost">Add ghost</button>
     <input type="file" id="ghostFile" accept=".smsghost" multiple hidden>
+    <nav class="siteLinks" aria-label="Related sites">
+      <a class="btn" href="https://dogecyanide.github.io/moonshine-site/" target="_blank" rel="noopener" title="Moonshine, the practice mod that records these ghosts (opens in a new tab)">Moonshine<span class="ext" aria-hidden="true">&#x2197;&#xFE0E;</span></a>
+      <a class="btn" href="https://zeldocto.github.io/delfino-ghosts/" target="_blank" rel="noopener" title="Delfino Ghosts, the ghost database (opens in a new tab)">Delfino<span class="long">Ghosts</span><span class="ext" aria-hidden="true">&#x2197;&#xFE0E;</span></a>
+    </nav>
+    <div class="seg themeSeg" role="group" aria-label="Theme">
+      <button type="button" data-theme-set="light" aria-pressed="false" aria-label="Light theme" title="Light theme">&#x2600;&#xFE0E;</button>
+      <button type="button" data-theme-set="dark" aria-pressed="false" aria-label="Dark theme" title="Dark theme">&#x263E;&#xFE0E;</button>
+    </div>
+    <span class="sprite sp-palm" aria-hidden="true"></span>
+    <script>
+    // Light / dark toggle, as on the Moonshine site: a saved choice wins, otherwise follow the OS live.
+    (function () {
+      var d = document.documentElement, mq = matchMedia('(prefers-color-scheme: dark)');
+      var COLOR = { light: '#36553c', dark: '#1f3326' };
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
+      var saved = null; try { saved = localStorage.getItem('theme'); } catch (e) {}
+      if (saved === 'light' || saved === 'dark') d.dataset.theme = saved;
+      function paint() {
+        var t = d.dataset.theme || (mq.matches ? 'dark' : 'light');
+        meta.content = COLOR[t];
+        document.querySelectorAll('.themeSeg button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.themeSet === t)); });
+      }
+      document.querySelectorAll('.themeSeg button').forEach(function (b) {
+        b.addEventListener('click', function () { d.dataset.theme = b.dataset.themeSet; try { localStorage.setItem('theme', b.dataset.themeSet); } catch (e) {} paint(); });
+      });
+      if (mq.addEventListener) mq.addEventListener('change', paint);
+      paint();
+    })();
+    </script>
   </header>
 
   <div class="stage" id="stage">
@@ -342,6 +418,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
     <div class="buttons">
       <button id="back" title="Back one frame (,)" aria-label="Back one frame">&minus;1f</button>
       <button id="play" class="primary" aria-label="Play">Play</button>
+      <button id="delSave" hidden aria-label="Delete save file">Delete save</button>
       <button id="fwd" title="Forward one frame (.)" aria-label="Forward one frame">+1f</button>
       <button id="shareBtn" class="tool" title="Copy a link to this view (ghost, time and camera)">Share</button>
       <button id="clipBtn" class="tool" title="Make a clip: pick a stretch around this moment and save it as a video">Clip</button>
@@ -441,6 +518,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
     </div>
     <p class="help">Click the stage to play or pause. Drag to orbit, scroll or pinch to zoom. <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or the arrow keys move the camera, <kbd>Q</kbd> <kbd>E</kbd> lower and raise it, hold <kbd>Shift</kbd> to go faster. <kbd>Space</kbd> play, <kbd>,</kbd> <kbd>.</kbd> step one frame, <kbd>F</kbd> follow camera. The button in the scene's top right corner goes full screen. On a touch screen, tick <b>Movement joystick</b> for an on-screen stick that flies the camera; dragging with one finger then turns the camera where it stands.</p>
     <p class="help">To load a ghost, drag .smsghost files from your computer and drop them anywhere on the page, use <b>Add ghost</b>, or pick one from <b>Shared ghosts</b>.</p>
+    <div class="doodles" aria-hidden="true"><span class="sprite sp-fish"></span><span class="sprite sp-ship"></span><span class="sprite sp-pad"></span><span class="sprite sp-hand"></span></div>
   </aside>
 </div>
 
@@ -5858,10 +5936,18 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   }
   // the Play button while live play runs: "Restart level" (back to Play / Pause when it ends)
   var playRestart = false;
+  // (live play only: erase file A's save in this browser; the next restart starts a fresh file)
+  document.getElementById('delSave').addEventListener('click', () => {
+    if (!confirm('Delete the save file? This cannot be undone.')) return;
+    try { localStorage.removeItem('ghostViewer.save.A'); } catch (e) { }
+    $('delSave').textContent = 'Save deleted';
+    setTimeout(() => { $('delSave').textContent = 'Delete save'; }, 2000);
+  });
   function livePlayButton() {
     const on = !!livePad.active, b = $('play');
     if (on === playRestart) return;
     playRestart = on;
+    $('delSave').hidden = !on;
     if (on) { b.textContent = 'Restart level'; b.setAttribute('aria-label', 'Restart level'); b.dataset.wasDisabled = b.disabled ? '1' : ''; b.disabled = false; }
     else { b.disabled = b.dataset.wasDisabled === '1'; setPlaying(playing); }
   }
@@ -5888,6 +5974,8 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     const st = livePad.runner.stage;
     if (st && livePad.frames - st.frame > 4) livePad.frames = st.frame + 4;
     if (gameLive) gameLayer.advanceSim(liveSimInput());
+    // (a live screen — a menu, the episode select, a movie — runs on while the game layer isn't drawn)
+    else if (livePad.runner && livePad.runner.stage && (livePad.runner.screen || livePad.runner.leaving)) { try { livePad.runner.update(livePad.runner.sceneName, null, liveSimInput()); } catch (e) { console.warn('[live]', e); } }
     liveGunCapture();
     liveStageChange();
   }

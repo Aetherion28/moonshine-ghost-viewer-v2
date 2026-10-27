@@ -83,6 +83,7 @@ import './bathwater.js';
 import { writeSmsGhost, type GhostFrame, type GhostSegment } from './ghostwrite.js';
 import { LiveDirector, LiveTiming, decideMarioPosIdx, entranceStart, gotShineFromSamples, moveStage, decideNextStageOfMiss, plazaDemoOnStart, stageDemoName, liveRunCarry, loadGapQf, Area, selectMenuInput } from './stagechange.js';
 import { FlagManager, MSF } from './flags.js';
+import { loadSlot, storeSlot, eraseSlot, readSave, writeSave, startArea, SAVE_SIZE } from './savefile.js';
 import { DIR } from './player/player.js';
 import { parseStageArc, sceneForRoute } from '../stagearc.js';
 import './mapevent.js';
@@ -676,7 +677,13 @@ export class LiveRunner extends SimRunner {
     /** the screen showing: the pause menu, the game over's choice, the episode select, a movie */
     screen: { kind: 'pause' | 'gameover' | 'select' | 'movie'; menu: any } | null = null;
     /** a stage change waiting on a screen (leave's later steps) */
-    private leaving: { cur: Area; next: Area; note: string; movie?: number; n?: Area & { select: boolean }; step: number } | null = null;
+    private leaving: { cur: Area; next: Area; note: string; movie?: number; n?: Area & { select: boolean }; step: number; flags?: FlagManager; prevArea?: number } | null = null;
+    /** the file the run plays (0..2: A / B / C, its saves go there), -1 none (the run's flags aren't a file's) */
+    saveSlot = -1;
+    /** the run waits on the file select (once, when live play starts, not when recording) */
+    private fileAsked = false;
+    /** show the Shine select when entering a course (off: it doesn't draw or take the pad in the browser yet; the default episode is used) */
+    shineSelect = false;
     private liveKey = '';
     /** the screens' clock: game frames (1/29.97 s) of real time (update runs more than once a page frame) */
     private menuT = -1;
@@ -763,7 +770,12 @@ export class LiveRunner extends SimRunner {
             if (this.liveKey === key && this.error) return false;   // (it failed: don't rebuild every frame)
             this.liveKey = key; this.error = null; this.sync = null; this.q0 = 0;
             if (fresh) {
-                this.resetSeen = L.reset; this.carry = null; this.qfBase = 0; this.notice = ''; this.loadQf = this.loadLeft = 0;
+                this.resetSeen = L.reset; this.qfBase = 0;
+                // live play plays file A (its save carries over and the pause menu's Save writes it)
+                if (!this.fileAsked && !L.record) { this.saveSlot = 0; this.fileAsked = true; }
+                // (a restart of a run playing a file starts again from the file's save)
+                const sv = this.saveSlot >= 0 && !L.record ? loadSlot(this.saveSlot) : null;
+                this.carry = this.saveSlot >= 0 && !L.record ? { flags: (sv && readSave(sv)) || new FlagManager(), prevArea: -1 } : null; this.notice = ''; this.loadQf = this.loadLeft = 0;
                 this.recording = L.record ? [] : null;
             } else if (this.stage) this.qfBase += this.stage.qf + Math.max(STAGE_LOAD_QF, this.loadQf);
             this.pending = null; this.paused = false; this.screen = null; this.leaving = null;
@@ -796,7 +808,7 @@ export class LiveRunner extends SimRunner {
             try { st.runFrame(null, pad); } catch (e) { this.error = e; console.warn('[live] frame', e); this.stage = null; return false; }
             this.snapCamera(st);
             if (T && T.freeRoamTick !== roamed) { this.notice = 'Free-roam Shine get: the game would go back to Delfino Plaza here (off while recording)'; this.noticeUntil = st.frame + 150; }
-            else if (this.noticeUntil >= 0 && st.frame >= this.noticeUntil) { this.noticeUntil = -1; if (this.notice.startsWith('Free-roam')) this.notice = ''; }
+            else if (this.noticeUntil >= 0 && st.frame >= this.noticeUntil) { this.noticeUntil = -1; if (this.notice.startsWith('Free-roam') || /saved|Saved|nothing saved|could not be written/.test(this.notice)) this.notice = ''; }
             const D = st.director as LiveDirector | null;
             if (D && D.setMarioTick >= 0 && this.recFrom < 0) {
                 // Moonshine's first sample: the end of the frame after setMario's (changeState at a frame's
@@ -847,7 +859,7 @@ export class LiveRunner extends SimRunner {
             const ns = M.nextState();
             if (ns === 2) return;
             this.screen = null; this.paused = false;
-            if (M.savePicked) { this.notice = 'Saving isn\'t simulated: the game goes on'; this.noticeUntil = st.frame + 90; }
+            if (M.savePicked) this.save(st, 'Saved');
             if (ns === 5) {
                 const w = st.world, D = st.director as LiveDirector;
                 w.nextArea = { stage: 1, scenario: 0xFF }; w.moviePending = false; w.stageTransitionPending = true;
@@ -881,8 +893,18 @@ export class LiveRunner extends SimRunner {
             if (w.nextArea) w.nextArea.movie = undefined;
         } else next = w.nextArea ? { stage: w.nextArea.stage, scenario: w.nextArea.scenario } : { stage: 1, scenario: 0xFF };
         const movie = w.moviePending && w.nextArea ? w.nextArea.movie : undefined;
+        // (a Shine got: the game's card save after it (DIRECTOR_FLAG_CARD_SAVE_PENDING): here without its question)
+        const T: any = w.talk;
+        if (T && (T.dflags & 0x8000) && D.state !== DIR.GAME_OVER) this.save(st, 'Shine got: saved');
         this.leaving = { cur, next, note: '', movie, step };
         this.leaveScreens(st, null);
+    }
+    /** write the run's flags to its file (TFlagManager::save into the browser's slot) */
+    private save(st: Stage, what: string) {
+        if (this.saveSlot < 0) { this.notice = 'No file is being played: nothing saved'; this.noticeUntil = st.frame + 90; return; }
+        const ok = storeSlot(this.saveSlot, writeSave(st.world.flags));
+        this.notice = ok ? `${what} to file ${'ABC'[this.saveSlot]} (${SAVE_SIZE} bytes, in this browser)` : 'The save could not be written (browser storage unavailable)';
+        this.noticeUntil = st.frame + 120;
     }
     /**
      * leave's steps, each waiting on its screen when the HUD gives one (else as the notices had it):
@@ -892,7 +914,8 @@ export class LiveRunner extends SimRunner {
      * episode picked is mNextArea's scenario and MSF_EPISODE).
      */
     private leaveScreens(st: Stage, L: LiveInput | null) {
-        const G = this.leaving!, w = st.world, f = w.flags, S = this.screens;
+        const G = this.leaving!, w = st.world, S = this.screens;
+        let f = G.flags || w.flags;
         const pad = L ? L.pad() : null;
         const add = (s: string) => { G.note = G.note ? G.note + '; ' + s : s; };
         const run = (kind: 'gameover' | 'select' | 'movie', make: () => any): any => {
@@ -909,7 +932,9 @@ export class LiveRunner extends SimRunner {
             const m = run('gameover', () => S!.gameOverMenu());
             if (m === undefined || (m && m.choice < 0)) return;
             this.screen = null;
-            f.setFlag(MSF.LIFE_COUNT, 0); f.correctFlag();
+            // (TFlagManager::restore: the file's save back, when the run plays a file)
+            const saved = this.saveSlot >= 0 ? loadSlot(this.saveSlot) : null, back = saved ? readSave(saved) : null;
+            if (back) { G.flags = f = back; } else { f.setFlag(MSF.LIFE_COUNT, 0); f.correctFlag(); }
             f.setBool(true, MSF.UNK30001);
             G.next = f.getFlag(MSF.SHINE_COUNT) ? { stage: 1, scenario: 0xFF } : { stage: 0, scenario: 0 };
             add(!m ? 'Game over' : m.choice === 1 ? 'Back to the title: the game goes to its title screen here (the run goes on from the save)' : '');
@@ -931,7 +956,8 @@ export class LiveRunner extends SimRunner {
         }
         if (G.step === 3) {
             const n = G.n!;
-            if (n.select) {
+            if (n.select && !this.shineSelect) add(`episode select: episode ${n.scenario + 1}`);
+            else if (n.select) {
                 const m = run('select', () => S!.selectMenu(selectMenuInput(f, n.stage)));
                 if (m === undefined || (m && !m.closeMenu)) return;
                 this.screen = null;
@@ -944,7 +970,7 @@ export class LiveRunner extends SimRunner {
         let note = G.note;
         if (n.stage === 0xF) note = 'The game goes to its title / file select here';
         this.leaving = null;
-        this.carry = { flags: f, prevArea: this.area };
+        this.carry = { flags: f, prevArea: G.prevArea ?? this.area };
         const scene = this.disc.stageArc ? sceneForRoute(this.disc.stageArc, n.stage, n.scenario) : null;
         this.notice = note;
         this.pending = { area: n.stage, episode: n.scenario, scene, key: `${n.stage}:${n.scenario}`, note };

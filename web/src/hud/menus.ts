@@ -281,8 +281,8 @@ class SelectShine {
         if (this.phase > 4) this.phase = 0;
     }
 }
-/** the shine_menu.bpk colour animation's length (the model isn't drawn: its fade with depth is taken over this many frames) */
-const SHINE_FRAME_MAX = 120;
+/** shine_menu.bpk's (and shine_menu_empty.bpk's) colour animation length: 99 frames (its PAK1 duration) */
+const SHINE_FRAME_MAX = 99;
 export class SelectMenu implements Menu {
     state = SS.CLOSE_MENU;
     closeMenu = false; selected = 0;
