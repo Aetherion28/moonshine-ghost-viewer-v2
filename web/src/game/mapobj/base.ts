@@ -238,6 +238,12 @@ export class MapObjBase extends LiveActor {
         else if (t === AT.NOZZLE_BOX) bmt('mapobj/nozzlebox.bmt', true);
         else if (t === AT.MIRROR_L) a.bmt = 'mapobj/mirror.bmt';
         else if (t === AT.RICCO_SHIP) a.bmt = 'mapobj/riccoship.bmt';
+        else if (t === AT.WOOD_BOX) bmt('mapobj/kibako.bmt');
+        else if (t === AT.WOOD_BARREL) bmt('mapobj/barrel.bmt');
+        else if (t === AT.BRICK_BLOCK) bmt('mapobj/brickblock.bmt');
+        else if (t === AT.WATER_MELON_BLOCK) bmt('mapobj/watermelonblock.bmt');
+        else if (t === AT.SAND_LEAF_BASE00 || t === AT.SAND_BOMB_BASE00 || t === AT.SAND_BOMB_BASE_FOOT) a.bmt = 'mapobj/sandbombbase.bmt';
+        else if (t === AT.SAND_CASTLE) { a.bmt = 'mapobj/sandbombbase.bmt'; (a as any).bmtTex = true; }
     }
     checkIllegalAttr() { }
 
