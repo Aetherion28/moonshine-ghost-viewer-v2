@@ -8293,11 +8293,15 @@ void main() {
         phase = 'timing'; t0 = now; f0 = loopFrame; g0 = livePad.frames;
         const R = gameLayer.renderer;
         acc = { s: { ...perfAcc }, g: { ...gameLayer.perf }, r: R && R.perf ? { ...R.perf } : null };
-        perfAcc.keep = true;
+        perfAcc.keep = true; window.__benchFrames = [];
       } else if (phase === 'timing' && now - t0 > 15000) {
         phase = 'done';
         const s = (now - t0) / 1000, n = loopFrame - f0;
-        box.textContent = `BENCH done: ${(n / s).toFixed(1)} fps drawn, ${((livePad.frames - g0) / s).toFixed(1)} game frames/s\n` + (window.__benchOut || '');
+        const F = window.__benchFrames || []; window.__benchFrames = null;
+        const work = F.filter((_, i) => !(i & 1)).sort((x, y) => x - y), gap = F.filter((_, i) => i & 1).slice(1).sort((x, y) => x - y);
+        const q = (A, f) => A.length ? A[Math.min(A.length - 1, Math.floor(A.length * f))].toFixed(1) : '-';
+        box.textContent = `BENCH done (build ${BUILD_STAMP}): ${(n / s).toFixed(1)} fps drawn, ${((livePad.frames - g0) / s).toFixed(1)} game frames/s\n` + (window.__benchOut || '')
+          + `\nwork ms p50 ${q(work, 0.5)} p90 ${q(work, 0.9)} p99 ${q(work, 0.99)} max ${q(work, 1)} · frame gap ms p50 ${q(gap, 0.5)} p90 ${q(gap, 0.9)} max ${q(gap, 1)} · gaps over 40 ms: ${gap.filter((g) => g > 40).length}/${gap.length}`;
         console.log('[bench]', box.textContent);
         return;
       }
@@ -8343,7 +8347,7 @@ void main() {
     else viewStep(dt, now, true);
     if (gameLive && loopFrame % 30 === 0) warmFx();   // (after the frame: the stage is on screen first)
     clipFrame();
-    perfAcc.loop += performance.now() - _lt;
+    { const d = performance.now() - _lt; perfAcc.loop += d; if (window.__benchFrames) window.__benchFrames.push(d, now - (window.__benchLast || now)); window.__benchLast = now; }
     requestAnimationFrame(loop);
   }
 
