@@ -554,14 +554,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793167973556"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793167973556"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793167973556"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793167973556"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793167973556"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793167973556"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793167973556"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793167973556"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793168182382"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793168182382"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793168182382"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793168182382"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793168182382"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793168182382"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793168182382"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793168182382"><\/script>');
 </script>
 <script>
 (() => {
@@ -8273,7 +8273,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793167973556';
+  const BUILD_STAMP = '1793168182382';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
@@ -8349,8 +8349,11 @@ void main() {
     if (Math.abs(renderer.getPixelRatio() - want) > 1e-3) renderer.setPixelRatio(want);
   }
   function loop(now) {
-    // at most 30 frames a second, the game's own rate (a 60 Hz screen draws every other refresh)
-    if (now - last < 1000 / 30 - 4) { requestAnimationFrame(loop); return; }
+    // at most 30 frames a second, the game's own rate, on a fixed 30 Hz schedule: a 60 Hz screen
+    // draws every other refresh, and a 144 Hz one alternates 4 and 5 refreshes (30 a second on
+    // average) rather than always waiting 5 (28.8)
+    if (now < nextDraw - 2) { requestAnimationFrame(loop); return; }
+    nextDraw = now - nextDraw > 1000 / 30 ? now + 1000 / 30 : nextDraw + 1000 / 30;
     loopFrame++;
     const dt = Math.min(0.1, (now - last) / 1000);
     adaptResolution();
@@ -8386,7 +8389,7 @@ void main() {
     requestAnimationFrame(loop);
     if (deferSim && !simQueued) { simQueued = true; simChannel.port2.postMessage(0); }
   }
-  let simDt = 0, simQueued = false;
+  let simDt = 0, simQueued = false, nextDraw = 0;
   const simChannel = new MessageChannel();
   simChannel.port1.onmessage = () => {
     simQueued = false;
