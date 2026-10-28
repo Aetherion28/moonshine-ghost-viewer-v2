@@ -23,7 +23,10 @@ const opts = {
   plugins: [stubs], keepNames: true, logLevel: 'warning', metafile: true, define: { 'process.env.NODE_ENV': '"production"' },
 };
 import fs from 'node:fs';
-fs.copyFileSync(path.join(here, 'viewer.html'), path.join(here, '../site/index.html'));
+// (each build stamps its scripts' URLs, so a reload gets this build's scripts past the page cache; build.txt names it)
+const stamp = String(Date.now());
+fs.writeFileSync(path.join(here, '../site/index.html'), fs.readFileSync(path.join(here, 'viewer.html'), 'utf8').replace(/\.js"><\\\/script>'\);/g, `.js?v=${stamp}"><\\/script>');`).replace("const BUILD_STAMP = '';", `const BUILD_STAMP = '${stamp}';`));
+fs.writeFileSync(path.join(here, '../site/build.txt'), stamp);
 for (const f of fs.readdirSync(path.join(here, 'legacy'))) fs.copyFileSync(path.join(here, 'legacy', f), path.join(here, '../site', f));
 // the game audio: the page side (audio.js) and its worklet (audio-worklet.js); the HUD (hud.js)
 const audio = [
