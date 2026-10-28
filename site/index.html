@@ -508,7 +508,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="With a ghost that recorded its controller: Mario is played by the game's own code from those inputs (the camera too), instead of following the ghost's recorded positions. Where the replay drifts from the ghost is shown here."><input type="checkbox" id="optReplay" checked disabled> Input replay <span class="discInfo" id="replayInfo"></span></label>
       <label title="When the input replay drifts more than a unit from the ghost, Mario follows the ghost's own position and animation until the ghost next stands on the ground, then the inputs take over again from there."><input type="checkbox" id="optSnap" checked> Snap Mario back to the ghost</label>
       <label title="Read the game from an extracted game folder instead of a disc image"><button type="button" id="pickFolder" class="linkBtn">Use an extracted game folder…</button></label>
-      <label title="Nintendo's GameCube controller adapter (WUP-028, for Wii U / Switch) read directly over USB, as Dolphin does: its four ports show up as controllers. No driver needed (it is read as a HID device); one set up for Dolphin with Zadig works too."><button type="button" id="gcAdapterBtn" class="linkBtn">Connect a GameCube adapter (WUP-028)…</button> <span class="discInfo" id="gcAdapterInfo"></span></label>
+      <label id="gcAdapterRow" hidden title="Nintendo's GameCube controller adapter (WUP-028, for Wii U / Switch) read directly over USB, as Dolphin does: its four ports show up as controllers. No driver needed (it is read as a HID device); one set up for Dolphin with Zadig works too."><button type="button" id="gcAdapterBtn" class="linkBtn">Connect a GameCube adapter (WUP-028)…</button> <span class="discInfo" id="gcAdapterInfo"></span></label>
       <label title="Load zones, cutscene and warp triggers, area cylinders and the camera, area, flow, wire, shadow, mirror, sound and draw-distance cubes, and enemies' own trigger zones (the Monty Mole cannon's), as see-through volumes with labels."><input type="checkbox" id="optTriggers"> Show invisible triggers</label>
       <label><input type="checkbox" id="optNames"> Show model names</label>
       <label title="Shines that appear only after an event (red coins, a boss, 100 coins...) are hidden until the ghost triggers them; the 100-coin shine counts the stage's placed gold coins. Red coins that a red switch brings out stay hidden until the ghost presses it. Tick to show every shine and red coin in the level."><input type="checkbox" id="optShines"> Show all shines and red coins</label>
@@ -555,14 +555,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793200221508"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793200221508"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793200221508"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793200221508"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793200221508"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793200221508"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793200221508"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793200221508"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793201669882"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793201669882"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793201669882"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793201669882"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793201669882"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793201669882"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793201669882"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793201669882"><\/script>');
 </script>
 <script>
 (() => {
@@ -6193,7 +6193,7 @@ document.write('<script src="' + V2 + 'hud.js?v=1793200221508"><\/script>');
     const on = !!livePad.active, b = $('play');
     if (on === playRestart) return;
     playRestart = on;
-    $('delSave').hidden = !on; $('ctrlBtn').hidden = !on;
+    $('delSave').hidden = !on; $('ctrlBtn').hidden = !on; $('gcAdapterRow').hidden = !on;
     if (on) { b.textContent = 'Restart level'; b.setAttribute('aria-label', 'Restart level'); b.dataset.wasDisabled = b.disabled ? '1' : ''; b.disabled = false; }
     else { b.disabled = b.dataset.wasDisabled === '1'; setPlaying(playing); }
   }
@@ -8398,7 +8398,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793200221508';
+  const BUILD_STAMP = '1793201669882';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
