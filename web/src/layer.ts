@@ -36,7 +36,7 @@ import { MarioShadow } from './marioshadow.js';
 import { BossMantaManager } from './game/enemies/bossmanta.js';
 import { MapWireConst } from './game/mapwire.js';
 import { CLASSES } from './game/scene.js';
-import { LiveActor, MActor } from './game/engine.js';
+import { LiveActor, MActor, LF } from './game/engine.js';
 import { Mtx } from './game/math.js';
 import { ModelGate } from './game/mapobj/modelgate.js';
 import { ShiningStone } from './game/mapobj/mamma.js';
@@ -620,6 +620,7 @@ export class GameLayer {
         this.sim.update(this.scene, this.simFiles, inp);
     }
 
+    private viewCam: any = null;
     private syncSim(inp: SimInput | null, group: any) {
         const r = this.renderer;
         const on = !!(inp && this.sim && r);
@@ -632,6 +633,11 @@ export class GameLayer {
         if (st) this.syncGoop(st);
         else if (this.goop) for (const g of this.goop.insts) if (g) g.visible = false;
         this.syncMapJoints(st);
+        // Looking through the game's own camera, an actor the game clips (CLIPPED_OUT: out of its
+        // view, or past its manager's far distance) isn't drawn, as in TLiveActor::perform and
+        // TMapObjBase::perform; from any other viewpoint everything is drawn as before.
+        const cc = st && st.world ? (st.world as any).clipCamera : null, vc = this.viewCam;
+        const gameView = !!(cc && vc && Math.abs(vc.position.x - cc.pos[0]) + Math.abs(vc.position.y - cc.pos[1]) + Math.abs(vc.position.z - cc.pos[2]) < 1);
         // the viewer's stand-ins
         this.simPlaces.clear();
         for (const d of list) this.simPlaces.add(d.type + '|' + d.place.map((v) => v.toFixed(1)).join(','));
@@ -725,7 +731,7 @@ export class GameLayer {
                 this.actorModels.push(inst);
             }
             const inst = m.inst;
-            inst.visible = this.live && a.drawn();
+            inst.visible = this.live && a.drawn() && !(gameView && (a as any).liveFlag & LF.CLIPPED_OUT);
             const twin = (m as any).twin as J3DModelInstanceSimple | undefined;
             if (twin) twin.visible = inst.visible;
             const parts = (m as any).parts as { inst: J3DModelInstanceSimple; joint: number }[] | undefined;
@@ -1239,6 +1245,7 @@ export class GameLayer {
             this.marios.delete(k);
         }
         let _pt = performance.now();
+        this.viewCam = cam;
         this.syncSim(sim, group);
         this.perf.sync += performance.now() - _pt; _pt = performance.now();
         this.wireStage = sim && this.sim ? this.sim.stage : null;

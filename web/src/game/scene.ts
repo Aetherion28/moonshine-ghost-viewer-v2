@@ -46,6 +46,8 @@ export class Stage {
     /** Each object's scene.bin node. */
     nodeOf = new Map<NameRef, SceneNode>();
     camera: GameCamera | null = null;
+    /** live play: with no recorded camera, the sim camera clips (a replay's frames without one clip nothing) */
+    liveClip = false;
     /** QF of the movement tick last run (0: the stage's first). */
     qf = 0;
     frame = 0;
@@ -242,7 +244,7 @@ export class Stage {
         w.fludd.emit(m.fludd, m.pos, m.vel, !!(m.fludd as any).burst);
     }
     /** The managers' and conductor's clipping, against the frame's game camera (else all in view). */
-    private clip() { this.world.clipCamera = this.camera; }
+    private clip() { this.world.clipCamera = this.camera ?? (this.liveClip && this.player ? simClipCamera(this.player.simCamera) : null); }
 
     /** Run up to QF q (frames are whole: the frame holding q). */
     runTo(q: number, track: MarioTrack | null, budgetFrames = Infinity, pad: ((qf: number) => PadStatus | null) | null = null) {
@@ -255,6 +257,25 @@ export class Stage {
     liveActors(): LiveActor[] { return this.objects.filter((o) => o instanceof LiveActor) as LiveActor[]; }
 }
 
+/** Live play (no recorded camera): the sim camera of the frame (its eye, look-at, up and FOV) as a GameCamera. */
+function simClipCamera(C: any): GameCamera | null {
+    if (!C || !C.pos || !C.at) return null;
+    const p = C.pos, a = C.at, u = C.up || { x: 0, y: 1, z: 0 };
+    // view space looks down -z: z the back (eye - at), x = up × z, y = z × x
+    let zx = p.x - a.x, zy = p.y - a.y, zz = p.z - a.z;
+    let l = Math.hypot(zx, zy, zz); if (!(l > 0)) return null; zx /= l; zy /= l; zz /= l;
+    let xx = u.y * zz - u.z * zy, xy = u.z * zx - u.x * zz, xz = u.x * zy - u.y * zx;
+    l = Math.hypot(xx, xy, xz); if (!(l > 0)) return null; xx /= l; xy /= l; xz /= l;
+    const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+    // the rotation's columns x, y, z to a quaternion
+    const m00 = xx, m11 = yy, m22 = zz, tr = m00 + m11 + m22;
+    let qx: number, qy: number, qz: number, qw: number;
+    if (tr > 0) { const S = Math.sqrt(tr + 1) * 2; qw = 0.25 * S; qx = (yz - zy) / S; qy = (zx - xz) / S; qz = (xy - yx) / S; }
+    else if (m00 > m11 && m00 > m22) { const S = Math.sqrt(1 + m00 - m11 - m22) * 2; qw = (yz - zy) / S; qx = 0.25 * S; qy = (yx + xy) / S; qz = (zx + xz) / S; }
+    else if (m11 > m22) { const S = Math.sqrt(1 + m11 - m00 - m22) * 2; qw = (zx - xz) / S; qx = (yx + xy) / S; qy = 0.25 * S; qz = (zy + yz) / S; }
+    else { const S = Math.sqrt(1 + m22 - m00 - m11) * 2; qw = (xy - yx) / S; qx = (zx + xz) / S; qy = (zy + yz) / S; qz = 0.25 * S; }
+    return { pos: [p.x, p.y, p.z], quat: [qx, qy, qz, qw], fovy: C.fovy || 50, aspect: (640 * 0.9134614) / 448, near: 10 };
+}
 declare module './engine.js' { interface World { clipCamera: GameCamera | null; } }
 World.prototype.clipCamera = null;
 export { IDX };

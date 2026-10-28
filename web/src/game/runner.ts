@@ -803,7 +803,7 @@ export class LiveRunner extends SimRunner {
         if (this.paused) { this.pauseMenu(st, L); if (this.paused) return true; }
         this.wantFrames = L.frames;
         while (st.frame < L.frames && !this.pending && !this.paused && !this.leaving) {
-            st.camera = null;
+            st.camera = null; st.liveClip = true;   // (live play: clipped against the sim's own camera)
             const pad = st.player ? L.pad() : null;
             const T = st.world.talk;
             if (T) T.freeRoamShine = (L.freeRoamShine ?? this.freeRoamShine) && !this.recording;
