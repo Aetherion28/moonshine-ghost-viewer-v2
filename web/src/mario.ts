@@ -25,23 +25,30 @@ const _v = vec3.create();
  * it (GXInitSpecularDir) in the same colour, shininess 50 (GXInitLightShininess: cos atten 0, 0, 1,
  * dist atten 25, 0, -24). The channel's ambient (太陽アンビエント（プレイヤー）) is set on the materials.
  */
+const _p0 = vec3.create(), _d2 = vec3.create(), _p2 = vec3.create();
 export function setPlayerLights(models: J3DModelInstanceSimple[], sun: SceneBinObjLight, viewMatrix: mat4) {
+    // (the same for every model: worked out once; models not drawn this frame are left as they are)
+    vec3.set(_v, sun.x, sun.y, sun.z);
+    transformVec3Mat4w1(_p0, viewMatrix, _v);
+    transformVec3Mat4w1(_v, viewMatrix, _v);
+    vec3.normalize(_v, _v);
+    const nx = -_v[0], ny = -_v[1], nz = -_v[2];
+    // GXInitSpecularDir: the half-angle vector, and the position far along the direction.
+    vec3.set(_d2, -nx, -ny, -(nz - 1));
+    vec3.normalize(_d2, _d2);
+    vec3.set(_p2, nx * -1048576, ny * -1048576, nz * -1048576);
+    const r = sun.r / 255, g = sun.g / 255, b = sun.b / 255, a = sun.a / 255;
     for (const m of models) {
+        if (!m.visible) continue;
         const l0 = m.getGXLightReference(0);
-        vec3.set(_v, sun.x, sun.y, sun.z);
-        transformVec3Mat4w1(l0.Position, viewMatrix, _v);
-        colorFromRGBA(l0.Color, sun.r / 255, sun.g / 255, sun.b / 255, sun.a / 255);
+        vec3.copy(l0.Position, _p0);
+        colorFromRGBA(l0.Color, r, g, b, a);
         vec3.set(l0.CosAtten, 1, 0, 0);
         vec3.set(l0.DistAtten, 1, 0, 0);
         const l2 = m.getGXLightReference(2);
-        transformVec3Mat4w1(_v, viewMatrix, _v);
-        vec3.normalize(_v, _v);
-        const nx = -_v[0], ny = -_v[1], nz = -_v[2];
-        // GXInitSpecularDir: the half-angle vector, and the position far along the direction.
-        vec3.set(l2.Direction, -nx, -ny, -(nz - 1));
-        vec3.normalize(l2.Direction, l2.Direction);
-        vec3.set(l2.Position, nx * -1048576, ny * -1048576, nz * -1048576);
-        colorFromRGBA(l2.Color, sun.r / 255, sun.g / 255, sun.b / 255, sun.a / 255);
+        vec3.copy(l2.Direction, _d2);
+        vec3.copy(l2.Position, _p2);
+        colorFromRGBA(l2.Color, r, g, b, a);
         vec3.set(l2.CosAtten, 0, 0, 1);
         vec3.set(l2.DistAtten, 25, 0, -24);
     }

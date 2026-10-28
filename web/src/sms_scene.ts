@@ -542,6 +542,19 @@ export class SunshineRenderer implements Viewer.SceneGfx {
         }
     }
 
+    // Each model's shader programs, made as soon as the model is added rather than the first frame it
+    // is drawn: the GPU compiles them in the background (a model coming into view for the first time —
+    // a pooled shadow, an object's first appearance — no longer stalls that frame on its shaders).
+    private warmed = new WeakSet<object>();
+    private warmPrograms(device: GfxDevice) {
+        const cache = this.renderHelper.renderCache;
+        for (const m of this.modelInstances) {
+            if (this.warmed.has(m)) continue;
+            this.warmed.add(m);
+            const mis = (m as any).materialInstances as any[] | undefined;
+            if (mis) for (const mi of mis) { const h = mi.materialHelper; if (h && h.valid) h.cacheProgram(cache); }
+        }
+    }
     /** time spent (ms, summed until read): the lights' setup, the models' prepare, and the GPU submission */
     perf = { lights: 0, prepare: 0, execute: 0 };
     private preparePass(device: GfxDevice, list: GfxRenderInstList, passMask: number, viewerInput: Viewer.ViewerRenderInput): void {
@@ -558,10 +571,11 @@ export class SunshineRenderer implements Viewer.SceneGfx {
     protected prepareToRender(device: GfxDevice, viewerInput: Viewer.ViewerRenderInput): void {
         if (this.beforePrepare !== null)
             this.beforePrepare(viewerInput);
+        this.warmPrograms(device);
         const _t0 = performance.now();
         if (this.objLightConfig !== null)
             for (let i = 0; i < this.modelInstances.length; i++)
-                if (!(this.modelInstances[i] as any).isPlayer)   // (the viewer lights Mario itself)
+                if (this.modelInstances[i].visible && !(this.modelInstances[i] as any).isPlayer)   // (the viewer lights Mario itself; a model not drawn needs none)
                     this.objLightConfig.setOnModelInstance(this.modelInstances[i], viewerInput.camera);
 
         const _t1 = performance.now(); this.perf.lights += _t1 - _t0;
