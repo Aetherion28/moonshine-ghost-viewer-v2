@@ -10,6 +10,7 @@
 // Everything the stage's other actors ask of Mario (MarioProxy's interface: pos, vel, faceAngle,
 // groundPlane, isJumping, hipDrop, marioFlags...) is here too, so they work on either.
 
+import { VERSION } from '../version.js';
 import { V3, s16, JMASSin, JMASCos, matan, IConverge, Mtx, mtx, MsMtxSetRotRPH } from '../math.js';
 import { HitActor, TakeActor, LiveActor, MSG, HC, LF, Stream, CUE_MOVE, World, calcKeyCode, shineIDofExStage, FC_PINGPONG_LOOP, MActor, AnmData, ANM_BCK } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -672,7 +673,7 @@ export class PlayerMario extends TMarioSim {
         else { this.changePlayerStatus(S.BACK_JUMP, 0, false); this.mVel.y = this.mJumpParams.mGetOffYoshiY; this.mYoshi!.getOff(false); }
         this.setAnimation(A.JUMP, 1);
         this.unk78 &= ~0x100;
-        this.pos.y = fadd(this.pos.y, 100);
+        if (!VERSION.pal) this.pos.y = fadd(this.pos.y, 100);   // (PAL drops the lift)
         this.mForwardVel = -8;
         const G = this.mWaterGun;
         if (G) { G.changeNozzle(NOZZLE.Hover, true); this.normalizeNozzle(); G.resetWaterToFull(); }

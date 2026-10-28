@@ -1,6 +1,7 @@
 // Player/MarioMove.cpp: statuses and their entry speeds, the controller, the planes he stands in,
 // the per-tick thinking (situation, water surface, height), and playerControl.
 
+import { VERSION } from '../version.js';
 import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import { V3, fr, s16, JMASSin, JMASCos, matan, psMtxMultVec, psMtxInverse, mtx, MsMtxSetTRS, jgNormalize } from '../math.js';
 import { sqrtf as stdSqrtf, fmadd as fmaddS } from './fmath.js';
@@ -496,7 +497,9 @@ export abstract class MarioMove extends MarioBase {
     }
     stateMachine() {
         let r = 1;
-        for (let guard = 0; r !== 0 && guard < 64; guard++) {
+        // (PAL caps the loop: it breaks once it has run 11 times)
+        const cap = VERSION.pal ? 11 : 64;
+        for (let guard = 0; r !== 0 && guard < cap; guard++) {
             switch (this.mStatus & 0x1C0) {
                 case 0x000: r = this.waitMain(); break;
                 case 0x040: r = this.moveMain(); break;

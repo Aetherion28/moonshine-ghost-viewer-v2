@@ -7,6 +7,7 @@
 // under the viewer's. The viewer then draws only what the game models can't (water, particles,
 // wires, overlays), depth-tested against its own copies of the stage and objects.
 
+import { setGameVersion } from './game/version.js';
 import { mat4, ReadonlyMat4 } from 'gl-matrix';
 import ArrayBufferSlice from '../noclip/ArrayBufferSlice.js';
 import AnimationController from '../noclip/AnimationController.js';
@@ -273,6 +274,7 @@ export class GameLayer {
         const mario = parseArchive(await fs.read('data/mario.szs'), Yaz0.decompressSW);
         const yoshi = fs.has('data/yoshi.szs') ? parseArchive(await fs.read('data/yoshi.szs'), Yaz0.decompressSW) : null;
         this.destroyScene();
+        setGameVersion(fs.id);
         this.fs = fs; this.stageTable = table; this.marioArc = mario; this.yoshiArc = yoshi;
         this.common = common || await DiscCommon.load(fs);
         this.sim = new SimRunner(this.common);

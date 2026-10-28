@@ -17,6 +17,7 @@
 // J3D's with the BCK, the walk/run motion blend, the eat motion on joint 18 and YoshiHeadCtrl
 // on joint 21 (FLUDD's gun angle).
 
+import { VERSION } from '../version.js';
 import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import type { mat4 } from 'gl-matrix';
 import { fr, s16, V3, Mtx, mtx, JMASSin, JMASCos, matan, MsRandF, mtxMultVec, mtxInverse, MsMtxSetXYZRPH } from '../math.js';
@@ -151,13 +152,14 @@ export class YoshiTongue extends TakeActor {
         let best: HitActor | null = null, bestDist = 10000;
         const C = this.cols();
         // (GMSJ01: a seal or a reversing basket in reach ends the reach)
-        for (const a of C) if (a.actorType === AT.SEAL || a.actorType === AT.BASKET_REVERSE) { this.mState = TS.RETRACTING; return null; }
+        if (!VERSION.pal) for (const a of C) if (a.actorType === AT.SEAL || a.actorType === AT.BASKET_REVERSE) { this.mState = TS.RETRACTING; return null; }
         for (const a of C) {
             const t = a.actorType;
             let ok = isFruitType(t);
             if (allowExtra) {
                 if (t === AT.BOTTLE_SHORT || t === AT.BOTTLE_LARGE || t === AT.WOOD_BARREL) ok = true;
-                if (a.isHitCategory(HC.ENEMY)) ok = true;
+                // (PAL: not a seal, an effect enemy or a reversing basket)
+                if (a.isHitCategory(HC.ENEMY) && !(VERSION.pal && (t === AT.SEAL || t === AT.EFFECT_ENEMY || t === AT.BASKET_REVERSE))) ok = true;
             }
             if (!ok) continue;
             const ty = fadd(a.pos.y, fmul(0.5, a.damageHeight));
@@ -427,6 +429,15 @@ export class Yoshi {
         this.unk2 = this.unk4;
         this.changeAnimation(knockedOff ? YB.DAMAGE : YB.WAIT_ALONE);
         rideMoveCalcLocalPos(this.unk94, this.mTranslation);
+        if (VERSION.pal) this.mTongue.mState = TS.IDLE;   // (PAL: the tongue back to idle)
+    }
+    /** PAL's movement: on through floors only Mario passes, down to real ground (at most five more probes) */
+    private probeThrough(w: World, gy: number, g: any): [number, any] {
+        for (let i = 0; i < 5; i++) {
+            if (!g.isMarioThrough() || g.isWaterSurface()) break;
+            [gy, g] = w.checkGround(this.mTranslation.x, fsub(gy, 1), this.mTranslation.z);
+        }
+        return [gy, g];
     }
     thinkJumpEnd(cur: number) { return cur === YB.JUMP_FALL ? YB.JUMP_END : -1; }
     /** TMario::getSideWalkValues: [type, the anim rate, the side speed] */
@@ -605,7 +616,8 @@ export class Yoshi {
                 const rot = { v: fmul(this.mEggRotSpeed, fr(0.0054931640625)) };
                 rideMoveByGroundActor(w, this.unk94, this.mTranslation, rot);
                 this.mEggRotSpeed = s16(Math.trunc(fmul(fr(182.04444885253906), rot.v)));
-                const [gy, g] = w.checkGround(this.mTranslation.x, fadd(200, this.mTranslation.y), this.mTranslation.z);
+                let [gy, g] = w.checkGround(this.mTranslation.x, fadd(200, this.mTranslation.y), this.mTranslation.z);
+                if (VERSION.pal) [gy, g] = this.probeThrough(w, gy, g);
                 this.unk2C = fsub(this.unk2C, M.mJumpParams.mGravity);
                 this.mTranslation.y = fadd(this.mTranslation.y, this.unk2C);
                 if (gy > this.mTranslation.y) {
@@ -646,7 +658,8 @@ export class Yoshi {
             this.unk84.y = fadd(this.unk84.y, fmul(this.unk80, fsub(C[1], this.unk84.y)));
             this.unk84.z = fadd(this.unk84.z, fmul(this.unk80, fsub(C[2], this.unk84.z)));
             this.mTongue.movement();
-            const [gy, g] = w.checkGround(this.mTranslation.x, fadd(200, this.mTranslation.y), this.mTranslation.z);
+            let [gy, g] = w.checkGround(this.mTranslation.x, fadd(200, this.mTranslation.y), this.mTranslation.z);
+            if (VERSION.pal) [gy, g] = this.probeThrough(w, gy, g);
             if (this.mState === YS.UNMOUNTED && gy > this.mTranslation.y) {
                 if (g.isWaterSurface()) this.disappear();
                 else { this.mTranslation.y = gy; this.unk2C = 0; }
