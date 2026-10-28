@@ -508,7 +508,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="With a ghost that recorded its controller: Mario is played by the game's own code from those inputs (the camera too), instead of following the ghost's recorded positions. Where the replay drifts from the ghost is shown here."><input type="checkbox" id="optReplay" checked disabled> Input replay <span class="discInfo" id="replayInfo"></span></label>
       <label title="When the input replay drifts more than a unit from the ghost, Mario follows the ghost's own position and animation until the ghost next stands on the ground, then the inputs take over again from there."><input type="checkbox" id="optSnap" checked> Snap Mario back to the ghost</label>
       <label title="Read the game from an extracted game folder instead of a disc image"><button type="button" id="pickFolder" class="linkBtn">Use an extracted game folder…</button></label>
-      <label title="Nintendo's GameCube controller adapter (WUP-028, for Wii U / Switch) read directly over USB, as Dolphin does: its four ports show up as controllers. On Windows it needs the WinUSB driver (Zadig), the same setup Dolphin uses."><button type="button" id="gcAdapterBtn" class="linkBtn">Connect a GameCube adapter (WUP-028)…</button> <span class="discInfo" id="gcAdapterInfo"></span></label>
+      <label title="Nintendo's GameCube controller adapter (WUP-028, for Wii U / Switch) read directly over USB, as Dolphin does: its four ports show up as controllers. No driver needed (it is read as a HID device); one set up for Dolphin with Zadig works too."><button type="button" id="gcAdapterBtn" class="linkBtn">Connect a GameCube adapter (WUP-028)…</button> <span class="discInfo" id="gcAdapterInfo"></span></label>
       <label title="Load zones, cutscene and warp triggers, area cylinders and the camera, area, flow, wire, shadow, mirror, sound and draw-distance cubes, and enemies' own trigger zones (the Monty Mole cannon's), as see-through volumes with labels."><input type="checkbox" id="optTriggers"> Show invisible triggers</label>
       <label><input type="checkbox" id="optNames"> Show model names</label>
       <label title="Shines that appear only after an event (red coins, a boss, 100 coins...) are hidden until the ghost triggers them; the 100-coin shine counts the stage's placed gold coins. Red coins that a red switch brings out stay hidden until the ghost presses it. Tick to show every shine and red coin in the level."><input type="checkbox" id="optShines"> Show all shines and red coins</label>
@@ -555,14 +555,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793199103317"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793199103317"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793199103317"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793199103317"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793199103317"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793199103317"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793199103317"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793199103317"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793200221508"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793200221508"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793200221508"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793200221508"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793200221508"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793200221508"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793200221508"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793200221508"><\/script>');
 </script>
 <script>
 (() => {
@@ -5937,13 +5937,49 @@ document.write('<script src="' + V2 + 'hud.js?v=1793199103317"><\/script>');
       try { await dev.close(); } catch { }
     } finally { gcUsb.busy = false; }
   }
+  // With Windows' own HID driver on it (no Zadig / WinUSB) the adapter is a HID device: WebHID reads
+  // the same reports (report 0x21, the four ports) and takes the same 0x13 to start.
+  async function gcHidOpen(dev) {
+    if (gcUsb.busy || gcUsb.dev === dev) return true;
+    gcUsb.busy = true;
+    try {
+      if (!dev.opened) await dev.open();
+      gcUsb.pads = [0, 1, 2, 3].map(gcUsbPad); gcUsb.dev = dev;
+      dev.addEventListener('inputreport', (e) => {
+        if (gcUsb.dev !== dev || e.reportId !== 0x21) return;
+        const b = new Uint8Array(1 + e.data.byteLength); b[0] = 0x21; b.set(new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength), 1);
+        gcUsbReport(new DataView(b.buffer));
+      });
+      let sent = false;
+      for (const body of [new Uint8Array(0), new Uint8Array(1)]) { try { await dev.sendReport(0x13, body); sent = true; break; } catch { } }
+      if (!sent) console.warn('[gc adapter] the start report (0x13) was refused; reading anyway');
+      gcUsbStatus('connected');
+      return true;
+    } catch (e) {
+      console.warn('[gc adapter] HID', e); gcUsb.dev = null; gcUsb.pads = [];
+      gcUsbStatus('could not open it as a HID device');
+      return false;
+    } finally { gcUsb.busy = false; }
+  }
   async function gcUsbConnect() {
-    if (!navigator.usb) { gcUsbStatus('this browser has no WebUSB (Chrome or Edge do)'); return; }
-    try { const dev = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x057e, productId: 0x0337 }] }); await gcUsbOpen(dev); }
+    const F = [{ vendorId: 0x057e, productId: 0x0337 }];
+    // (WebHID first: it needs no driver; WebUSB for an adapter on WinUSB / libusb, as Dolphin's Zadig setup leaves it)
+    if (navigator.hid) {
+      try { const [dev] = await navigator.hid.requestDevice({ filters: F }); if (dev && await gcHidOpen(dev)) return; if (!dev && !navigator.usb) return; }
+      catch (e) { console.warn('[gc adapter] HID', e); }
+    }
+    if (!navigator.usb) { gcUsbStatus('this browser has neither WebHID nor WebUSB (Chrome or Edge have both)'); return; }
+    try { const dev = await navigator.usb.requestDevice({ filters: F }); await gcUsbOpen(dev); }
     catch (e) { if (e && e.name !== 'NotFoundError') gcUsbStatus(String(e.message || e)); }
   }
   $('gcAdapterBtn').addEventListener('click', gcUsbConnect);
   $('ctrlGcAdapter').addEventListener('click', gcUsbConnect);
+  if (navigator.hid) {
+    const isGc = (d) => d.vendorId === 0x057e && d.productId === 0x0337;
+    navigator.hid.getDevices().then((ds) => { const d = ds.find(isGc); if (d) gcHidOpen(d); }).catch(() => { });
+    navigator.hid.addEventListener('connect', (e) => { if (isGc(e.device)) gcHidOpen(e.device); });
+    navigator.hid.addEventListener('disconnect', (e) => { if (e.device === gcUsb.dev) { gcUsb.dev = null; gcUsb.pads = []; gcUsbStatus('unplugged'); } });
+  }
   if (navigator.usb) {
     // (one allowed before reconnects by itself; plugged in again, too)
     navigator.usb.getDevices().then((ds) => { const d = ds.find((x) => x.vendorId === 0x057e && x.productId === 0x0337); if (d) gcUsbOpen(d); }).catch(() => { });
@@ -8362,7 +8398,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793199103317';
+  const BUILD_STAMP = '1793200221508';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
