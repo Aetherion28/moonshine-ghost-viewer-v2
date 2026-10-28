@@ -554,14 +554,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793162555958"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793162555958"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793162555958"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793162555958"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793162555958"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793162555958"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793162555958"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793162555958"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793163805189"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793163805189"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793163805189"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793163805189"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793163805189"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793163805189"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793163805189"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793163805189"><\/script>');
 </script>
 <script>
 (() => {
@@ -6927,6 +6927,7 @@ void main() {
     }
     dropMat.uniforms.tScreen.value = copyViewTo(waterScreen);
     dropMat.uniforms.uView.value.copy(_wsz);
+    ensureDepth();
     renderer.autoClear = false;
     renderer.render(waterScene, camera);
     renderer.autoClear = true;
@@ -7628,6 +7629,7 @@ void main() {
     let any1 = false, any3 = false;
     jpaBatches.forEach((b, res) => { b.end(); if (b.ni) { if (jpaScene3.children.includes(b.mesh)) any3 = true; else any1 = true; } });
     if (!any1 && !any3) return;
+    ensureDepth();
     renderer.autoClear = false;
     if (any1) renderer.render(jpaScene1, camera);
     if (any3 && renderer.getDrawingBufferSize(_wsz).x && _wsz.y) {
@@ -8271,7 +8273,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793162555958';
+  const BUILD_STAMP = '1793163805189';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
@@ -8313,6 +8315,23 @@ void main() {
     window.__benchAdd = (o) => { if (phase !== 'timing') return; const B = window.__benchT || (window.__benchT = {}); for (const k in o) B[k] = (B[k] || 0) + o[k]; B.frames = (B.frames || 0) + (o.n || 0);
       const F = B.frames || 1; window.__benchOut = 'ms per drawn frame: ' + Object.keys(B).filter((k) => k !== 'frames' && k !== 'n').map((k) => `${k} ${(B[k] / F).toFixed(2)}`).join(', '); };
   })();
+  let depthDrawn = false;
+  function ensureDepth() {
+    if (depthDrawn) return;
+    depthDrawn = true;
+    const _t = performance.now(); renderer.render(scene, camera); perfAcc.three += performance.now() - _t;
+  }
+  // whether anything visible in the scene draws colour (the depth-only stage, objects and Mario don't)
+  function sceneHasColour() {
+    let any = false;
+    const walk = (o) => {
+      if (any || !o.visible) return;
+      if (o.isMesh || o.isLine || o.isPoints || o.isSprite) { const M = o.material; if (Array.isArray(M) ? M.some((m) => m.colorWrite !== false && m.visible !== false) : M && M.colorWrite !== false && M.visible !== false) { any = true; return; } }
+      const C = o.children; for (let i = 0; i < C.length && !any; i++) walk(C[i]);
+    };
+    walk(scene);
+    return any;
+  }
   function adaptResolution() {
     const ch = renderer.domElement.clientHeight || 1, want = 720 / ch;
     if (Math.abs(renderer.getPixelRatio() - want) > 1e-3) renderer.setPixelRatio(want);
@@ -8520,9 +8539,13 @@ void main() {
     }
     // (the simulated stage catches up with t over several drawn frames: its water is read each one)
     ghosts.forEach((g) => { if (g.visible && g.water && g.marker.parent) simSpray(g); });
-    { const _t = performance.now(); renderer.render(scene, camera); perfAcc.three += performance.now() - _t; }
+    // (the stage is drawn here into depth only, for what goes over it: when nothing this frame does
+    // (nothing in the scene writes colour, no water drops, no particles) the pass is left out)
+    depthDrawn = false;
+    if (sceneHasColour()) ensureDepth();
     drawWater();
     drawJpa();
+    if (!depthDrawn) renderer.clear();
     drawShineOverlay(sgDm, t);
     hudFrame();
   }
