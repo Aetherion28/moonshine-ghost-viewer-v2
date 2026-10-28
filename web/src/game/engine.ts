@@ -12,6 +12,7 @@ import { BAS_TABLES } from './bastables.js';
 import { FlagManager } from './flags.js';
 import { SplineRail } from './spline.js';
 import { psVecMag } from './camera/lib.js';
+import { vDot, vNormMs, vCross, msVecMag2 } from './vecops.js';
 import { rngCtx, fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsIsInSight, matan, MsRandF, sqDist, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, psMtxMultVec, psMtxInverse, MsMtxSetTRS, SMSCalcJumpVelocityY } from './math.js';
 import type { MarioProxy } from './mario.js';
 import type { PlayerMario } from './player/player.js';
@@ -847,7 +848,7 @@ export class GraphWeb {
         if (e !== null) return e;
         const p = this.point(i);
         let r = -1, min = 0;
-        for (const k of c) { if (k === prev) continue; const d = this.point(k).sub(p).squared(); if (r < 0 || min > d) { min = d; r = k; } }
+        for (const k of c) { if (k === prev) continue; const v = this.point(k).sub(p), d = vDot(v, v); if (r < 0 || min > d) { min = d; r = k; } }
         return r;
     }
     getRandomNextIndex(i: number, prev: number, filter = -1) {
@@ -861,41 +862,41 @@ export class GraphWeb {
     getEscapeFromMarioIndex(i: number, prev: number, pos: V3, mario: V3, filter = -1) {
         const c = this.conns(i, filter), e = this.easy(i, prev, c);
         if (e !== null) return e;
-        const m = V3.sub(mario, pos).normalize();
+        const m = vNormMs(V3.sub(mario, pos));
         let r = -1, best = 0;
-        for (const k of c) { if (k === prev) continue; const d = this.point(k).sub(pos).normalize().dot(m); if (r < 0 || d < best) { best = d; r = k; } }
+        for (const k of c) { if (k === prev) continue; const d = vDot(vNormMs(this.point(k).sub(pos)), m); if (r < 0 || d < best) { best = d; r = k; } }
         return r;
     }
     getAimToDirNextIndex(i: number, prev: number, dir: V3, pos: V3, filter = -1) {
         const c = this.conns(i, filter), e = this.easy(i, prev, c);
         if (e !== null) return e;
-        const d0 = dir.clone().normalize();
+        const d0 = vNormMs(dir.clone());
         let r = -1, best = 0;
-        for (const k of c) { if (k === prev) continue; const d = this.point(k).sub(pos).normalize().dot(d0); if (r < 0 || d > best) { best = d; r = k; } }
+        for (const k of c) { if (k === prev) continue; const d = vDot(vNormMs(this.point(k).sub(pos)), d0); if (r < 0 || d > best) { best = d; r = k; } }
         return r;
     }
     getRandomButDirLimited(i: number, prev: number, dir: V3, pos: V3, limit: number, filter = -1) {
         const c = this.conns(i, filter), e = this.easy(i, prev, c);
         if (e !== null) return e;
-        const d0 = dir.clone().normalize();
+        const d0 = vNormMs(dir.clone());
         let r = -1, n = 0;
         for (const k of c) {
             if (k === prev) continue;
-            const d = this.point(k).sub(pos).normalize();
-            const cr = new V3().cross(d0, d);
-            const ang = Math.abs(matan(d0.dot(d), cr.length()) * (360 / 65536));
+            const d = vNormMs(this.point(k).sub(pos));
+            const cr = vCross(new V3(), d0, d);
+            const ang = Math.abs(fr(matan(vDot(d0, d), msVecMag2(cr)) * fr(0.0054931640625)));
             if (Math.abs(ang) < limit) { if (n === 0) r = k; else if (MsRandF() < fr(1 / (n + 1))) r = k; n++; }   // (fdivs)
         }
         if (n > 0) return r;
         r = -1; let best = 0;
-        for (const k of c) { if (k === prev) continue; const d = this.point(k).sub(pos).normalize().dot(d0); if (r < 0 || d > best) { best = d; r = k; } }
+        for (const k of c) { if (k === prev) continue; const d = vDot(vNormMs(this.point(k).sub(pos)), d0); if (r < 0 || d > best) { best = d; r = k; } }
         return r;
     }
     findNearestNodeIndex(p: V3, filter = -1) {
         let r = -1, min = -1;
         for (let i = 0; i < this.nodes.length; i++) {
             if (filter !== -1 && this.checkFlag(i, filter)) continue;
-            const d = this.point(i).sub(p).squared();
+            const v = this.point(i).sub(p), d = vDot(v, v);
             if (min < 0 || d < min) { min = d; r = i; }
         }
         return r;
@@ -1027,7 +1028,7 @@ export class SpineEnemy extends LiveActor {
     maxHitPoints() { const p = this.getSaveParam(); return p ? p.mSLHitPointMax : 1; }
     resetHitPoints() { this.hitPoints = this.maxHitPoints(); }
     decHitPoints() { if (this.hitPoints > 0) this.hitPoints -= 1; }
-    getHeadHeight() { return this.bodyScale * this.headHeight; }
+    getHeadHeight() { return fr(this.bodyScale * this.headHeight); }
     getBodyRadius() { return this.bodyScale * this.bodyRadius; }
     reset() {
         this.tracer.reset();

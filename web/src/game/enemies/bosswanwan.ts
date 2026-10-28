@@ -40,6 +40,10 @@ import type { BGCheckData } from '../collision.js';
 import { SE } from '../sound.js';
 import { register } from '../scene.js';
 import { mat4 } from 'gl-matrix';
+import { fmadd as FMA } from '../player/fmath.js';
+import { msVecNormalize } from '../camera/lib.js';
+import { matan, s16 } from '../math.js';
+import { vNorm, vMag, vSq, vDot, vCross, msVecMag2 } from '../vecops.js';
 
 /** TBWParams */
 const BW_PARAMS = {
@@ -50,18 +54,24 @@ const BW_PARAMS = {
 } satisfies PSchema;
 
 export const BW_BATH_POS = new V3(-1000, 4.5, -6217.2), BW_PICKET_START = new V3(6012.84, 0, 7323.15), BW_HEAD_START = new V3(5741.72, -100, 6311.62);
-const EPS = 3.81469727e-6;
+const EPS = fr(3.814697265625e-6);
 const velocityMinY = -40;
-/** fromPolar: (r sin t, 0, r cos t) */
-const fromPolar = (t: number, r: number) => { const a = Math.trunc(t * (65536 / 360)); return new V3(fr(r * JMASSin(a)), 0, fr(r * JMASCos(a))); };
-const norm = (v: V3) => { const l = v.length(); if (l > 0) v.scale(1 / l); return v.fround(); };
+// The vector maths as the game compiles it (all singles): TVec3::dot / squared as fmuls then
+// fmadds (or fadds), cross as fmuls then fmsubs, VECNormalize / VECMag the SDK's paired-single
+// PSVECNormalize / PSVECMag (frsqrte and a Newton step), MsVECNormalize / MsVECMag2 the raw estimate.
+/** fromPolar: (r sin t, 0, r cos t), t in degrees: fmuls by 182.04445 and fctiwz into the sin table */
+const fromPolar = (t: number, r: number) => { const a = Math.trunc(fr(fr(182.04444885253906) * t)); return new V3(fr(r * JMASSin(a)), 0, fr(r * JMASCos(a))); };
+const norm = vNorm, mag = vMag, sq3 = vSq, dot = vDot, cross = vCross;
 const isEnemyThrough = (d: BGCheckData) => d.bgType === 0x801 || d.bgType === 0x402;
+/** MsPerpendicFootToLineR (0x801e77e8): the point of the segment a-b nearest p (no zero-length check) */
 function perpendicFoot(a: V3, b: V3, p: V3) {
     const d = V3.sub(b, a);
-    const sq = fr(d.squared());
-    let t = sq === 0 ? 0 : fr((fr(p.dot(d)) - fr(a.dot(d))) / sq);
+    const ad = FMA(a.z, d.z, FMA(a.x, d.x, fr(a.y * d.y)));
+    const sq = FMA(d.z, d.z, FMA(d.x, d.x, fr(d.y * d.y)));
+    const pd = FMA(p.z, d.z, FMA(p.x, d.x, fr(p.y * d.y)));
+    let t = fr(fr(pd - ad) / sq);
     if (t < 0) t = 0; else if (t > 1) t = 1;
-    return new V3(fr(d.x * t + a.x), fr(d.y * t + a.y), fr(d.z * t + a.z));
+    return new V3(fr(fr(d.x * t) + a.x), fr(fr(d.y * t) + a.y), fr(fr(d.z * t) + a.z));
 }
 
 // BCKs / BTPs / BRKs (/scene/bwanwan, in the folder's order: bwanwan_bastable)
@@ -96,7 +106,7 @@ export class Rope {
         for (let i = 0; i < this.num - 1; i++) {
             const c = this.pts[i], n = this.pts[i + 1];
             const d = V3.sub(n.pos, c.pos);
-            if (d.squared() <= EPS) d.set(0, 1, 0);
+            if (sq3(d) <= EPS) d.set(0, 1, 0);
             norm(d).scale(c.len);
             n.pos.set(c.pos).add(d).fround();
         }
@@ -106,7 +116,8 @@ export class Rope {
         this.pts[this.num - 1].pos.set(t);
         for (let i = this.num - 1; i > 0; --i) {
             const c = this.pts[i], p = this.pts[i - 1];
-            const same = Math.abs(p.pos.x - c.pos.x) <= EPS && Math.abs(p.pos.y - c.pos.y) <= EPS && Math.abs(p.pos.z - c.pos.z) <= EPS;
+            const near = (a: number, b: number) => { const t = fr(a - b); return -EPS <= t && t <= EPS; };
+            const same = near(p.pos.x, c.pos.x) && near(p.pos.y, c.pos.y) && near(p.pos.z, c.pos.z);
             if (!same) {
                 const d = norm(V3.sub(p.pos, c.pos)).scale(c.len);
                 p.pos.set(c.pos).add(d).fround();
@@ -147,8 +158,8 @@ export class BWLeashNode extends HitActor {
     }
     calcTemperature() {
         if (this.index === 0) return;
-        const d = this.leash.nodes[this.index - 1].temperature - this.temperature;
-        const step = d < 0 ? (d < -0.1 ? -0.02 : -0.005) : (d > 0.1 ? 0.02 : 0.005);
+        const d = fr(this.leash.nodes[this.index - 1].temperature - this.temperature);
+        const step = d < 0 ? (d < fr(-0.1) ? fr(-0.02) : fr(-0.005)) : (d > fr(0.1) ? fr(0.02) : fr(0.005));
         let t = fr(this.temperature + step);
         if (t < 0) t = 0; if (t > 1) t = 1;
         this.temperature = t;
@@ -159,8 +170,8 @@ export class BWLeashNode extends HitActor {
         const front = this.index < r.num - 1 ? V3.sub(r.pts[this.index + 1].pos, p) : V3.sub(r.pts[this.index - 1].pos, p).scale(-1);
         norm(front);
         let up = new V3(0, 1, 0);
-        const side = norm(new V3().cross(up, front));
-        up = norm(new V3().cross(front, side));
+        const side = norm(cross(new V3(), up, front));
+        up = norm(cross(new V3(), front, side));
         m[2] = front.x; m[6] = front.y; m[10] = front.z;
         // (every other link turned by 90 degrees)
         const [a, b] = this.index & 1 ? [side, up] : [up, side];
@@ -183,7 +194,7 @@ export class BWLeashNode extends HitActor {
                 let f = fr(this.temperature * (c.end - 1));
                 const n = this.leash.rope.num;
                 let heat: number;
-                if (this.index < 5) heat = fr(this.index * 0.25 + o.hitPoints / o.PB.mSLBWHitPointMax);
+                if (this.index < 5) heat = FMA(this.index, 0.25, fr(o.hitPoints / o.PB.mSLBWHitPointMax));
                 else if (this.index >= n - 10) heat = fr((n - this.index) / 10);
                 else heat = 1;
                 if (heat > 1) heat = 1; else if (heat < 0) heat = 0;
@@ -225,7 +236,7 @@ export class BWLeash extends NameRef {
             if (o.unk17C !== 0) {
                 this.pullTail(o.picket!.pos);
                 const toHead = V3.sub(this.rope.pts[0].pos, new V3(o.pos.x, fr(o.pos.y + 500), o.pos.z));
-                if (toHead.length() > 650) {
+                if (mag(toHead) > 650) {
                     norm(toHead).scale(20); toHead.y = 0;
                     o.pos.add(toHead).fround();
                     o.unk188 = 1;
@@ -241,7 +252,7 @@ export class BWLeash extends NameRef {
             for (let i = 0; i < 15 && i < this.rope.num; ++i) {
                 const p = this.rope.pts[i];
                 const d = V3.sub(p.pos, c);
-                const l = d.length();
+                const l = mag(d);
                 if (l < 500) {
                     d.scale(fr(500 / l)).add(c);
                     p.vel.zero(); p.pos.set(d).fround(); p.prev.set(p.pos);
@@ -289,9 +300,9 @@ export class BWPicket extends TakeActor {
     isTaken() { return !!this.holder; }
     private static frame(m: Mtx, front: V3, p: V3) {
         let up = new V3(0, 1, 0);
-        const side = norm(new V3().cross(up, front));
-        up = norm(new V3().cross(front, side));
-        front.cross(side, up); norm(front);
+        const side = norm(cross(new V3(), up, front));
+        up = norm(cross(new V3(), front, side));
+        cross(front, side, up); norm(front);
         m[0] = side.x; m[4] = side.y; m[8] = side.z; m[1] = up.x; m[5] = up.y; m[9] = up.z; m[2] = front.x; m[6] = front.y; m[10] = front.z;
         m[3] = p.x; m[7] = p.y; m[11] = p.z;
         return front;
@@ -311,11 +322,11 @@ export class BWPicket extends TakeActor {
             const m = this.model.baseTR;
             m.set(mtx());
             const front = V3.sub(this.pos, r.pts[r.num - 3].pos);
-            if (front.squared() <= EPS) front.set(0, 0, 1);
+            if (sq3(front) <= EPS) front.set(0, 0, 1);
             const f = BWPicket.frame(m, front, this.pos);
             if (o.unk17C === 0) m[7] = fr(m[7] + 70);
             const k = this.isTaken() ? 50 : 60;
-            m[3] = fr(m[3] - k * f.x); m[11] = fr(m[11] - k * f.z);
+            m[3] = fr(m[3] - fr(k * f.x)); m[11] = fr(m[11] - fr(k * f.z));
             this.model.pos.set(m[3], m[7], m[11]);
             this.model.mactor!.frameUpdate();
         }
@@ -369,8 +380,8 @@ export class BWBinder {
         // (only along the current graph link)
         if (!bw.isAirborne() && G && t.cur >= 0 && t.prev >= 0 && t.cur !== t.prev) {
             const a2 = norm(V3.sub(G.point(t.cur), G.point(t.prev)));
-            const sq = a2.squared();
-            const len = sq === 0 ? 0 : fr(delta.dot(a2) / sq);
+            const sq = sq3(a2);
+            const len = sq === 0 ? 0 : fr(dot(delta, a2) / sq);
             let speed = len;
             if (len < 0) { if (len > -3) speed = -3; }
             else if (len > 0 && len < 3) speed = 3;
@@ -378,10 +389,10 @@ export class BWBinder {
         }
         // (the ball rolls by the distance it moved)
         if (!bw.isAirborne()) {
-            const dist = delta.length();
+            const dist = mag(delta);
             if (dist !== 0) {
-                let roll = fr(360 * fr(dist / 3141.5927));
-                if (fromPolar(bw.rot.y, 1).dot(delta) < 0) roll = -roll;
+                let roll = fr(360 * fr(dist / fr(3141.5927)));
+                if (dot(fromPolar(bw.rot.y, 1), delta) < 0) roll = -roll;
                 roll = fr(roll * 2);
                 if (bw.unk16C !== 0) bw.unk168 = MsWrap(fr(roll + bw.unk168), 0, 360);
                 else {
@@ -394,15 +405,15 @@ export class BWBinder {
         if (bw.unk17C !== 0) {
             const anchor = bw.leash!.rope.pts[3].pos;
             const np = V3.add(bw.pos, delta).sub(anchor);
-            if (np.length() > 860) { norm(np).scale(860).add(anchor).sub(bw.pos); delta = np.fround(); }
+            if (mag(np) > 860) { norm(np).scale(860).add(anchor).sub(bw.pos); delta = np.fround(); }
         }
         // (pulled back onto the link)
         if (!bw.isAirborne() && G && t.cur >= 0 && t.prev >= 0) {
             const a2 = G.point(t.cur), b = G.point(t.prev);
             const foot = perpendicFoot(b, a2, bw.pos).sub(bw.pos);
-            let d = foot.length();
+            let d = mag(foot);
             if (d > 10) d = 10;
-            if (d < 0.0001) foot.zero(); else norm(foot).scale(d);
+            if (d < fr(0.0001)) foot.zero(); else norm(foot).scale(d);
             delta.add(foot);
         }
         bw.posDelta.set(delta).fround();
@@ -529,7 +540,7 @@ export class BossWanwan extends SpineEnemy {
             if (j === 0 && air) { m[12] = B[3]; m[13] = B[7]; m[14] = B[11]; }
             // (the ball rolled by unk168: MTXConcat(anmMtx, RotX))
             if (j === 1) mat4.mul(m, m, rot);
-        });
+        }, null, air ? (j) => j === 0 : null);
     }
     receiveMessage(sender: HitActor, msg: number): boolean {
         if (sender.isActorType(AT.MARIO)) return false;
@@ -573,13 +584,13 @@ export class BossWanwan extends SpineEnemy {
         const a = this.mactor!;
         const c0 = a.getFrameCtrl(ANM_BCK);
         const mc = this.mc;
-        if (mc.newIdx !== i) { mc.oldIdx = mc.newIdx; mc.oldFrame = c0 ? c0.frame : 0; mc.newIdx = i; }
-        mc.ratio = 1;
+        // (M3UMtxCalcSIAnmBlendQuat::joinAnm: nothing when it is the anm already, else the old one kept and the blend restarted)
+        if (mc.newIdx !== i) { mc.oldIdx = mc.newIdx; mc.oldFrame = c0 ? c0.frame : 0; mc.newIdx = i; mc.ratio = 1; }
         a.setBckFromIndex(i);
         const c = a.getFrameCtrl(ANM_BCK);
         this.unk178 = c && c.end ? fr(10 / c.end) : 1;
     }
-    isHeadPulled() { return !(this.unk15C.squared() < this.PB.mSLPullLimit); }
+    isHeadPulled() { return !(sq3(this.unk15C) < this.PB.mSLPullLimit); }
     isBurning() { return this.hitPoints !== 0; }
     calcRootMatrix() { MsMtxSetXYZRPH(this.baseTR, this.pos.x, fr(this.pos.y + 500), this.pos.z, this.rot.x, this.rot.y, this.rot.z); }
     reverseNextGraphNode() {
@@ -601,7 +612,7 @@ export class BossWanwan extends SpineEnemy {
     }
     slideToCurPathNode(speed: number, turn: number) {
         const to = V3.sub(this.goal.point(), this.pos);
-        const dist = to.length();
+        const dist = mag(to);
         const target = MsWrap(MsGetRotFromZaxisY(to), 0, 360);
         const d = MsAngleDiff(target, this.rot.y);
         const t = d > 0 ? Math.min(d, turn) : Math.max(d, -turn);
@@ -714,28 +725,34 @@ export class BossWanwan extends SpineEnemy {
     }
 }
 
-/** TGraphWeb::getEscapeDirLimited: among the links within limit degrees of dir, the one leading most away from Mario (else the one most against dir). */
+/**
+ * TGraphWeb::getEscapeDirLimited (0x8025f50c): among the links within limit degrees of dir (the
+ * angle by matan of the dot and |cross|, MsVECMag2), the one leading most away from Mario (the
+ * least dot with the way to him); if none is that close to dir, the least dot with the way to him
+ * of all of them. The node points are the rail's s16s; the directions MsVECNormalize'd.
+ */
 function getEscapeDirLimited(g: GraphWeb, i: number, prev: number, dir: V3, pos: V3, mario: V3, limit: number) {
     const c = g.nodes[i].conns;
     if (c.length === 0) return i;
     if (c.length === 1) return c[0];
     if (c.length === 2 && prev >= 0) return c[0] !== prev ? c[0] : c[1];
-    const d0 = norm(dir.clone()), m = norm(V3.sub(mario, pos));
+    const d0 = msVecNormalize(dir.clone(), new V3()) as V3, m = msVecNormalize(V3.sub(mario, pos), new V3()) as V3;
     let r = -1, best = 0;
     for (const k of c) {
         if (k === prev) continue;
-        const d = norm(g.point(k).sub(pos));
-        const cr = new V3().cross(d0, d);
-        const ang = Math.abs(Math.atan2(cr.length(), d0.dot(d)) * (180 / Math.PI));
-        if (Math.abs(ang) < limit) {
-            const cs = d.dot(m);
+        const d = msVecNormalize(V3.sub(g.point(k), pos), new V3()) as V3;
+        const cr = cross(new V3(), d0, d);
+        const cs0 = dot(d0, d);
+        const ang = Math.abs(fr(matan(cs0, msVecMag2(cr)) * fr(0.0054931640625)));
+        if (ang < limit) {
+            const cs = dot(d, m);
             if (r < 0 || cs < best) { r = k; best = cs; }
         }
     }
     if (r >= 0) return r;
     for (const k of c) {
         if (k === prev) continue;
-        const cs = norm(g.point(k).sub(pos)).dot(d0);
+        const cs = dot(msVecNormalize(V3.sub(g.point(k), pos), new V3()) as V3, m);
         if (r < 0 || cs < best) { best = cs; r = k; }
     }
     return r;
@@ -762,10 +779,10 @@ BWNerves.graphWander = nerve<BossWanwan>('TNerveBWGraphWander', (spine: S) => {
         const t = self.tracer, g = t.graph!;
         const ahead = t.prev;
         const toNode = V3.sub(g.point(ahead), self.pos);
-        if (toNode.length() < 400 && ahead === g.goalIdx) { spine.pushAfterCurrent(BWNerves.jumpToBath); return true; }
-        if (toNode.length() < 400) self.reverseNextGraphNode();
+        if (mag(toNode) < 400 && ahead === g.goalIdx) { spine.pushAfterCurrent(BWNerves.jumpToBath); return true; }
+        if (mag(toNode) < 400) self.reverseNextGraphNode();
         const heat = fr(self.hitPoints / P.mSLBWHitPointMax);
-        self.slideToCurPathNode(3 * (heat * self.marchSpeed), self.turnSpeed);
+        self.slideToCurPathNode(fr(3 * fr(heat * self.marchSpeed)), self.turnSpeed);
         return false;
     }
     if (self.isReachedToGoal()) {
@@ -776,17 +793,19 @@ BWNerves.graphWander = nerve<BossWanwan>('TNerveBWGraphWander', (spine: S) => {
     self.unk16C = 0;
     const heat = fr(self.hitPoints / P.mSLBWHitPointMax);
     if (self.picket!.isTaken()) {
-        // (Mario holding the picket holds it back by leaning away: gpMarioOriginal's stick, not in MarioProxy: 0)
+        // (Mario holding the picket holds it back by leaning away: gpMarioOriginal's stick, mIntendedYaw /
+        // mIntendedMag; the ghost's MarioProxy has none: 0)
         const m = self.world.mario as any;
-        const yaw = typeof m.intendedYaw === 'number' ? m.intendedYaw : 0, mag = typeof m.intendedMag === 'number' ? m.intendedMag : 0;
-        const stick = fromPolar(yaw * (360 / 65536), 1);
+        const yaw = typeof m.mIntendedYaw === 'number' ? m.mIntendedYaw : 0, im = typeof m.mIntendedMag === 'number' ? m.mIntendedMag : 0;
+        const stick = fromPolar(fr(s16(yaw) * fr(0.0054931640625)), 1);
         const from = norm(V3.sub(self.pos, self.world.mario.pos));
-        let pull = fr(mag / 32 * 0.75);
-        pull = fr(pull * -from.dot(stick));
+        // (mag / 32 in singles, times 0.75 as a double, then fmuls by the dot)
+        const pull = fr((fr(im * fr(0.03125)) * 0.75) * -dot(from, stick));
         let rate = fr(1 - pull);
-        if (rate < 0) rate = 0; else if (1.5 < rate) rate = 1.5;
-        self.slideToCurPathNode(rate * (heat * self.marchSpeed), self.turnSpeed);
-    } else self.slideToCurPathNode(fr(heat * self.marchSpeed + 0.2), self.turnSpeed);
+        if (rate < 0) rate = 0;
+        if (1.5 < rate) rate = 1.5;
+        self.slideToCurPathNode(fr(rate * fr(heat * self.marchSpeed)), self.turnSpeed);
+    } else self.slideToCurPathNode(FMA(heat, self.marchSpeed, fr(0.2)), self.turnSpeed);
     return false;
 });
 BWNerves.roll = nerve<BossWanwan>('TNerveBWRoll', (spine: S) => {
@@ -824,7 +843,7 @@ BWNerves.stun = nerve<BossWanwan>('TNerveBWStun', (spine: S) => {
     if (self.picket!.isTaken() && self.isHeadPulled()) {
         const t = self.tracer, g = t.graph!, ahead = t.prev;
         const toNode = V3.sub(g.point(ahead), self.pos);
-        if (toNode.length() < 100) {
+        if (mag(toNode) < 100) {
             if (ahead === g.goalIdx) { spine.pushAfterCurrent(BWNerves.jumpToBath); return true; }
             self.reverseNextGraphNode();
         }
@@ -854,7 +873,7 @@ BWNerves.jumpToBath = nerve<BossWanwan>('TNerveBWJumpToBath', (spine: S) => {
         self.world.sound(SE.BS_WANWAN_DIVE, self.pos);
     }
     const d = V3.sub(BW_BATH_POS, self.pos);
-    if (d.squared() < 10000 && self.pos.y <= BW_BATH_POS.y) { self.pos.set(BW_BATH_POS); spine.pushAfterCurrent(BWNerves.die); return true; }
+    if (sq3(d) < 10000 && self.pos.y <= BW_BATH_POS.y) { self.pos.set(BW_BATH_POS); spine.pushAfterCurrent(BWNerves.die); return true; }
     self.walkToCurPathNode(0, self.turnSpeed, 0);
     return false;
 });

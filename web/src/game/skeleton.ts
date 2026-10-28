@@ -112,7 +112,7 @@ export interface BlendAnm { anm: ANK1 | null; frame: number; }
  */
 export function jointMatricesBlend(sk: Skeleton, nw: BlendAnm | null, old: BlendAnm | null, ratio: number, basic: boolean, base: Mtx, scale: [number, number, number],
     out: mat4[] = [], locals: mat4[] | null = null, post?: (j: number, m: mat4) => void,
-    upper?: { joint: number; anm: BlendAnm | null } | null): mat4[] {
+    upper?: { joint: number; anm: BlendAnm | null } | null, newOnly?: ((j: number) => boolean) | null): mat4[] {
     const root = mat4.fromValues(base[0], base[4], base[8], 0, base[1], base[5], base[9], 0, base[2], base[6], base[10], 0, base[3], base[7], base[11], 1);
     mat4.scale(root, root, scale);
     const local = mat4.create(), inv = mat4.create();
@@ -130,6 +130,8 @@ export function jointMatricesBlend(sk: Skeleton, nw: BlendAnm | null, old: Blend
         let t: JointTransformInfo;
         if (upper) { const p = sk.parent[j]; inUpper[j] = j === upper.joint || (p >= 0 && !!inUpper[p]); }
         if (upper && inUpper[j]) t = upper.anm ? sample(tmpT, upper.anm, j) : sk.rest[j];
+        // (a calc of its own for this joint: the new anm alone, e.g. TBossWanwanMtxCalc's airborne root)
+        else if (newOnly && newOnly(j)) t = nw ? sample(tmpT, nw, j) : sk.rest[j];
         else if ((!nw && !old) || (!nw && ratio === 0) || (!old && ratio === 1)) t = sk.rest[j];
         else if (ratio === 0 || !old) t = sample(tmpT, nw, j);
         else if (ratio === 1 || !nw) t = sample(tmpT, old, j);
