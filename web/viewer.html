@@ -5857,14 +5857,21 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   window.addEventListener('gamepadconnected', (e) => { if (livePad.on && livePad.index < 0) findPad(); });
   window.addEventListener('gamepaddisconnected', (e) => { if (e.gamepad && e.gamepad.index === livePad.index) { livePad.index = -1; livePad.id = ''; findPad(); } });
   const pads = () => { try { return [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); } catch { return []; } };
-  function findPad() {
-    const p = pads()[0];
+  // a pad with a button held or a stick pushed (its own Start index, or anything)
+  const padBusy = (p) => p.buttons.some((b) => b && b.pressed) || p.axes.some((v, i) => Math.abs(v) > 0.5 && (i < 2 || (p.mapping === 'standard' && i < 4)));   // (sticks only: some pads rest their triggers at -1)
+  const padStartIndex = (p) => (isGcAdapter(p) || p.mapping === 'standard' ? 9 : CTRL.pad.Start);
+  // The pad live play reads: the one asked for, else one in use, else a standard-mapped one, else the
+  // first. (A GameCube adapter shows up as four pads, and other HID devices can sit at index 0, so
+  // "the first pad" is often not the controller in the player's hands.)
+  function findPad(prefer = -1) {
+    const all = pads();
+    const p = all.find((x) => x.index === prefer) || all.find(padBusy) || all.find((x) => x.mapping === 'standard') || all[0];
     livePad.index = p ? p.index : -1; livePad.id = p ? p.id : '';
     padInfoLine();
   }
-  function setLivePad(on) {
+  function setLivePad(on, prefer = -1) {
     livePad.on = !!on;
-    if (on) { findPad(); livePad.reset++; livePad.clock = 0; livePad.frames = 0; }
+    if (on) { findPad(prefer); livePad.reset++; livePad.clock = 0; livePad.frames = 0; }
     padInfoLine();
     return livePad.on;
   }
@@ -5977,6 +5984,8 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   function readLivePad() {
     const P = { button: 0, stickX: 0, stickY: 0, substickX: 0, substickY: 0, triggerLeft: 0, triggerRight: 0, analogA: 0, analogB: 0 };
     let p = livePad.index >= 0 ? pads().find((x) => x.index === livePad.index) : null;
+    // the pad in use changed (another controller pressed while this one sits idle): follow it
+    if (p && !padBusy(p)) { const q = pads().find((x) => x.index !== p.index && padBusy(x)); if (q) { findPad(q.index); p = q; } }
     if (!p) { findPad(); p = livePad.index >= 0 ? pads().find((x) => x.index === livePad.index) : null; }
     const B = (i) => !!(p && i >= 0 && p.buttons[i] && p.buttons[i].pressed), V = (i) => (p && i >= 0 && p.buttons[i] ? p.buttons[i].value || (p.buttons[i].pressed ? 1 : 0) : 0), A = (i) => (p && p.axes[i]) || 0;
     let rx = 0, ry = 0, cx = 0, cy = 0, tl = 0, tr = 0, dl = false, dr = false, bits = 0;
@@ -6021,8 +6030,9 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   let padStartWas = false;
   function pollPadStart() {
     if (livePad.on || ghosts.length || !navigator.getGamepads) return;
-    const down = pads().some((p) => p.buttons[9] && p.buttons[9].pressed);
-    if (down && !padStartWas) setLivePad(true);
+    const hit = pads().find((p) => { const b = p.buttons[padStartIndex(p)]; return b && b.pressed; });
+    const down = !!hit;
+    if (down && !padStartWas) setLivePad(true, hit.index);
     padStartWas = down;
   }
   let padSelectWas = false;
