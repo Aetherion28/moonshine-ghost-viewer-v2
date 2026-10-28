@@ -1248,6 +1248,9 @@ export class GameLayer {
                     const m = rig.root.matrixWorld.elements;
                     S.addMario({ x: m[12], y: m[13], z: m[14] }, rig.bones, col, this.shadowLight, eye);
                 }
+                // the NPCs' and enemies' circles (TLiveActor::requestShadow at CUE_CALC_VIEW)
+                const G = st.world.groups;
+                if (G) for (const k of [7, 8, 9]) for (const a of G[k] || []) if ((a as any).mactor || (a as any).mMActor || (a as any).model) S.addActor(a, col, eye);
             }
         }
         this.syncFittings();

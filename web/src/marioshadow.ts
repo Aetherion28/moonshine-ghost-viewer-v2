@@ -70,7 +70,7 @@ function volumeMaterials(inst: J3DModelInstanceSimple, back: boolean) {
     }
 }
 
-interface Req { x: number; y: number; z: number; rx: number; rz: number; dist2: number }
+interface Req { x: number; y: number; z: number; rx: number; rz: number; dist2: number; rotY?: number; mario?: boolean; ground?: boolean }
 
 /** a model's joint world matrix (three.js column-major elements): its translation */
 const tx = (e: number[]) => e[12], ty = (e: number[]) => e[13], tz = (e: number[]) => e[14];
@@ -150,8 +150,18 @@ export class MarioShadow {
                 if (rz > rx) { if (rz > RATIO * rx) rz *= STRETCH; if (rx > min) rx = min; }
                 else if (rx > rz) { if (rx > RATIO * rz) rx *= STRETCH; if (rz > min) rz = min; }
             }
-            this.request({ x: cx, y: groundY, z: cz, rx, rz, dist2: 0 }, col, eye);
+            this.request({ x: cx, y: groundY, z: cz, rx, rz, dist2: 0, rotY: 0, mario: true, ground: true }, col, eye);
         }
+    }
+
+    /** TLiveActor::requestShadow (a circle of the actor's scaled body radius, turned by its rotation) */
+    addActor(a: any, col: any, eye: number[]) {
+        if (!col || !a || !a.pos || typeof a.checkLiveFlag !== 'function') return;
+        if (a.checkLiveFlag(0x1 | 0x2 | 0x8)) return;   // DEAD | HIDDEN | UNK8
+        if (a.checkLiveFlag(0x200 | 0x4) && !a.checkLiveFlag(0x400)) return;   // UNK200 | CLIPPED_OUT, unless FORCE_SHADOW
+        const air = a.checkLiveFlag(0x80);
+        const r = a.scaledBodyRadius;
+        this.request({ x: a.pos.x, y: air ? a.pos.y : a.groundHeight, z: a.pos.z, rx: r, rz: r, dist2: 0, rotY: a.rot ? a.rot.y : 0, mario: false, ground: air }, col, eye);
     }
 
     private request(r: Req, col: any, eye: number[]) {
@@ -161,16 +171,22 @@ export class MarioShadow {
         if (r.rx < 0.01 || r.rz < 0.01) return;
         if (!col.isInArea(r.x, r.z)) return;
         if (Number.isNaN(r.x) || Number.isNaN(r.z)) return;
-        // calcVtx: on the ground under its centre
-        let [gy, g] = col.checkGround(r.x, r.y + RISE, r.z);
-        if (g && g.isWaterSurface()) [gy, g] = col.checkGround(r.x, r.y, r.z, IGNORE_WATER_SURFACE);
-        const shrink = r.dist2 > 20000000 ? 0.2 : 1;
+        // calcVtx: on the ground under its centre (unless the request already put it there)
+        let gy = r.y;
+        if (r.ground !== false) {
+            let g: any;
+            [gy, g] = col.checkGround(r.x, r.y + RISE, r.z);
+            if (g && g.isWaterSurface()) [gy, g] = col.checkGround(r.x, r.y, r.z, IGNORE_WATER_SURFACE);
+        }
+        const rotY = r.rotY || 0;
+        const shrink = r.dist2 > 20000000 || rotY !== 0 ? 0.2 : 1;
         const rad = Math.max(r.rx, r.rz);
-        const sx = 0.08 * r.rx, sy = 0.08 * r.rz, sz = 0.08 * (rad * shrink) * 1.5;
-        // MsMtxSetTRS(x, y, z, 90, 0, 0, sx, sy, sz): model y along world z, model z down world -y
+        const sx = 0.08 * r.rx, sy = 0.08 * r.rz, sz = 0.08 * (rad * shrink) * (r.mario ? 1.5 : 1);
+        // MsMtxSetTRS(x, y, z, 90, rotY, 0, sx, sy, sz): model y along world z, model z down world -y, turned by rotY about y
+        const c = Math.cos(rotY * Math.PI / 180), s = Math.sin(rotY * Math.PI / 180);
         const v = this.volume(this.used++), set = r.dist2 < 20000000 ? v.hi : v.lo;
         for (const m of set) {
-            mat4.set(m.modelMatrix, sx, 0, 0, 0, 0, 0, sy, 0, 0, -sz, 0, 0, r.x, gy, r.z, 1);
+            mat4.set(m.modelMatrix, sx * c, 0, -sx * s, 0, sy * s, 0, sy * c, 0, 0, -sz, 0, 0, r.x, gy, r.z, 1);
             m.visible = true;
         }
     }
