@@ -457,7 +457,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <header><h2 id="ctrlTitle">Controls</h2><button value="close" aria-label="Close">&times;</button></header>
       <p class="ctrlNote">Click a box, then press the key or controller button for it. Esc cancels, Backspace clears. Sticks and analog triggers on a controller stay on their usual axes; a GameCube adapter keeps its own layout.</p>
       <div class="ctrlGrid" id="ctrlGrid"></div>
-      <footer><button type="button" id="ctrlReset">Reset to defaults</button><span></span><button value="close" class="primary">Done</button></footer>
+      <footer><button type="button" id="ctrlReset">Reset to defaults</button><button type="button" id="ctrlGcAdapter" title="Nintendo's GameCube controller adapter (WUP-028) over USB">GameCube adapter…</button><span></span><button value="close" class="primary">Done</button></footer>
     </form>
   </dialog>
   <dialog class="browse" id="browseDlg" aria-labelledby="browseTitle">
@@ -508,6 +508,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="With a ghost that recorded its controller: Mario is played by the game's own code from those inputs (the camera too), instead of following the ghost's recorded positions. Where the replay drifts from the ghost is shown here."><input type="checkbox" id="optReplay" checked disabled> Input replay <span class="discInfo" id="replayInfo"></span></label>
       <label title="When the input replay drifts more than a unit from the ghost, Mario follows the ghost's own position and animation until the ghost next stands on the ground, then the inputs take over again from there."><input type="checkbox" id="optSnap" checked> Snap Mario back to the ghost</label>
       <label title="Read the game from an extracted game folder instead of a disc image"><button type="button" id="pickFolder" class="linkBtn">Use an extracted game folder…</button></label>
+      <label title="Nintendo's GameCube controller adapter (WUP-028, for Wii U / Switch) read directly over USB, as Dolphin does: its four ports show up as controllers. On Windows it needs the WinUSB driver (Zadig), the same setup Dolphin uses."><button type="button" id="gcAdapterBtn" class="linkBtn">Connect a GameCube adapter (WUP-028)…</button> <span class="discInfo" id="gcAdapterInfo"></span></label>
       <label title="Load zones, cutscene and warp triggers, area cylinders and the camera, area, flow, wire, shadow, mirror, sound and draw-distance cubes, and enemies' own trigger zones (the Monty Mole cannon's), as see-through volumes with labels."><input type="checkbox" id="optTriggers"> Show invisible triggers</label>
       <label><input type="checkbox" id="optNames"> Show model names</label>
       <label title="Shines that appear only after an event (red coins, a boss, 100 coins...) are hidden until the ghost triggers them; the 100-coin shine counts the stage's placed gold coins. Red coins that a red switch brings out stay hidden until the ghost presses it. Tick to show every shine and red coin in the level."><input type="checkbox" id="optShines"> Show all shines and red coins</label>
@@ -554,14 +555,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793198624483"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793198624483"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793198624483"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793198624483"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793198624483"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793198624483"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793198624483"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793198624483"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793199103317"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793199103317"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793199103317"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793199103317"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793199103317"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793199103317"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793199103317"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793199103317"><\/script>');
 </script>
 <script>
 (() => {
@@ -5871,7 +5872,84 @@ document.write('<script src="' + V2 + 'hud.js?v=1793198624483"><\/script>');
   }
   window.addEventListener('gamepadconnected', (e) => { if (livePad.on && livePad.index < 0) findPad(); });
   window.addEventListener('gamepaddisconnected', (e) => { if (e.gamepad && e.gamepad.index === livePad.index) { livePad.index = -1; livePad.id = ''; findPad(); } });
-  const pads = () => { try { return [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); } catch { return []; } };
+  const pads = () => { let a = []; try { a = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); } catch { } return gcUsb.pads.length ? a.concat(gcUsb.pads.filter((p) => p.connected)) : a; };
+  // ---------------------------------------------------------------- the WUP-028 adapter over WebUSB
+  // Nintendo's GameCube adapter (057e:0337) in its own mode isn't a HID gamepad, so the browser's
+  // Gamepad API never sees it. Read it as Dolphin does: claim interface 0, send 0x13 on the OUT
+  // endpoint to start it, then each 37-byte report from the IN endpoint is 0x21 and four ports of 9
+  // bytes: status (0x10 wired, 0x20 WaveBird; 0 nothing plugged), buttons (A B X Y, D-left right down
+  // up), buttons (Start Z R L), stick X Y, C-stick X Y, L, R analog (raw, 0-255 centred on 128).
+  // Each port is offered as a pad laid out like the adapter's PC mode (isGcAdapter's layout).
+  const gcUsb = { dev: null, pads: [], busy: false };
+  function gcUsbPad(port) {
+    return { index: 100 + port, id: `WUP-028 GameCube Adapter port ${port + 1} (USB 057e:0337)`, mapping: '', connected: false, timestamp: 0,
+      axes: [0, 0, 0, -1, -1, 0], buttons: Array.from({ length: 16 }, () => ({ pressed: false, touched: false, value: 0 })) };
+  }
+  function gcUsbReport(d) {
+    if (d.byteLength < 37 || d.getUint8(0) !== 0x21) return;
+    for (let i = 0; i < 4; i++) {
+      const o = 1 + i * 9, st = d.getUint8(o), P = gcUsb.pads[i];
+      const was = P.connected;
+      P.connected = (st & 0x30) !== 0;
+      // (the PAD library's origin: the sticks and triggers as they rest when the controller is plugged
+      // in, taken off every read (SPEC2_MakeStatus), as on the console; X + Y + Start held 3 s resets it)
+      const raw = [3, 4, 5, 6, 7, 8].map((k) => d.getUint8(o + k));
+      if (P.connected && (!was || !P.origin)) P.origin = raw.slice();
+      if (!P.connected) { P.origin = null; P.xyStart = 0; continue; }
+      if ((d.getUint8(o + 1) & 0x0C) === 0x0C && (d.getUint8(o + 2) & 0x01)) { if (!P.xyStart) P.xyStart = performance.now(); else if (performance.now() - P.xyStart > 3000) { P.origin = raw.slice(); P.xyStart = 0; } } else P.xyStart = 0;
+      const O = P.origin;
+      const b1 = d.getUint8(o + 1), b2 = d.getUint8(o + 2);
+      const set = (k, on) => { const b = P.buttons[k]; b.pressed = on; b.touched = on; b.value = on ? 1 : 0; };
+      set(1, !!(b1 & 0x01)); set(2, !!(b1 & 0x02)); set(0, !!(b1 & 0x04)); set(3, !!(b1 & 0x08));
+      set(14, !!(b1 & 0x10)); set(15, !!(b1 & 0x20)); set(13, !!(b1 & 0x40)); set(12, !!(b1 & 0x80));
+      set(9, !!(b2 & 0x01)); set(7, !!(b2 & 0x02)); set(5, !!(b2 & 0x04)); set(4, !!(b2 & 0x08));
+      // (as offsets from 128 by the origin: the stick reads s8(raw - origin))
+      const ax = (v, c) => (v - c) / 127, tr = (v, c) => (Math.max(0, v - c) / 127.5) - 1;
+      P.axes[0] = ax(raw[0], O[0]); P.axes[1] = -ax(raw[1], O[1]);
+      P.axes[5] = ax(raw[2], O[2]); P.axes[2] = -ax(raw[3], O[3]);
+      P.axes[3] = tr(raw[4], O[4]); P.axes[4] = tr(raw[5], O[5]);
+      P.timestamp = performance.now();
+    }
+  }
+  function gcUsbStatus(text) { setText($('gcAdapterInfo'), text); }
+  async function gcUsbOpen(dev) {
+    if (gcUsb.busy || gcUsb.dev === dev) return;
+    gcUsb.busy = true;
+    try {
+      await dev.open();
+      if (dev.configuration === null) await dev.selectConfiguration(1);
+      await dev.claimInterface(0);
+      const alt = dev.configuration.interfaces[0].alternate;
+      const epIn = alt.endpoints.find((e) => e.direction === 'in'), epOut = alt.endpoints.find((e) => e.direction === 'out');
+      if (epOut) await dev.transferOut(epOut.endpointNumber, new Uint8Array([0x13]));
+      gcUsb.dev = dev; gcUsb.pads = [0, 1, 2, 3].map(gcUsbPad);
+      gcUsbStatus('connected');
+      (async () => {
+        while (gcUsb.dev === dev) {
+          try { const r = await dev.transferIn(epIn ? epIn.endpointNumber : 1, 37); if (r.data) gcUsbReport(r.data); }
+          catch (e) { if (gcUsb.dev === dev) { gcUsb.dev = null; gcUsb.pads = []; gcUsbStatus('disconnected'); } break; }
+        }
+      })();
+    } catch (e) {
+      console.warn('[gc adapter]', e);
+      const win = /Win/.test(navigator.platform || navigator.userAgent);
+      gcUsbStatus('could not open it' + (win ? ' (on Windows it needs the WinUSB driver: Zadig, as for Dolphin)' : (/Linux/.test(navigator.userAgent) ? ' (on Linux it needs a udev rule giving access to 057e:0337, as for Dolphin)' : '')));
+      try { await dev.close(); } catch { }
+    } finally { gcUsb.busy = false; }
+  }
+  async function gcUsbConnect() {
+    if (!navigator.usb) { gcUsbStatus('this browser has no WebUSB (Chrome or Edge do)'); return; }
+    try { const dev = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x057e, productId: 0x0337 }] }); await gcUsbOpen(dev); }
+    catch (e) { if (e && e.name !== 'NotFoundError') gcUsbStatus(String(e.message || e)); }
+  }
+  $('gcAdapterBtn').addEventListener('click', gcUsbConnect);
+  $('ctrlGcAdapter').addEventListener('click', gcUsbConnect);
+  if (navigator.usb) {
+    // (one allowed before reconnects by itself; plugged in again, too)
+    navigator.usb.getDevices().then((ds) => { const d = ds.find((x) => x.vendorId === 0x057e && x.productId === 0x0337); if (d) gcUsbOpen(d); }).catch(() => { });
+    navigator.usb.addEventListener('connect', (e) => { const d = e.device; if (d.vendorId === 0x057e && d.productId === 0x0337) gcUsbOpen(d); });
+    navigator.usb.addEventListener('disconnect', (e) => { if (e.device === gcUsb.dev) { gcUsb.dev = null; gcUsb.pads = []; gcUsbStatus('unplugged'); } });
+  } else { const b = $('gcAdapterBtn'); if (b) b.title += ' (This browser has no WebUSB: use Chrome or Edge.)'; }
   // a pad with a button held or a stick pushed (its own Start index, or anything)
   const padBusy = (p) => p.buttons.some((b) => b && b.pressed) || p.axes.some((v, i) => Math.abs(v) > 0.5 && (i < 2 || (p.mapping === 'standard' && i < 4)));   // (sticks only: some pads rest their triggers at -1)
   const padStartIndex = (p) => (isGcAdapter(p) || p.mapping === 'standard' ? 9 : CTRL.pad.Start);
@@ -8284,7 +8362,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793198624483';
+  const BUILD_STAMP = '1793199103317';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
