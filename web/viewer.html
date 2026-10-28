@@ -8260,11 +8260,50 @@ void main() {
       const G = gameLayer && gameLayer.perf;
       const gd = G ? ` (sync ${ms(G.sync)}, shadows ${ms(G.shadow)}, objects ${ms(G.objects)}, render ${ms(G.gpu)})` : '';
       el.textContent = `${fps.toFixed(0)} fps${game} · ms/frame: total ${ms(perfAcc.loop)}, game logic ${ms(perfAcc.sim)}, game draw ${ms(perfAcc.game)}${gd}, overlay ${ms(perfAcc.three)}`;
+      const RP = gameLayer && gameLayer.renderer && gameLayer.renderer.perf;
+      if (window.__benchAdd) window.__benchAdd({ n: fpsMeter.n, total: perfAcc.loop, logic: perfAcc.sim, draw: perfAcc.game, overlay: perfAcc.three, sync: G ? G.sync : 0, shadows: G ? G.shadow : 0, objects: G ? G.objects : 0, render: G ? G.gpu : 0,
+        lights: RP ? RP.lights : 0, prepare: RP ? RP.prepare : 0, submit: RP ? RP.execute : 0 });
+      if (RP) RP.lights = RP.prepare = RP.execute = 0;
       if (G) G.sync = G.shadow = G.objects = G.gpu = 0;
       perfAcc.sim = perfAcc.game = perfAcc.three = perfAcc.loop = 0;
       fpsMeter.t0 = now; fpsMeter.n = 0; fpsMeter.g0 = livePad.frames;
     }
   }
+  // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
+  // wide circle; after 5 s it times 15 s of frames and shows where the time went.
+  (function bench() {
+    if (!/[?&]bench\b/.test(location.search)) return;
+    const pad = { index: 99, id: 'bench (STANDARD GAMEPAD)', mapping: 'standard', connected: true, axes: [0, -1, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) };
+    const real = navigator.getGamepads ? navigator.getGamepads.bind(navigator) : () => [];
+    navigator.getGamepads = () => [pad];
+    const box = document.createElement('pre');
+    box.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;background:#000c;color:#fff;font:12px monospace;padding:8px;margin:0;max-width:96vw;white-space:pre-wrap';
+    document.body.append(box);
+    let phase = 'waiting for the disc', t0 = 0, f0 = 0, g0 = 0, acc = null;
+    const tick = () => {
+      const now = performance.now();
+      const a = now / 1500; pad.axes[0] = Math.sin(a) * 0.9; pad.axes[1] = -Math.cos(a) * 0.9;
+      if (phase === 'waiting for the disc' && gameLive && gameLayer && gameLayer.common && objectsGroup) { setLivePad(true, 99); phase = 'warming up'; t0 = now; }
+      else if (phase === 'warming up' && now - t0 > 5000) {
+        phase = 'timing'; t0 = now; f0 = loopFrame; g0 = livePad.frames;
+        const R = gameLayer.renderer;
+        acc = { s: { ...perfAcc }, g: { ...gameLayer.perf }, r: R && R.perf ? { ...R.perf } : null };
+        perfAcc.keep = true;
+      } else if (phase === 'timing' && now - t0 > 15000) {
+        phase = 'done';
+        const s = (now - t0) / 1000, n = loopFrame - f0;
+        box.textContent = `BENCH done: ${(n / s).toFixed(1)} fps drawn, ${((livePad.frames - g0) / s).toFixed(1)} game frames/s\n` + (window.__benchOut || '');
+        console.log('[bench]', box.textContent);
+        return;
+      }
+      if (phase !== 'done') box.textContent = `BENCH ${phase}…` + (phase === 'timing' ? ` ${((now - t0) / 1000).toFixed(0)} s` : '');
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    // totals over the timing window, summed by fpsTick before it clears them
+    window.__benchAdd = (o) => { if (phase !== 'timing') return; const B = window.__benchT || (window.__benchT = {}); for (const k in o) B[k] = (B[k] || 0) + o[k]; B.frames = (B.frames || 0) + (o.n || 0);
+      const F = B.frames || 1; window.__benchOut = 'ms per drawn frame: ' + Object.keys(B).filter((k) => k !== 'frames' && k !== 'n').map((k) => `${k} ${(B[k] / F).toFixed(2)}`).join(', '); };
+  })();
   function adaptResolution() {
     const ch = renderer.domElement.clientHeight || 1, want = 720 / ch;
     if (Math.abs(renderer.getPixelRatio() - want) > 1e-3) renderer.setPixelRatio(want);

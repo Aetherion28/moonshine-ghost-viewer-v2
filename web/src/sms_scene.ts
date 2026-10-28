@@ -542,6 +542,8 @@ export class SunshineRenderer implements Viewer.SceneGfx {
         }
     }
 
+    /** time spent (ms, summed until read): the lights' setup, the models' prepare, and the GPU submission */
+    perf = { lights: 0, prepare: 0, execute: 0 };
     private preparePass(device: GfxDevice, list: GfxRenderInstList, passMask: number, viewerInput: Viewer.ViewerRenderInput): void {
         const renderInstManager = this.renderHelper.renderInstManager;
         renderInstManager.setCurrentList(list);
@@ -556,11 +558,13 @@ export class SunshineRenderer implements Viewer.SceneGfx {
     protected prepareToRender(device: GfxDevice, viewerInput: Viewer.ViewerRenderInput): void {
         if (this.beforePrepare !== null)
             this.beforePrepare(viewerInput);
+        const _t0 = performance.now();
         if (this.objLightConfig !== null)
             for (let i = 0; i < this.modelInstances.length; i++)
                 if (!(this.modelInstances[i] as any).isPlayer)   // (the viewer lights Mario itself)
                     this.objLightConfig.setOnModelInstance(this.modelInstances[i], viewerInput.camera);
 
+        const _t1 = performance.now(); this.perf.lights += _t1 - _t0;
         const template = this.renderHelper.pushTemplateRenderInst();
         fillSceneParamsDataOnTemplate(template, viewerInput);
         this.preparePass(device, this.renderInstListSky, SMSPass.SKYBOX, viewerInput);
@@ -573,6 +577,7 @@ export class SunshineRenderer implements Viewer.SceneGfx {
         this.preparePass(device, this.renderInstListMain, SMSPass.MAIN, viewerInput);
         this.preparePass(device, this.renderInstListInd, SMSPass.INDIRECT, viewerInput);
         this.renderHelper.renderInstManager.popTemplate();
+        this.perf.prepare += performance.now() - _t1;
     }
 
     public render(device: GfxDevice, viewerInput: Viewer.ViewerRenderInput) {
@@ -630,8 +635,10 @@ export class SunshineRenderer implements Viewer.SceneGfx {
         this.copyFilter.pushPasses(builder, this.renderHelper, mainColorTargetID);
         builder.resolveRenderTargetToExternalTexture(mainColorTargetID, viewerInput.onscreenTexture);
 
+        const _t2 = performance.now();
         this.renderHelper.prepareToRender();
         builder.execute();
+        this.perf.execute += performance.now() - _t2;
         this.renderInstListSky.reset();
         this.renderInstListMain.reset();
         this.renderInstListInd.reset();
