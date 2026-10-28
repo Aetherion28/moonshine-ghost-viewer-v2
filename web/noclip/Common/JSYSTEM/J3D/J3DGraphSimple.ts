@@ -12,6 +12,9 @@ import { calcANF1JointAnimationTransform, calcANK1JointAnimationTransform, calcJ
 import { ColorKind } from "../../../gx/gx_render.js";
 import { Color } from "../../../Color.js";
 import * as GX from "../../../gx/gx_enum.js";
+import { AABB } from "../../../Geometry.js";
+import { computeModelMatrixS } from "../../../MathHelpers.js";
+const wholeScratch = new AABB(), wholeMtx = mat4.create();
 
 // "Simple" API for when systems are not well-integrated enough to have custom main loops.
 
@@ -288,6 +291,21 @@ export class J3DModelInstanceSimple extends J3DModelInstance {
 
         this.animationController.setTimeInMilliseconds(viewerInput.time);
         this.calcSkybox(camera);
+        // (viewer: a whole model well outside the view skips its joint animation and per-joint culling:
+        // its root joint's box, grown by half each way for limbs and animation that reach past it)
+        if (!this.isSkybox && !this.modelData.hasBillboard && (this as any).cullWhole !== false) {
+            const rb = this.modelData.bmd.jnt1.joints[0].bbox;
+            if (!rb.isEmpty()) {
+                wholeScratch.copy(rb);
+                const cx = (wholeScratch.min[0] + wholeScratch.max[0]) / 2, cy = (wholeScratch.min[1] + wholeScratch.max[1]) / 2, cz = (wholeScratch.min[2] + wholeScratch.max[2]) / 2;
+                const ex = (wholeScratch.max[0] - wholeScratch.min[0]), ey = (wholeScratch.max[1] - wholeScratch.min[1]), ez = (wholeScratch.max[2] - wholeScratch.min[2]);
+                wholeScratch.set(cx - ex, cy - ey, cz - ez, cx + ex, cy + ey, cz + ez);
+                computeModelMatrixS(wholeMtx, this.baseScale[0], this.baseScale[1], this.baseScale[2]);
+                mat4.mul(wholeMtx, this.modelMatrix, wholeMtx);
+                wholeScratch.transform(wholeScratch, wholeMtx);
+                if (!camera.frustum.contains(wholeScratch)) return;
+            }
+        }
         this.calcAnim();
         this.calcView(camera.viewMatrix, camera.frustum);
 
