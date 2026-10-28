@@ -554,14 +554,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793168182382"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793168182382"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793168182382"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793168182382"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793168182382"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793168182382"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793168182382"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793168182382"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793171323450"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793171323450"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793171323450"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793171323450"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793171323450"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793171323450"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793171323450"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793171323450"><\/script>');
 </script>
 <script>
 (() => {
@@ -4194,6 +4194,9 @@ document.write('<script src="' + V2 + 'hud.js?v=1793168182382"><\/script>');
   }
   function placeGesso(node, f, g, base) {
     const bg = node.userData.bg, A = GESSO_ANIMS;
+    // (the game layer's sim runs his fight itself (TBossGesso) and draws him: this stand-in, with its
+    // tentacles, beak and effects, would be a second Gooper Blooper over him)
+    if (node.userData.simHidden) { node.visible = false; bg.parts.forEach((p) => { p.visible = false; }); node.userData.bgJpa = null; bg.flight = null; return; }
     if (!A || typeof GessoSim === 'undefined') { node.visible = false; bg.parts.forEach((p) => { p.visible = false; }); return; }
     const sim = gessoSim(node, g, base);
     if (!g) { if (sim.f0 === undefined) sim.f0 = Math.floor(f); f = Math.max(0, f - sim.f0); }   // (idle: from when it was first shown)
@@ -8273,7 +8276,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793168182382';
+  const BUILD_STAMP = '1793171323450';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)

@@ -234,14 +234,17 @@ export class V3 {
 export const sqDist = (a: V3, b: V3) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;
 
 // ---------------------------------------------------------------- MathUtil.hpp
+/** MsWrap<f> (0x803695d0): the range and each step in singles (fsubs / fadds) */
 export function MsWrap(t: number, l: number, r: number) {
     if (l >= r) return l;
-    while (t >= r) t -= r - l;
-    while (t < l) t += r - l;
+    const d = fr(r - l);
+    while (t >= r) t = fr(t - d);
+    while (t < l) t = fr(t + d);
     return t;
 }
 export const MsClamp = (t: number, l: number, r: number) => (t < l ? l : t > r ? r : t);
-export const MsAngleDiff = (a: number, b: number) => a - MsWrap(b, a - 180, a + 180);
+/** MsAngleDiff: the bounds and the difference in singles */
+export const MsAngleDiff = (a: number, b: number) => fr(a - MsWrap(b, fr(a - 180), fr(a + 180)));
 export const MsAngleWrap = (a: number) => MsWrap(a, 0, 360);
 export function MsGetRotFromZaxisY(v: V3) {
     if (v.z === 0) return v.x >= 0 ? 90 : -90;
