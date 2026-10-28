@@ -94,6 +94,8 @@ header .seg button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--trim
 .hud { position: absolute; left: 12px; top: 12px; display: grid; gap: 2px; font-family: var(--mono); font-size: 12px;
   background: color-mix(in srgb, var(--panel) 82%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
   pointer-events: none; font-variant-numeric: tabular-nums; }
+.fpsBox { position: absolute; right: 56px; top: 12px; font-family: var(--mono); font-size: 12px; padding: 4px 8px; border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 82%, transparent); border: 1px solid var(--line); pointer-events: none; font-variant-numeric: tabular-nums; }
 .hud b { font-weight: 500; color: var(--muted); display: inline-block; width: 5.5ch; }
 .joy { position: absolute; left: 14px; bottom: 14px; display: flex; align-items: flex-end; gap: 10px; touch-action: none; user-select: none; -webkit-user-select: none; }
 .joy[hidden] { display: none; }
@@ -402,6 +404,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       </div>
     </div>
     <div class="hud" id="hud" aria-live="off"></div>
+    <div class="fpsBox" id="fpsBox" aria-live="off" hidden></div>
     <div class="notice" id="notice" hidden></div>
     <div class="inputsStage" id="inputsStage" hidden></div>
     <div class="inputsStage" id="inputsStageB" hidden></div>
@@ -497,6 +500,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="Mario's and the objects' sounds, from the game disc"><input type="checkbox" id="optSfx"> Sound effects <span class="discInfo" id="audioInfo"></span></label>
       <label><input type="checkbox" id="optPath" checked> Show full route lines</label>
       <label title="The box of Mario's position, speed, animation and FLUDD in the view's corner"><input type="checkbox" id="optInfo" checked> Show info box</label>
+      <label title="Frames drawn per second, and in live play the game frames run per second (the game runs at 30)"><input type="checkbox" id="optFps" checked> Show frame rate</label>
       <label title="The coloured circle at each ghost's feet that tells ghosts apart"><input type="checkbox" id="optRing" checked> Show ghost circles</label>
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
       <div class="discLine">Disc: <span class="discInfo" id="discInfo">none loaded</span> <span class="discInfo" id="padInfo" hidden></span> <span class="discInfo" id="padRec" hidden></span></div>
@@ -8239,6 +8243,22 @@ void main() {
   let playClock = null;
   let last = performance.now();
   // The view draws at a constant 720 pixels tall, whatever the window's size or the screen's density.
+  // frame rate readout: frames drawn in the last second (and, live, game frames run)
+  const fpsMeter = { t0: 0, n: 0, g0: 0 };
+  function fpsTick(now) {
+    const el = $('fpsBox'); if (!el) return;
+    const on = $('optFps').checked;
+    setHidden(el, !on);
+    if (!on) return;
+    if (!fpsMeter.t0) { fpsMeter.t0 = now; fpsMeter.g0 = livePad.frames; }
+    fpsMeter.n++;
+    if (now - fpsMeter.t0 >= 1000) {
+      const s = (now - fpsMeter.t0) / 1000, fps = fpsMeter.n / s;
+      const game = livePad.active ? ` · game ${((livePad.frames - fpsMeter.g0) / s).toFixed(0)}/30` : '';
+      el.textContent = `${fps.toFixed(0)} fps${game}`;
+      fpsMeter.t0 = now; fpsMeter.n = 0; fpsMeter.g0 = livePad.frames;
+    }
+  }
   function adaptResolution() {
     const ch = renderer.domElement.clientHeight || 1, want = 720 / ch;
     if (Math.abs(renderer.getPixelRatio() - want) > 1e-3) renderer.setPixelRatio(want);
@@ -8247,6 +8267,7 @@ void main() {
     loopFrame++;
     const dt = Math.min(0.1, (now - last) / 1000);
     adaptResolution();
+    fpsTick(now);
     updateTexAnims(now);
     last = now;
     if (playing) {
@@ -8906,6 +8927,8 @@ void main() {
   $('camTop').onclick = () => setCameraMode('top');
   $('optPath').onchange = (e) => ghosts.forEach((g) => { g.path.visible = e.target.checked && g.visible; });
   try { if (localStorage.getItem('ghostViewer.infoBox') === '0') $('optInfo').checked = false; } catch (e) { }
+  try { if (localStorage.getItem('ghostViewer.fps') === '0') $('optFps').checked = false; } catch (e) { }
+  $('optFps').onchange = (e) => { try { localStorage.setItem('ghostViewer.fps', e.target.checked ? '1' : '0'); } catch (err) { } };
   $('optInfo').onchange = (e) => { try { localStorage.setItem('ghostViewer.infoBox', e.target.checked ? '1' : '0'); } catch (err) { } hudKey = null; };
   $('optRing').onchange = (e) => ghosts.forEach((g) => { if (g.marker.userData.ring) g.marker.userData.ring.visible = e.target.checked; });
   $('optWire').onchange = (e) => setWireframe(e.target.checked);
