@@ -473,6 +473,8 @@ export class BossWanwan extends SpineEnemy {
         const P = this.PB;
         this.marchSpeed = P.mSLMarchSpeed; this.turnSpeed = P.mSLTurnSpeed;
         this.pos.set(BW_HEAD_START);
+        // (the viewer's stand-in sits here too: the drawables match the two by this place)
+        this.loadPos = BW_HEAD_START.clone();
         this.reset();
         this.calcRootMatrix();
         this.calcJoints();

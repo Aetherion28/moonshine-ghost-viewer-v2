@@ -554,14 +554,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793171323450"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793171323450"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793171323450"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793171323450"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793171323450"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793171323450"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793171323450"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793171323450"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793196518448"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793196518448"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793196518448"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793196518448"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793196518448"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793196518448"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793196518448"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793196518448"><\/script>');
 </script>
 <script>
 (() => {
@@ -3973,6 +3973,14 @@ document.write('<script src="' + V2 + 'hud.js?v=1793171323450"><\/script>');
     return out;
   }
   function placeChomp(node, f, g, base) {
+    // (the game layer's sim runs the chomp itself (TBossWanwan) and draws it, its chain and its
+    // stake: this stand-in would be a second one over it)
+    if (node.userData.simHidden) {
+      const bw = node.userData.bw;
+      node.visible = false; if (bw.pkNode) bw.pkNode.visible = false; bw.links.forEach((l) => { l.visible = false; });
+      bw.flight = null; node.userData.bwJpa = null;
+      return;
+    }
     // Mario at the chomp's frame k of this visit (the ghost's time base + k frames), while he's here.
     let mario = null, key = 'idle';
     if (g && base !== undefined) {
@@ -8276,7 +8284,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793171323450';
+  const BUILD_STAMP = '1793196518448';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)

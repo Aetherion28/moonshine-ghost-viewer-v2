@@ -3973,6 +3973,14 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     return out;
   }
   function placeChomp(node, f, g, base) {
+    // (the game layer's sim runs the chomp itself (TBossWanwan) and draws it, its chain and its
+    // stake: this stand-in would be a second one over it)
+    if (node.userData.simHidden) {
+      const bw = node.userData.bw;
+      node.visible = false; if (bw.pkNode) bw.pkNode.visible = false; bw.links.forEach((l) => { l.visible = false; });
+      bw.flight = null; node.userData.bwJpa = null;
+      return;
+    }
     // Mario at the chomp's frame k of this visit (the ghost's time base + k frames), while he's here.
     let mario = null, key = 'idle';
     if (g && base !== undefined) {
