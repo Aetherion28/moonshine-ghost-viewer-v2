@@ -8273,7 +8273,7 @@ void main() {
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
-    const pad = { index: 99, id: 'bench (STANDARD GAMEPAD)', mapping: 'standard', connected: true, axes: [0, -1, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) };
+    const pad = { index: 99, id: 'bench (STANDARD GAMEPAD)', mapping: 'standard', connected: true, axes: [0, 0, 1, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) };
     const real = navigator.getGamepads ? navigator.getGamepads.bind(navigator) : () => [];
     navigator.getGamepads = () => [pad];
     const box = document.createElement('pre');
@@ -8282,7 +8282,7 @@ void main() {
     let phase = 'waiting for the disc', t0 = 0, f0 = 0, g0 = 0, acc = null;
     const tick = () => {
       const now = performance.now();
-      const a = now / 1500; pad.axes[0] = Math.sin(a) * 0.9; pad.axes[1] = -Math.cos(a) * 0.9;
+      pad.axes[0] = 0; pad.axes[1] = 0; pad.axes[2] = 1; pad.axes[3] = 0;   // (Mario stands; the C-stick turns the camera round him: the whole stage in view by turns)
       if (phase === 'waiting for the disc' && gameLive && gameLayer && gameLayer.common && objectsGroup) { setLivePad(true, 99); phase = 'warming up'; t0 = now; }
       else if (phase === 'warming up' && now - t0 > 5000) {
         phase = 'timing'; t0 = now; f0 = loopFrame; g0 = livePad.frames;
