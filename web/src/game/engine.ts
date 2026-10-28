@@ -1350,13 +1350,15 @@ export class ObjHitCheck {
         att.collisions.push(suf);
     }
     private checkInList(a: HitActor, list: HitActor[]) {
-        // (the game's lists are newest first)
+        // (the game's lists are newest first; the filter tests and checkDistance inlined, same order and results)
+        const af = a.hitFilter, aCat = a.actorType & HC_MASK, ap = a.pos;
+        const aAtk = !(af & HF.NO_ATTACK), aDmg = !(af & HF.NO_DAMAGE);
         for (let k = list.length - 1; k >= 0; k--) {
-            const c = list[k];
-            if (!a.checkHitFilter(HF.NO_ATTACK) && !c.checkHitFilter(HF.NO_DAMAGE) && a.canAttack(c)
-                && checkDistance(a.pos, a.attackRadius, a.attackHeight, c.pos, c.damageRadius, c.damageHeight)) this.suffer(a, c);
-            if (!c.checkHitFilter(HF.NO_ATTACK) && !a.checkHitFilter(HF.NO_DAMAGE) && c.canAttack(a)
-                && checkDistance(c.pos, c.attackRadius, c.attackHeight, a.pos, a.damageRadius, a.damageHeight)) this.suffer(c, a);
+            const c = list[k], cf = c.hitFilter, cp = c.pos;
+            if (aAtk && !(cf & HF.NO_DAMAGE) && (af & (c.actorType & HC_MASK)) !== 0
+                && checkDistance(ap, a.attackRadius, a.attackHeight, cp, c.damageRadius, c.damageHeight)) this.suffer(a, c);
+            if (aDmg && !(cf & HF.NO_ATTACK) && (cf & aCat) !== 0
+                && checkDistance(cp, c.attackRadius, c.attackHeight, ap, a.damageRadius, a.damageHeight)) this.suffer(c, a);
         }
     }
     private entry(a: HitActor, i: number) {
@@ -1377,7 +1379,7 @@ export class ObjHitCheck {
     }
     clearHitNum() { for (const k of [IDX.ENEMY, IDX.BOSS, IDX.NPC, IDX.PLAYER, IDX.WATER_PARTICLE, IDX.ITEM]) for (const a of this.w.groups[k] || []) a.collisions.length = 0; }
     checkActorsHit() {
-        this.table = []; for (let i = 0; i < 256; i++) this.table.push([]);
+        if (this.table.length !== 256) { this.table = []; for (let i = 0; i < 256; i++) this.table.push([]); } else for (const L of this.table) L.length = 0;
         const g = this.w.groups;
         this.entryGroup(g[IDX.OBJECT], false);
         this.entryGroup(g[IDX.ENEMY], true);

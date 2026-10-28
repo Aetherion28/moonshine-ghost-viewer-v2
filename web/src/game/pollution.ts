@@ -740,6 +740,7 @@ function rasterCount(m: CountMesh, a: number, b: number, c: number, W: number, H
 }
 
 const meshCache = new WeakMap<CountObj, CountMesh>();
+const texelCache = new WeakMap<CountMesh, Int32Array>();
 /**
  * TPollutionCounterObj::draw + drawSyncCallback for one object: its triangles over the 512 x 512
  * pass, each covered pixel's texel (NEAR: floor(s x w), CLAMP) of the layer's texture tested > 0.
@@ -752,14 +753,27 @@ export function countObjDegree(o: CountObj, files: Files): number {
         m = countMesh(o, b ? jointShapes(b).get(o.jointIndex) || [] : []);
         meshCache.set(o, m);
     }
-    const W = P.w, H = P.h;
+    // (the mesh is fixed, so which texel each covered pixel samples is too: rasterized once, then
+    // each frame only the texels are tested)
+    let T = texelCache.get(m);
+    if (!T) {
+        const W = P.w, H = P.h, out: number[] = [];
+        const px = (_x: number, _y: number, s: number, t: number) => {
+            let u = Math.floor(s * W), v = Math.floor(t * H);
+            u = u < 0 ? 0 : u >= W ? W - 1 : u; v = v < 0 ? 0 : v >= H ? H - 1 : v;
+            out.push(P.index(u, v));
+        };
+        for (let k = 0; k + 2 < m.idx.length; k += 3) rasterCount(m, m.idx[k], m.idx[k + 1], m.idx[k + 2], 512, 512, px);
+        // (each texel once, with how many pixels sample it)
+        const cnt = new Map<number, number>();
+        for (const i of out) cnt.set(i, (cnt.get(i) || 0) + 1);
+        T = new Int32Array(cnt.size * 2);
+        let j = 0;
+        for (const [i, c] of cnt) { T[j++] = i; T[j++] = c; }
+        texelCache.set(m, T);
+    }
     let n = 0;
-    const px = (_x: number, _y: number, s: number, t: number) => {
-        let u = Math.floor(s * W), v = Math.floor(t * H);
-        u = u < 0 ? 0 : u >= W ? W - 1 : u; v = v < 0 ? 0 : v >= H ? H - 1 : v;
-        if (M[P.index(u, v)]) n++;
-    };
-    for (let k = 0; k + 2 < m.idx.length; k += 3) rasterCount(m, m.idx[k], m.idx[k + 1], m.idx[k + 2], 512, 512, px);
+    for (let k = 0; k < T.length; k += 2) if (M[T[k]]) n += T[k + 1];
     return pixMetric(n, m.tris);
 }
 /** TMapEventSink::mCleanedDegree (u32 static, 10; mapevent.ts's sinkStatics) */
