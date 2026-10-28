@@ -8238,25 +8238,15 @@ void main() {
 
   let playClock = null;
   let last = performance.now();
-  // Resolution follows the frame rate: when frames take longer than a game frame (30 a second) for
-  // about a second, draw fewer pixels (down to half the CSS size); when there's room again for a few
-  // seconds, go back up (to the screen's own, at most 2x).
-  const autoRes = { ema: 1 / 60, slow: 0, fast: 0, max: Math.min(window.devicePixelRatio || 1, 2) };
-  function adaptResolution(dt) {
-    if (document.hidden || dt <= 0) return;
-    autoRes.ema += (dt - autoRes.ema) * 0.1;
-    let pr = renderer.getPixelRatio();
-    // (never more than 1080 pixels tall)
-    const ch = renderer.domElement.clientHeight || 1, cap = Math.max(0.5, Math.min(autoRes.max, 1080 / ch));
-    if (pr > cap) { renderer.setPixelRatio(cap); pr = cap; }
-    if (autoRes.ema > 1 / 28) { autoRes.fast = 0; if (++autoRes.slow > 30 && pr > 0.5) { renderer.setPixelRatio(Math.max(0.5, pr - 0.25)); autoRes.slow = 0; } }
-    else if (autoRes.ema < 1 / 45) { autoRes.slow = 0; if (++autoRes.fast > 180 && pr < cap) { renderer.setPixelRatio(Math.min(cap, pr + 0.25)); autoRes.fast = 0; } }
-    else { autoRes.slow = 0; autoRes.fast = 0; }
+  // The view draws at a constant 720 pixels tall, whatever the window's size or the screen's density.
+  function adaptResolution() {
+    const ch = renderer.domElement.clientHeight || 1, want = 720 / ch;
+    if (Math.abs(renderer.getPixelRatio() - want) > 1e-3) renderer.setPixelRatio(want);
   }
   function loop(now) {
     loopFrame++;
     const dt = Math.min(0.1, (now - last) / 1000);
-    adaptResolution((now - last) / 1000);
+    adaptResolution();
     updateTexAnims(now);
     last = now;
     if (playing) {
