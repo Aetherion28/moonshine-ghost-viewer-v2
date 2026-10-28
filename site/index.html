@@ -8267,6 +8267,8 @@ void main() {
     if (Math.abs(renderer.getPixelRatio() - want) > 1e-3) renderer.setPixelRatio(want);
   }
   function loop(now) {
+    // at most 30 frames a second, the game's own rate (a 60 Hz screen draws every other refresh)
+    if (now - last < 1000 / 30 - 4) { requestAnimationFrame(loop); return; }
     loopFrame++;
     const dt = Math.min(0.1, (now - last) / 1000);
     adaptResolution();
