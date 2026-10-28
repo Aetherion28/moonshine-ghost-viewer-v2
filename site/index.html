@@ -6094,7 +6094,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     while (livePad.clock >= 1 / 29.97) { livePad.clock -= 1 / 29.97; livePad.frames++; }
     const st = livePad.runner.stage;
     if (st && livePad.frames - st.frame > 4) livePad.frames = st.frame + 4;
-    if (gameLive) gameLayer.advanceSim(liveSimInput());
+    if (gameLive) { const _t = performance.now(); gameLayer.advanceSim(liveSimInput()); perfAcc.sim += performance.now() - _t; }
     // (a live screen — a menu, the episode select, a movie — runs on while the game layer isn't drawn)
     else if (livePad.runner && livePad.runner.stage && (livePad.runner.screen || livePad.runner.leaving)) { try { livePad.runner.update(livePad.runner.sceneName, null, liveSimInput()); } catch (e) { console.warn('[live]', e); } }
     liveGunCapture();
@@ -8245,6 +8245,7 @@ void main() {
   // The view draws at a constant 720 pixels tall, whatever the window's size or the screen's density.
   // frame rate readout: frames drawn in the last second (and, live, game frames run)
   const fpsMeter = { t0: 0, n: 0, g0: 0 };
+  var perfAcc = { sim: 0, game: 0, three: 0, loop: 0 };
   function fpsTick(now) {
     const el = $('fpsBox'); if (!el) return;
     const on = $('optFps').checked;
@@ -8255,7 +8256,9 @@ void main() {
     if (now - fpsMeter.t0 >= 1000) {
       const s = (now - fpsMeter.t0) / 1000, fps = fpsMeter.n / s;
       const game = livePad.active ? ` · game ${((livePad.frames - fpsMeter.g0) / s).toFixed(0)}/30` : '';
-      el.textContent = `${fps.toFixed(0)} fps${game}`;
+      const ms = (v) => (v / fpsMeter.n).toFixed(1);
+      el.textContent = `${fps.toFixed(0)} fps${game} · ms/frame: total ${ms(perfAcc.loop)}, game logic ${ms(perfAcc.sim)}, game draw ${ms(perfAcc.game)}, overlay ${ms(perfAcc.three)}`;
+      perfAcc.sim = perfAcc.game = perfAcc.three = perfAcc.loop = 0;
       fpsMeter.t0 = now; fpsMeter.n = 0; fpsMeter.g0 = livePad.frames;
     }
   }
@@ -8268,6 +8271,7 @@ void main() {
     const dt = Math.min(0.1, (now - last) / 1000);
     adaptResolution();
     fpsTick(now);
+    const _lt = performance.now();
     updateTexAnims(now);
     last = now;
     if (playing) {
@@ -8290,6 +8294,7 @@ void main() {
     else viewStep(dt, now, true);
     if (gameLive && loopFrame % 30 === 0) warmFx();   // (after the frame: the stage is on screen first)
     clipFrame();
+    perfAcc.loop += performance.now() - _lt;
     requestAnimationFrame(loop);
   }
 
@@ -8462,7 +8467,7 @@ void main() {
     }
     // (the simulated stage catches up with t over several drawn frames: its water is read each one)
     ghosts.forEach((g) => { if (g.visible && g.water && g.marker.parent) simSpray(g); });
-    renderer.render(scene, camera);
+    { const _t = performance.now(); renderer.render(scene, camera); perfAcc.three += performance.now() - _t; }
     drawWater();
     drawJpa();
     drawShineOverlay(sgDm, t);
@@ -9530,7 +9535,7 @@ void main() {
     }
     const marios = ghosts.filter((g) => g.marker && g.marker.parent).map((g) => ({ key: g, rig: g.marker.userData.rig, yoshi: g.yoshiNode || null }));
     if (sleepMario && sleepMario.visible) marios.push({ key: sleepMario, rig: sleepMario.userData.rig, yoshi: null });
-    gameLayer.render(camera, _gsz.x, _gsz.y, objectsGroup, objectsGroup.userData.mp, marios, performance.now(), gameSimInput());
+    { const _t = performance.now(); gameLayer.render(camera, _gsz.x, _gsz.y, objectsGroup, objectsGroup.userData.mp, marios, performance.now(), gameSimInput()); perfAcc.game += performance.now() - _t; }
     syncBathWater();
     replayStatus();
     return true;
