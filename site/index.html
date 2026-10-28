@@ -554,14 +554,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793167263423"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793167263423"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793167263423"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793167263423"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793167263423"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793167263423"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793167263423"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793167263423"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793167973556"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793167973556"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793167973556"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793167973556"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793167973556"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793167973556"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793167973556"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793167973556"><\/script>');
 </script>
 <script>
 (() => {
@@ -8273,7 +8273,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793167263423';
+  const BUILD_STAMP = '1793167973556';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
@@ -8370,7 +8370,11 @@ void main() {
     // With no ghost loaded the stage still lives: its walkers run on their own clock.
     if (!ghosts.length && objectsGroup) { idleClock += dt * QF_PER_SECOND; updateWalkers(); }
     pollPadStart();
-    liveStep(dt);
+    // Live play: the game frame is run right after this frame is drawn (in the time until the next
+    // one, as the console runs a frame and shows it at the next vblank), so a frame's drawing and its
+    // game logic don't have to fit in the same 33 ms. The frame drawn is the one run after the last.
+    const deferSim = livePad.active && gameLive && !playing && !splitOn();
+    if (deferSim) simDt += dt; else { if (simDt) { liveStep(simDt); simDt = 0; } liveStep(dt); }
     if (livePad.on && !playing && gameLive) { const r = []; liveInfoRows(r); drawInfoBox(r); }
     pollPadSelect();
     updateSleeper();
@@ -8380,7 +8384,15 @@ void main() {
     clipFrame();
     { const d = performance.now() - _lt; perfAcc.loop += d; if (window.__benchFrames) { window.__benchFrames.push(d, now - (window.__benchLast || now)); if (_ps) { const e = perfSnap(), o = { work: d }; for (const k in e) o[k] = e[k] - _ps[k]; window.__benchSlow.push(o); } } window.__benchLast = now; }
     requestAnimationFrame(loop);
+    if (deferSim && !simQueued) { simQueued = true; simChannel.port2.postMessage(0); }
   }
+  let simDt = 0, simQueued = false;
+  const simChannel = new MessageChannel();
+  simChannel.port1.onmessage = () => {
+    simQueued = false;
+    const d = simDt; simDt = 0;
+    if (d) liveStep(d);
+  };
 
   // The stage's opening cutscene (TMarDirector STATE_UNK1: the "startcamera" demo camera, until the
   // runner skips it or it ends, then the wipe closes and opens on Mario). Moonshine records no
