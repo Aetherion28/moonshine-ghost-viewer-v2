@@ -8257,7 +8257,10 @@ void main() {
       const s = (now - fpsMeter.t0) / 1000, fps = fpsMeter.n / s;
       const game = livePad.active ? ` · game ${((livePad.frames - fpsMeter.g0) / s).toFixed(0)}/30` : '';
       const ms = (v) => (v / fpsMeter.n).toFixed(1);
-      el.textContent = `${fps.toFixed(0)} fps${game} · ms/frame: total ${ms(perfAcc.loop)}, game logic ${ms(perfAcc.sim)}, game draw ${ms(perfAcc.game)}, overlay ${ms(perfAcc.three)}`;
+      const G = gameLayer && gameLayer.perf;
+      const gd = G ? ` (sync ${ms(G.sync)}, shadows ${ms(G.shadow)}, objects ${ms(G.objects)}, render ${ms(G.gpu)})` : '';
+      el.textContent = `${fps.toFixed(0)} fps${game} · ms/frame: total ${ms(perfAcc.loop)}, game logic ${ms(perfAcc.sim)}, game draw ${ms(perfAcc.game)}${gd}, overlay ${ms(perfAcc.three)}`;
+      if (G) G.sync = G.shadow = G.objects = G.gpu = 0;
       perfAcc.sim = perfAcc.game = perfAcc.three = perfAcc.loop = 0;
       fpsMeter.t0 = now; fpsMeter.n = 0; fpsMeter.g0 = livePad.frames;
     }

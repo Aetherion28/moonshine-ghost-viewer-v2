@@ -1137,6 +1137,8 @@ export class GameLayer {
     /** the Phantamanta's shadow: its full-screen passes, this frame's getMantaColor (null: no manta manager) and whether a manta's volume is drawn */
     private mantaQuads: MantaShadowQuads | null = null;
     /** Mario's shadow (TMBindShadowManager for the Marios) and the light group's first light's position */
+    /** per-phase time spent drawing (ms, summed until the viewer reads and clears it) */
+    perf = { sync: 0, shadow: 0, objects: 0, gpu: 0 };
     private marioShadow: MarioShadow | null = null;
     private shadowLight: number[] | null = null;
     private mantaColor: number[] | null = null;
@@ -1234,7 +1236,9 @@ export class GameLayer {
             r.modelInstances = r.modelInstances.filter((x) => !drop.has(x));
             this.marios.delete(k);
         }
+        let _pt = performance.now();
         this.syncSim(sim, group);
+        this.perf.sync += performance.now() - _pt; _pt = performance.now();
         this.wireStage = sim && this.sim ? this.sim.stage : null;
         if (this.marioShadow) {
             const S = this.marioShadow, st = this.wireStage, col = st && st.world ? st.world.col : null;
@@ -1253,8 +1257,10 @@ export class GameLayer {
                 if (G) for (const k of [7, 8, 9]) for (const a of G[k] || []) if ((a as any).mactor || (a as any).mMActor || (a as any).model) S.addActor(a, col, eye);
             }
         }
+        this.perf.shadow += performance.now() - _pt; _pt = performance.now();
         this.syncFittings();
         this.syncObjects();
+        this.perf.objects += performance.now() - _pt; _pt = performance.now();
         mat4.copy(this.camera.worldMatrix, cam.matrixWorld.elements);
         this.camera.worldMatrixUpdated();
         this.camera.fovY = (cam.fov * Math.PI) / 180;
@@ -1268,6 +1274,7 @@ export class GameLayer {
         r.copyFilterOn = this.copyFilter;
         r.render(this.device, vi);
         this.device.endFrame();
+        this.perf.gpu += performance.now() - _pt;
         this.drawn = true;
         return true;
     }
