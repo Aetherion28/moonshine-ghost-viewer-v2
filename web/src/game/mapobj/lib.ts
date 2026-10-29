@@ -9,7 +9,7 @@
 import { mat4 } from 'gl-matrix';
 import { fr, V3, Mtx, mtx, MsSin, MsCos, MsRandF, sinf, cosf, HALF_PI_F } from '../math.js';
 import { fmadd as FMA, fmsub as FMS } from '../player/fmath.js';
-import { vNormMs } from '../vecops.js';
+import { vNormMs, vNorm } from '../vecops.js';
 import { World, NameRef, Stream, HitActor, LiveActor, parseSceneBin, SceneNode, CUE_MOVE, readParams } from '../engine.js';
 import { isPointInCube } from '../mapwire.js';
 import { Skeleton, jointMatrices } from '../skeleton.js';
@@ -57,11 +57,11 @@ export function MTXConcat(a: Mtx, b: Mtx, out: Mtx) {
     out.set(r);
     return out;
 }
-/** PSMTXRotAxisRad around a unit axis */
+/** PSMTXRotAxisRad around a unit axis: sinf/cosf of rad, PSVECNormalize (frsqrte + one Newton step) of the axis -- not Math.sin/cos/sqrt. */
 export function MTXRotAxisRad(m: Mtx, ax: V3, rad: number) {
-    const s = Math.sin(rad), c = Math.cos(rad), t = 1 - c;
-    const l = Math.sqrt(ax.x * ax.x + ax.y * ax.y + ax.z * ax.z) || 1;
-    const x = ax.x / l, y = ax.y / l, z = ax.z / l;
+    const s = sinf(rad), c = cosf(rad), t = fr(1 - c);
+    const n = vNorm(ax.clone());
+    const x = n.x, y = n.y, z = n.z;
     m[0] = fr(t * x * x + c); m[1] = fr(t * x * y - s * z); m[2] = fr(t * x * z + s * y); m[3] = 0;
     m[4] = fr(t * x * y + s * z); m[5] = fr(t * y * y + c); m[6] = fr(t * y * z - s * x); m[7] = 0;
     m[8] = fr(t * x * z - s * y); m[9] = fr(t * y * z + s * x); m[10] = fr(t * z * z + c); m[11] = 0;

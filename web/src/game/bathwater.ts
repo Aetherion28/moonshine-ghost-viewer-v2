@@ -27,6 +27,7 @@
 // polygons (and the exact depth conversion) differs a little.
 
 import { fr, V3, Quat } from './math.js';
+import { jgSqrt } from './vecops.js';
 import { World, Stream, NameRef, CUE_MOVE, HitActor, MSG, HF, HC, readParams, PSchema } from './engine.js';
 import { AT } from './actortypes.js';
 import { register } from './scene.js';
@@ -83,7 +84,8 @@ function getPos(D: BathtubData, i: number, j: number, h: number) {
     r.x = fr(r.x + fr(at(D, 1, 0) * y)); r.y = fr(r.y + fr(at(D, 1, 1) * y)); r.z = fr(r.z + fr(at(D, 1, 2) * y));
     return r;
 }
-const capRadius = (D: BathtubData) => fr(Math.sqrt(fr(fr(D.unk3C * D.unk3C) - fr(D.unk44 * D.unk44))));
+// JGeometry::TUtil<f32>::sqrt (frsqrte + one Newton step, then x * that), not Math.sqrt.
+const capRadius = (D: BathtubData) => jgSqrt(fr(fr(D.unk3C * D.unk3C) - fr(D.unk44 * D.unk44)));
 
 // ---------------------------------------------------------------- TBathWater::TDrop
 /** JGeometry::TBox3 (i, f) grown to take in p (it starts at 0, 0, 0) */
@@ -110,7 +112,8 @@ export class Drop {
         if (distSq <= fr(outerR * outerR)) {
             if (proj < 0) {
                 if (distSq >= fr(innerR * innerR)) {
-                    const dist = fr(Math.sqrt(distSq)), pen = fr(dist - innerR), inv = fr(-1 / dist);
+                    // TDrop::calcBathtub: JGeometry::TUtil<f32>::sqrt, not Math.sqrt.
+                    const dist = jgSqrt(distSq), pen = fr(dist - innerR), inv = fr(-1 / dist);
                     const n = delta.clone().scale(inv);
                     this.unk18.extend(n.clone().scale(pen));
                     let c = -dot(n, this.unkC);
@@ -232,7 +235,8 @@ export class BathWater extends HitActor {
         if (acc.count * 30 > this.unk74) {
             acc.accum.scale(fr(1 / acc.count));
             const t = fr(fr(3 * acc.count) / this.unk74);
-            heightVal = fr(Math.sqrt(t));
+            // JGeometry::TUtil<f32>::sqrt, same family.
+            heightVal = jgSqrt(t);
             if (heightVal > 1) heightVal = 1;
         } else heightVal = 0;
         this.unk78.set(acc.accum); this.unk84 = heightVal;

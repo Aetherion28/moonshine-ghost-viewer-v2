@@ -5,7 +5,7 @@
 // are the hardware's (math.ts).
 
 import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from '../player/fmath.js';
-import { fr, s16, matan, JMASSin, JMASCos, frsqrte, MsSqrtfHW } from '../math.js';
+import { fr, s16, matan, JMASSin, JMASCos, frsqrte, MsSqrtfHW, jgNormalize } from '../math.js';
 
 /** A TVec3<f32> / Vec */
 export interface Vec { x: number; y: number; z: number; }
@@ -166,13 +166,10 @@ const f64 = new Float64Array(1), i64 = new BigUint64Array(f64.buffer);
 /** Dolphin's Force25Bit: the multiplier's mantissa rounded to 24 fraction bits */
 export function force25(d: number) { f64[0] = d; const b = i64[0]; i64[0] = (b & 0xFFFFFFFFF8000000n) + (b & 0x8000000n); return f64[0]; }
 
-/** TVec3::normalize (JGeometry: setLength(one)) as the camera uses it for unk25C: a plain normalize */
+/** TVec3<f32>::normalize (JGeometry::TUtil<f32>::inv_sqrt: frsqrte + one Newton step, zero-guarded
+ * at epsilon() = 2^-18, not 1/Math.sqrt with a l2 <= 0 guard) as the camera uses it for unk25C. */
 export function vnormalize(v: Vec) {
-    const l2 = fr(FMA(v.x, v.x, fr(v.y * v.y)) + fr(v.z * v.z));
-    if (l2 <= 0) return v;
-    const inv = fr(1 / Math.sqrt(l2));
-    v.x = fr(v.x * inv); v.y = fr(v.y * inv); v.z = fr(v.z * inv);
-    return v;
+    return jgNormalize(v);
 }
 
 /** CLBIsPointInCube (the decomp's order; mapwire.ts's isPointInCube is the same code) */

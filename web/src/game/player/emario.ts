@@ -4,7 +4,7 @@
 // for the Bianco Hills chase, plays the recorded pads of map/map/pad (tutorial??.pad, TMarioInputReplay)
 // from graph node to graph node, linked by linkdata.bin, and falls down when he's sprayed enough.
 
-import { fmadd as fmaddF } from './fmath.js';
+import { fmadd as fmaddF, sqrtf } from './fmath.js';
 import { fr, s16, V3, matan, IConverge, MsRandF, rand, mtx, Mtx, MsMtxSetRotRPH, JMASSin, JMASCos } from '../math.js';
 import {
     World, Stream, SpineEnemy, EnemyManager, LiveManager, LiveActor, HitActor, MActor, AnmData, ObjChara, Files, Params,
@@ -697,7 +697,8 @@ export class EnemyMario extends TMarioSim {
         const m = this.marioPos();
         const dx = fr(m.x - this.pos.x), dz = fr(m.z - this.pos.z);
         this.mAngleToMario = matan(dz, dx);
-        this.mDistanceToMario = fr(Math.sqrt(fr(dx * dx + dz * dz)));
+        // TEnemyMario::checkController: std::sqrtf (MSL math.h, three Newton steps), not Math.sqrt.
+        this.mDistanceToMario = sqrtf(fr(dx * dx + dz * dz));
         const C = this.unk108;
         const prev = C.mInput;
         C.mStickHS16 = 0; C.mStickVS16 = 0; C.mInput = 0; C.mFrameInput = 0; C.mAnalogRU8 = 0; C.mAnalogLU8 = 0;
@@ -708,7 +709,8 @@ export class EnemyMario extends TMarioSim {
         if (C.mStickHS16 > 7) C.mStickH = C.mStickHS16 - 6;
         if (C.mStickVS16 < -7) C.mStickV = C.mStickVS16 + 6;
         if (C.mStickVS16 > 7) C.mStickV = C.mStickVS16 - 6;
-        C.mStickDist = fr(Math.sqrt(fr(C.mStickH * C.mStickH + C.mStickV * C.mStickV)));
+        // std::sqrtf, same as above.
+        C.mStickDist = sqrtf(fr(C.mStickH * C.mStickH + C.mStickV * C.mStickV));
         if (C.mStickDist > 64) { C.mStickH = fr(C.mStickH * fr(64 / C.mStickDist)); C.mStickV = fr(C.mStickV * fr(64 / C.mStickDist)); C.mStickDist = 64; }
         C.mFrameInput = (C.mInput & (C.mInput ^ prev)) >>> 0;
         const r = fr(C.mStickDist * (1 / 64));
