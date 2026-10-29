@@ -5,6 +5,7 @@
 // named "S_...") it slides along the curve, turned to face its way.
 
 import { fr, V3, JMAHermiteInterpolation, MsClamp } from '../math.js';
+import { vNorm, vMag } from '../vecops.js';
 import { World, Stream, Actor, HitActor, GraphTracer, GraphWeb, HF, CUE_ENTRY, CUE_CALC_VIEW } from '../engine.js';
 import { register } from '../scene.js';
 import { MapObjBase, MOF } from './base.js';
@@ -47,7 +48,9 @@ export class RailMapObj extends MapObjBase {
     }
     resetStep(sp: number) {
         const p = this.tracer!.current();
-        this.unk13C = Math.trunc(fr(fr(Math.sqrt(V3.sub(p, this.pos).squared())) / sp));
+        // TRailMapObj::resetStep: VECDistance (PSVECDistance, the paired-single frsqrte + Newton
+        // step family), not Math.sqrt.
+        this.unk13C = Math.trunc(fr(fr(vMag(V3.sub(p, this.pos))) / sp));
     }
     moveToNextNode(sp: number) {
         const t = this.tracer!;
@@ -68,8 +71,9 @@ export class RailMapObj extends MapObjBase {
             this.pos.set(target);
             return true;
         }
-        const l = Math.sqrt(d.squared());
-        d.x = fr(fr(d.x / l) * sp); d.y = fr(fr(d.y / l) * sp); d.z = fr(fr(d.z / l) * sp);
+        // TRailMapObj::moveToNextNode: VECNormalize (PSVECNormalize: frsqrte + one Newton step),
+        // then scale by sp -- not a Math.sqrt-based normalize.
+        vNorm(d).scale(sp);
         this.posDelta.add(d);
         if (this.unk13C > 0) --this.unk13C;
         return false;

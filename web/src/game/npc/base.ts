@@ -10,6 +10,8 @@
 // an NPC only goes into its talk nerve if something sets LF_N.UNK40000).
 
 import { fr, V3, MsRandF, MsRandI, MsWrap, MsClamp, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsIsInSight, JMASSin, JMASCos, matan, s16, IConverge } from '../math.js';
+import { MsSqrtf } from '../player/fmath.js';
+import { msVecMag2 } from '../vecops.js';
 import { World, Stream, HitActor, TakeActor, LiveActor, LiveManager, SpineEnemy, Spine, Nerve, nerve, LF, HF, HC, MSG, ANM_BCK, ANM_BTP, CUE_MOVE, CUE_CALC_ANIM, CUE_ENTRY, CUE_CALC_VIEW, PSchema, PType, readParams } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SE } from '../soundids.js';
@@ -628,7 +630,8 @@ export class BaseNPC extends SpineEnemy {
         if (tc) { const te = s16(tc.end); tc.frame = te === end ? fb : s16(fr(te * MsRandF())); }
     }
     private walkAnmRateChange() {
-        const d = fr(Math.sqrt(fr(fr(this.posDelta.x * this.posDelta.x) + fr(this.posDelta.z * this.posDelta.z))));
+        // walkAnmRateChange_: MsSqrtf (frsqrte + one Newton step in double), not Math.sqrt.
+        const d = MsSqrtf(fr(fr(this.posDelta.x * this.posDelta.x) + fr(this.posDelta.z * this.posDelta.z)));
         const a = this.mactor!, cur = this.lodAnm.cur;
         if (d < fr(0.001)) {
             if (cur === NK.WALK || cur === NK.RUN) {
@@ -1201,16 +1204,18 @@ export class BaseNPC extends SpineEnemy {
             }
             const d = new V3(fr(this.pos.x - c.pos.x), 0, fr(this.pos.z - c.pos.z));
             if (push) { d.x = -d.x; d.z = -d.z; }
-            if (d.squared() <= 1.1920929e-7) {
+            // execNpcObjCollision_: TUtil<f32>::epsilon() (2^-18), not 1.1920929e-7; MsVECMag2
+            // (the raw frsqrte estimate, no Newton step) for the magnitude, then TVec3::setLength
+            // (inv_sqrt with its own Newton step) for the direction -- not two Math.sqrt calls.
+            if (d.squared() <= fr(3.8146973e-6)) {
                 const dy = fr(this.pos.y - c.pos.y);
                 if (Math.abs(dy) < fr(0.001)) d.set(1, 10, 0); else d.set(0, dy, 0);
             } else {
-                const mag = fr(Math.sqrt(d.x * d.x + d.y * d.y + d.z * d.z));
+                const mag = msVecMag2(d);
                 let k = fr(fr(this.attackRadius + c.damageRadius) - mag);
                 if (k < 0) k = -k;
                 if (k < fr(0.001)) k = fr(0.001);
-                const l = Math.sqrt(d.squared());
-                d.x = fr(d.x * fr(k / l)); d.y = fr(d.y * fr(k / l)); d.z = fr(d.z * fr(k / l));
+                d.setLength(k);
             }
             if (push) c.pos.add(d); else this.posDelta.add(d);
         }
@@ -1356,7 +1361,8 @@ function chaseDecreaseT(v: number, d: number, ratio: number, threshold: number):
 /** CalcJumpVelocityY (NpcAnm.cpp) */
 function calcJumpVelocityY(height: number, g: number) {
     if (g <= 0) return 0;
-    return fr(fr(g * 0.5) * fr(fr(Math.sqrt(fr(fr(fr(height * fr(1 / g)) * 8) + 1))) + 1));
+    // CalcJumpVelocityY: MsSqrtf (frsqrte + one Newton step in double), not Math.sqrt.
+    return fr(fr(g * 0.5) * fr(fr(MsSqrtf(fr(fr(fr(height * fr(1 / g)) * 8) + 1))) + 1));
 }
 /** SMS_GoRotate (MarioUtil/MathUtil.cpp): turns *rot (degrees) towards the target by at most speed degrees */
 export function SMS_GoRotate(from: V3, to: V3, speed: number, rot: number) {

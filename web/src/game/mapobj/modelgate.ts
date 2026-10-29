@@ -11,6 +11,7 @@
 // the screen's directional blur (screenBlur: unkE0 is never set, so it is always 0), drawing.
 
 import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, matan, MsRandF } from '../math.js';
+import { sqrtf } from '../player/fmath.js';
 import { World, Stream, Actor, HitActor, TakeActor, MActor, AnmData, HF, HC, MSG, CUE_MOVE, CUE_CALC_ANIM, ANM_BPK, ANM_BTK, ANM_BRK } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -130,7 +131,8 @@ export class ModelGate extends TakeActor {
                     if (mario.isJumping() && mario.receiveMessage(this, MSG.TAKE) === true) this.held = mario;
                 } else {
                     const dx = fr(mario.pos.x - this.pos.x), dz = fr(mario.pos.z - this.pos.z);
-                    const d = fr(Math.sqrt(fr(dx * dx + dz * dz)));
+                    // std::sqrtf (MSL math.h): three Newton steps from frsqrte, not Math.sqrt.
+                    const d = sqrtf(fr(fr(dx * dx) + fr(dz * dz)));
                     if (d < this.unk100) {
                         const p = mario.pos.clone();
                         p.x = fr(p.x + fr(10 * fr(dx / d))); p.z = fr(p.z + fr(10 * fr(dz / d)));

@@ -9,7 +9,9 @@
 //
 // The windmill roof, the turn bridges and the normal block are plain map objects (TMapObjBase).
 
-import { fr, V3, Mtx, mtx, MsWrap, MsClamp, MsSin, MsCos, MsRandF, MsMtxSetXYZRPH, mtxInverse, mtxMultVec } from '../math.js';
+import { fr, V3, Mtx, mtx, MsWrap, MsClamp, MsSin, MsCos, MsRandF, MsMtxSetXYZRPH, mtxInverse, mtxMultVec, sinf, cosf, HALF_PI_F } from '../math.js';
+import { MsSqrtf } from '../player/fmath.js';
+import { fmadd as FMA, fmsub as FMS } from '../player/fmath.js';
 import { World, Stream, HitActor, LF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -549,10 +551,12 @@ export class LeanBlock extends MapObjBase {
         if (d.x === 0 && d.y === 0 && d.z === 0) v.y = fr(v.y + this.unk144);
         else { v.x = fr(v.x + d.x); v.y = fr(v.y + d.y); v.z = fr(v.z + d.z); }
         normalize(v);
-        // the axis: (x, 0, z) turned 90 degrees about Y
-        const s = Math.sin(1.5707963), c = Math.cos(1.5707963);
-        const ax = new V3(fr(c * v.x + s * v.z), 0, fr(-s * v.x + c * v.z));
-        const len = fr(Math.sqrt(v.x * v.x + v.z * v.z));
+        // rotateVecByAxisY(axis, pi/2): TRotation3::setEular(0, a, 0).mult33 -- real
+        // sinf/cosf(1.5707963705062866) rounded to f32, not Math.sin/cos of the 7-digit spelling.
+        const s = sinf(HALF_PI_F), c = cosf(HALF_PI_F);
+        const ax = new V3(FMA(s, v.z, fr(c * v.x)), 0, FMS(c, v.z, fr(s * v.x)));
+        // length = MsSqrtf(...) (frsqrte + one Newton step in double), not Math.sqrt.
+        const len = MsSqrtf(fr(fr(v.x * v.x) + fr(v.z * v.z)));
         const rot = fr(len * this.unk148);
         // makeObjMtxRotByAxis: the rotation, by the scale, at the place
         MTXRotAxisRad(out, ax, rot);

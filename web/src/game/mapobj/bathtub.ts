@@ -25,6 +25,7 @@
 // camera and streaming movie, getModel()->calc() (the joints are worked out when asked).
 
 import { fr, V3, Mtx, mtx, Quat, matan, MsMtxSetRotRPH, JMASSin, JMASCos, s16 } from '../math.js';
+import { jgSqrt } from '../vecops.js';
 import { World, Stream, HitActor, LiveActor, TakeActor, LF, MSG, ANM_BCK, ANM_FRAME_RATE, readParams, PSchema } from '../engine.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
@@ -315,7 +316,8 @@ export class Bathtub extends MapObjBase {
         for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) R[r * 4 + c] = m[r * 4 + c];
         D.mPos.set(m[3], m[7], m[11]);
         const upY = R[5];
-        const tilt = fr(Math.sqrt(fr(1 - fr(upY * upY))));
+        // calcBathtubData: TUtil<f32>::sqrt (frsqrte + one Newton step), not Math.sqrt.
+        const tilt = jgSqrt(fr(1 - fr(upY * upY)));
         const depth = P.watermark >= tilt ? P.watermark : tilt;
         D.unk44 = fr(D.unk3C * depth);
         D.unk48 = P.outerHeight;

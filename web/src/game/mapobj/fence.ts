@@ -8,6 +8,7 @@
 // vertical one's) or under it (the lying one's) is what the water hits.
 
 import { fr, V3, mtx, MsWrap, MsSin, MsCos } from '../math.js';
+import { vNorm } from '../vecops.js';
 import { World, Stream, HitActor, GraphTracer, MSG, HF, ANM_BCK } from '../engine.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
@@ -211,8 +212,9 @@ export class RailFence extends Fence {
             d = t.current();
         }
         this.world.sound(SE.OBJ_MVING_FENCE_MOVE, this.pos);
-        const l = Math.sqrt(d.squared()) || 1;
-        this.posDelta.add(new V3(fr(fr(d.x / l) * this.unk140), fr(fr(d.y / l) * this.unk140), fr(fr(d.z / l) * this.unk140)));
+        // goOnRail: VECNormalize (PSVECNormalize: frsqrte + one Newton step), then scale by unk140 -- not a Math.sqrt-based normalize.
+        const dir = vNorm(d.clone()).scale(this.unk140);
+        this.posDelta.add(dir);
     }
     control() {
         super.control();

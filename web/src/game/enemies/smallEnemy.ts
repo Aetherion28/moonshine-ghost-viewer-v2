@@ -4,6 +4,7 @@
 // block (Yoshi's juice, not modelled: the viewer has no juice).
 
 import { fr, V3, MsRandF, MsSin, MsCos, matan } from '../math.js';
+import { vNormMs } from '../vecops.js';
 import {
     World, SpineEnemy, EnemyManager, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, Params, PSchema, SPINE_PARAMS, HitActor, ANM_BCK, Files, TakeActor,
 } from '../engine.js';
@@ -157,8 +158,10 @@ export class SmallEnemy extends SpineEnemy {
             const c = this.world.makeCoinAt(this.pos.x + dx, this.pos.y, this.pos.z + dz);
             if (c) {
                 c.pos.y = this.pos.y;
-                const l = Math.hypot(dx, dz) || 1;
-                c.vel.set(dx / l * 4, rangeRand(8, 16), dz / l * 4);
+                // genEventCoin: MsVECNormalize(&local_d0, &local_d0) -- the raw frsqrte estimate,
+                // no Newton step, no zero guard -- not a Math.hypot-based normalize.
+                const n = vNormMs(new V3(dx, 0, dz));
+                c.vel.set(fr(n.x * 4), rangeRand(8, 16), fr(n.z * 4));
                 c.offLiveFlag(LF.UNK10);
             }
         }

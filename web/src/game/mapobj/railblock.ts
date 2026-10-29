@@ -13,9 +13,10 @@ import { MapObjBase } from './base.js';
 import { RailMapObj } from './cloud.js';
 import { MsMtxSetRotZ, MTXConcat } from './lib.js';
 import { psVecNormalize } from '../camera/lib.js';
+import { vMag } from '../vecops.js';
 
-/** VECDistance */
-const dist = (a: V3, b: V3) => fr(Math.sqrt(V3.sub(a, b).squared()));
+/** VECDistance (PSVECDistance: the paired-single frsqrte + one Newton step family), not Math.sqrt. */
+const dist = (a: V3, b: V3) => vMag(V3.sub(a, b));
 
 export class NormalLift extends RailMapObj {
     /** unk150 frames to wait, unk152 frames to stay away (u16) */

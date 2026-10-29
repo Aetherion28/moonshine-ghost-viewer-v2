@@ -6,7 +6,7 @@
 // Not modelled: the body's roll (RollEnemyBodyCallback: a visual joint turn), the mirror copy,
 // the watermills a Gorogoro turns (BiaWatermill isn't simulated; its collision has no actor).
 
-import { fr, V3, MsWrap, MsClamp, MsSin, MsRandF, MsGetRotFromZaxisY, MsIsInSight, MsMtxSetXYZRPH, MsMtxSetRotRPH, mtx, mtxMultVec } from '../math.js';
+import { fr, V3, MsWrap, MsClamp, MsSin, MsRandF, MsGetRotFromZaxisY, MsIsInSight, MsMtxSetXYZRPH, MsMtxSetRotRPH, mtx, mtxMultVec, jgInvSqrt } from '../math.js';
 import { World, LF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, MActor, LiveActor, PathNode, CUE_CALC_ANIM, CUE_MOVE, SpineEnemy } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
@@ -242,7 +242,10 @@ export class Igaiga extends RollEnemy {
         super.walkBehavior(kind, k);
         let x = this.posDelta.x, z = this.posDelta.z;
         if (this.unk1A8) { x = this.vel.x; z = this.vel.z; }
-        const speed = fr(Math.hypot(x, z));
+        // TVec2<f32>::length(): TUtil<f32>::sqrt(squared()) -- x * inv_sqrt(x) (frsqrte + one
+        // Newton step), not Math.hypot's full-precision sqrt.
+        const sq = fr(fr(x * x) + fr(z * z));
+        const speed = sq > 0 ? fr(sq * jgInvSqrt(sq)) : sq;
         this.unk194 = fr(this.unk194 + 4 * fr(speed / fr(this.bodyRadius * this.unk1CC * this.unk1E4)));
         if (this.unk1B4) { ++this.unk1B4; if (this.unk1B4 > this.unk1B8) this.unk1B4 = 0; }
         if (!this.isAirborne() && this.groundPlane && this.groundPlane.actor) (this.groundPlane.actor as HitActor).receiveMessage(this, MSG.ATTACK);

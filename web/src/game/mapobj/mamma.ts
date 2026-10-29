@@ -27,7 +27,9 @@
 // mirror in use: registered as a plain object, MammaMirrorMapOperator below), the Shine stone's own models are
 // kept (their BCKs set) but not drawn by the viewer.
 
-import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH } from '../math.js';
+import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH, sinf, cosf, HALF_PI_F } from '../math.js';
+import { MsSqrtf } from '../player/fmath.js';
+import { fmadd as FMA, fmsub as FMS } from '../player/fmath.js';
 import { World, HitActor, LiveActor, Actor, Stream, MActor, AnmData, LF, HF, MSG, CUE_CALC_ANIM, ANM_FRAME_RATE, ANM_BPK, ANM_BTK, ANM_BRK } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -445,10 +447,11 @@ export class LeanMirror extends MapObjBase {
     }
     calcCurrentMtx(m: Mtx) {
         const v = new V3(this.unk14C.x, 0, this.unk14C.z);
-        // rotateVecByAxisY(axis, pi/2)
-        const s = fr(Math.sin(1.5707963)), c = fr(Math.cos(1.5707963));
-        const axis = new V3(fr(c * v.x + s * v.z), 0, fr(-s * v.x + c * v.z));
-        const len = fr(Math.sqrt(fr(this.unk14C.x * this.unk14C.x + this.unk14C.z * this.unk14C.z)));
+        // rotateVecByAxisY(axis, pi/2): real sinf/cosf(1.5707963705062866) rounded to f32.
+        const s = sinf(HALF_PI_F), c = cosf(HALF_PI_F);
+        const axis = new V3(FMA(s, v.z, fr(c * v.x)), 0, FMS(c, v.z, fr(s * v.x)));
+        // len = MsSqrtf(...) (frsqrte + one Newton step in double), not Math.sqrt.
+        const len = MsSqrtf(fr(fr(this.unk14C.x * this.unk14C.x) + fr(this.unk14C.z * this.unk14C.z)));
         const speed = fr(len * this.unk158);
         const rot = mtx();
         makeMtxRotByAxis(axis, speed, rot);

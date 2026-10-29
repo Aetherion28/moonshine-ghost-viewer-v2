@@ -68,6 +68,11 @@ const DEG_K = fr(65536 / 360);
 export const degToAngle = (deg: number) => s16(fr(DEG_K * fr(deg)));
 export const MsSin = (deg: number) => JMASSin(degToAngle(deg));
 export const MsCos = (deg: number) => JMASCos(degToAngle(deg));
+/** sinf / cosf of an f32 radian value, rounded to f32 -- the game's calls of the real C library, not JMASSin/JMASCos's table. */
+export const sinf = (a: number) => fr(Math.sin(fr(a)));
+export const cosf = (a: number) => fr(Math.cos(fr(a)));
+/** f32 1.5707963f (a quarter turn), exactly as the game's literal expands -- not the 7-digit source spelling. */
+export const HALF_PI_F = 1.5707963705062866;
 
 // ---------------------------------------------------------------- matan
 const ATN = new Uint16Array([0, 10, 20, 31, 41, 51, 61, 71, 81, 92, 102, 112, 122, 132, 143, 153, 163, 173, 183, 194, 204, 214, 224, 234,
@@ -228,6 +233,14 @@ export class V3 {
     squared() { return fr(fr(fr(this.x * this.x) + fr(this.y * this.y)) + fr(this.z * this.z)); }
     length() { const sq = this.squared(); return sq > 0 ? fr(sq * jgInvSqrt(sq)) : sq; }
     normalize() { jgNormalize(this); return this; }
+    /** TVec3<f32>::setLength: zero within TUtil<f32>::epsilon (2^-18), else scale by length * inv_sqrt(squared()). */
+    setLength(length: number) {
+        const sq = this.squared();
+        if (sq <= fr(3.8146973e-6)) { this.x = 0; this.y = 0; this.z = 0; return this; }
+        const k = fr(length * jgInvSqrt(sq));
+        this.x = fr(this.x * k); this.y = fr(this.y * k); this.z = fr(this.z * k);
+        return this;
+    }
     // JGeometry::TVec3<f32>::cross: -fp_contract on fuses each a*b-c into one fmsubs (the
     // subtrahend's product is a separate fmuls rounded to f32 first; the fused op rounds once).
     cross(a: V3, b: V3) { const x = FMS(a.y, b.z, fr(a.z * b.y)), y = FMS(a.z, b.x, fr(a.x * b.z)), z = FMS(a.x, b.y, fr(a.y * b.x)); this.x = x; this.y = y; this.z = z; return this; }

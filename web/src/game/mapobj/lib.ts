@@ -7,7 +7,9 @@
 // (SMS_GetMario*, TWaterGun) as the Mario the stage has can answer them.
 
 import { mat4 } from 'gl-matrix';
-import { fr, V3, Mtx, mtx, MsSin, MsCos, MsRandF } from '../math.js';
+import { fr, V3, Mtx, mtx, MsSin, MsCos, MsRandF, sinf, cosf, HALF_PI_F } from '../math.js';
+import { fmadd as FMA, fmsub as FMS } from '../player/fmath.js';
+import { vNormMs } from '../vecops.js';
 import { World, NameRef, Stream, HitActor, LiveActor, parseSceneBin, SceneNode, CUE_MOVE, readParams } from '../engine.js';
 import { isPointInCube } from '../mapwire.js';
 import { Skeleton, jointMatrices } from '../skeleton.js';
@@ -65,8 +67,8 @@ export function MTXRotAxisRad(m: Mtx, ax: V3, rad: number) {
     m[8] = fr(t * x * z - s * y); m[9] = fr(t * y * z + s * x); m[10] = fr(t * z * z + c); m[11] = 0;
     return m;
 }
-/** MsVECNormalize (zero stays zero) */
-export function normalize(v: V3) { const l = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z); if (l > 0) { v.x = fr(v.x / l); v.y = fr(v.y / l); v.z = fr(v.z / l); } return v; }
+/** MsVECNormalize: the raw frsqrte estimate, no Newton step, no zero guard -- not a Math.sqrt-based normalize. */
+export function normalize(v: V3) { return vNormMs(v); }
 const toMat4 = (m: Mtx) => mat4.fromValues(m[0], m[4], m[8], 0, m[1], m[5], m[9], 0, m[2], m[6], m[10], 0, m[3], m[7], m[11], 1);
 
 /** TMapObjBase::makeRootMtxRotZ / RotY / RotX (sinf of the degrees; the Y offset taken off) */
@@ -211,9 +213,10 @@ export function waterHitPlane(w: World, a: HitActor) {
 /** getVerticalVecToTargetXZ: the unit XZ offset to (x, z) turned 90 degrees round Y */
 export function getVerticalVecToTargetXZ(o: { pos: V3 }, x: number, z: number) {
     const v = normalize(new V3(fr(x - o.pos.x), 0, fr(z - o.pos.z)));
-    // rotateVecByAxisY(v, pi/2): TRotation3::setEular(0, a, 0).mult33
-    const s = Math.sin(1.5707963), c = Math.cos(1.5707963);
-    return new V3(fr(c * v.x + s * v.z), 0, fr(-s * v.x + c * v.z));
+    // rotateVecByAxisY(v, pi/2): TRotation3::setEular(0, a, 0).mult33 -- real sinf/cosf(1.5707963705062866)
+    // rounded to f32, not Math.sin/cos of the 7-digit source spelling.
+    const s = sinf(HALF_PI_F), c = cosf(HALF_PI_F);
+    return new V3(FMA(s, v.z, fr(c * v.x)), 0, FMS(c, v.z, fr(s * v.x)));
 }
 
 /** TMapObjMessenger: a hit actor standing in for its owner (receiveMessage goes to unk68) */
