@@ -231,7 +231,11 @@ export class V3 {
     fround() { this.x = Math.fround(this.x); this.y = Math.fround(this.y); this.z = Math.fround(this.z); return this; }
 }
 /** PSVECSquareDistance */
-export const sqDist = (a: V3, b: V3) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;
+export function sqDist(a: V3, b: V3) {
+    // (paired singles: dx² + dy² fused, then + dz²)
+    const dx = fr(a.x - b.x), dy = fr(a.y - b.y), dz = fr(a.z - b.z);
+    return fr(fmaS(dx, dx, fr(dy * dy)) + fr(dz * dz));
+}
 
 // ---------------------------------------------------------------- MathUtil.hpp
 /** MsWrap<f> (0x803695d0): the range and each step in singles (fsubs / fadds) */
@@ -264,8 +268,10 @@ export function MsGetRotFromZaxis(v: V3) {
 export const MsAtan2 = (y: number, x: number) => Math.abs(matan(y, x) * (360 / 65536));
 export function MsIsInSight(eye: V3, sight: number, target: V3, length: number, angle: number, aware: number) {
     const t = V3.sub(target, eye);
-    if (t.squared() < aware * aware) return true;
-    return t.squared() < length * length && Math.abs(MsAngleDiff(MsGetRotFromZaxisY(t), sight)) < angle * 0.5;
+    // (0x800c5ab0: the squared length (x² + y²) + z², the radii squared, all in singles)
+    const sq = fr(fr(fr(t.x * t.x) + fr(t.y * t.y)) + fr(t.z * t.z));
+    if (sq < fr(aware * aware)) return true;
+    return sq < fr(length * length) && Math.abs(MsAngleDiff(MsGetRotFromZaxisY(t), sight)) < fr(0.5 * angle);
 }
 export function IConverge(v: number, t: number, inc: number, dec: number) {
     if (v < t) { v += inc; if (v > t) v = t; } else { v -= dec; if (v < t) v = t; }

@@ -12,7 +12,9 @@ import { BAS_TABLES } from './bastables.js';
 import { FlagManager } from './flags.js';
 import { SplineRail } from './spline.js';
 import { psVecMag } from './camera/lib.js';
-import { vDot, vNormMs, vCross, msVecMag2 } from './vecops.js';
+import { vDot, vNormMs, vCross, msVecMag2, vLen, jgSqrt, vSq } from './vecops.js';
+import { fmadd as FMA_, fnmsub as FNMS_ } from './player/fmath.js';
+import { jgNormalize, frsqrte } from './math.js';
 import { rngCtx, fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsIsInSight, matan, MsRandF, sqDist, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, psMtxMultVec, psMtxInverse, MsMtxSetTRS, SMSCalcJumpVelocityY } from './math.js';
 import type { MarioProxy } from './mario.js';
 import type { PlayerMario } from './player/player.js';
@@ -906,7 +908,7 @@ export class GraphWeb {
         for (let i = 0; i < this.nodes.length; i++) {
             if (filter !== -1 && this.checkFlag(i, filter)) continue;
             const q = this.point(i);
-            if (MsIsInSight(p, sight, q, len, ang, 0)) { const d = q.sub(p).squared(); if (min < 0 || d < min) { min = d; r = i; } }
+            if (MsIsInSight(p, sight, q, len, ang, 0)) { const d = vSq(q.sub(p)); if (min < 0 || d < min) { min = d; r = i; } }
         }
         return r;
     }
@@ -920,11 +922,15 @@ export class GraphWeb {
         for (let i = 0; i < this.nodes.length; i++) {
             const a = this.point(i);
             for (const c of this.nodes[i].conns) {
+                // (0x8025ecf0: MsPerpendicFootToLineR inlined; the distance from the foot rounded step by
+                // step, the foot kept fused, fmadds)
                 const d = this.point(c).sub(a);
-                const t = MsClamp((p.dot(d) - a.dot(d)) / d.squared(), 0, 1);
-                const q = d.clone().scale(t).add(a);
-                const dd = V3.sub(q, p).squared();
-                if (first || dd < min) { best = q; first = false; min = dd; }
+                const ad = FMA_(a.z, d.z, FMA_(a.x, d.x, fr(a.y * d.y))), pd = FMA_(p.z, d.z, FMA_(p.x, d.x, fr(p.y * d.y)));
+                const sq = FMA_(d.z, d.z, FMA_(d.x, d.x, fr(d.y * d.y)));
+                let t = fr(fr(pd - ad) / sq);
+                if (t < 0) t = 0; else if (t > 1) t = 1;
+                const dd = vSq(new V3(fr(fr(fr(d.x * t) + a.x) - p.x), fr(fr(fr(d.y * t) + a.y) - p.y), fr(fr(fr(d.z * t) + a.z) - p.z)));
+                if (first || dd < min) { best = new V3(FMA_(d.x, t, a.x), FMA_(d.y, t, a.y), FMA_(d.z, t, a.z)); first = false; min = dd; }
             }
         }
         return best;
@@ -1088,30 +1094,30 @@ export class SpineEnemy extends LiveActor {
     switchNextGoalPath() { if (this.goalStack.length) this.goal = this.goalStack.pop()!; }
     zigzagToCurPathNode(speed: number, turn: number, cycle: number, angle: number) {
         if (this.tracer.unk10 === 0) { this.walkToCurPathNode(speed, turn, 0); return; }
-        let a = angle * this.tracer.unk10;
-        const dist = V3.sub(this.goal.point(), this.pos).length();
-        let ph = MsWrap(dist, 0, cycle) * (360 * (1 / cycle)) + this.getPhaseShift();
-        a *= MsSin(ph);
-        const target = a + MsGetRotFromZaxisY(V3.sub(this.goal.point(), this.pos));
+        let a = fr(angle * this.tracer.unk10);
+        const dist = vLen(V3.sub(this.goal.point(), this.pos));
+        const ph = fr(fr(MsWrap(dist, 0, cycle) * fr(360 * fr(1 / cycle))) + this.getPhaseShift());
+        a = fr(a * MsSin(ph));
+        const target = fr(a + MsGetRotFromZaxisY(V3.sub(this.goal.point(), this.pos)));
         const diff = MsAngleDiff(target, this.rot.y);
         let r: number;
         // (the game's code reads its minimum turn radius before setting it in one branch: walkToCurPathNode's rule here)
-        if (dist > this.calcMinimumTurnRadius(speed, turn) * 2) r = diff > 0 ? Math.min(diff, turn) : Math.max(diff, -turn);
-        else { const ts = this.calcTurnSpeedToReach(speed, dist * 0.5); r = diff > 0 ? Math.min(diff, ts) : Math.max(diff, -ts); }
-        this.rot.y = MsWrap(this.rot.y + r, 0, 360);
-        this.posDelta.add(new V3(speed * MsSin(this.rot.y), 0, speed * MsCos(this.rot.y)));
-        if (Math.abs(dist - this.unk12C) < 100) this.unk128 += 1; else { this.unk128 = 0; this.unk12C = dist; }
+        if (dist > fr(2 * this.calcMinimumTurnRadius(speed, turn))) r = diff > 0 ? Math.min(diff, turn) : Math.max(diff, -turn);
+        else { const ts = this.calcTurnSpeedToReach(speed, fr(dist * 0.5)); r = diff > 0 ? Math.min(diff, ts) : Math.max(diff, -ts); }
+        this.rot.y = MsWrap(fr(this.rot.y + r), 0, 360);
+        this.posDelta.add(new V3(fr(speed * MsSin(this.rot.y)), 0, fr(speed * MsCos(this.rot.y))));
+        if (Math.abs(fr(dist - this.unk12C)) < 100) this.unk128 += 1; else { this.unk128 = 0; this.unk12C = dist; }
     }
     getPhaseShift() { return 0; }
     doShortCut() {
         if (this.goalStack.length <= 0) return;
-        if (V3.sub(this.goal.point(), this.pos).length() < this.getBodyRadius()) { if (this.goalStack.length) this.goal = this.popGoal(); return; }
+        if (vLen(V3.sub(this.goal.point(), this.pos)) < fr(this.getBodyRadius())) { if (this.goalStack.length) this.goal = this.popGoal(); return; }
         const node = this.popGoal();
         const d = V3.sub(node.point(), this.pos);
         if (d.x === 0 && d.y === 0 && d.z === 0) d.x = 1;
-        d.normalize().scale(this.marchSpeed).add(this.pos);
+        jgNormalize(d); d.scale(this.marchSpeed).add(this.pos);
         const p = { x: d.x, z: d.z };
-        if (!this.world.isTouchedOneWallAndMoveXZ(p, d.y + this.getHeadHeight(), this.getBodyRadius() * 2)) { if (this.goalStack.length) this.goal = this.popGoal(); }
+        if (!this.world.isTouchedOneWallAndMoveXZ(p, fr(d.y + this.getHeadHeight()), fr(2 * fr(this.getBodyRadius())))) { if (this.goalStack.length) this.goal = this.popGoal(); }
     }
     goToShortestNextGraphNode() {
         const t = this.tracer, g = t.graph;
@@ -1167,39 +1173,40 @@ export class SpineEnemy extends LiveActor {
     calcMinimumTurnRadius(speed: number, turn: number) {
         if (turn >= 90) return 0;
         const s = MsSin(turn);
-        return s === 0 ? 100000 : (speed * MsSin(-(turn * 0.5 - 90))) / s;
+        return s === 0 ? 100000 : fr(fr(speed * MsSin(FNMS_(0.5, turn, 90))) / s);
     }
     calcTurnSpeedToReach(speed: number, d: number) {
         if (d === 0) return 0;
-        const f = d * 2 * d;
-        const c = MsClamp(-(speed * speed - f) / f, -1, 1);
+        const f = fr(fr(2 * d) * d);
+        const c = MsClamp(fr(FNMS_(speed, speed, f) / f), -1, 1);
         if (c === 1) return 0;
         if (c === -1) return 180;
-        const s = Math.sqrt(-(c * c - 1));
-        return 90 - matan(s, c) * (360 / 65536);
+        // (the square root as the raw frsqrte estimate: fmul in double, then frsp)
+        const v = FNMS_(c, c, 1), s = fr(v * frsqrte(v));
+        return fr(90 - fr(matan(s, c) * fr(0.0054931640625)));
     }
     turnToCurPathNode(max: number) {
         const t = V3.sub(this.goal.point(), this.pos);
         let r = MsAngleDiff(MsGetRotFromZaxisY(t), this.rot.y), done = false;
         if (r > 0) { if (r < max) done = true; else r = max; }
         else { if (r > -max) done = true; else r = -max; }
-        this.rot.y = MsWrap(this.rot.y + r, 0, 360);
+        this.rot.y = MsWrap(fr(this.rot.y + r), 0, 360);
         return done;
     }
     walkToCurPathNode(speed: number, turn: number, offset: number) {
         const t = V3.sub(this.goal.point(), this.pos);
-        const dist = t.length();
-        const ang = MsWrap(offset + MsGetRotFromZaxisY(t), 0, 360);
+        const dist = vLen(t);
+        const ang = MsWrap(fr(offset + MsGetRotFromZaxisY(t)), 0, 360);
         const diff = MsAngleDiff(ang, this.rot.y);
         let r: number;
-        if (dist > this.calcMinimumTurnRadius(speed, turn) * 2) r = diff > 0 ? Math.min(diff, turn) : Math.max(diff, -turn);
-        else { const ts = this.calcTurnSpeedToReach(speed, dist * 0.5); r = diff > 0 ? Math.min(diff, ts) : Math.max(diff, -ts); }
-        this.rot.y = MsWrap(this.rot.y + r, 0, 360);
-        this.posDelta.add(new V3(speed * MsSin(this.rot.y), 0, speed * MsCos(this.rot.y)));
-        if (Math.abs(dist - this.unk12C) < 100) this.unk128 += 1;
+        if (dist > fr(2 * this.calcMinimumTurnRadius(speed, turn))) r = diff > 0 ? Math.min(diff, turn) : Math.max(diff, -turn);
+        else { const ts = this.calcTurnSpeedToReach(speed, fr(0.5 * dist)); r = diff > 0 ? Math.min(diff, ts) : Math.max(diff, -ts); }
+        this.rot.y = MsWrap(fr(this.rot.y + r), 0, 360);
+        this.posDelta.add(new V3(fr(speed * MsSin(this.rot.y)), 0, fr(speed * MsCos(this.rot.y))));
+        if (Math.abs(fr(dist - this.unk12C)) < 100) this.unk128 += 1;
         else { this.unk128 = 0; this.unk12C = dist; }
     }
-    isReachedToGoal() { return V3.sub(this.goal104.point(), this.pos).length() < 100; }
+    isReachedToGoal() { return vLen(V3.sub(this.goal104.point(), this.pos)) < 100; }
     getCurAnmFrameNo(type: number) {
         const m = this.mgr, a = this.mactor!;
         const set = m ? m.getSharedMActorSet(a.getCurAnmIdx(type)) : null;

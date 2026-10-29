@@ -2,8 +2,8 @@
 // JGeometry::TVec3<f32>::dot / squared as fmuls then fmadds (y first), cross as fmuls then fmsubs,
 // VECNormalize / VECMag the SDK's paired-single PSVECNormalize / PSVECMag (frsqrte and one Newton
 // step), MsVECNormalize / MsVECMag2 the raw frsqrte estimate.
-import { fr, V3, frsqrte } from './math.js';
-import { fmadd as FMA, fmsub as FMS } from './player/fmath.js';
+import { fr, V3, frsqrte, JMASSin, JMASCos } from './math.js';
+import { fmadd as FMA, fmsub as FMS, fnmsub as FNMS } from './player/fmath.js';
 import { psVecNormalize, psVecMag, msVecNormalize, force25 } from './camera/lib.js';
 
 /** VECNormalize (PSVECNormalize) in place */
@@ -27,3 +27,19 @@ export function msVecMag2(v: V3) {
     if (!(s > 0)) return 0;
     return fr(s * force25(frsqrte(s)));
 }
+/** JGeometry::TUtil<f32>::sqrt (0x800d08b0): x times inv_sqrt (frsqrte to single, one Newton step); x itself for x <= 0 */
+export function jgSqrt(x: number) {
+    if (!(x > 0)) return x;
+    const e = fr(frsqrte(x));
+    return fr(x * fr(fr(0.5 * e) * FNMS(x, fr(e * e), 3)));
+}
+/** TVec3 length as the inline TUtil sqrt of (x² + y²) + z² */
+export const vLen = (v: V3) => jgSqrt(vSq(v));
+/** PSVECSquareDistance (paired singles: dx² + dy² fused, + dz²) */
+export function psSqDist(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) {
+    const dx = fr(a.x - b.x), dy = fr(a.y - b.y), dz = fr(a.z - b.z);
+    return fr(FMA(dx, dx, fr(dy * dy)) + fr(dz * dz));
+}
+/** the sine table at an angle in degrees, as the inlined fromPolar / MsSin do it: fmuls 182.04445, fctiwz */
+export const sinDeg = (d: number) => JMASSin(Math.trunc(fr(fr(182.04444885253906) * d)));
+export const cosDeg = (d: number) => JMASCos(Math.trunc(fr(fr(182.04444885253906) * d)));
