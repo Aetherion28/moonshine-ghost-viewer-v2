@@ -19,7 +19,8 @@
 // From the binary (the decomp's NonMatching source has these wrong): checkHungTail is
 // `canTakenByMario() && unk194->isTaken()`, doTurn's and the bounce's abs() are fabs().
 
-import { fr, V3, Quat, Mtx, mtx, MsRandF, MsSin, MsCos, MsWrap, MsAngleDiff, MsGetRotFromZaxisY } from '../math.js';
+import { fr, V3, Quat, Mtx, mtx, MsRandF, MsSin, MsCos, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, jgInvSqrt } from '../math.js';
+import { vSq } from '../vecops.js';
 import { World, HitActor, TakeActor, LiveActor, FrameCtrl, LF, HF, MSG, nerve, Spine, Stream, ANM_BCK, ANM_BTK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, FC_ONCE, PathNode, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, smallParams } from './smallEnemy.js';
@@ -46,8 +47,9 @@ export const cBodyColorOnFire = [400, -50, -100, 0], cBodyColorOnCool = [-50, -5
 const EPS = 3.81469727e-6;   // TUtil<f32>::epsilon
 const PI = 3.1415927, HALF_PI = 1.5707964;
 const velocityMinY = -40;
-const isZero = (v: V3) => v.squared() <= EPS;
-function setLength(v: V3, len: number) { const l = v.squared(); if (l <= EPS) return v.zero(); return v.scale(len / Math.sqrt(l)).fround(); }
+const isZero = (v: V3) => vSq(v) <= EPS;
+/** TVec3::setLength (0x801251d0): scale by len * inv_sqrt(squared()) (frsqrte + one Newton step) */
+function setLength(v: V3, len: number) { const l = vSq(v); if (l <= EPS) return v.zero(); return v.scale(fr(len * jgInvSqrt(l))); }
 const scaleAdd = (s: number, b: V3, c: V3) => new V3(fr(b.x + c.x * s), fr(b.y + c.y * s), fr(b.z + c.z * s));
 const qEulerY = (a: number) => new Quat(0, fr(Math.sin(0.5 * a)), 0, fr(Math.cos(0.5 * a)));
 function qRotate(q: Quat, v: V3) {

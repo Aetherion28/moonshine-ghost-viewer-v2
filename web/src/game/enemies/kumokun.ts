@@ -16,7 +16,8 @@
 // SMS_IsMarioFencing / SMS_IsMarioRoofing are taken as false (so punches do nothing, and only
 // a floor spider sees Mario: on his ground plane).
 
-import { fr, V3, Quat, MsRandF } from '../math.js';
+import { fr, V3, Quat, MsRandF, jgInvSqrt } from '../math.js';
+import { vSq } from '../vecops.js';
 import { World, HitActor, LF, HF, HC, MSG, nerve, Spine, ANM_BCK, ANM_FRAME_RATE, GraphWeb, Stream, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, smallParams } from './smallEnemy.js';
@@ -32,9 +33,9 @@ const KUMOKUN_PARAMS = {
 /** TUtil<f32>::epsilon */
 const EPS = 3.81469727e-6;
 const PI = 3.1415927;
-const isZero = (v: V3) => v.squared() <= EPS;
-/** TVec3::setLength (JGeometry's: zero when nearly zero) */
-function setLength(v: V3, len: number) { const l = v.squared(); if (l <= EPS) return v.zero(); return v.scale(len / Math.sqrt(l)).fround(); }
+const isZero = (v: V3) => vSq(v) <= EPS;
+/** TVec3::setLength (0x801251d0): scale by len * inv_sqrt(squared()) (frsqrte + one Newton step) */
+function setLength(v: V3, len: number) { const l = vSq(v); if (l <= EPS) return v.zero(); return v.scale(fr(len * jgInvSqrt(l))); }
 /** TVec3::scaleAdd(s, b, c): b + c s */
 const scaleAdd = (s: number, b: V3, c: V3) => new V3(fr(b.x + c.x * s), fr(b.y + c.y * s), fr(b.z + c.z * s));
 const normalOf = (d: BGCheckData) => new V3(d.n[0], d.n[1], d.n[2]);

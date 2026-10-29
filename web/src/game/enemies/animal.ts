@@ -5,7 +5,8 @@
 // their own animation, the others copy one of theirs. Also the helpers the other animals share
 // (SMS_Eular2Quat, TQuat4 rotate, CLBChaseGeneralConstantSpecifySpeed, items by event ID).
 
-import { fr, V3, Quat, MsRandF, MsRandI, MsWrap, MsClamp, MsAngleDiff, MsGetRotFromZaxis, JMASSin, JMASCos, s16, Mtx } from '../math.js';
+import { fr, V3, Quat, MsRandF, MsRandI, MsWrap, MsClamp, MsAngleDiff, MsGetRotFromZaxis, JMASSin, JMASCos, s16, Mtx, jgInvSqrt } from '../math.js';
+import { vSq, jgSqrt } from '../vecops.js';
 import { World, SpineEnemy, EnemyManager, LiveManager, LiveActor, PathNode, LF, HF, nerve, Spine, Stream, ANM_BCK, ANM_BTP, ANM_FRAME_RATE, readParams, PSchema, CUE_MOVE, CUE_CALC_ANIM, HitActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -25,13 +26,13 @@ export function chase(value: number, desired: number, speed: number) {
 }
 /** JGeometry::TUtil<f32>::clamp */
 export const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
-/** TUtil<f32>::epsilon */
-export const EPS = 1.1920929e-7;
-/** TVec3::setLength (zero when its length squared is within epsilon) */
+/** TUtil<f32>::epsilon (2^-18), the threshold TVec3::setLength/normalize use */
+export const EPS = 3.814697265625e-6;
+/** TVec3::setLength (0x801251d0): scale by len * inv_sqrt(squared()) (frsqrte + one Newton step) */
 export function setLength(v: V3, len: number) {
-    const l = v.squared();
+    const l = vSq(v);
     if (l <= EPS) return v.zero();
-    return v.scale(len / Math.sqrt(l));
+    return v.scale(fr(len * jgInvSqrt(l)));
 }
 /** TVec3::normalize */
 export const jnormalize = (v: V3) => setLength(v, 1);
@@ -55,19 +56,19 @@ export function quatRotate(t: Quat, v: V3, out = new V3()) {
 export function mtxGetQuat(m: Mtx, q = new Quat()) {
     const a = (r: number, c: number) => m[r * 4 + c];
     if (a(0, 0) + a(1, 1) + a(2, 2) >= 0) {
-        const s = Math.sqrt(a(0, 0) + a(1, 1) + a(2, 2) + 1);
+        const s = jgSqrt(a(0, 0) + a(1, 1) + a(2, 2) + 1);
         return q.set4((0.5 / s) * (a(2, 1) - a(1, 2)), (0.5 / s) * (a(0, 2) - a(2, 0)), (0.5 / s) * (a(1, 0) - a(0, 1)), 0.5 * s);
     }
     const mx = Math.max(Math.max(a(0, 0), a(1, 1)), a(2, 2));
     if (mx === a(0, 0)) {
-        const s = Math.sqrt(a(0, 0) - (a(1, 1) + a(2, 2)) + 1);
+        const s = jgSqrt(a(0, 0) - (a(1, 1) + a(2, 2)) + 1);
         return q.set4(0.5 * s, (0.5 / s) * (a(0, 1) + a(1, 0)), (0.5 / s) * (a(2, 0) + a(0, 2)), (0.5 / s) * (a(2, 1) - a(1, 2)));
     }
     if (mx === a(1, 1)) {
-        const s = Math.sqrt(a(1, 1) - (a(2, 2) + a(0, 0)) + 1);
+        const s = jgSqrt(a(1, 1) - (a(2, 2) + a(0, 0)) + 1);
         return q.set4((0.5 / s) * (a(0, 1) + a(1, 0)), 0.5 * s, (0.5 / s) * (a(1, 2) + a(2, 1)), (0.5 / s) * (a(0, 2) - a(2, 0)));
     }
-    const s = Math.sqrt(a(2, 2) - (a(0, 0) + a(1, 1)) + 1);
+    const s = jgSqrt(a(2, 2) - (a(0, 0) + a(1, 1)) + 1);
     return q.set4((0.5 / s) * (a(2, 0) + a(0, 2)), (0.5 / s) * (a(1, 2) + a(2, 1)), 0.5 * s, (0.5 / s) * (a(1, 0) - a(0, 1)));
 }
 /** TRotation3::setSQ (rows scaled) and the translation */

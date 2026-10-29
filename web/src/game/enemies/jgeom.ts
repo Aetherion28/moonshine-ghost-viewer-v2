@@ -1,20 +1,23 @@
 // JGeometry helpers the ported enemies use that math.ts doesn't have (TQuat4::rotate / setEuler*,
 // TVec3::setLength, TRotation3::getQuat, SMS_Eular2Quat, CLBChaseGeneralConstantSpecifySpeed).
 
-import { fr, V3, Quat, Mtx } from '../math.js';
+import { fr, V3, Quat, Mtx, jgInvSqrt } from '../math.js';
+import { vSq, jgSqrt } from '../vecops.js';
 
-const EPS = 1.1920929e-7;
+/** TUtil<f32>::epsilon (2^-18), the threshold TVec3::setLength/normalize/isZero use */
+const EPS = 3.814697265625e-6;
 
-/** TVec3::setLength: zero when (nearly) zero. */
+/** TVec3::setLength (0x801251d0): scale by len * inv_sqrt(squared()) (frsqrte + one Newton
+ * step); zero when squared() is at most TUtil<f32>::epsilon. Confirmed against the disassembly. */
 export function setLength(v: V3, len: number) {
-    const l = v.squared();
+    const l = vSq(v);
     if (l <= EPS) return v.zero();
-    return v.scale(len / Math.sqrt(l)).fround();
+    return v.scale(fr(len * jgInvSqrt(l)));
 }
 /** TVec3::normalize (JGeometry's: zero when nearly zero) */
 export const jNormalize = (v: V3) => setLength(v, 1);
 /** TVec3::isZero */
-export const isZero = (v: V3) => v.squared() <= EPS;
+export const isZero = (v: V3) => vSq(v) <= EPS;
 
 /** TQuat4::rotate(v, dest): q v q* (q assumed unit). */
 export function qRotate(q: Quat, v: V3, out = new V3()) {
@@ -44,19 +47,19 @@ export function eulerToQuat(r: V3) {
 export function mtxToQuat(m: Mtx, q = new Quat()) {
     const a = (r: number, c: number) => m[r * 4 + c];
     if (a(0, 0) + a(1, 1) + a(2, 2) >= 0) {
-        const s = Math.sqrt(a(0, 0) + a(1, 1) + a(2, 2) + 1);
+        const s = jgSqrt(a(0, 0) + a(1, 1) + a(2, 2) + 1);
         return q.set4(0.5 / s * (a(2, 1) - a(1, 2)), 0.5 / s * (a(0, 2) - a(2, 0)), 0.5 / s * (a(1, 0) - a(0, 1)), 0.5 * s);
     }
     const mx = Math.max(Math.max(a(0, 0), a(1, 1)), a(2, 2));
     if (mx === a(0, 0)) {
-        const s = Math.sqrt(a(0, 0) - (a(1, 1) + a(2, 2)) + 1);
+        const s = jgSqrt(a(0, 0) - (a(1, 1) + a(2, 2)) + 1);
         return q.set4(0.5 * s, 0.5 / s * (a(0, 1) + a(1, 0)), 0.5 / s * (a(2, 0) + a(0, 2)), 0.5 / s * (a(2, 1) - a(1, 2)));
     }
     if (mx === a(1, 1)) {
-        const s = Math.sqrt(a(1, 1) - (a(2, 2) + a(0, 0)) + 1);
+        const s = jgSqrt(a(1, 1) - (a(2, 2) + a(0, 0)) + 1);
         return q.set4(0.5 / s * (a(0, 1) + a(1, 0)), 0.5 * s, 0.5 / s * (a(1, 2) + a(2, 1)), 0.5 / s * (a(0, 2) - a(2, 0)));
     }
-    const s = Math.sqrt(a(2, 2) - (a(0, 0) + a(1, 1)) + 1);
+    const s = jgSqrt(a(2, 2) - (a(0, 0) + a(1, 1)) + 1);
     return q.set4(0.5 / s * (a(2, 0) + a(0, 2)), 0.5 / s * (a(1, 2) + a(2, 1)), 0.5 * s, 0.5 / s * (a(1, 0) - a(0, 1)));
 }
 
