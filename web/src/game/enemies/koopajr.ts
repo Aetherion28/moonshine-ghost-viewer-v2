@@ -23,7 +23,8 @@
 // light type, and the flag manager's life count (see appearShineKiller).
 
 import { MSF } from '../flags.js';
-import { fr, V3, Mtx, mtx, Quat, MsMtxSetRotRPH, MsMtxSetXYZRPH, MsRandF, matan } from '../math.js';
+import { fr, V3, Mtx, mtx, Quat, MsMtxSetRotRPH, MsMtxSetXYZRPH, MsRandF, matan, jgInvSqrt } from '../math.js';
+import { jgSqrt } from '../vecops.js';
 import { World, Stream, HitActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, LF, HF, MSG, ANM_BCK, CUE_MOVE, CUE_CALC_ANIM, nerve, Nerve, readParams, SPINE_PARAMS, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -143,7 +144,7 @@ export class BathtubBinder {
         const d = V3.sub(front, back);
         a.pos.y = fr(a.pos.y + fr(0.2 * fr(fr(fr(this.unk1C * d.y) + back.y) - a.pos.y)));
         if (d.squared() <= 3.81469727e-6) return;
-        const h = fr(Math.sqrt(fr(fr(d.x * d.x) + fr(d.z * d.z))));
+        const h = jgSqrt(fr(fr(d.x * d.x) + fr(d.z * d.z)));
         let ang = fr(matan(h, d.y) * (360 / 65536));
         ang = ang < -15 ? -15 : ang > 15 ? 15 : ang;
         a.rot.x = fr(a.rot.x + fr(0.1 * fr(ang - a.rot.x)));
@@ -155,10 +156,10 @@ export class BathtubBinder {
         if (!t) return;
         const data = t.getBathtubData();
         const c = new V3(data.mPos.x, fr(data.mPos.y - data.unk44), data.mPos.z);
-        const radius = fr(fr(Math.sqrt(fr(fr(data.unk3C * data.unk3C) - fr(data.unk44 * data.unk44)))) - margin);
+        const radius = fr(jgSqrt(fr(fr(data.unk3C * data.unk3C) - fr(data.unk44 * data.unk44))) - margin);
         const dx = fr(p.x - c.x), dz = fr(p.z - c.z), dist = fr(fr(dx * dx) + fr(dz * dz));
         if (dist > fr(radius * radius)) {
-            const k = fr(radius / Math.sqrt(dist));
+            const k = fr(radius * jgInvSqrt(dist));
             p.set(fr(fr(k * dx) + c.x), p.y, fr(fr(k * dz) + c.z));
         }
         if (p.y < c.y) p.y = c.y;

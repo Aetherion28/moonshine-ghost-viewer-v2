@@ -27,6 +27,8 @@ import { MSF } from '../flags.js';
 import { fr, V3, Quat, mtx, MsSin, MsCos, MsRandF, MsMtxSetRotRPH, matan } from '../math.js';
 import { World, Stream, HitActor, SpineEnemy, EnemyManager, LF, HF, MSG, ANM_BCK, ANM_BTP, ANM_FRAME_RATE, MActor, nerve, Spine, PSchema, Params, SPINE_PARAMS } from '../engine.js';
 import { AT } from '../actortypes.js';
+import { jgSqrt } from '../vecops.js';
+import { jgInvSqrt } from '../math.js';
 import { register } from '../scene.js';
 import { SmallEnemy, SmallEnemyManager, smallParams } from './smallEnemy.js';
 import { quatRotate } from './animal.js';
@@ -71,7 +73,7 @@ export class BathtubBinder {
         const d = V3.sub(front, back);
         a.pos.y = fr(a.pos.y + fr(0.2 * fr(fr(fr(this.unk1C * d.y) + back.y) - a.pos.y)));
         if (d.x === 0 && d.y === 0 && d.z === 0) return;
-        const h = fr(Math.sqrt(fr(d.x * d.x + d.z * d.z)));
+        const h = jgSqrt(fr(fr(d.x * d.x) + fr(d.z * d.z)));
         let ang = fr(matan(h, d.y) * (360 / 65536));
         ang = ang < -15 ? -15 : ang > 15 ? 15 : ang;
         a.rot.x = fr(a.rot.x + fr(0.1 * fr(ang - a.rot.x)));
@@ -83,11 +85,11 @@ export class BathtubBinder {
         if (!this.unk4) return;
         const D = this.unk4.getBathtubData();
         const c = D.getThing();
-        const radius = fr(fr(Math.sqrt(fr(fr(D.unk3C * D.unk3C) - fr(D.unk44 * D.unk44)))) - r);
+        const radius = fr(jgSqrt(fr(fr(D.unk3C * D.unk3C) - fr(D.unk44 * D.unk44))) - r);
         const dx = fr(p.x - c.x), dz = fr(p.z - c.z);
-        const dist = fr(dx * dx + dz * dz);
+        const dist = fr(fr(dx * dx) + fr(dz * dz));
         if (dist > radius * radius) {
-            const k = fr(radius * fr(1 / Math.sqrt(dist)));
+            const k = fr(radius * jgInvSqrt(dist));
             p.set(fr(k * dx + c.x), p.y, fr(k * dz + c.z));
         }
         if (p.y < c.y) p.y = c.y;
