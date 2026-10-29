@@ -26,6 +26,7 @@
 
 import { MSF } from '../flags.js';
 import { fr, V3 } from '../math.js';
+import { vLen } from '../vecops.js';
 import { World, Stream, HitActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, MActor, AnmData, MoveCollision, LF, HF, MSG, ANM_BCK, CUE_MOVE, CUE_CALC_ANIM, nerve, Spine, FrameCtrl, readParams, SPINE_PARAMS, PSchema, GraphWeb } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -352,7 +353,8 @@ export class TinKoopa extends SpineEnemy {
         for (let i = 0; i < g.count - 1; ++i) {
             const prev = point;
             point = g.point(i + 1);
-            this.unk1E8[i] = fr(Math.sqrt(V3.sub(prev, point).squared()));
+            // makeCoasterDistanceTable: prev.distance(point) -- TVec3<f32>::length of the delta.
+            this.unk1E8[i] = vLen(V3.sub(prev, point));
         }
     }
     calcCoasterDistance(from: number, to: number) { let d = 0; for (let i = from; i < to; ++i) d = fr(d + this.unk1E8[i]); return d; }

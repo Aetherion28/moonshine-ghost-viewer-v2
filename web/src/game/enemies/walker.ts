@@ -2,7 +2,7 @@
 // walk the stage's graph, chase or flee Mario, and go round the walls they meet (the binder
 // steers them along a wall it hasn't touched before, and jumps them out of pools).
 
-import { fr, V3, MsSin, MsCos } from '../math.js';
+import { fr, V3, MsSin, MsCos, frsqrte } from '../math.js';
 import { World, LiveActor, LF, nerve, Spine, PathNode, ANM_BCK, PSchema, Files } from '../engine.js';
 import { SmallEnemy, SmallEnemyNerves, smallParams, rangeRand as rangeRandF } from './smallEnemy.js';
 import type { BGCheckData, WallCheck } from '../collision.js';
@@ -23,7 +23,9 @@ function calcFarthestVertex(d: BGCheckData, p: V3, dir: V3) {
     const diffs = [d.p1, d.p2, d.p3].map((q) => new V3(q[0] - p.x, 0, q[2] - p.z));
     let first = true, f7 = 0;
     for (const v of diffs) if (v.dot(dir) > 0) { const s = v.squared(); if (first) { first = false; f7 = s; } else if (f7 < s) f7 = s; }
-    return first ? 0 : Math.sqrt(f7);
+    // calcFarthestVertex (walker.cpp): "yet another copy of the standard sqrt but without the
+    // newton iterations" -- the raw frsqrte estimate times f7, not a real sqrt.
+    return first ? 0 : fr(f7 * fr(frsqrte(f7)));
 }
 
 /** TWalker: the walking binder. */

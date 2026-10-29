@@ -154,7 +154,13 @@ export class BathtubPeach extends SpineEnemy {
     goTo(p: V3) {
         let dx = fr(p.x - this.pos.x), dz = fr(p.z - this.pos.z);
         const sp = this.getParam().speed;
-        if (dx * dx + dz * dz > sp * sp) { const l = Math.sqrt(dx * dx + dz * dz); dx = fr(dx * (sp / l)); dz = fr(dz * (sp / l)); }
+        // TBathtubPeach::goTo: TVec2<f32>::setLength(speed) -- squared length times inv_sqrt
+        // (frsqrte + one Newton step), not a real sqrt and division.
+        if (fr(fr(dx * dx) + fr(dz * dz)) > fr(sp * sp)) {
+            const sq = fr(fr(dx * dx) + fr(dz * dz));
+            const k = jgInvSqrt(sq);
+            dx = fr(dx * fr(sp * k)); dz = fr(dz * fr(sp * k));
+        }
         this.pos.x = fr(this.pos.x + dx); this.pos.z = fr(this.pos.z + dz);
     }
     /** faceTo: turned towards p by at most speed degrees */
