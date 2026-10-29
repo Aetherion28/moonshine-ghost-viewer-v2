@@ -23,7 +23,7 @@
 // Not here: the particles (fire, hip drop: effects by name), the camera shake, rumble, the
 // animation sounds (.bas) and the BCK motion blend (initBckSimpleMotionBlend).
 
-import { fr, V3, Mtx, mtx, Quat, MsMtxSetRotRPH, matan } from '../math.js';
+import { fr, V3, Mtx, mtx, Quat, MsMtxSetRotRPH, matan, jgNormalize } from '../math.js';
 import { World, Stream, HitActor, LiveManager, SpineEnemy, EnemyManager, LF, HF, HC, MSG, ANM_BCK, ANM_BTP, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, nerve, Nerve, Spine, readParams, SPINE_PARAMS, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -77,8 +77,8 @@ export const MsWrapMod = (v: number, lo: number, hi: number) => {
     return fr(lo + m);
 };
 const EPS = 3.81469727e-6;
-/** JGeometry::TVec3::normalize (setLength(1): zero when (nearly) zero) */
-export const jnorm = (v: V3) => { const l2 = v.squared(); if (l2 <= EPS) return v.zero(); return v.scale(1 / Math.sqrt(l2)); };
+/** JGeometry::TVec3<f32>::normalize (inv_sqrt: frsqrte + one Newton step; zero when (nearly) zero) */
+export const jnorm = (v: V3) => jgNormalize(v) as V3;
 /** SMS_GetMarioSpeedX/Y/Z */
 export function marioVel(w: World): V3 { const m = w.mario as any; const v = typeof m.mStatus === 'number' ? m.mVel : m.vel; return v ? new V3(v.x, v.y, v.z) : new V3(); }
 /** SMS_ThrowMario(dir, speed) */

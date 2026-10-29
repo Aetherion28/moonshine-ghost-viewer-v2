@@ -25,6 +25,7 @@ import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, MsClamp, MsWrap, MsSin, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsMtxSetRotRPH, MsMtxSetXYZRPH, JMASSin, JMASCos, MsRandF, s16 } from '../math.js';
 import { World, Stream, HitActor, LiveActor, MActor, LF, HF, HC, MSG, ANM_BCK, ANM_BTK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, nerve, Spine, PathNode, PSchema, SpineEnemy, MoveCollision } from '../engine.js';
 import { AT } from '../actortypes.js';
+import { msVecMag2 } from '../vecops.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
@@ -507,8 +508,8 @@ export class Cannon extends SmallEnemy {
 /** TMarDirector::mState == STATE_UNK1 (not modelled) */
 const DIRECTOR_STATE_UNK1 = false;
 
-/** MsVECMag2 (TODO: the game's is the raw frsqrte estimate, see tobipuku.ts's msVecMag2) */
-const msVecMag = (v: V3) => fr(Math.sqrt(fr(fr(fr(v.x * v.x) + fr(v.y * v.y)) + fr(v.z * v.z))));
+/** MsVECMag2: the game's raw frsqrte estimate (0 for 0), via the shared vecops helper */
+const msVecMag = (v: V3) => msVecMag2(v);
 /** SMS_GetMarioSpeedX / Z: his mVel */
 function marioVel(w: World): V3 { const m = w.mario as any; return (typeof m.mStatus === 'number' ? m.mVel : m.vel) as V3; }
 

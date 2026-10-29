@@ -35,6 +35,7 @@
 // needs the talk system the sim doesn't have yet (TODO), so for now the fight doesn't start.
 
 import { fr, V3, MsRandF } from '../math.js';
+import { vLen } from '../vecops.js';
 import { World, Stream, HitActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, LF, HF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE,
     nerve, Spine, readParams, SPINE_PARAMS, PSchema, Nerve } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -96,8 +97,8 @@ function attackMario(w: World, attacker: HitActor) {
 /** lerp_hack: value += progress * (target - value) */
 const lerp = (v: number, t: number, p: number) => fr(v + fr(p * fr(t - v)));
 const lerpToMario = (w: World, pt: V3, p: number) => { const m = w.mario.pos; pt.x = lerp(pt.x, m.x, p); pt.y = lerp(pt.y, m.y, p); pt.z = lerp(pt.z, m.z, p); };
-/** TVec3::length */
-const len = (v: V3) => fr(Math.sqrt(v.squared()));
+/** JGeometry::TVec3<f32>::length (the inlined TUtil sqrt: frsqrte + one Newton step, times x) */
+const len = (v: V3) => vLen(v);
 
 // ================================================================ nerves
 type MS = Spine<BossManta>;
