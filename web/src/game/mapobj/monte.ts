@@ -10,7 +10,9 @@
 // drawRopeBetweenBoards, TSwingBoard::draw); they aren't drawn here.
 
 import { MSF } from '../flags.js';
-import { fr, V3, Mtx, mtx, MsRandF, MsMtxSetXYZRPH } from '../math.js';
+import { fr, V3, Mtx, mtx, MsRandF, MsMtxSetXYZRPH, jgInvSqrt } from '../math.js';
+import { fmadd as FMA, fmsub as FMS } from '../player/fmath.js';
+import { vNormMs } from '../vecops.js';
 import { World, Stream, NameRef, HitActor, LF, HF, MSG } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -127,10 +129,16 @@ export class HangingBridge extends NameRef {
             n = 19; this.unk18.set(0, 0, 11356); this.unk24.set(0, -750, 17743);
             HangingBridge.mRopeHeight = 1000; this.unk40 = 1; this.unk44 = 0.5; this.unk3C = 315;
         }
-        // (unk30: the bridge's direction across, for its ropes)
+        // (unk30: the bridge's direction across, for its ropes. THangingBridge::loadAfter,
+        // disassembled: TVec2<f32>::normalize -- squared length, zero within TUtil<f32>::epsilon
+        // (2^-18) else times inv_sqrt (frsqrte + one Newton step) -- then TVec2<f32>::rotate(pi/2)
+        // as a real cosf/sinf(1.5707963705062866) and a fused 2D rotation, not a hardcoded swap.)
         let dx = fr(this.unk24.x - this.unk18.x), dz = fr(this.unk24.z - this.unk18.z);
-        const l = Math.hypot(dx, dz) || 1; dx = fr(dx / l); dz = fr(dz / l);
-        this.unk30 = [fr(-dz), dx];
+        const sq = fr(fr(dx * dx) + fr(dz * dz));
+        if (sq > fr(3.814697265625e-6)) { const k = jgInvSqrt(sq); dx = fr(dx * k); dz = fr(dz * k); }
+        else { dx = 0; dz = 0; }
+        const ang = 1.5707963705062866, cs = cosf(ang), sn = sinf(ang);
+        this.unk30 = [FMS(dx, cs, fr(dz * sn)), FMA(dx, sn, fr(dz * cs))];
         for (let i = 0; i < n; i++) {
             const t = fr(i / (n - 1));
             const pos = new V3(fr(fr(t * fr(this.unk24.x - this.unk18.x)) + this.unk18.x),
@@ -234,13 +242,13 @@ export class Fluff extends MapObjBase {
     constructor(w: World, name = 'わた毛') { super(w, name); }
     touchWater(a: HitActor) {
         const p = getWaterPos(this.world, a);
-        // getNormalVecFromTarget: the unit vector from the target to this
-        let nx = fr(this.pos.x - p.x), ny = fr(this.pos.y - p.y), nz = fr(this.pos.z - p.z);
-        const l = Math.sqrt(nx * nx + ny * ny + nz * nz);
-        if (l > 0) { nx = fr(nx / l); ny = fr(ny / l); nz = fr(nz / l); }
-        this.vel.x = fr(this.vel.x - fr(nx * this.unk160));
-        this.vel.y = fr(this.vel.y - fr(ny * this.unk160));
-        this.vel.z = fr(this.vel.z - fr(nz * this.unk160));
+        // getNormalVecFromTarget (0x80191314): the delta, then MsVECNormalize (the raw frsqrte
+        // estimate, no Newton step, no zero guard) -- not a Math.sqrt-based normalize.
+        const n = V3.sub(this.pos, p);
+        vNormMs(n);
+        this.vel.x = fr(this.vel.x - fr(n.x * this.unk160));
+        this.vel.y = fr(this.vel.y - fr(n.y * this.unk160));
+        this.vel.z = fr(this.vel.z - fr(n.z * this.unk160));
         return 1;
     }
     move() {
