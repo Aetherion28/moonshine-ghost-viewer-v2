@@ -223,7 +223,9 @@ export class V3 {
     squared() { return this.x * this.x + this.y * this.y + this.z * this.z; }
     length() { return Math.sqrt(this.squared()); }
     normalize() { const l = this.length(); if (l > 0) this.scale(1 / l); return this; }
-    cross(a: V3, b: V3) { const x = a.y * b.z - a.z * b.y, y = a.z * b.x - a.x * b.z, z = a.x * b.y - a.y * b.x; this.x = x; this.y = y; this.z = z; return this; }
+    // JGeometry::TVec3<f32>::cross: -fp_contract on fuses each a*b-c into one fmsubs (the
+    // subtrahend's product is a separate fmuls rounded to f32 first; the fused op rounds once).
+    cross(a: V3, b: V3) { const x = FMS(a.y, b.z, fr(a.z * b.y)), y = FMS(a.z, b.x, fr(a.x * b.z)), z = FMS(a.x, b.y, fr(a.y * b.x)); this.x = x; this.y = y; this.z = z; return this; }
     static sub(a: V3, b: V3) { return new V3(fr(a.x - b.x), fr(a.y - b.y), fr(a.z - b.z)); }
     static add(a: V3, b: V3) { return new V3(fr(a.x + b.x), fr(a.y + b.y), fr(a.z + b.z)); }
     arr(): number[] { return [this.x, this.y, this.z]; }

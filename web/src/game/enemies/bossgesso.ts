@@ -18,7 +18,8 @@
 // Not here: the camera shakes, rumble, the balloons and streaming movie (told as events), the
 // damage fog, the shadow, and the particles (effects by name).
 
-import { fr, V3, Mtx, mtx, MsWrap, MsClamp, MsAngleDiff, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsMtxSetXYZRPH, MsSin, MsCos, MsRandF, matan, frsqrte, JMASSin, JMASCos } from '../math.js';
+import { fr, V3, Mtx, mtx, MsWrap, MsClamp, MsAngleDiff, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsMtxSetXYZRPH, MsSin, MsCos, MsRandF, matan, frsqrte, JMASSin, JMASCos, jgNormalize } from '../math.js';
+import { vLen } from '../vecops.js';
 import { World, Stream, NameRef, HitActor, TakeActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, PathNode, MActor, LF, HF, HC, MSG, ANM_BCK, ANM_BTP, ANM_BTK, CUE_MOVE, CUE_CALC_ANIM, CUE_ENTRY, nerve, Spine, readParams, SPINE_PARAMS, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -62,9 +63,11 @@ const TS_WAIT = 0, TS_ATTACK = 1, TS_REST = 2, TS_HELD = 3, TS_AMPUTEE = 4, TS_S
 const EPS = 32 * 1.1920929e-7;
 const isZero = (v: V3) => v.squared() <= EPS;
 const vnorm = (v: V3) => psVecNormalize(v, v) as V3;
-/** JGeometry::TVec3::normalize: setLength(1) (a plain one) */
-const jnorm = (v: V3) => { const l2 = fr(fr(v.x * v.x + fr(v.y * v.y)) + fr(v.z * v.z)); if (l2 > EPS) { const k = fr(1 / Math.sqrt(l2)); v.x = fr(v.x * k); v.y = fr(v.y * k); v.z = fr(v.z * k); } return v; };
-const len = (v: V3) => fr(Math.sqrt(fr(fr(v.x * v.x + fr(v.y * v.y)) + fr(v.z * v.z))));
+/** JGeometry::TVec3<f32>::normalize (inv_sqrt, frsqrte + one Newton step) -- confirmed against
+ * setAttackTarget__11TBGTentacleFv's cross-product normalize (bl inv_sqrt__Q29JGeometry8TUtil<f>Ff) */
+const jnorm = (v: V3) => jgNormalize(v) as V3;
+/** JGeometry::TVec3<f32>::length (the inlined TUtil sqrt: frsqrte + one Newton step, times x) */
+const len = (v: V3) => vLen(v);
 const trans = (m: Mtx) => new V3(m[3], m[7], m[11]);
 const fromPolar = (theta: number, r: number) => new V3(fr(r * JMASSin(Math.trunc(fr(theta * fr(65536 / 360))))), 0, fr(r * JMASCos(Math.trunc(fr(theta * fr(65536 / 360))))));
 /** a row-major 3x4 from a world mat4 (column-major) */
