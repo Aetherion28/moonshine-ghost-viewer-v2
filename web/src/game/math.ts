@@ -220,9 +220,14 @@ export class V3 {
     sub(v: V3) { this.x = fr(this.x - v.x); this.y = fr(this.y - v.y); this.z = fr(this.z - v.z); return this; }
     scale(s: number) { s = fr(s); this.x = fr(this.x * s); this.y = fr(this.y * s); this.z = fr(this.z * s); return this; }
     dot(v: V3) { return this.x * v.x + this.y * v.y + this.z * v.z; }
-    squared() { return this.x * this.x + this.y * this.y + this.z * this.z; }
-    length() { return Math.sqrt(this.squared()); }
-    normalize() { const l = this.length(); if (l > 0) this.scale(1 / l); return this; }
+    // JGeometry::TVec3<f32>::squared/length/normalize (checked against setLength's disassembly,
+    // 0x801251d0): squared() rounds each term and each partial sum to f32; length() is the
+    // inlined TUtil sqrt (squared() times inv_sqrt -- frsqrte + one Newton step, itself for <= 0);
+    // normalize() zeroes when squared() is at most TUtil<f32>::epsilon (2^-18), else scales by
+    // inv_sqrt(squared()). These used to be plain double-precision Math.sqrt / 1/length.
+    squared() { return fr(fr(fr(this.x * this.x) + fr(this.y * this.y)) + fr(this.z * this.z)); }
+    length() { const sq = this.squared(); return sq > 0 ? fr(sq * jgInvSqrt(sq)) : sq; }
+    normalize() { jgNormalize(this); return this; }
     // JGeometry::TVec3<f32>::cross: -fp_contract on fuses each a*b-c into one fmsubs (the
     // subtrahend's product is a separate fmuls rounded to f32 first; the fused op rounds once).
     cross(a: V3, b: V3) { const x = FMS(a.y, b.z, fr(a.z * b.y)), y = FMS(a.z, b.x, fr(a.x * b.z)), z = FMS(a.x, b.y, fr(a.y * b.x)); this.x = x; this.y = y; this.z = z; return this; }
