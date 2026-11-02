@@ -21,9 +21,15 @@
 // (fctiwz truncation, f32 rounding); the comparisons compare strings by strcmp when both are
 // strings, as floats when either is a float, else as ints (a string reads as 0 / 0.0).
 //
-// Not modelled: SpcTrace (compiled out of the game), dump(); the uninitialised mLocked of a fresh
-// TSpcInterp (the constructor never writes it: taken as 0, as a freshly allocated heap block's
-// would be most of the time).
+// Not modelled: SpcTrace (compiled out of the game), dump().
+//
+// mLocked starts as whatever the heap block held: TSpcInterp's constructor never writes +0x14 (JP
+// and PAL DOL alike) and JKRHeap doesn't clear what it hands out. A PAL trace from the stage load
+// (Sirena 0, the manta's appearance) shows it nonzero there: appearmanta.sb's loop over the nine
+// NPCs (about 180 instructions, no yield) finished inside one update, so its demo started the tick
+// after the talk ended. With 0 it takes six updates at 0x20 and the demo starts 4 ticks late. So
+// a fresh interpreter runs locked (each update runs to its yield) until a script calls unlock.
+// The real word is heap garbage, so this is the value seen, not one the code sets.
 
 import { fr } from './math.js';
 
@@ -173,7 +179,8 @@ const spcTypeof: SpcBuiltin = (it, n) => { const a = { n }; if (n !== 1) it.veri
 /** TSpcInterp */
 export class SpcInterp {
     mStepsToDo: number; mProgramCounter = 0; mStepsLeft: number;
-    mLocked = 0;
+    /** uninitialised in the game (see the top): seen nonzero */
+    mLocked = 1;
     proc: SliceStack; storage: SliceStack; ctx: U32Stack;
     display = [0, 0, 0, 0];
     /** mCurrentlyExecutingBuiltinName */
