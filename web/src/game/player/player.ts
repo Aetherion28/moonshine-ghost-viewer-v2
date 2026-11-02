@@ -86,7 +86,7 @@ export const playerHooks: {
 
 // ---------------------------------------------------------------- the player
 /** see PlayerMario.calcAnim */
-export const CAP_TREMBLE_RNG = false;
+export const CAP_TREMBLE_RNG = true;
 export class PlayerMario extends TMarioSim {
     /** this stage's Mario is the player (gpMarioOriginal) */
     isMario() { return true; }
@@ -403,11 +403,10 @@ export class PlayerMario extends TMarioSim {
     }
     /**
      * TMario::calcAnim: the body, then (calcAnimHands) mCap->perform(CUE_CALC_ANIM). The hat's rolls
-     * are in the replays (264 a tick from TTrembleModelEffect::tremble, 3 per vertex of ma_cap1), but
-     * CAP_TREMBLE_RNG stays off for now: with them the sim's rand() stream lines up call for call
-     * until the NPCs' and birds' first rolls, which the game makes 61 ticks before the sim does
-     * (Plaza replay: 18, 20, 55 against 79, 81, 116; birds 59 against 120), and from there the water's
-     * drops get other numbers. TODO: find what starts them earlier in the game, then turn this on.
+     * (264 a tick in the replays, TTrembleModelEffect::tremble: 3 per vertex of ma_cap1) come from the
+     * one rand() everything shares, so every later roll depends on them. TODO: the NPCs' and birds'
+     * first rolls come 61 ticks earlier in the game than here (Plaza replay: 18, 20, 55 against 79,
+     * 81, 116; birds 59 against 120), and the rolls after them are taken by other callers.
      */
     calcAnim() {
         super.calcAnim();
