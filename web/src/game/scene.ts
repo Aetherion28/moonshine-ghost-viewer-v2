@@ -111,7 +111,7 @@ export class Stage {
         if (this.player && this.player.simCamera) (this.player.simCamera as any).bckSource = (name: string) => cameraBck(w, name);
         for (const gw of w.graphs.values()) { gw.initGoalIndex(new V3()); gw.attachToGround(w); }
         w.conductor.init();
-        if (this.player && intro) this.leadFrame();
+        if (this.player && intro && !intro.fromLoad) this.leadFrame();
         if (this.player && intro) {
             const make = (intro as any).makeDirector as ((p: PlayerMario, map: number, start: boolean, t: IntroTiming) => PlayerDirector) | undefined;   // (live play's: stagechange.ts LiveDirector)
             this.director = make ? make(this.player, map, !!files.scene('map/camera/startcamera.bck'), intro) : new PlayerDirector(this.player, map, !!files.scene('map/camera/startcamera.bck'), intro); this.player.driftFrom = Math.max(intro.demoEndTick, (intro.firstSample ?? 0) - 1); }

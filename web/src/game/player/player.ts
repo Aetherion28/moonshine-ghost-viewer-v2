@@ -1915,6 +1915,12 @@ const DEMO_STAGES = new Set([2, 3, 4, 5, 6, 8, 9, 0x34]);
 export const OPEN_WIPE_TICKS = 31;
 
 export interface IntroTiming {
+    /**
+     * The replay holds the stage's load (MSTR v3 starts recording before it): its RNG seed is the
+     * one the load rolls with, and the first world tick after the load is Mario's first update, so
+     * no lead frame (Stage.leadFrame) runs before it
+     */
+    fromLoad?: boolean;
     /** the changeState (after this stage tick) that ends the camera demo (STATE_UNK1 to STATE_UNK3): the ghost's */
     demoEndTick: number;
     /** the ghost's first sample after the opening (its drift is checked from there) */

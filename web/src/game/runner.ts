@@ -543,11 +543,14 @@ export class SimRunner {
             }
             // MSL rand()'s state at the stage's start (srand(OSGetTick()) at boot, then everything before
             // it): the ghost's RNG tape SEED for this segment when it has one, else 0
-            const seed = stageSeed(g, segI);
+            // (a replay that holds the stage's load: its first recorded seed is the load's)
+            const fromLoad = segI === 0 && !!(g.header && g.header.fromLoad && g.header.initialRng !== undefined);
+            if (intro && fromLoad) intro.fromLoad = true;
+            const seed = fromLoad ? g.header.initialRng : stageSeed(g, segI);
             try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, seed ?? 0, 0, intro); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
             // V9: rand()'s state at the first recorded pose (the stage's QF 0, after its lead frames)
-            if (segI === 0 && g.header && g.header.initialRng !== undefined) srand(g.header.initialRng);
+            if (segI === 0 && !fromLoad && g.header && g.header.initialRng !== undefined) srand(g.header.initialRng);
             const st0 = this.stage;
             const C0: any = st0.player && st0.player.simCamera;
             if (C0 && demoName) C0.stageDemoName = demoName(st0.world.flags);

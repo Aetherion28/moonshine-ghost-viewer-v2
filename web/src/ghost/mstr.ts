@@ -69,12 +69,32 @@ export interface MstrSummary {
  * visit (optional) sees each record after it validated. Throws MstrError on anything the reference
  * reader rejects.
  */
+/** An LZ4 block (lz4 block format) at src[p, p + len) into out from o; the bytes written. */
+function lz4Block(src: Uint8Array, p: number, len: number, out: Uint8Array, o: number): number {
+    const end = p + len, o0 = o;
+    while (p < end) {
+        const tok = src[p++];
+        let lit = tok >>> 4;
+        if (lit === 15) { let b; do { b = src[p++]; lit += b; } while (b === 255 && p < end); }
+        if (p + lit > end || o + lit > out.length) return -1;
+        out.set(src.subarray(p, p + lit), o); p += lit; o += lit;
+        if (p >= end) break;
+        const off = src[p] | (src[p + 1] << 8); p += 2;
+        if (!off || off > o - o0 + o0 || o - off < 0) return -1;
+        let m = (tok & 15) + 4;
+        if ((tok & 15) === 15) { let b; do { b = src[p++]; m += b; } while (b === 255 && p < end); }
+        if (o + m > out.length) return -1;
+        for (let i = 0; i < m; i++, o++) out[o] = out[o - off];
+    }
+    return o - o0;
+}
+
 export function readMstr(buf: ArrayBuffer, visit?: (r: MstrRecord) => void): MstrSummary {
     const bytes = new Uint8Array(buf), dv = new DataView(buf);
     const fail = (m: string): never => { throw new MstrError(m); };
     if (bytes.length < 64) fail('Truncated capture at 0x0');
     const w = (i: number) => dv.getUint32(i * 4);
-    if (w(0) !== MSTR_MAGIC || (w(1) !== 1 && w(1) !== 2) || w(2) !== 64 || w(8) !== 0x80000 || fnv1a(bytes.subarray(0, 60)) !== w(15))
+    if (w(0) !== MSTR_MAGIC || (w(1) < 1 || w(1) > 3) || w(2) !== 64 || w(8) !== 0x80000 || fnv1a(bytes.subarray(0, 60)) !== w(15))
         fail('Invalid MSTR header');
     const header: MstrHeader = {
         version: w(1), gameCode: String.fromCharCode(bytes[12], bytes[13], bytes[14], bytes[15]),
@@ -96,20 +116,38 @@ export function readMstr(buf: ArrayBuffer, visit?: (r: MstrRecord) => void): Mst
             return { header, complete: err === 0, producerError: err, chunks, payloadBytes: payload, frames, movementUpdates: ticks, rngCalls, records: counts };
         }
         const [run, seq, n, digest, first, last, r0, r1] = [v(0), v(1), v(2), v(3), v(4), v(5), v(6), v(7)];
-        if (run !== header.run || seq !== chunks + 1 || !(n > 0 && n <= 0x80000) || r0 || r1 || first > last) fail('Invalid chunk boundary');
-        const start = at + 32;
-        if (start + n > bytes.length) fail(`Truncated capture at 0x${start.toString(16)}`);
-        const data = bytes.subarray(start, start + n);
+        // v3: a chunk may be stored LZ4-compressed (r0 = 1) in blocks of r1 bytes: each block a u32 raw size and
+        // a u32 stored size (high bit: LZ4 block format, else the raw bytes); n is the decompressed size
+        const packed = header.version >= 3 && r0 === 1;
+        if (run !== header.run || seq !== chunks + 1 || !(n > 0 && n <= 0x80000) || (packed ? !(r1 > 0 && r1 <= 0x80000) : (r0 || r1)) || first > last) fail('Invalid chunk boundary');
+        let cbytes = bytes, cdv = dv, start = at + 32, stored = n;
+        if (packed) {
+            const out = new Uint8Array(n);
+            let p = start, o = 0;
+            while (o < n) {
+                if (p + 8 > bytes.length) fail(`Truncated capture at 0x${p.toString(16)}`);
+                const raw = dv.getUint32(p), sz = dv.getUint32(p + 4), len = sz & 0x7fffffff;
+                p += 8;
+                if (raw > r1 || o + raw > n || p + len > bytes.length) fail('Invalid compressed block');
+                if (sz & 0x80000000) { if (lz4Block(bytes, p, len, out, o) !== raw) fail('Invalid compressed block'); }
+                else { if (len !== raw) fail('Invalid stored block'); out.set(bytes.subarray(p, p + len), o); }
+                p += len; o += raw;
+            }
+            stored = p - start;
+            cbytes = out; cdv = new DataView(out.buffer); start = 0;
+        }
+        if (start + n > cbytes.length) fail(`Truncated capture at 0x${start.toString(16)}`);
+        const data = cbytes.subarray(start, start + n);
         if (fnv1a(data) !== digest) fail(`Chunk ${seq} checksum mismatch`);
         let pos = 0, firstFrame = -1, lastFrame = -1;
         while (pos < n) {
             if (n - pos < 12) fail('Truncated record header');
             const o = start + pos;
-            const kind = dv.getUint16(o), size = dv.getUint16(o + 2), frame = dv.getUint32(o + 4), tick = dv.getUint32(o + 8);
+            const kind = cdv.getUint16(o), size = cdv.getUint16(o + 2), frame = cdv.getUint32(o + 4), tick = cdv.getUint32(o + 8);
             pos += 12;
-            if (!KIND_NAMES[kind] || size > n - pos || frame < frames || tick < ticks) fail('Invalid record boundary/order');
-            const body = bytes.subarray(start + pos, start + pos + size);
-            const bv = new DataView(buf, start + pos, size);
+            if ((!KIND_NAMES[kind] && !(header.version >= 3 && kind >= 22 && kind < 64)) || size > n - pos || frame < frames || tick < ticks) fail(`Invalid record boundary/order (kind ${kind} size ${size} frame ${frame}/${frames} tick ${tick}/${ticks})`);
+            const body = cbytes.subarray(start + pos, start + pos + size);
+            const bv = new DataView(cbytes.buffer, cbytes.byteOffset + start + pos, size);
             if (kind === K.FRAME) {
                 if (size !== 32) fail('Bad frame record');
                 const s = bv.getUint32(0);
@@ -132,12 +170,12 @@ export function readMstr(buf: ArrayBuffer, visit?: (r: MstrRecord) => void): Mst
             frames = frame; ticks = tick;
             if (firstFrame < 0) firstFrame = frame;
             lastFrame = frame;
-            counts[KIND_NAMES[kind]] = (counts[KIND_NAMES[kind]] || 0) + 1;
+            { const kn = KIND_NAMES[kind] || 'kind' + kind; counts[kn] = (counts[kn] || 0) + 1; }
             if (visit) visit({ kind, frame, tick, body });
             pos += size;
         }
         if (firstFrame < 0 || firstFrame !== first || lastFrame !== last) fail('Chunk frame range mismatch');
-        chunks++; payload += n; at = start + n;
+        chunks++; payload += n; at = packed ? at + 32 + stored : start + n;
     }
 }
 

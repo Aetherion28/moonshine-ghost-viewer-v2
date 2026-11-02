@@ -82,6 +82,8 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
         },
         onRng: (c) => { rq.push(worldQf(c.tick)); rc.push(c.caller); rs.push(c.seed); rr.push(c.result); },
         onTick: (s) => {
+            // v3: each frame also records the pad as the frame starts (cue 0, word 1's high bit), not a movement update
+            if (s.input && s.input.length >= 8 && (s.input[4] & 0x80)) return;
             const qf = worldQf(s.tick);
             if (!segs.length || segs[segs.length - 1].scene !== s.scene) { segs.push({ scene: s.scene, first: ticks.length, startQf: qf, endQf: qf }); segNow = segs.length - 1; }
             segs[segNow].endQf = qf;
@@ -138,6 +140,9 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
         route: route0, routeLabel: '', runFlags: 0, resultQf: lastQf, startQf: 0, endQf: lastQf, durationQf: lastQf, sampleCount: n,
         created: 0, author: '', name, profileName: '',
         initialRng: firstSeed === null ? undefined : (firstSeed as number) >>> 0,
+        // MSTR v3 starts recording before the stage loads: frames go by before Mario's first update, and
+        // initialRng is then the seed the load itself rolls with (game/player/player.ts IntroTiming.fromLoad)
+        fromLoad: summary.header.version >= 3 && segs.length > 0 && segs[0].startQf > 0,
     };
     const segments = segs.map((s, i) => ({
         firstSample: s.first, sampleCount: (i + 1 < segs.length ? segs[i + 1].first : n) - s.first, startQf: s.startQf, endQf: s.endQf,
