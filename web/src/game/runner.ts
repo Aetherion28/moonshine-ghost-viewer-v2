@@ -122,6 +122,18 @@ export class DiscCommon {
         try { c.stageArc = parseStageArc(await fs.read('data/stageArc.bin')); } catch (e) { console.warn('[game] stageArc.bin', e); }
         try { c.params = parse(await fs.read('data/params.szs')); } catch (e) { console.warn('[game] params.szs', e); }
         try { c.common = parse(await fs.read('data/common.szs')); } catch (e) { console.warn('[game] common.szs', e); }
+        // PAL keeps common.szs's 2d folder (sys_message.bmg, the talks' system messages: Fast text's
+        // fallback among them) in a per-language archive, data/cmn2d_<lang>.szs, mounted as /common/2d.
+        // The language is the console's; English here (the system messages' entries are laid out alike).
+        try {
+            for (const lang of ['en', 'fr', 'ge', 'it', 'sp']) {
+                const path = `data/cmn2d_${lang}.szs`;
+                if (!c.common || !fs.has(path)) continue;
+                const d = parse(await fs.read(path));
+                for (const [k, v] of d.files) if (!c.common.files.has('2d/' + k)) c.common.files.set('2d/' + k, v);
+                break;
+            }
+        } catch (e) { console.warn('[game] cmn2d', e); }
         try { if (fs.has('data/scenecmn.bin')) c.scenecmn = new Uint8Array(await fs.read('data/scenecmn.bin')); } catch { }
         // Mario's archive (the simulated Marios' animations and params: Shadow Mario)
         try { const m = parse(await fs.read('data/mario.szs')); setMarioArchive((p) => m.files.get(p.toLowerCase()) || null); } catch (e) { console.warn('[game] mario.szs', e); }
@@ -654,7 +666,7 @@ export class SimRunner {
     /**
      * Play recording: the stage's actors placed as the trace's actor records have them (position,
      * rotation, scaling and, for a live actor, velocity). A record is the object's state at the end of
-     * its frame: the one labelled ghost QF r is applied after the movement of stage tick r - q0 + 4.
+     * the tick it was taken on: the one labelled ghost QF r is applied after the movement of stage tick r - q0 + 1 (where the game code's positions line up with it while it runs in step).
      * Each recorded object is paired with the simulated object of the same name (its JDrama key code)
      * and the same place among those (see below); one the sim doesn't make stays unpaired. An enemy
      * the game had dead is kept dead (see below). Animation frames, states and anything past
@@ -680,7 +692,7 @@ export class SimRunner {
         };
         let sim: Map<number, LiveActor[]> | null = null;
         return (q: number) => {
-            const label = q0 + q - 4;
+            const label = q0 + q - 1;
             if (k < A.count && A.qf[k] <= label) sim = null;
             for (; k < A.count && A.qf[k] <= label; k++) {
                 const id = A.id[k], key = A.key[k];

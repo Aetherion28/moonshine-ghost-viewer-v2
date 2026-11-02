@@ -29,8 +29,13 @@ import { J3DModelInstanceSimple } from '../noclip/Common/JSYSTEM/J3D/J3DGraphSim
 import { MaterialData } from '../noclip/Common/JSYSTEM/J3D/J3DGraphBase.js';
 import * as Viewer from '../noclip/viewer.js';
 
-/** sort layers, all between the opaque models and the translucent ones */
-const L_ALPHA1 = 0x7A, L_BACK = 0x7B, L_FRONT = 0x7C, L_SHADE = 0x7D, L_RESTORE = 0x7F;
+/**
+ * sort layers, all after the translucent ones (0x80): the game draws the manta's shadow with the
+ * enemies, after the map has drawn its translucent parts (the sea, the goop layers), so those are
+ * shaded too (the goop pool under the manta in Sirena). The particles, drawn after the enemies in
+ * the game and in the same 0x80 layer here, are shaded as well (not the game's).
+ */
+const L_ALPHA1 = 0x8A, L_BACK = 0x8B, L_FRONT = 0x8C, L_SHADE = 0x8D, L_RESTORE = 0x8F;
 
 function passClr(mb: GXMaterialBuilder) {
     mb.setChanCtrl(GX.ColorChannelID.COLOR0A0, false, GX.ColorSrc.REG, GX.ColorSrc.REG, 0, GX.DiffuseFunction.NONE, GX.AttenuationFunction.NONE);
