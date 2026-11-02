@@ -6,8 +6,10 @@
 // movement update (status, velocities, intended yaw, the camera's movement yaw unk258, the
 // triangles he touched), every libc rand() call with its caller, and the console's refresh rate.
 //
-// Timeline: one SGHF QF is one Mario movement update, so a trace's movement tick is its QF. The
-// first tick is QF 0 (a trace starts where its capture started, not at a level timer).
+// Timeline: one QF is one world movement tick. The recorder's tick counts Mario's updates, so
+// it stands still while the director stops the world (a Shine's appear demo); the QF here counts
+// four ticks a frame from the frame records instead. The first tick is QF 0 (a trace starts where
+// its capture started, not at a level timer).
 
 import { replayMstr, readMstr, marioView, cameraView, padView, contactTriangle, MstrError, MstrSummary, MstrIdentity, MarioView, CameraView, CAMERA, K } from './mstr.js';
 
@@ -66,14 +68,21 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     const rq: number[] = [], rc: number[] = [], rs: number[] = [], rr: number[] = [];
     const segs: { scene: number; first: number; startQf: number; endQf: number }[] = [];
     let firstSeed: number | null = null, lastCamKey = -1e9, segNow = -1;
+    /** the world tick at the current frame's start, and the recorder's (Mario-update) tick there */
+    let worldTick = 0, frameTick: number | null = null;
+    const worldQf = (t: number) => (frameTick === null ? t : worldTick + (t - frameTick)) - 1;
     const summary = replayMstr(buf, {
         onIdentity: (id) => { identity = id; },
         onFrame: (s) => {
             if (firstSeed === null) firstSeed = s.seed;
+            // a frame is four world ticks however many of them moved Mario (none while the director
+            // stops the world for a Shine's appear demo: the recorder's tick counts Mario's updates)
+            if (frameTick === null) worldTick = s.tick; else worldTick += 4;
+            frameTick = s.tick;
         },
-        onRng: (c) => { rq.push(c.tick); rc.push(c.caller); rs.push(c.seed); rr.push(c.result); },
+        onRng: (c) => { rq.push(worldQf(c.tick)); rc.push(c.caller); rs.push(c.seed); rr.push(c.result); },
         onTick: (s) => {
-            const qf = s.tick - 1;
+            const qf = worldQf(s.tick);
             if (!segs.length || segs[segs.length - 1].scene !== s.scene) { segs.push({ scene: s.scene, first: ticks.length, startQf: qf, endQf: qf }); segNow = segs.length - 1; }
             segs[segNow].endQf = qf;
             const m = s.mario ? marioView(s.mario) : null, c = s.camera ? cameraView(s.camera) : null;

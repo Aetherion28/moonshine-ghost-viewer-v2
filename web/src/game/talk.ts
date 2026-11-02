@@ -65,7 +65,9 @@ const DF = {
 /** MSBgm::getHandle(2) (the demo's jingle track): the BGM isn't simulated, taken as not playing */
 const BGM_HANDLE2_PLAYING = false;
 /** a TDemoInfo of mDemoQueue (fireStartDemoCamera's arguments) */
-interface DemoInfo { name: string | null; offset: V3 | null; frames: number; angle: number; timed: boolean; actor: NameRef | null; }
+interface DemoInfo { name: string | null; offset: V3 | null; frames: number; angle: number; timed: boolean; actor: NameRef | null; cb: ((phase: number) => void) | null; }
+/** TMarDirector's demo flags (unk...: onDemoFlag / checkDemoFlag) */
+export const DEMO_FLAG = { SHINE_GET_STOP_THE_WORLD: 0x1 } as const;
 const MEANING_TALK_B = 0x800, MEANING_SELECT_A = 0x20000, MEANING_SELECT_B = 0x40000, MEANING_SELECT_UP = 0x80000, MEANING_SELECT_DOWN = 0x100000;
 /** CPolarSubCamera modes (camera/polar.ts CM) */
 const CM_TALK_A = 0xC, CM_TALK_B = 0x2D, CM_TALK_C = 0x3F, CM_TALK_D = 0x40, CM_TALK_E = 0xA;
@@ -679,10 +681,10 @@ export class TalkDirector {
     /** the state updateGameMode last asked of the director (mState: STATE_UNK4 is 4; 7 the game over, 5 pause, 10 guide, 11 card save) */
     nextState = 4;
     /** TMarDirector::fireStartDemoCamera: queue a camera demo (the script's: timed, no offset) */
-    fireStartDemoCamera(name: string | null, offset: V3 | null = null, frames = -1, angle = 0, timed = true, actor: NameRef | null = null) {
+    fireStartDemoCamera(name: string | null, offset: V3 | null = null, frames = -1, angle = 0, timed = true, actor: NameRef | null = null, cb: ((phase: number) => void) | null = null) {
         if (((this.demoTail - this.demoHead) & 7) >= 7) return;
         this.dflags |= DF.DEMO_PENDING;
-        this.demoQueue[this.demoTail] = { name, offset, frames, angle, timed, actor };
+        this.demoQueue[this.demoTail] = { name, offset, frames, angle, timed, actor, cb };
         this.demoTail = (this.demoTail + 1) & 7;
     }
     /**
@@ -742,7 +744,14 @@ export class TalkDirector {
         const d = this.demoQueue[this.demoHead], C: any = this.camera();
         if (C && !C.bckSource) C.bckSource = (name: string) => this.demoBck(name);
         if (C && C.startDemoCamera) C.startDemoCamera(d.name, d.offset, d.frames, d.angle, d.timed);
+        // (the demo's callback, unk14(unk18, 0): e.g. TShine::appearWithTimeCallback)
+        if (d.cb) d.cb(0);
     }
+    /** demo flags (DEMO_FLAG): SHINE_GET_STOP_THE_WORLD runs only the Shine perform lists (scene.ts) */
+    demoFlags = 0;
+    onDemoFlag(f: number) { this.demoFlags |= f; }
+    offDemoFlag(f: number) { this.demoFlags &= ~f; }
+    checkDemoFlag(f: number) { return (this.demoFlags & f) !== 0; }
     /** updateGameMode (changeState in the game state, at the tick's end) */
     updateGameMode() {
         const w = this.world;
@@ -806,14 +815,17 @@ export class TalkDirector {
                     endCamera = this.demoQueue[this.demoHead] ? this.demoQueue[this.demoHead].timed : false;
                 }
                 if (end) {
+                    const info = this.demoQueue[this.demoHead];
                     this.demoHead = (this.demoHead + 1) & 7;
                     if (this.demoHead !== this.demoTail) {
                         if (C) C.endDemoCamera();
+                        if (info && info.cb) info.cb(1);
                         this.startQueuedDemo();
                     } else {
                         this.dflags &= ~DF.DEMO_PENDING;
                         this.unk126 = this.unk124 === 4 ? 2 : 0;
                         if (endCamera && C) C.endDemoCamera();
+                        if (info && info.cb) info.cb(1);
                         if (this.freeRoamDemo) this.endFreeRoamShine(C);
                     }
                 }

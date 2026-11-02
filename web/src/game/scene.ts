@@ -5,6 +5,7 @@
 // TMarDirector::direct's four movement ticks, the hit checks every fourth, the animations on the
 // frame's last, and the goop's stamps after it.
 
+import { DEMO_FLAG } from './talk.js';
 import { V3, srand } from './math.js';
 import {
     World, Files, NameRef, Stream, parseSceneBin, SceneNode, ObjChara, HitActor, IDX, GROUP_NAMES, parseRails, GraphWeb, CUE_MOVE, CUE_CALC_ANIM,
@@ -206,6 +207,18 @@ export class Stage {
             this.qf++;
             if (!(w.moveTickCount & 3)) w.hitCheck.checkActorsHit();
             else w.hitCheck.clearHitNum();
+            // DEMO_FLAG_SHINE_GET_STOP_THE_WORLD (a Shine's appear demo, TShine::appearWithTimeCallback): the
+            // director runs Shine PfLst Mov / Anm (PerformLists.bin: シャインマネージャー, camera 1) instead
+            const stw = !!(w.talk && w.talk.checkDemoFlag(DEMO_FLAG.SHINE_GET_STOP_THE_WORLD));
+            if (stw) {
+                const sm = w.conductor.getManagerByName('シャインマネージャー');
+                if (sm) sm.testPerform(CUE_MOVE);
+                if (P) P.cameraTick((tick === 0 ? 1 : 0) | (last ? 2 : 0));
+                if (w.talk) w.talk.tick(last, !!D && D.state === 4);
+                if (last && sm) sm.testPerform(CUE_CALC_ANIM);
+                if (D && !last) D.changeState(this.qf);
+                continue;
+            }
             // PerformList Movement: map group, wave, graffiti group, conductor, manager group, player group, camera, water manager...
             // TMap::perform: the moving collision's grid starts the tick empty
             w.col.clearMove();

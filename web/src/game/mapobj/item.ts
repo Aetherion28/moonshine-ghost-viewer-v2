@@ -8,6 +8,7 @@
 // ('coinGet', 'redCoinGet', 'blueCoinGet', 'shineGet', 'nozzleGet'), with the counts on
 // itemCounts(world).
 
+import { DEMO_FLAG } from '../talk.js';
 import { fr, V3, Mtx, mtx, JMASSin, JMASCos, MsSin, MsWrap, MsMtxSetXYZRPH } from '../math.js';
 import { World, Stream, HitActor, TakeActor, LF, HF, MSG, CUE_MOVE, CUE_CALC_ANIM, parseSceneBin, SceneNode } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -383,8 +384,15 @@ export class Shine extends Item {
     appearWithDemo(camera: string) {
         this.unk18C = demoLength(this.world, camera);
         this.world.events.push({ t: this.world.tickCount, kind: 'demoCamera', data: { name: camera, p: this.pos.clone(), frames: this.unk18C } });
-        if (this.world.talk) this.world.talk.fireStartDemoCamera(camera, this.pos.clone());
-        this.appearWithTime(this.unk18C, -1, -1, -1);
+        const T = this.world.talk;
+        if (!T) { this.appearWithTime(this.unk18C, -1, -1, -1); return; }
+        // TShine::appearWithTimeCallback (Item.cpp:739): the appearance starts with the demo, the world
+        // stopped meanwhile (DEMO_FLAG_SHINE_GET_STOP_THE_WORLD: only the Shine perform lists run)
+        // (&mPosition: the demo camera's target follows the Shine as it moves, not where it started)
+        T.fireStartDemoCamera(camera, this.pos, -1, 0, true, null, (phase) => {
+            if (phase === 0) { this.appearWithTime(this.unk18C, -1, -1, -1); T.onDemoFlag(DEMO_FLAG.SHINE_GET_STOP_THE_WORLD); }
+            else if (phase === 1) T.offDemoFlag(DEMO_FLAG.SHINE_GET_STOP_THE_WORLD);
+        });
     }
 }
 
