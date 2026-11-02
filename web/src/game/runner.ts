@@ -3,6 +3,7 @@
 // record, run up to the viewer's time; scrubbing back starts the stage over. The enemies' own
 // classes register themselves (import them below).
 
+import { useGhostVersion, useDiscVersion } from './version.js';
 import * as RARC from '../../noclip/Common/JSYSTEM/JKRArchive.js';
 import * as Yaz0 from '../../noclip/Common/Compression/Yaz0.js';
 import ArrayBufferSlice from '../../noclip/ArrayBufferSlice.js';
@@ -492,6 +493,8 @@ export class SimRunner {
     update(sceneName: string, scene: FileMap, inp: SimInput, budgetMs = 20): boolean {
         const g = inp.ghost;
         if (!g || !g.segments) return false;
+        // the build this ghost was played on (its game ID and disc revision), before any of its code runs
+        useGhostVersion(g);
         // the segment the time is in: its stage starts at its first QF
         const s = inp.api.ghostSampleAt(g, inp.t);
         const segI = s ? g.segIndex[s.i] : 0;
@@ -727,7 +730,7 @@ export class LiveRunner extends SimRunner {
     /** the frame the free-roam notice goes (-1: none showing) */
     private noticeUntil = -1;
     /** the recording as a .smsghost (null: nothing recorded); recording stops */
-    takeRecording(o: { area: number; episode: number; region: number; name?: string }): ArrayBuffer | null {
+    takeRecording(o: { area: number; episode: number; region: number; name?: string; gameId?: string; discRevision?: number }): ArrayBuffer | null {
         const R = this.recording;
         this.recording = null;
         return R && R.some((g) => g.frames.length) ? writeSmsGhost(R, o) : null;
@@ -758,6 +761,7 @@ export class LiveRunner extends SimRunner {
     update(sceneName: string, scene: FileMap, inp: any, budgetMs = 20): boolean {
         const L: LiveInput | undefined = inp && inp.live;
         if (!L) return false;
+        useDiscVersion();
         const P = this.pending;
         let fresh = false, next = false;
         if (L.reset !== this.resetSeen) fresh = true;

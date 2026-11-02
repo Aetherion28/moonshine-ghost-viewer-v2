@@ -23,6 +23,7 @@
 // knocks it off (selectCapHolder / makeCapFly), ドロハネクリ takes it (attackToMario); whichever has
 // it (unk198) drops it as the mario_cap item where it dies (THamuKuri::setAfterDeadEffect).
 
+import { V } from '../version.js';
 import { fr, V3, MsMtxSetRotRPH, mtx, mtxMultVec, Mtx, MsSin, MsCos, MsClamp, MsGetRotFromZaxis, MsRandF, JMASSin, s16 } from '../math.js';
 import { frsqrte } from '../math.js';
 import { World, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, HitActor, LiveActor, TakeActor, SpineEnemy, AnmData, LiveManager, CUE_MOVE, CUE_CALC_ANIM, ANM_BCK, ANM_FRAME_RATE, PSchema } from '../engine.js';
@@ -281,8 +282,15 @@ export class HamuKuri extends WalkerEnemy {
     setAfterDeadEffect() {
         if (this.unk198) {
             const im = itemManager(this.world);
-            const obj = im ? im.makeObjAppearAt(this.pos.x, this.pos.y, this.pos.z, AT.MARIO_CAP, true) : null;
-            if (obj) { this.unk200.set(this.pos.x, this.groundHeight, this.pos.z); this.world.effect('capDrop', this.unk200); }
+            // (hamukuri.cpp #if !defined(VERSION_GMSJ01): US and later drop the cap from 200 up and put
+            // the effect where the cap is; JP 1.0 at its feet, the effect on the ground)
+            const y = !V.GMSJ01 ? fr(200 + this.pos.y) : this.pos.y;
+            const obj = im ? im.makeObjAppearAt(this.pos.x, y, this.pos.z, AT.MARIO_CAP, true) : null;
+            if (obj) {
+                if (!V.GMSJ01) this.unk200.set((obj as any).pos.x, (obj as any).pos.y, (obj as any).pos.z);
+                else this.unk200.set(this.pos.x, this.groundHeight, this.pos.z);
+                this.world.effect('capDrop', this.unk200);
+            }
             this.unk198 = false;
             this.hmgr.unk70 = null;
         }
@@ -326,7 +334,10 @@ export class HamuKuri extends WalkerEnemy {
     }
     isHitValid(_m: number) {
         if (this.isBckAnm(BCK_JITABATA)) { this.hmgr.requestSerialKill(this); return true; }
-        return !this.checkLiveFlag(LF.HIDDEN);
+        if (this.checkLiveFlag(LF.HIDDEN)) return false;
+        // (hamukuri.cpp #if !defined(VERSION_GMSJ01): US and later hide it on message 0xB)
+        if (!V.GMSJ01 && _m === MSG.UNKB) this.onLiveFlag(LF.HIDDEN);
+        return true;
     }
     isCollidMove(a: HitActor): boolean {
         const c = this.spine!.current;
@@ -627,7 +638,11 @@ export class HaneHamuKuri extends HamuKuri {
     setBehavior() { }
     setGenerateAnm() { }
     isCollidMove(a: HitActor): boolean { return SmallEnemy.prototype.isCollidMove.call(this, a); }
-    isHitValid(_m: number) { return !this.checkLiveFlag(LF.HIDDEN); }
+    isHitValid(m: number) {
+        if (this.checkLiveFlag(LF.HIDDEN)) return false;
+        if (!V.GMSJ01 && m === MSG.UNKB) this.onLiveFlag(LF.HIDDEN); // hamukuri.cpp:1551
+        return true;
+    }
     canDoJitabata() { return false; }
     resetFlyParam() { this.unk214 = 0; this.unk210 = 0; this.unk234 = 0; this.unk20C = 0; this.unk21C = 0; }
 }
@@ -808,12 +823,12 @@ DoroNerves.hitWater = nerve<DoroHaneKuri>('TNerveDoroHaneHitWater', (spine: DS) 
     const self = spine.body;
     if (spine.time === 0) {
         self.setGoalPath(new PathNode(null, self.world.mario.pos.clone()));
-        self.mactor!.setFrameRate(fr(ANM_FRAME_RATE * 1.5), ANM_BCK);
+        self.mactor!.setFrameRate(fr(ANM_FRAME_RATE() * 1.5), ANM_BCK);
     }
     if (self.pos.y > fr(self.groundHeight + 50)) self.unk234 = fr(self.unk234 - 4);
     self.unk210 = 0; self.unk214 = 0; self.unk20C = 0;
     self.unk230 = self.groundHeight;
-    if (spine.time > 300) { self.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK); return true; }
+    if (spine.time > 300) { self.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BCK); return true; }
     self.rot.y = fr(self.rot.y + 10);
     if (!self.isBckAnm(4)) WalkerEnemy.prototype.walkBehavior.call(self, 0, 0.5);
     return false;

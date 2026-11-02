@@ -768,12 +768,12 @@ BWNerves.graphWander = nerve<BossWanwan>('TNerveBWGraphWander', (spine: S) => {
         // (the second check was probably meant to be 5: the game's)
         if (!a.checkCurBckFromIndex(BCK_WAIT) && !a.checkCurBckFromIndex(BCK_WAIT)) {
             self.changeBck(self.hitPoints === 0 ? BCK_WAIT2 : BCK_WAIT);
-            frameAt(self, 0, ANM_FRAME_RATE);
+            frameAt(self, 0, ANM_FRAME_RATE());
         }
         a.setFromIndex(ANM_BTP, BTP_TDOWN);
         const c = a.getFrameCtrl(ANM_BTP); if (c) { c.frame = 0; c.rate = 0; }
     }
-    if (a.curAnmEndsNext(ANM_BCK) && self.hitPoints === 0 && !a.checkCurBckFromIndex(BCK_WAIT2)) { self.changeBck(BCK_WAIT2); frameAt(self, 0, ANM_FRAME_RATE); }
+    if (a.curAnmEndsNext(ANM_BCK) && self.hitPoints === 0 && !a.checkCurBckFromIndex(BCK_WAIT2)) { self.changeBck(BCK_WAIT2); frameAt(self, 0, ANM_FRAME_RATE()); }
     if (self.unk17C === 0 && self.picket!.isTaken() && self.isHeadPulled()) {
         // (Mario drags it by the chain)
         const t = self.tracer, g = t.graph!;
@@ -811,7 +811,7 @@ BWNerves.graphWander = nerve<BossWanwan>('TNerveBWGraphWander', (spine: S) => {
 BWNerves.roll = nerve<BossWanwan>('TNerveBWRoll', (spine: S) => {
     const self = spine.body;
     if (spine.time === 0) { frameAt(self, 0, 0); self.unk16C = 1; }
-    if (self.isReachedToGoal()) { spine.pushAfterCurrent(BWNerves.graphWander); const c = self.mactor!.getFrameCtrl(ANM_BCK); if (c) c.rate = ANM_FRAME_RATE; return true; }
+    if (self.isReachedToGoal()) { spine.pushAfterCurrent(BWNerves.graphWander); const c = self.mactor!.getFrameCtrl(ANM_BCK); if (c) c.rate = ANM_FRAME_RATE(); return true; }
     self.walkToCurPathNode(self.PB.mSLAttackSpeed, self.turnSpeed, 0);
     return false;
 });

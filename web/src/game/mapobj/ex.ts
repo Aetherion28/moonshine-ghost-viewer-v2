@@ -131,9 +131,9 @@ export class JointCoin extends MapObjBase {
         const names = jointNames(this.mactor);
         for (let i = 0; i < names.length - 1; i++) this.makeObjFromJointName(names[i], i);
         const fc = this.mactor && this.mactor.getFrameCtrl(ANM_BCK);
-        if (fc) fc.rate = fr(ANM_FRAME_RATE * fr(0.25));
+        if (fc) fc.rate = fr(ANM_FRAME_RATE() * fr(0.25));
         const rc = this.unk138 && this.unk138.getFrameCtrl(ANM_BCK);
-        if (rc) rc.rate = fr(ANM_FRAME_RATE * fr(0.25));
+        if (rc) rc.rate = fr(ANM_FRAME_RATE() * fr(0.25));
     }
     initMapObj() {
         super.initMapObj();

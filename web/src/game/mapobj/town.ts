@@ -211,7 +211,7 @@ export class Manhole extends MapObjGeneral {
     private fc() { return this.mactor ? this.mactor.getFrameCtrl(ANM_BCK) : null; }
     private open() {
         const fc = this.fc();
-        if (fc) { fc.rate = ANM_FRAME_RATE; fc.frame = fr(fc.frame + ANM_FRAME_RATE); }
+        if (fc) { fc.rate = ANM_FRAME_RATE(); fc.frame = fr(fc.frame + ANM_FRAME_RATE()); }
         this.world.sound(SE.OBJ_MANHOLE_OPEN, this.pos);
         this.offMapObjFlag(MOF.NO_ANIMATIONS);
     }

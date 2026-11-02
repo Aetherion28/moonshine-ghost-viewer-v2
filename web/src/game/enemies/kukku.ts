@@ -293,7 +293,7 @@ KukkuNerves.fall = nerve<Kukku>('TNerveKukkuFall', (spine: S) => {
     const self = spine.body;
     if (spine.time === 0) {
         self.changeBck('tori_wait');
-        self.mactor!.setFrameRate(2 * ANM_FRAME_RATE, ANM_BCK);
+        self.mactor!.setFrameRate(2 * ANM_FRAME_RATE(), ANM_BCK);
         self.vel.set(0, -self.getWaterPowerY(), 0);
         self.dropCoins();
     }

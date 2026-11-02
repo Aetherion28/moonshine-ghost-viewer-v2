@@ -27,6 +27,7 @@
 // mirror in use: registered as a plain object, MammaMirrorMapOperator below), the Shine stone's own models are
 // kept (their BCKs set) but not drawn by the viewer.
 
+import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH, sinf, cosf, HALF_PI_F } from '../math.js';
 import { MsSqrtf } from '../player/fmath.js';
 import { fmadd as FMA, fmsub as FMS } from '../player/fmath.js';
@@ -40,7 +41,7 @@ import { MapObjBase, MOF, STATE_NORMAL, UNIQUE_MAKERS, newAndRegisterObj, mapObj
 import { ObjCollision, KIND_MOVE } from './objcol.js';
 import { JointCoin } from './ex.js';
 import { MapObjFlag } from './view.js';
-import { MTXConcat, MTXRotAxisRad, setRootMtx, mapObjWave, marioGroundLevel, marioGroundPlane, marioTouchGround4cm, sendToMario } from './lib.js';
+import { MTXConcat, rotationSetRotate, setRootMtx, mapObjWave, marioGroundLevel, marioGroundPlane, marioTouchGround4cm, sendToMario } from './lib.js';
 import './item.js';
 
 const demoCamera = (w: World, name: string, p: V3 | null, frames = -1) => { w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name, p: p ? p.clone() : null, frames } }); if (w.talk) w.talk.fireStartDemoCamera(name, p ? p.clone() : null, frames); };
@@ -66,7 +67,7 @@ function concatOnlyRotFromLeft(a: Mtx, b: Mtx, out: Mtx) {
 /** TMapObjBase::makeMtxRotByAxis: TPosition3f::setRotate(axis, angle)'s rotation part */
 function makeMtxRotByAxis(axis: V3, angle: number, out: Mtx) {
     const r = mtx();
-    MTXRotAxisRad(r, axis, angle);
+    rotationSetRotate(r, axis, angle);
     for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) out[i * 4 + j] = r[i * 4 + j];
 }
 /** MsAngleBetween */
@@ -122,7 +123,7 @@ export class SandLeafBase extends SandBase {
             this.unk144!.startControlAnim(2);
             this.state = SAND.GROWN;
         }
-        addAnmFrame(this.unk144!, 0, ANM_FRAME_RATE);
+        addAnmFrame(this.unk144!, 0, ANM_FRAME_RATE());
         this.world.sound(SE.OBJ_SANDBUD_NORMAL, this.unk144!.pos);
         this.stateTimer = SandBase.mWitherTime;
     }
@@ -759,4 +760,13 @@ register('MammaSurfboard', (w, n) => new MapObjBase(w, n));
 register('MammaYacht', (w, n) => new MammaYacht(w, n));
 register('SandBird', (w, n) => new SandBird(w, n));
 register('GoalWatermelon', (w, n) => new GoalWatermelon(w, n));
+/**
+ * TWatermelonStatic (MapObjMamma.hpp, "固定スイカ"; MarNameRefGen_MapObj: "WatermelonStatic"): a
+ * plain TMapObjBase. US and later (#if !defined(VERSION_GMSJ01)) add touchWater returning 1.
+ */
+export class WatermelonStatic extends MapObjBase {
+    constructor(w: World, name = '固定スイカ') { super(w, name); }
+    touchWater(a: HitActor): number { return !V.GMSJ01 ? 1 : super.touchWater(a); }
+}
+register('WatermelonStatic', (w, n) => new WatermelonStatic(w, n));
 register('SandEgg', (w, n) => new SandEgg(w, n));

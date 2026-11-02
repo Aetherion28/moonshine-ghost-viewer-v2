@@ -180,8 +180,8 @@ export class AnimalBird extends SpineEnemy {
         const diff = V3.sub(this.goal.point(), this.pos);
         const dist = diff.length();
         if (dist < 100) return;
-        const march = fr(this.getMyMarchSpeed() * RATE);
-        let turn = fr(this.P.mTurnSpeed * RATE);
+        const march = fr(this.getMyMarchSpeed() * RATE());
+        let turn = fr(this.P.mTurnSpeed * RATE());
         if (dist <= 2 * this.calcMinimumTurnRadius(march, turn)) turn = this.calcTurnSpeedToReach(march, 0.5 * dist);
         AnimalBase.getRotationFlyToDir(this.rot, diff, march, turn);
         const v = quatRotate(SMS_Eular2Quat(this.rot), new V3(0, 0, march));
@@ -192,13 +192,13 @@ export class AnimalBird extends SpineEnemy {
     }
     doWalk() {
         this.gravity = 0.15;
-        this.rot.y = MsWrap(fr(this.walkDir * (this.P.mWalkingTorqueY * RATE) + this.rot.y), 0, 360);
+        this.rot.y = MsWrap(fr(this.walkDir * (this.P.mWalkingTorqueY * RATE()) + this.rot.y), 0, 360);
         this.posDelta.set(quatRotate(SMS_Eular2Quat(this.rot), new V3(0, 0, this.P.mWalkingSpeed))).fround();
     }
     /** Glide down to the perch, turning back to the scene's facing; true once there and facing it. */
     doLanding(init: boolean) {
         if (init) {
-            const sp = fr(this.getMyMarchSpeed() * RATE);
+            const sp = fr(this.getMyMarchSpeed() * RATE());
             const d = quatRotate(SMS_Eular2Quat(this.rot), new V3(0, 0, sp));
             this.vel.set(d.x, 0, d.z);
         }
@@ -207,7 +207,7 @@ export class AnimalBird extends SpineEnemy {
         this.getFootGroundHeight();
         if (this.checkLiveFlag(LF.AIRBORNE)) delta.y = -this.P.mLandingGravityY; else landed = true;
         this.rot.x = this.homeRot.x; this.rot.z = this.homeRot.z;
-        const torque = fr(this.P.mLandingTorqueY * RATE);
+        const torque = fr(this.P.mLandingTorqueY * RATE());
         const turn = clamp(MsAngleDiff(this.homeRot.y, this.rot.y), -torque, torque);
         this.rot.y = MsWrap(fr(this.rot.y + turn), 0, 360);
         this.posDelta.set(delta);

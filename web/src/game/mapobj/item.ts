@@ -18,6 +18,7 @@ import { marioOnYoshi } from './lib.js';
 import { SE } from '../soundids.js';
 import { MSF } from '../flags.js';
 import { holdKey } from '../sound.js';
+import { V } from '../version.js';
 
 export interface ItemCounts { gold: number; red: number; blue: number[]; shines: number[]; }
 const COUNTS = new WeakMap<World, ItemCounts>();
@@ -245,12 +246,17 @@ export class Shine extends Item {
     }
     movingUp() {
         this.pos.y = fr(this.pos.y + this.upSpeed);
+        // (Item.cpp #if !defined(VERSION_GMSJ01): US and later spin a simple Shine as it rises; the
+        // MsWrap after it discards its result)
+        if (!V.GMSJ01 && this.unk154 === 3) this.rot.y = fr(this.rot.y + 7);
         if (this.isStateTimerEngaged()) return;
         if (this.unk154 === 3) { this.stateTimer = this.unk170; this.state = SHS.MOVING_DOWN; }
         else { this.unk164 = this.pos.y; this.stateTimer = this.unk168; this.state = SHS.MOVING_CIRCLE; }
     }
     movingDown() {
         this.pos.y = fr(this.pos.y - this.upSpeed);
+        // (Item.cpp #if !defined(VERSION_GMSJ01): US and later spin it coming down too)
+        if (!V.GMSJ01) this.rot.y = fr(this.rot.y + 7);
         if (this.isStateTimerEngaged()) return;
         this.unk16C = 7; this.stateTimer = this.unk178; this.state = SHS.UNKF;
     }
@@ -336,6 +342,8 @@ export class Shine extends Item {
         this.unk160 = fr(this.unk15C * SHINE_CIRCLE_RATE_Y);
         this.emit('shineAppear');
         this.world.sound(SE.SHINE_APPEAR, this.pos);
+        // (Item.cpp #if !defined(VERSION_GMSJ01): US and later start the Shine-appears BGM)
+        if (!V.GMSJ01) this.world.events.push({ t: this.world.tickCount, kind: 'bgm', data: { name: 'MSD_BGM_SHINE_APPEAR', p: this.pos.clone() } });
         this.stateTimer = this.unk174;
         this.state = SHS.UNKB;
         this.onHitFilter(HF.NO_COLLISION);
@@ -347,6 +355,7 @@ export class Shine extends Item {
         this.initialPos.set(this.pos);
         this.emit('shineAppear');
         this.world.sound(SE.SHINE_APPEAR, this.pos);
+        if (!V.GMSJ01) this.world.events.push({ t: this.world.tickCount, kind: 'bgm', data: { name: 'MSD_BGM_SHINE_APPEAR', p: this.pos.clone() } });   // (Item.cpp: US and later)
         this.stateTimer = this.unk174; this.state = SHS.UNKB;
         this.onHitFilter(HF.NO_COLLISION);
     }

@@ -17,6 +17,7 @@
 // Not here: the sparks and shock particles, the spark / shock sounds, the shell's shadow; the
 // material table (dennoko_model1.bmt) is the viewer's (MActor.bmt).
 
+import { V } from '../version.js';
 import { fr, V3, MsIsInSight, MsRandF } from '../math.js';
 import { World, Stream, HitActor, SpineEnemy, PathNode, LF, HF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE, nerve, Spine, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -287,7 +288,7 @@ export class ElecNokonoko extends WalkerEnemy {
     }
     sendAttackMsgToMario() { this.world.mario.receiveMessage(this, this.unk1A4 === 0 ? MSG.ELECTRIC_SHOCK : MSG.ATTACK); }
     receiveMessage(sender: HitActor, msg: number): boolean {
-        if (msg === MSG.UNKD || msg === MSG.UNKB) { this.onLiveFlag(LF.DEAD); this.kill(); }
+        if (msg === MSG.UNKD || msg === MSG.UNKB) { this.onLiveFlag(LF.DEAD); this.kill(); if (!V.GMSJ01 && this.unk194) this.unk194.kill(); }   // (elecNokonoko.cpp: US and later kill the shell too)
         if (msg === MSG.TAKE && !this.holder) { this.onHitFilter(HF.NO_COLLISION); this.holder = sender as any; return true; }
         if ((msg === MSG.PUT || msg === MSG.THROWN) && this.holder === sender) { this.holder = null; return true; }
         if (msg === MSG.TRAMPLE) {
@@ -381,7 +382,7 @@ ElecNerves.collect = nerve<ElecNokonoko>('TNerveElecNokonokoCollect', (spine: S)
         if (!self.isBckAnm(BCK_CATCH)) self.setBckAnm(BCK_UNK8);
         self.setGoalPath(new PathNode(self.shell));
     }
-    self.mactor!.setFrameRate(self.shell.isMove() ? ANM_FRAME_RATE : 0, ANM_BCK);
+    self.mactor!.setFrameRate(self.shell.isMove() ? ANM_FRAME_RATE() : 0, ANM_BCK);
     if (self.isBckAnm(BCK_CATCH)) {
         const frame = Math.trunc(self.getCurAnmFrameNo(ANM_BCK));
         if (frame > 20) self.shell.onHitFilter(HF.NO_COLLISION);

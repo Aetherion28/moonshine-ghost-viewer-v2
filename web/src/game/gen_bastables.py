@@ -3,11 +3,13 @@
 *_bastable arrays in the decomp's Enemy/, NPC/, Animal/ sources), keyed by class name without its
 leading T (as the sim's classes are named).
 
-    python3 gen_bastables.py /path/to/sms-ai-decomp > bastables.ts
+    python3 gen_bastables.py /path/to/SMS-Decomp-PAL > bastables.ts
+
+(any of the public regional repositories, Aetherion28/SMS-Decomp-*: they share one source tree)
 """
 import json, re, sys, glob
 
-root = sys.argv[1] if len(sys.argv) > 1 else '/home/claude/sms-ai-decomp'
+root = sys.argv[1] if len(sys.argv) > 1 else '../SMS-Decomp-PAL'
 tables, owners = {}, {}
 for path in sorted(glob.glob(root + '/src/**/*.cpp', recursive=True)):
     src = open(path, encoding='utf-8', errors='replace').read()

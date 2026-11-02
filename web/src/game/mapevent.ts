@@ -1,5 +1,5 @@
 // The stage events that move parts of the map model itself (Map/MapEvent*.cpp, Map/Map.cpp's
-// initStage), ported from the decomp (aetherion28/sms-ai-decomp):
+// initStage), ported from the decomp (the public decomp, Aetherion28/SMS-Decomp-JP-1.0 and its regional repositories):
 //
 // - TMapEvent (base): watch() until it says go, startControl, control() each move tick until it says
 //   done, finishControl (back to watching unless isFinishedAll). unk1C is the map's joint model

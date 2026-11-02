@@ -1,4 +1,4 @@
-// The game's object system and per-frame loop, ported from the decomp (aetherion28/sms-ai-decomp):
+// The game's object system and per-frame loop, ported from the decomp (the public decomp, Aetherion28/SMS-Decomp-JP-1.0 and its regional repositories):
 // JDrama's name refs and actors, THitActor / TTakeActor / TLiveActor (Strategic/), the managers
 // (TObjManager / TLiveManager / TEnemyManager), the spine and nerves, TSpineEnemy (Enemy/enemy.cpp),
 // the graphs enemies walk (Enemy/graph.cpp), TObjHitCheck, TConductor, the parameter files
@@ -7,6 +7,7 @@
 // animations once at the end). Drawing is the viewer's: this only works out where everything is,
 // which animation it plays at which frame, and what's visible.
 
+import { anmFrameRate } from './version.js';
 import { AnmSound, loadBas } from './anmsound.js';
 import { BAS_TABLES } from './bastables.js';
 import { FlagManager } from './flags.js';
@@ -33,6 +34,8 @@ export const LF = {
     // From here on the values are the US / PAL ones (VERSION_SELECT's default; GMSJ01's are half).
     UNK4000: 0x8000, UNK8000: 0x10000, UNK10000: 0x20000, UNK20000: 0x40000, UNK40000: 0x80000, UNK80000: 0x100000,
     UNK100000: 0x200000, UNK200000: 0x400000, UNK400000: 0x800000, UNK1000000: 0x2000000,
+    /** LIVE_FLAG_CALC_INT_FRAME: only PAL, JP 1.1 and 3D All-Stars (LiveActor.hpp) have it, the bit the US / PAL table leaves free */
+    CALC_INT_FRAME: 0x4000,
 };
 export const HF = { NO_COLLISION: 0x1, NO_ATTACK: 0x2, NO_DAMAGE: 0x4 };
 export const MSG = {
@@ -45,8 +48,8 @@ export const HC = {
 };
 export const HC_MASK = 0xFFFF0000 | 0;
 export const ANM_BCK = 0, ANM_BPK = 1, ANM_BTP = 2, ANM_BTK = 3, ANM_BRK = 4, ANM_BLK = 5;
-/** SMSGetAnmFrameRate: 60 fps animations at 30 frames a second. */
-export const ANM_FRAME_RATE = 2;
+/** SMSGetAnmFrameRate(): 60 / SMSGetVSyncTimesPerSec(), 2 at 60 Hz, 2.4 for a PAL game at 50 Hz (version.ts). */
+export const ANM_FRAME_RATE = anmFrameRate;
 
 // ---------------------------------------------------------------- the archive the stage runs from
 /** What the engine reads files from: the stage archive (/scene/...) and params.szs (/...). */
@@ -415,7 +418,7 @@ class AnmSlot {
         if (!a) { this.idx = -1; return false; }
         this.fc.init(a.frameMax);
         this.fc.attr = a.attr;
-        this.fc.rate = ANM_FRAME_RATE;
+        this.fc.rate = ANM_FRAME_RATE();
         return true;
     }
     endsNext() { return this.fc.frame + this.fc.rate + 0.1 >= this.fc.end; }
@@ -766,10 +769,26 @@ export class LiveActor extends TakeActor {
         if (cue & CUE_MOVE) this.moveObject();
         if (cue & CUE_CALC_ANIM) this.updateAnmSound();
         if (this.mactor) {
-            if (cue & CUE_CALC_ANIM) this.mactor.frameUpdate();
-            if (!(this.liveFlag & (LF.HIDDEN | LF.CLIPPED_OUT)) && (cue & CUE_CALC_ANIM)) this.calcRootMatrix();
+            // (liveactor.cpp #if !defined(VERSION_GMSJ01) && !defined(VERSION_GMSE01): with
+            // LIVE_FLAG_CALC_INT_FRAME the first animation's frame is a whole number while the model
+            // calculates, then put back; hidden or clipped out, it is never put back)
+            const intFrame = (this.liveFlag & LF.CALC_INT_FRAME) !== 0;
+            let frame = 0;
+            if (cue & CUE_CALC_ANIM) {
+                this.mactor.frameUpdate();
+                const c = intFrame ? this.mactor.getFrameCtrl(ANM_BCK) : null;
+                if (c) { frame = c.frame; c.frame = Math.trunc(frame); }
+            }
+            if (!(this.liveFlag & (LF.HIDDEN | LF.CLIPPED_OUT)) && (cue & CUE_CALC_ANIM)) {
+                this.calcRootMatrix();
+                this.calcModel(intFrame);
+                const c = intFrame ? this.mactor.getFrameCtrl(ANM_BCK) : null;
+                if (c) c.frame = frame;
+            }
         }
     }
+    /** mMActor->calc(): the joint matrices at this frame. Most ports work them out when asked; intFrame: the frame is the whole-number one. */
+    calcModel(_intFrame: boolean) { }
     performOnlyDraw(cue: number) { if (this.liveFlag & (LF.UNK200 | LF.DEAD)) return; if (this.mactor && (cue & CUE_CALC_ANIM)) this.calcRootMatrix(); }
     getJointTrans(_i: number): V3 { return this.pos.clone(); }
     /** For the viewer: shown at all, and the matrix it's drawn with. */

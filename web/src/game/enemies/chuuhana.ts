@@ -394,7 +394,7 @@ ChuuHanaNerves.attack = nerve<ChuuHana>('TNerveChuuHanaAttack', (spine: S) => {
     const self = spine.body;
     if (spine.time === 0) {
         self.setBckAnm(12);
-        self.mactor!.setFrameRate(2 * ANM_FRAME_RATE, ANM_BCK);
+        self.mactor!.setFrameRate(2 * ANM_FRAME_RATE(), ANM_BCK);
         self.setGoalPath(new PathNode(self.world.mario));
     }
     if (marioGroundPlane(self.world).actor !== self.unk218) self.unk21C.v = 0;

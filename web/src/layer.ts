@@ -7,6 +7,8 @@
 // under the viewer's. The viewer then draws only what the game models can't (water, particles,
 // wires, overlays), depth-tested against its own copies of the stage and objects.
 
+import { isMstr, parseMstrGhost } from './ghost/mstrghost.js';
+import { ghostVersion, versionLabel } from './game/version.js';
 import { setGameVersion } from './game/version.js';
 import { mat4, ReadonlyMat4 } from 'gl-matrix';
 import ArrayBufferSlice from '../noclip/ArrayBufferSlice.js';
@@ -274,7 +276,7 @@ export class GameLayer {
         const mario = parseArchive(await fs.read('data/mario.szs'), Yaz0.decompressSW);
         const yoshi = fs.has('data/yoshi.szs') ? parseArchive(await fs.read('data/yoshi.szs'), Yaz0.decompressSW) : null;
         this.destroyScene();
-        setGameVersion(fs.id);
+        setGameVersion(fs.id, fs.revision || 0);
         this.fs = fs; this.stageTable = table; this.marioArc = mario; this.yoshiArc = yoshi;
         this.common = common || await DiscCommon.load(fs);
         this.sim = new SimRunner(this.common);
@@ -1347,3 +1349,6 @@ function setAmbient(models: J3DModelInstanceSimple[], amb: { r: number, g: numbe
 (window as any).GameDisc = { openDisc, openFolder, rememberHandle, rememberedHandle, forgetHandle };
 (window as any).GameSim = { setCorrectDrift(on: boolean) { PlayerMario.correctDrift = !!on; } };
 (window as any).V1Data = V1Data;
+// Moonshine's MSTR traces (.msgt) as ghosts, and the build each ghost was played on
+(window as any).GameTrace = { isMstr, parseMstrGhost };
+(window as any).GameVersion = { ghostVersion, versionLabel };

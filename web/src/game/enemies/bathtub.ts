@@ -179,7 +179,7 @@ export class BathtubPeach extends SpineEnemy {
         if (!a.checkCurBckFromIndex(bck)) a.setBckFromIndex(bck);
         if (btp !== a.getCurAnmIdx(ANM_BTP)) a.setFromIndex(ANM_BTP, btp);
         const c = a.getFrameCtrl(ANM_BCK);
-        if (c) c.rate = fr(0.5 * fr(speed * ANM_FRAME_RATE));
+        if (c) c.rate = fr(0.5 * fr(speed * ANM_FRAME_RATE()));
     }
     init(m: any) {
         super.init(m);

@@ -392,7 +392,7 @@ export class Koopa extends SpineEnemy {
         if (!a.checkCurBckFromIndex(bck)) a.setBckFromIndex(bck);
         if (btp !== a.getCurAnmIdx(ANM_BTP)) a.setFromIndex(ANM_BTP, btp);
         const c = a.getFrameCtrl(ANM_BCK);
-        if (c) c.rate = fr(0.5 * fr(speed * ANM_FRAME_RATE));
+        if (c) c.rate = fr(0.5 * fr(speed * ANM_FRAME_RATE()));
     }
     getAnmIndex() { return this.mactor ? this.mactor.getCurAnmIdx(ANM_BCK) : -1; }
     endsAnm() { return !this.mactor || this.mactor.curAnmEndsNext(ANM_BCK); }

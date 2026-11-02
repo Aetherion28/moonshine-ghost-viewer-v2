@@ -16,6 +16,7 @@
 // Not here: particles (kizetsu / zzz / sand / dead), rumble, the body's TEV colour
 // (initSetEnemies / unk1C0: the viewer's), juice (changeByJuice).
 
+import { V } from '../version.js';
 import { fr, V3, MsMtxSetRotRPH, mtx, mtxMultVec, MsRandF } from '../math.js';
 import { World, Stream, HitActor, LiveActor, LiveManager, LF, HF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, nerve, Spine, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -179,7 +180,7 @@ export class PoiHana extends WalkerEnemy {
         // (particles: ms_poi_dead, and the jump / sand ones)
     }
     isHitValid(msg: number) {
-        if (msg === MSG.UNKB) return true;
+        if (msg === MSG.UNKB) { if (!V.GMSJ01) this.onLiveFlag(LF.HIDDEN); return true; }   // (poihana.cpp: US and later hide it)
         if (this.spine!.current === PoiHanaNerves.freeze) { this.setBckAnm(BCK_HUMI); this.genRandomItem(); }
         return false;
     }
@@ -323,7 +324,7 @@ PoiHanaNerves.throw = nerve<PoiHana>('TNervePoihanaThrow', (spine: S) => {
             const mario = self.world.mario as any;
             if (typeof mario.throwMario === 'function') mario.throwMario(v, self.unk19C.mSLThrowSpeed);   // SMS_ThrowMario
             self.mThrowTimer = 0;
-            a.setFrameRate(ANM_FRAME_RATE, ANM_BCK);
+            a.setFrameRate(ANM_FRAME_RATE(), ANM_BCK);
             self.mThrowTimer = 0;
         }
     }

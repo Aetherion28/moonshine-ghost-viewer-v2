@@ -223,6 +223,7 @@ aside h2 { margin: 0; font-size: 11px; font-weight: 800; text-transform: upperca
 .swatch { width: 12px; height: 12px; border-radius: 50%; margin-top: 4px; }
 .ghost .name { font-weight: 700; overflow-wrap: anywhere; min-width: 0; }
 .ghost .name .old { padding: 0 2px; border: 0; background: none; font-size: 13px; line-height: 1; cursor: help; vertical-align: 1px; }
+.ghost .name .build { font-weight: 400; font-size: 11px; opacity: 0.7; cursor: help; }
 .ghost .meta { grid-column: 2 / 4; font-size: 12px; color: var(--muted); font-family: var(--mono); display: flex; flex-wrap: wrap; gap: 2px 12px; }
 .ghost .tag { font-size: 10px; font-family: var(--display); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
   border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--muted); }
@@ -356,7 +357,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
     <input type="file" id="folderFile" webkitdirectory hidden>
     <button id="browseGhosts" title="Browse ghosts shared on Delfino Ghosts">Browse</button>
     <button class="primary" id="addGhost">Add ghost</button>
-    <input type="file" id="ghostFile" accept=".smsghost" multiple hidden>
+    <input type="file" id="ghostFile" accept=".smsghost,.msgt" multiple hidden>
     <nav class="siteLinks" aria-label="Related sites">
       <a class="btn" href="https://dogecyanide.github.io/moonshine-site/" target="_blank" rel="noopener" title="Moonshine, the practice mod that records these ghosts (opens in a new tab)">Moonshine<span class="ext" aria-hidden="true">&#x2197;&#xFE0E;</span></a>
       <a class="btn" href="https://zeldocto.github.io/delfino-ghosts/" target="_blank" rel="noopener" title="Delfino Ghosts, the ghost database (opens in a new tab)">Delfino<span class="long">Ghosts</span><span class="ext" aria-hidden="true">&#x2197;&#xFE0E;</span></a>
@@ -5860,7 +5861,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
       const st = livePad.runner && livePad.runner.stage, [a, e] = objectsKey ? objectsKey.split('|').pop().split(':').map(Number) : [0, 0];
       const id = (gameLayer && gameLayer.fs && gameLayer.fs.id) || '';
       let buf = null;
-      try { buf = livePad.runner ? livePad.runner.takeRecording({ area: a, episode: e, region: ({ J: 0, E: 1, P: 2 })[id[3]] ?? 0 }) : null; } catch (err) { console.warn('[live] record', err); }
+      try { buf = livePad.runner ? livePad.runner.takeRecording({ area: a, episode: e, region: ({ J: 0, E: 1, P: 2 })[id[3]] ?? 0, gameId: id.slice(0, 4), discRevision: (gameLayer && gameLayer.fs && gameLayer.fs.revision) || 0 }) : null; } catch (err) { console.warn('[live] record', err); }
       if (buf) {
         const name = `live-${ghostRouteLabel({ area: a, episode: e, parentArea: 0xff, variant: -1 })}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.smsghost`;
         livePad.last = { buf, name, url: URL.createObjectURL(new Blob([buf], { type: 'application/octet-stream' })), qf: st ? st.qf : 0 };
@@ -7790,7 +7791,8 @@ void main() {
 
   function addGhost(buffer, fileName, isSample = false) {
     let data;
-    try { data = parseSmsGhost(buffer); }
+    // an MSTR trace (.msgt, Moonshine's experimental per-frame capture) loads as a ghost too
+    try { data = (window.GameTrace && window.GameTrace.isMstr(buffer)) ? window.GameTrace.parseMstrGhost(buffer, fileName) : parseSmsGhost(buffer); }
     catch (err) { showNotice(`${fileName}: ${err.message}`); return null; }
     const color = GHOST_COLORS[ghosts.length % GHOST_COLORS.length];
     const g = { data, fileName, color, visible: true, isSample, marker: makeMarker(color), path: makePath(data, color),
@@ -7861,6 +7863,15 @@ void main() {
       const name = document.createElement('div');
       name.className = 'name';
       name.textContent = h.name || g.fileName;
+      // the build it was played on (its code runs in the replay): JP 1.0, JP 1.1, US, KOR or PAL
+      const gv = window.GameVersion && window.GameVersion.ghostVersion(g.data);
+      if (gv) {
+        const tag = document.createElement('span');
+        tag.className = 'build';
+        tag.textContent = ' ' + window.GameVersion.versionLabel(gv.id, gv.kr) + (h.format === 'mstr' ? ' trace' : '');
+        tag.title = h.format === 'mstr' ? `MSTR trace, ${h.refreshHz} Hz: the replay runs this build's code` : 'The replay runs this build\'s code';
+        name.append(tag);
+      }
       // Older ghost formats (an older Moonshine): a ⚠ with what the file is missing.
       if (h.version < GHOST_LATEST) {
         const list = (a) => a.join(', ').replace(/, ([^,]*)$/, a.length > 2 ? ', or $1' : ' or $1');
@@ -9338,8 +9349,8 @@ void main() {
   window.addEventListener('drop', (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; $('drop').hidden = true;
     const iso = [...e.dataTransfer.files].find((f) => /\.(iso|gcm)$/i.test(f.name));
     if (iso) { useDiscFile(iso); return; }
-    const files = [...e.dataTransfer.files].filter((f) => /\.smsghost$/i.test(f.name) || !/\.[a-z0-9]+$/i.test(f.name));
-    if (files.length) readFiles(files); else showNotice('Drop .smsghost files (or a Super Mario Sunshine disc image) to load them.'); });
+    const files = [...e.dataTransfer.files].filter((f) => /\.(smsghost|msgt)$/i.test(f.name) || !/\.[a-z0-9]+$/i.test(f.name));
+    if (files.length) readFiles(files); else showNotice('Drop .smsghost or .msgt files (or a Super Mario Sunshine disc image) to load them.'); });
 
   // WASD / arrow keys fly the camera (Q/E down/up, Shift faster); the orbit target moves with it.
   const MOVE_KEYS = { KeyW: [0, 0, 1], ArrowUp: [0, 0, 1], KeyS: [0, 0, -1], ArrowDown: [0, 0, -1],

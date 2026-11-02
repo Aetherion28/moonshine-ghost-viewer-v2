@@ -4,6 +4,7 @@
 // for the Bianco Hills chase, plays the recorded pads of map/map/pad (tutorial??.pad, TMarioInputReplay)
 // from graph node to graph node, linked by linkdata.bin, and falls down when he's sprayed enough.
 
+import { V } from '../version.js';
 import { fmadd as fmaddF, sqrtf } from './fmath.js';
 import { fr, s16, V3, matan, IConverge, MsRandF, rand, mtx, Mtx, MsMtxSetRotRPH, JMASSin, JMASCos } from '../math.js';
 import {
@@ -388,7 +389,9 @@ export class EnemyMario extends TMarioSim {
         if (this.mSettingParams.mCarryFlag === 1 && !this.mHeldObject) { this.changeEMDoing(EM.UNK12); return; }
         if (this.mStampActor && this.mSettingParams.mStampFlag === 1) {
             this.mStampActor.mactor!.setBck('stamp_koopa_sign_draw1');
-            this.mStampActor.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK);
+            this.mStampActor.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BCK);
+            // (enemyMario.cpp #ifdef VERSION_GMSP01: PAL alone draws the stamp at 0.8333333)
+            if (V.GMSP01) this.mStampActor.mactor!.setFrameRate(fr(0.8333333), ANM_BCK);
             this.changeEMDoing(EM.UNK13);
             this.world.events.push({ t: this.world.tickCount, kind: 'emario:stamp', data: { pos: this.pos.clone() } });
             return;
@@ -567,7 +570,11 @@ export class EnemyMario extends TMarioSim {
     }
     emEnforceTake() {
         if (this.tryTake()) {
-            if (this.mStampActor && this.mSettingParams.mStampFlag === 1) { this.mStampActor.mactor!.setBck('stamp_koopa_sign_draw1'); this.changeEMDoing(EM.UNK13); }
+            if (this.mStampActor && this.mSettingParams.mStampFlag === 1) {
+                this.mStampActor.mactor!.setBck('stamp_koopa_sign_draw1');
+                if (V.GMSP01) this.mStampActor.mactor!.setFrameRate(fr(0.8333333), ANM_BCK);   // (enemyMario.cpp #ifdef VERSION_GMSP01)
+                this.changeEMDoing(EM.UNK13);
+            }
             else this.decideDoingAfterCarry();
         }
     }
@@ -686,7 +693,16 @@ export class EnemyMario extends TMarioSim {
         const G = this.graph;
         if (!G.count) return;
         let n = G.findNearestNodeIndex(this.pos, -1);
-        // (the game loops until a node is over 1000 from Mario: one lap here)
+        if (!V.GMSJ01) {
+            // (enemyMario.cpp #if !defined(VERSION_GMSJ01): US and later go round every node from the
+            // nearest and take each one over 1000 from Mario, so the last such node wins)
+            for (let k = 0; k < G.count; k++) {
+                const p = G.point((n + k) % G.count);
+                if (fr(V3.sub(p, this.marioPos()).length()) > 1000) this.pos.set(p);
+            }
+            return;
+        }
+        // (JP 1.0 loops until a node is over 1000 from Mario: one lap here)
         for (let k = 0; k < G.count; k++) {
             const p = G.point(n);
             if (fr(V3.sub(p, this.marioPos()).length()) > 1000) { this.pos.set(p); break; }

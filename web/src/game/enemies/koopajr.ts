@@ -22,6 +22,7 @@
 // Not here: the particles and sound gate checks, the animation sounds (.bas), Bowser Jr.'s
 // light type, and the flag manager's life count (see appearShineKiller).
 
+import { V } from '../version.js';
 import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, Quat, MsMtxSetRotRPH, MsMtxSetXYZRPH, MsRandF, matan, jgInvSqrt } from '../math.js';
 import { jgSqrt } from '../vecops.js';
@@ -211,7 +212,8 @@ N.subWait = nerve<KoopaJrSubmarine>('TNerveKoopaJrSubmarineWait', (s) => {
 });
 N.subCannon = nerve<KoopaJrSubmarine>('TNerveKoopaJrSubmarineCannonOpenClose', (s) => {
     const k = s.body;
-    if (s.getTime() === 0) { k.setAnimationIndex(0); const c = k.mactor!.getFrameCtrl(ANM_BCK); if (c) c.rate = k.mAnmRate; }
+    // (koopajr.cpp: only JP 1.0 sets the animation here; US and later when the launch is pushed)
+    if (s.getTime() === 0) { if (V.GMSJ01) k.setAnimationIndex(0); const c = k.mactor!.getFrameCtrl(ANM_BCK); if (c) c.rate = k.mAnmRate; }
     return k.mactor!.isCurAnmAlreadyEnd(ANM_BCK);
 });
 N.subLaunch = nerve<KoopaJrSubmarine>('TNerveKoopaJrSubmarineLaunchKiller', (s) => {
@@ -323,6 +325,7 @@ export class KoopaJr extends SpineEnemy {
         this.mSubmarine!.prepareKillerLaunch(n);
         this.spine!.pushNerve(N.launch);
         this.mSubmarine!.spine!.pushNerve(N.subCannon);
+        if (!V.GMSJ01) this.mSubmarine!.setAnimationIndex(0);   // (koopajr.cpp: US and later)
     }
     checkNerveKillerLaunchFast() {
         if (this.mTimers[TIMER_LAUNCH_FAST] > 0) return;
@@ -331,6 +334,7 @@ export class KoopaJr extends SpineEnemy {
         this.mSubmarine!.prepareKillerLaunchFast(n);
         this.spine!.pushNerve(N.launch);
         this.mSubmarine!.spine!.pushNerve(N.subCannon);
+        if (!V.GMSJ01) this.mSubmarine!.setAnimationIndex(0);   // (koopajr.cpp: US and later)
     }
     /** checkNerveKillerHit: he cheers whenever one of his Bullet Bills hits Mario */
     checkNerveKillerHit() {

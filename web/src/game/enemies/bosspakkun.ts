@@ -10,6 +10,7 @@
 // in it and his head turns toward Mario. Approximation: checkMarioRiding's status bits are read
 // from the ghost (landed on his body).
 
+import { V } from '../version.js';
 import { fr, V3, JMASSin, JMASCos, s16, rand, JMAHermiteInterpolation, MsSin, MsCos, MsGetRotFromZaxisY, MsAngleDiff, MsWrap } from '../math.js';
 import { World, SpineEnemy, EnemyManager, LF, HF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, MActor, readParams, SPINE_PARAMS, PSchema, CUE_MOVE, CUE_CALC_ANIM, NameRef, ANM_BRK, ANM_BTK, ANM_FRAME_RATE, MoveCollision, PathNode, LiveActor } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -206,7 +207,7 @@ export class Tornado extends HitActor {
     vanish() {
         this.onHitFilter(HF.NO_COLLISION); this.unk98 = 2;
         const c = this.model.mactor!.getFrameCtrl(ANM_BRK);
-        if (c) { c.frame = 0; c.rate = ANM_FRAME_RATE; }
+        if (c) { c.frame = 0; c.rate = ANM_FRAME_RATE(); }
     }
     launch(target: V3) {
         const o = this.owner;
@@ -318,7 +319,7 @@ export class BossPakkun extends SpineEnemy {
     headHit: HeadHit | null = null; navel: Navel | null = null;
     weakPoint = WEAK_NONE; unk170 = 0; unk174 = 0; unk178 = 0; unk17C = 0;
     endModel: PolModel | null = null; unk184 = 0; unk188: AreaCylinderManager | null = null; unk18C: EmitInfo | null = null;
-    unk190 = 0; unk1B8 = 0; unk1BC = 0; unk1C0 = 0; unk1C4 = 0; unk1CC = 0;
+    unk190 = 0; unk1B8 = 0; unk1BC = 0; unk1C0 = 0; unk1C4 = V.GMSJ01 ? 0 : 1; unk1CC = 0;
     body: MoveCollision | null = null;
     /** the model's joint matrices at its last calc (J3DModel::getAnmMtx) */
     joints: mat4[] | null = null;
@@ -514,7 +515,9 @@ export class BossPakkun extends SpineEnemy {
     /** unk114.push(unkF4); unkF4 = TPathNode(p) */
     pushGoalTo(p: V3) { this.pushGoal(this.goal); this.goal = new PathNode(null, p.clone()); }
     setGroundCollision() {
-        if (!this.spine!.isNerve(BPNerves.die) && this.body && this.joints && this.joints[2]) this.body.moveMat4(this.joints[2]);
+        // (bosspakkun.cpp #if !defined(VERSION_GMSJ01): US and later leave it off while he tumbles out too)
+        const sp = this.spine!;
+        if (!sp.isNerve(BPNerves.die) && (V.GMSJ01 || !sp.isNerve(BPNerves.tumbleOut)) && this.body && this.joints && this.joints[2]) this.body.moveMat4(this.joints[2]);
     }
     kill() {
         LiveActor.prototype.kill.call(this);
@@ -681,7 +684,11 @@ BPNerves.tumbleOut = nerve<BossPakkun>('TNerveBPTumbleOut', (spine: S) => {
     if (a.curAnmEndsNext(ANM_BCK)) {
         if (a.checkCurBckFromIndex(14)) {
             self.changeBck(22);
-            if (!self.is2ndFightNow()) { self.unk1C4 += 1; if (self.unk1C4 >= 3) { self.world.effect('balloon:e0001', self.pos); self.unk1C4 = 0; } }
+            if (!self.is2ndFightNow()) {
+                // the hint balloon: JP 1.0 every third tumble, later builds on the first and then every third
+                if (V.GMSJ01) { self.unk1C4 += 1; if (self.unk1C4 >= 3) { self.world.effect('balloon:e0001', self.pos); self.unk1C4 = 0; } }
+                else { self.unk1C4 -= 1; if (self.unk1C4 <= 0) { self.world.effect('balloon:e0001', self.pos); self.unk1C4 = 3; } }
+            }
         } else { spine.pushAfterCurrent(BPNerves.wait); return true; }
     }
     if (a.checkCurBckFromIndex(22)) {

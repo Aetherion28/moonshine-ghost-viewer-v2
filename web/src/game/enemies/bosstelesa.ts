@@ -31,6 +31,7 @@
 // slot frame model (TSharedParts srot_waku.bmd), the slot's TMapCollisionMove, the game-over laugh,
 // and the screen texture.
 
+import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, MsRandF, MsMtxSetRotRPH, MsMtxSetXYZRPH, MsClamp, mtxMultVec } from '../math.js';
 import { World, Stream, HitActor, TakeActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, PathNode, LF, HF, HC, MSG, ANM_BCK, ANM_BTP, ANM_BRK,
     nerve, Spine, readParams, SPINE_PARAMS, PSchema } from '../engine.js';
@@ -124,8 +125,11 @@ function tsGetSlotResult(s: SlotLike) {
 /** TTelesaSlot::getForcastResult: where drum i stops if left alone */
 function tsForcast(s: SlotLike, i: number) {
     let ang = s.unk13C[i], cur = s.unk138[i];
-    // (the game loops until it lands on a face; capped here so a stopped drum can't hang the page)
-    for (let n = 0; n < 1000000; n++) {
+    // (bosstelesa.cpp #if !defined(VERSION_GMSJ01): US and later give up after 10001 steps and read
+    // the angle as it is; JP 1.0 loops until it lands on a face, capped here so it can't hang the page)
+    const cap = !V.GMSJ01 ? 10001 : 1000000;
+    let landed = false;
+    for (let n = 0; n < cap; n++) {
         if (Math.abs(cur) > s.unk160) {
             ang = fr(ang + cur);
             cur = cur > 0 ? fr(cur - s.unk15C) : fr(cur + s.unk15C);
@@ -135,10 +139,10 @@ function tsForcast(s: SlotLike, i: number) {
             ang = fr(ang + cur);
             if (ang >= 360) ang = fr(ang - 360);
             if (ang <= 0) ang = fr(ang + 360);
-            if (Math.trunc(Math.abs(ang)) % s.unk168 === 0) break;
+            if (Math.trunc(Math.abs(ang)) % s.unk168 === 0) { landed = true; break; }
         }
     }
-    return tsResultFromAng(s.unk168 * Math.trunc(fr(ang / s.unk168)));
+    return tsResultFromAng(landed || V.GMSJ01 ? s.unk168 * Math.trunc(fr(ang / s.unk168)) : ang);
 }
 function tsMoveObject(s: SlotLike) {
     LiveActor.prototype.moveObject.call(s);

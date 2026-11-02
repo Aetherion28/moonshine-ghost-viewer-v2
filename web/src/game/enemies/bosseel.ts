@@ -37,6 +37,7 @@
 // (onNeutralMarioKey) and the head map collisions (mUseMapCollision is false; meoto_out_loop's
 // one-off setUpTrans). Balloons and demo cameras are 'balloon:<id>' / 'demo:<name>' effects.
 
+import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, MsWrap, MsClamp, MsRandF, MsMtxSetXYZRPH, MsMtxSetRotRPH, JMASSin, s16 } from '../math.js';
 import { World, Stream, HitActor, TakeActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, MActor, LF, HF, HC, MSG, ANM_BCK, CUE_MOVE, CUE_CALC_ANIM,
     nerve, Spine, readParams, SPINE_PARAMS, PSchema, MoveCollision } from '../engine.js';
@@ -581,13 +582,14 @@ export class BossEelHeartCoin {
             const fc = a.getFrameCtrl(ANM_BCK);
             if (a.checkCurBckFromIndex(BCK_DIE) && fc && fc.frame < 700) this.position.set(m[3], m[7], m[11]);
             this.position.y = m[7];
+            if (!V.GMSJ01 && !V.GMSE01) this.position.y = -23300;
             this.model.baseTR.set(transMtx(this.position.x, this.position.y, this.position.z));
             this.model.pos.set(this.position);
             this.model.mactor?.frameUpdate();
         }
         // the coins ride the heart's joints 2..21
         const all = (cue & CUE_CALC_ANIM) && this.model.mactor ? this.model.mactor.anmMtxAll(this.model.baseTR, this.model.scale) : null;
-        if (all) for (let i = 0; i < this.coins.length; ++i) { const m = all[i + 2]; if (m) this.coins[i].pos.set(m[12], m[13], m[14]); }
+        if (all) for (let i = 0; i < this.coins.length; ++i) { const m = all[i + 2]; if (m) this.coins[i].pos.set(m[12], !V.GMSJ01 && !V.GMSE01 ? -23300 : m[13], m[14]); }
     }
     generate(p: V3) {
         this.position.set(p); this.active = true;
@@ -645,7 +647,7 @@ export class BossEelAwaCollision extends BossEelCollision {
             if (mp.y > this.pos.y + this.attackHeight) this.onHitFilter(HF.NO_COLLISION);
             for (const c of this.collisions.slice()) if (c.isActorType(AT.MARIO)) this.behaveToMario();
         }
-        if (cue & CUE_CALC_ANIM) { const m = this.mtxOf(); this.pos.set(m[3], fr(m[7] + 11000), m[11]); }
+        if (cue & CUE_CALC_ANIM) { const m = this.mtxOf(); this.pos.set(m[3], !V.GMSJ01 && !V.GMSE01 ? -24300 : fr(m[7] + 11000), m[11]); }
     }
 }
 /** TBossEelBarrierCollision (障害コリジョン): on joint 7 while it rises (zero sized). */

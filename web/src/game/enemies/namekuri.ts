@@ -5,6 +5,7 @@
 // their last 100. TDiffusionNameKuriManager is the same with diffusionnamekuri.prm.
 // TNameKuriLauncher is the plain TLauncher that throws them out.
 
+import { V } from '../version.js';
 import { fr, V3, MsSin, MsCos, MsClamp, MsMtxSetRotRPH, mtx } from '../math.js';
 import { World, PathNode, LF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, LiveManager, LiveActor, SpineEnemy } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -257,7 +258,10 @@ export class NameKuri extends WalkerEnemy {
     isHitValid(msg: number) {
         this.unk198 = 1;
         if (msg === MSG.SPRAYED_BY_WATER) this.unk198 = 0;
-        return !this.checkLiveFlag(LF.HIDDEN);
+        if (this.checkLiveFlag(LF.HIDDEN)) return false;
+        // (namekuri.cpp #if !defined(VERSION_GMSJ01): US and later hide it on message 0xB)
+        if (!V.GMSJ01 && msg === MSG.UNKB) this.onLiveFlag(LF.HIDDEN);
+        return true;
     }
     isCollidMove(a: HitActor) {
         if (a.getHitCategory() === (HC.MAP_OBJECT | 0)) {

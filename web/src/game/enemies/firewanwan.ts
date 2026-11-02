@@ -69,7 +69,7 @@ export class LerpControl {
     fc = new FrameCtrl();
     init(to: number[], from: number[], len: number) {
         this.start = from.slice(); this.end = to.slice(); this.cur = from.slice();
-        this.fc.init(len); this.fc.attr = FC_ONCE; this.fc.rate = ANM_FRAME_RATE;
+        this.fc.init(len); this.fc.attr = FC_ONCE; this.fc.rate = ANM_FRAME_RATE();
     }
     setCurrent(c: number[]) { this.cur = c.slice(); }
     update() {
@@ -849,7 +849,7 @@ FireWanwanNerves.die = nerve<FireWanwan>('TNerveFireWanwanDie', (spine: S) => {
 });
 FireWanwanNerves.hungTail = nerve<FireWanwan>('TNerveFireWanwanHungTail', (spine: S) => {
     const self = spine.body;
-    if (spine.time === 0) { self.setBckAnm(BCK_DAMAGE); self.mactor!.setFromIndex(ANM_BTK, 0); self.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BTK); }
+    if (spine.time === 0) { self.setBckAnm(BCK_DAMAGE); self.mactor!.setFromIndex(ANM_BTK, 0); self.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BTK); }
     self.rot.y = MsGetRotFromZaxisY(V3.sub(self.pos, self.world.mario.pos));
     if (self.isReadyToFly()) { spine.pushAfterCurrent(FireWanwanNerves.fly); return true; }
     return false;
@@ -857,7 +857,7 @@ FireWanwanNerves.hungTail = nerve<FireWanwan>('TNerveFireWanwanHungTail', (spine
 FireWanwanNerves.fly = nerve<FireWanwan>('TNerveFireWanwanFly', (spine: S) => {
     const self = spine.body, P = self.PF;
     if (spine.time === 0) {
-        self.setBckAnm(BCK_DAMAGE); self.mactor!.setFromIndex(ANM_BTK, 0); self.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BTK);
+        self.setBckAnm(BCK_DAMAGE); self.mactor!.setFromIndex(ANM_BTK, 0); self.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BTK);
         const r = self.tail!.throwPow;
         self.vel.set(fr(r * MsSin(self.rot.y)), 0, fr(r * MsCos(self.rot.y)));
         const k = P.mFreezeTimeThreshold;
@@ -871,7 +871,7 @@ FireWanwanNerves.fly = nerve<FireWanwan>('TNerveFireWanwanFly', (spine: S) => {
 FireWanwanNerves.freeze = nerve<FireWanwan>('TNerveFireWanwanFreeze', (spine: S) => {
     const self = spine.body;
     if (spine.time === 0) {
-        self.setBckAnm(BCK_DAMAGE); self.mactor!.setFromIndex(ANM_BTK, 0); self.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BTK);
+        self.setBckAnm(BCK_DAMAGE); self.mactor!.setFromIndex(ANM_BTK, 0); self.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BTK);
         self.world.sound(SE.EN_COMMON_TWINKLE, self.pos);
     }
     self.vel.zero();
@@ -882,7 +882,7 @@ FireWanwanNerves.escape = nerve<FireWanwan>('TNerveFireWanwanEscape', (spine: S)
     const self = spine.body;
     if (spine.time === 0) {
         self.initEscapeNextGraphNode();
-        self.setBckAnm(BCK_DAMAGE); self.mactor!.setFromIndex(ANM_BTK, 0); self.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BTK);
+        self.setBckAnm(BCK_DAMAGE); self.mactor!.setFromIndex(ANM_BTK, 0); self.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BTK);
         self.changeBodyToBlack(40);
     }
     if (self.PF.mEscapeRecoverTime < spine.time) { spine.pushAfterCurrent(FireWanwanNerves.recover); return true; }

@@ -13,6 +13,7 @@
 // rumble, the anm sounds, and the director's flag 0xF check in calcRootMatrix.
 
 import { fr, V3, JMASSin, JMASCos } from '../math.js';
+import { V } from '../version.js';
 import { World, Stream, HitActor, LF, HF, MSG, ANM_BCK, ANM_BTP, ANM_FRAME_RATE, nerve, Spine, PathNode, PSchema, SpineEnemy, MActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -199,7 +200,7 @@ BombHeiNerves.generate = nerve<BombHei>('TNerveBombHeiGenerate', (spine: S) => {
     if (!self.isAirborne() && !self.holder) {
         if (self.isBckAnm(BCK_FALL)) self.setBckAnm(BCK_LAND);
         else if (self.checkCurAnmEnd(ANM_BCK)) { spine.pushAfterCurrent(BombHeiNerves.attack); return true; }
-    } else if (!self.isBckAnm(BCK_FALL)) self.setGenerateModel();
+    } else if ((V.GMSJ01 || self.vel.y > 0) && !self.isBckAnm(BCK_FALL)) self.setGenerateModel();
     return false;
 });
 BombHeiNerves.attack = nerve<BombHei>('TNerveBombHeiAttack', (spine: S) => {
@@ -224,11 +225,11 @@ BombHeiNerves.waitExplosion = nerve<BombHei>('TNerveBombHeiWaitExplosion', (spin
         const fc = a.getFrameCtrl(ANM_BCK)!;
         if (fc.checkPass(60)) a.setFrameRate(0, ANM_BCK);
         if (fc.checkPass(10)) {
-            a.setFrameRate(ANM_FRAME_RATE, ANM_BTP);
+            a.setFrameRate(ANM_FRAME_RATE(), ANM_BTP);
             if (self.getCurAnmFrameNo(ANM_BTP) >= 1) a.setFrameRate(0, ANM_BTP);
         }
     } else {
-        a.setFrameRate(ANM_FRAME_RATE, ANM_BCK);
+        a.setFrameRate(ANM_FRAME_RATE(), ANM_BCK);
         if (a.getCurAnmIdx(ANM_BTP) !== 0) a.setFromIndex(ANM_BTP, 0);
         if (self.checkCurAnmEnd(ANM_BCK) && spine.time > 150) { spine.pushAfterCurrent(BombHeiNerves.explosion); return true; }
         const btp = a.getFrameCtrl(ANM_BTP);

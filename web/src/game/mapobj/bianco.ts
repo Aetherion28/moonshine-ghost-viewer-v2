@@ -22,7 +22,7 @@ import { MapObjBase, STATE_NORMAL, mapObjGlobals, newAndRegisterObj } from './ba
 import { HideObjBase } from './hide.js';
 import type { ItemManager } from './item.js';
 import {
-    MsMtxSetRotX, MsMtxSetRotY, MsMtxSetRotZ, MTXConcat, MTXRotAxisRad, normalize, makeRootMtxRot, setRootMtx, setJointWorlds, restJointMtx,
+    MsMtxSetRotX, MsMtxSetRotY, MsMtxSetRotZ, MTXConcat, rotationSetRotate, normalize, makeRootMtxRot, setRootMtx, setJointWorlds, restJointMtx,
     getWaterPlane, getWaterPos, getWaterSpeed, waterHitPlane, getVerticalVecToTargetXZ, marioGroundPlane, marioTouchGround4cm, marioHipDropping,
     marioSpeedY, marioGroundLevel, marioWaterGun, marioSwimming, sendToMario, inStreamCube, MapObjLibWave, vtxPosCount,
 } from './lib.js';
@@ -253,7 +253,7 @@ export class BiancoBell extends MapObjBase {
         const fc = this.mactor ? this.mactor.getFrameCtrl(ANM_BCK) : null;
         return !fc || fc.frame === 0 || fc.frame + fc.rate >= fc.end - 1;
     }
-    private setRate() { const fc = this.mactor ? this.mactor.getFrameCtrl(ANM_BCK) : null; if (fc) fc.rate = ANM_FRAME_RATE; }
+    private setRate() { const fc = this.mactor ? this.mactor.getFrameCtrl(ANM_BCK) : null; if (fc) fc.rate = ANM_FRAME_RATE(); }
     ring() {
         if (!this.ready()) return;
         this.startAnim(this.unk138);
@@ -559,7 +559,9 @@ export class LeanBlock extends MapObjBase {
         const len = MsSqrtf(fr(fr(v.x * v.x) + fr(v.z * v.z)));
         const rot = fr(len * this.unk148);
         // makeObjMtxRotByAxis: the rotation, by the scale, at the place
-        MTXRotAxisRad(out, ax, rot);
+        // makeObjMtxRotByAxis -> makeMtxRotByAxis: TRotation3::setRotate, not PSMTXRotAxisRad (at rest the
+        // axis is zero: setRotate's TVec3::normalize makes that the identity)
+        rotationSetRotate(out, ax, rot);
         const S = this.scale;
         for (let r = 0; r < 3; r++) { out[r * 4] = fr(out[r * 4] * S.x); out[r * 4 + 1] = fr(out[r * 4 + 1] * S.y); out[r * 4 + 2] = fr(out[r * 4 + 2] * S.z); }
         out[3] = this.pos.x; out[7] = fr(this.pos.y - this.yOffset); out[11] = this.pos.z;

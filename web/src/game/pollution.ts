@@ -5,6 +5,7 @@
 // countTexDegree, in the frame's draw lists) and copies the result back over the texture; here
 // the same TEV and blend maths run on the CPU over the same texel layout (GX I8 tiles).
 
+import { V } from './version.js';
 import { MsRandF } from './math.js';
 import type { Files, MActor } from './engine.js';
 import type { Mtx } from './math.js';
@@ -141,7 +142,8 @@ export class Layer {
     initLayerInfo(type: number, flags: number, l: number, t: number, r: number, b: number) {
         this.type = type; this.flags = flags; this.minX = l; this.minZ = t; this.maxX = r; this.maxZ = b; this.unk48 = 2;
         if (type === POLLUTION_TYPE.UNK7) { this.threshold = 200; this.changeThreshold = 160; }
-        else if (type === POLLUTION_TYPE.FIRE) { this.threshold = 128; this.changeThreshold = 128; }
+        // (PollutionLayer.cpp #if !defined(VERSION_GMSJ01): US and later give electric goop fire's thresholds too)
+        else if (type === POLLUTION_TYPE.FIRE || (!V.GMSJ01 && type === POLLUTION_TYPE.ELECTRIC)) { this.threshold = 128; this.changeThreshold = 128; }
         else { this.threshold = 30; this.changeThreshold = 50; }
         if (this.planeType === 4 || this.planeType === 5) { this.minY = this.minZ; this.maxY = this.maxZ; this.unk48 = 20; }
         if (this.planeType === 2 || this.planeType === 3) { this.minY = this.minZ; this.maxY = this.maxZ; this.minZ = this.minX; this.maxZ = this.maxX; this.unk48 = 20; }

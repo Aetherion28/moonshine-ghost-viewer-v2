@@ -13,6 +13,7 @@
 // The bcks are the stage's /scene/map/camera/<name>.bck and, added to the same MActorAnmData,
 // /common/camera/camera_demo_shine_get_inside / _outside / camera_demo_gate_in.bck.
 
+import { anmFrameRate } from '../version.js';
 import { fr } from '../math.js';
 import { mat4 } from 'gl-matrix';
 import type { ANK1 } from '../../../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
@@ -25,7 +26,7 @@ import type { DemoBck, DemoView } from './polar.js';
 /** sAddBckFileNameTable: the common camera demos every stage has */
 const COMMON_BCKS = new Set(['camera_demo_shine_get_inside', 'camera_demo_shine_get_outside', 'camera_demo_gate_in']);
 /** SMSGetAnmFrameRate() */
-const RATE = 2;
+const RATE = anmFrameRate;
 const IDENT = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
 
 /** the camera bck of that name (TCameraBck::isFileExist: the stage's, else the common ones), null if none */
@@ -63,13 +64,13 @@ class CameraBckDemo implements DemoBck {
     /** J3DFrameCtrl::update after n calls from frame 0 at rate 2, the bck's attribute */
     frameAfter(n: number): number {
         const end = this.anm.duration;
-        let f = n * RATE;
+        let f = n * RATE();
         switch (this.anm.loopMode) {
             case 0: if (f >= end) f = end - fr(0.001); break;          // ONCE
             case 1: if (f >= end) f = 0; break;                     // ONCE_AND_RESET
             case 2: if (end > 0) f = f % end; break;               // LOOP (start 0, loop 0)
             case 3: case 4: {                                       // PING_PONG (MIRROR / MIRROR_LOOP)
-                if (end > 0) { const p = f % (2 * end); f = p < end ? p : 2 * end - p; if (this.anm.loopMode === 3 && n * RATE >= 2 * end) f = 0; }
+                if (end > 0) { const p = f % (2 * end); f = p < end ? p : 2 * end - p; if (this.anm.loopMode === 3 && n * RATE() >= 2 * end) f = 0; }
                 break;
             }
         }

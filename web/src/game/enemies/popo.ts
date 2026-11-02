@@ -194,7 +194,7 @@ export class Popo extends WalkerEnemy {
             this.unk198 = fr(this.unk198 + fr(pressure * P.mSLPumpRate));
             if (this.unk198 > maxScale) {
                 this.unk198 = maxScale;
-                if (!mBrkFlag) this.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BRK);
+                if (!mBrkFlag) this.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BRK);
             }
             if (mBrkFlag) { const c = this.mactor!.getFrameCtrl(ANM_BRK); if (c) c.frame = fr((this.unk1A0 * this.unk198) / P.mSLWaterScaleMax); }
         }
@@ -418,7 +418,7 @@ PopoNerves.possessedNozzle = nerve<Popo>('TNervePopoPossessedNozzle', (spine: S)
         self.possessedIn();
     }
     if (self.checkCurAnmEnd(ANM_BCK)) {
-        if (self.unsetUnk165()) { self.setBckAnm(3); self.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BTP); }
+        if (self.unsetUnk165()) { self.setBckAnm(3); self.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BTP); }
         else { self.setBckAnm(4); const c = self.mactor!.getFrameCtrl(ANM_BTP); if (c) c.frame = 0; self.mactor!.setFrameRate(0, ANM_BTP); }
     }
     if (self.checkTrigger()) { spine.pushAfterCurrent(PopoNerves.fly); return true; }

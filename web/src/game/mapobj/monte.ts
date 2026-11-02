@@ -9,6 +9,7 @@
 // The ropes of the bridge and the swinging boards are GX strips the game draws itself (drawRopes,
 // drawRopeBetweenBoards, TSwingBoard::draw); they aren't drawn here.
 
+import { V } from '../version.js';
 import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, MsRandF, MsMtxSetXYZRPH, jgInvSqrt } from '../math.js';
 import { fmadd as FMA, fmsub as FMS } from '../player/fmath.js';
@@ -151,7 +152,13 @@ export class HangingBridge extends NameRef {
             this.boards.push(b);
         }
         if (map === 8) this.initMonte();
-        if (map === 13) { this.unk18.set(1350, 2980, -9410); this.unk24.set(3650, 2455, -9410); }
+        // (MapObjMonte.cpp: the rope ends after the boards are placed. US and later: Pianta Village's
+        // measured ends, less the rope height, and Ricco's far end 120 nearer; JP 1.0: round numbers.)
+        if (!V.GMSJ01) {
+            const h = HangingBridge.mRopeHeight;
+            if (map === 13) { this.unk18.set(fr(1436.32), fr(fr(3201.477) - h), fr(-9417.205)); this.unk24.set(fr(3656.32), fr(fr(2631.477) - h), fr(-9417.205)); }
+            else if (map === 8) this.unk24.z = fr(this.unk24.z - 120);
+        } else if (map === 13) { this.unk18.set(1350, 2980, -9410); this.unk24.set(3650, 2455, -9410); }
         const B = this.boards;
         for (let i = 0; i < B.length; i++) {
             if (i > 0) B[i].prev = B[i - 1];

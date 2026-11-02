@@ -9,6 +9,8 @@
 export interface GameFS {
     /** Game ID, e.g. GMSE01 (US), GMSJ01 (JP), GMSP01 (PAL). */
     id: string;
+    /** boot.bin 0x07, the disc revision: JP 1.1 is GMSJ01 revision 1, the Korean image GMSE01 revision 48 */
+    revision?: number;
     label: string;
     /** Paths are the disc's own, without a leading slash: "data/scene/dolpic0.szs". */
     has(path: string): boolean;
@@ -24,6 +26,7 @@ const GC_MAGIC = 0xC2339F3D;
 
 class DiscImage implements GameFS {
     private files = new Map<string, { off: number, len: number }>();
+    public revision = 0;
     constructor(private blob: Blob, public id: string, public label: string) { }
 
     static async open(blob: Blob, name: string): Promise<DiscImage> {
@@ -33,6 +36,7 @@ class DiscImage implements GameFS {
         const id = String.fromCharCode(...new Uint8Array(head.buffer, 0, 6));
         const fstOff = head.getUint32(0x424), fstLen = head.getUint32(0x428);
         const disc = new DiscImage(blob, id, name);
+        disc.revision = head.getUint8(7);
         const fst = new Uint8Array(await blob.slice(fstOff, fstOff + fstLen).arrayBuffer());
         const v = new DataView(fst.buffer);
         const n = v.getUint32(8);
@@ -75,6 +79,7 @@ class DiscImage implements GameFS {
 class ExtractedFolder implements GameFS {
     private files = new Map<string, File>();
     public id = '';
+    public revision = 0;
     constructor(public label: string) { }
 
     static async open(list: File[]): Promise<ExtractedFolder> {
@@ -90,8 +95,9 @@ class ExtractedFolder implements GameFS {
             const tail = at >= 0 ? parts.slice(at + 1) : di >= 0 ? parts.slice(di) : null;
             if (tail && tail.length) f.files.set(tail.join('/').toLowerCase(), file);
             if (parts.includes('sys') && file.name === 'boot.bin') {
-                const h = new Uint8Array(await file.slice(0, 6).arrayBuffer());
-                f.id = String.fromCharCode(...h);
+                const h = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+                f.id = String.fromCharCode(...h.subarray(0, 6));
+                f.revision = h[7] || 0;
             }
         }
         if (!f.files.has('data/scene/dolpic0.szs'))

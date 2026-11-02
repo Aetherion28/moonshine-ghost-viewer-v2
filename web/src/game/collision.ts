@@ -1,4 +1,4 @@
-// The game's map collision (TMapCollisionData), ported from the decomp (aetherion28/sms-ai-decomp):
+// The game's map collision (TMapCollisionData), ported from the decomp (the public decomp, Aetherion28/SMS-Decomp-JP-1.0 and its regional repositories):
 // Map/MapCollisionData.cpp (the grid), Map/MapMakeData.cpp (TBGCheckData::setVertex),
 // Map/MapMakeList.cpp (which grid cells and lists a triangle goes in, in what order),
 // Map/MapArea.cpp (polygonIsInGrid), Map/MapData.cpp (getPlaneType) and Map/MapCheck.cpp

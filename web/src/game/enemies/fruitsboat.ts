@@ -13,6 +13,7 @@
 // isn't ported), the ponponsen sound's actor binding beyond the SE helper, the ship shadow
 // (requestShadow) and the question manager's request.
 
+import { V } from '../version.js';
 import { fr, V3, mtx, Mtx, MsMtxSetRotRPH, MsSin, MsCos, MsAngleDiff, MsGetRotFromZaxis } from '../math.js';
 import { World, Stream, Actor, HitActor, LiveManager, SpineEnemy, EnemyManager, MoveCollision, LF, HF, ANM_BCK, ANM_FRAME_RATE, FrameCtrl, nerve, Spine, PSchema, readParams, SPINE_PARAMS } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -74,7 +75,7 @@ export class FruitsBoat extends SpineEnemy {
         // (J3DFrameCtrl: init(frameMax), the BCK's loop mode, rate mSLBckMoveSpeed * SMSGetAnmFrameRate())
         fc.init(a.frameMax); fc.attr = a.attr;
         const rate = this.P.mSLBckMoveSpeed;
-        fc.rate = fr(rate * ANM_FRAME_RATE);
+        fc.rate = fr(rate * ANM_FRAME_RATE());
         this.mBckTrackCtrl = fc;
         return 0;
     }
@@ -224,7 +225,10 @@ export class FruitsBoat extends SpineEnemy {
         }
         this.mRockSpeed = fr(this.mRockSpeed + fr(0.01 * -MsSin(this.mRockAngle)));
         this.mRockAngle = fr(this.mRockAngle + this.mRockSpeed);
-        if (this.mRockAngle < -10 || this.mRockAngle > 10) this.mRockSpeed = -this.mRockSpeed;
+        // (fruitsboat.cpp: JP 1.0 bounces the rock back past +-10; the others clamp it at +-8)
+        if (V.GMSJ01) { if (this.mRockAngle < -10 || this.mRockAngle > 10) this.mRockSpeed = -this.mRockSpeed; }
+        else if (this.mRockAngle < -8) { this.mRockAngle = -8; this.mRockSpeed = -this.mRockSpeed; }
+        else if (this.mRockAngle > 8) { this.mRockAngle = 8; this.mRockSpeed = -this.mRockSpeed; }
         this.mRockSpeed = fr(this.mRockSpeed * 0.99);
         super.moveObject();
     }

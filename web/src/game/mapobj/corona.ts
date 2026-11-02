@@ -64,14 +64,14 @@ export class LampTrapSpike extends MapObjBase {
         switch (thing) {
             case SPIKE_UP: {
                 const c = fc();
-                if (this.unk13C === 0) { setBck('lamptrapspike_up'); const c2 = fc(); if (c2) { c2.frame = 6; c2.rate = ANM_FRAME_RATE; } }
+                if (this.unk13C === 0) { setBck('lamptrapspike_up'); const c2 = fc(); if (c2) { c2.frame = 6; c2.rate = ANM_FRAME_RATE(); } }
                 if (!a || a.curAnmEndsNext(ANM_BCK)) { this.unk13C = 0; this.unk138 = SPIKE_STAY_UP; }
                 if (c && c.frame > fr(c.end * 0.5)) burn = true;
                 break;
             }
             case SPIKE_DOWN: {
                 const c = fc();
-                if (this.unk13C === 0) { setBck('lamptrapspike_down'); const c2 = fc(); if (c2) { c2.frame = 0; c2.rate = fr(ANM_FRAME_RATE * 0.8); } }
+                if (this.unk13C === 0) { setBck('lamptrapspike_down'); const c2 = fc(); if (c2) { c2.frame = 0; c2.rate = fr(ANM_FRAME_RATE() * 0.8); } }
                 if (!a || a.curAnmEndsNext(ANM_BCK)) { this.unk13C = 0; this.unk138 = SPIKE_STAY_DOWN; }
                 if (c && c.frame > fr(c.end * 0.5)) burn = true;
                 break;
@@ -92,14 +92,14 @@ export class LampTrapSpike extends MapObjBase {
                 break;
             case SPIKE_CREEP: {
                 const c = fc();
-                if (this.unk13C === 0) { setBck('lamptrapspike_up'); const c2 = fc(); if (c2) { c2.frame = 0; c2.rate = fr(ANM_FRAME_RATE * 0.1); } }
+                if (this.unk13C === 0) { setBck('lamptrapspike_up'); const c2 = fc(); if (c2) { c2.frame = 0; c2.rate = fr(ANM_FRAME_RATE() * 0.1); } }
                 if (c && c.checkPass(6)) c.rate = 0;
                 if (this.unk13C >= 240) { this.unk13C = 0; this.unk138 = SPIKE_UP; }
                 break;
             }
             default: { // SPIKE_BACK
                 const c = fc();
-                if (this.unk13C === 0) { setBck('lamptrapspike_up'); const c2 = fc(); if (c2) { c2.frame = 6; c2.rate = -ANM_FRAME_RATE; } }
+                if (this.unk13C === 0) { setBck('lamptrapspike_up'); const c2 = fc(); if (c2) { c2.frame = 6; c2.rate = -ANM_FRAME_RATE(); } }
                 if (c && c.checkPass(0)) { this.unk13C = 0; this.unk138 = SPIKE_UP; }
                 break;
             }

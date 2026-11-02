@@ -300,7 +300,7 @@ export class Kumokun extends SmallEnemy {
         this.mactor!.setBck(name);
         const latest = this.spine!.getLatestNerve();
         const k = latest !== SmallEnemyNerves.die && (this.unk1D4 || latest === KumokunNerves.preFly) ? 2 : 1;
-        this.mactor!.setFrameRate(fr(ANM_FRAME_RATE * 0.5 * k), ANM_BCK);
+        this.mactor!.setFrameRate(fr(ANM_FRAME_RATE() * 0.5 * k), ANM_BCK);
     }
     setDeadAnm() {
         switch (this.unk1EC) {

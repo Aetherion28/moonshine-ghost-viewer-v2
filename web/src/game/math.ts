@@ -56,6 +56,23 @@ export function mslSinf(x: number): number {
     if (q & 1) return fr(fmaS(xx, fmaS(xx, fmaS(xx, fmaS(C[0], xx, C[2]), C[4]), C[6]), C[8]) * T[2 * q]);
     return fr(fr(f * fmaS(xx, fmaS(xx, fmaS(xx, fmaS(C[1], xx, C[3]), C[5]), C[7]), C[9])) * T[2 * q + 1]);
 }
+/**
+ * MSL cosf (trigf.c), the same reduction as mslSinf with the quadrants swapped:
+ * |frac| < sqrt(FLT_EPSILON): Q[2n+1] - Q[2n] * frac (fnmsubs); odd n: -(odd chain) * frac * Q[2n];
+ * even n: (even chain) * Q[2n+1]. What the SDK's C code (dolphin mtx.c) links: the C++-only
+ * inline cosf in math.h (a double ::cos) is game code's, not the SDK's.
+ */
+export function mslCosf(x: number): number {
+    x = fr(x);
+    const z = fr(fr(0.63661975) * x), n = Math.trunc(x < 0 ? fr(z - 0.5) : fr(z + 0.5));
+    let f = fr(x - fr(n * 2));
+    for (const a of SINF_A) f = fmaS(a, x, f);
+    const q = n & 3, C = SINF_C, T = SINF_Q;
+    if (Math.abs(f) < fr(3.45266983e-4)) return fmaS(-T[2 * q], f, T[2 * q + 1]);
+    const xx = fr(f * f);
+    if (q & 1) return fr(fr(fr(-fmaS(xx, fmaS(xx, fmaS(xx, fmaS(C[1], xx, C[3]), C[5]), C[7]), C[9])) * f) * T[2 * q]);
+    return fr(fmaS(xx, fmaS(xx, fmaS(xx, fmaS(C[0], xx, C[2]), C[4]), C[6]), C[8]) * T[2 * q + 1]);
+}
 const sinAll = new Float32Array(4096 + 1024);
 { const step = fr(fr(6.2831855) / 4096); for (let i = 0; i < sinAll.length; i++) sinAll[i] = mslSinf(fr(step * i)); }
 const sinT = sinAll.subarray(0, 4096), cosT = sinAll.subarray(1024);

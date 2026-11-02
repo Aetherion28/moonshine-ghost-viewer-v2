@@ -9,6 +9,7 @@
 // sounds, the balloon messages and the talk itself (TMarDirector's talk mode isn't simulated:
 // an NPC only goes into its talk nerve if something sets LF_N.UNK40000).
 
+import { anmFrameRate } from '../version.js';
 import { fr, V3, MsRandF, MsRandI, MsWrap, MsClamp, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsIsInSight, JMASSin, JMASCos, matan, s16, IConverge } from '../math.js';
 import { MsSqrtf } from '../player/fmath.js';
 import { msVecMag2 } from '../vecops.js';
@@ -48,8 +49,8 @@ const T = AT;
 /** sinf of an f32 (the C library's, rounded) */
 const MONTE_M = T.NPC_MONTE_M;
 
-/** CLBPalFrame: frames at 30 a second (SMSGetAnmFrameRate 2): round(x / 2) */
-export const palFrame = (x: number) => { const v = fr(x * 0.5); return Math.trunc(v + (v > 0 ? 0.5 : -0.5)); };
+/** CLBPalFrame: CLBRoundf(x / SMSGetAnmFrameRate()), x / 2 at 60 Hz */
+export const palFrame = (x: number) => { const v = fr(x * fr(1 / anmFrameRate())); return Math.trunc(v + (v > 0 ? 0.5 : -0.5)); };
 
 // ---------------------------------------------------------------- the parameter files (NpcSave.cpp)
 const F = (v: number): [PType, number] => ['f', v], S = (v: number): [PType, number] => ['s16', v], I = (v: number): [PType, number] => ['i', v];

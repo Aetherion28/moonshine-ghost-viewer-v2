@@ -22,7 +22,7 @@
 // onYoshi() is false; the Yoshi nozzle's tongue matrix is null), the handle's TMultiMtxEffect
 // and the mirror actor (drawing only).
 
-import { VERSION } from '../version.js';
+import { V } from '../version.js';
 import type { mat4 } from 'gl-matrix';
 import { fr, s16, JMASSin, JMASCos, V3, Mtx, mtx, MsMtxSetRotRPH } from '../math.js';
 import { Params, PSchema, World, FrameCtrl, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM } from '../engine.js';
@@ -124,7 +124,7 @@ export class GunModel {
         const dv = b ? new DataView(b.buffer, b.byteOffset, b.byteLength) : null;
         this.fc.init(dv ? dv.getUint16(0x20 + 0x0A) : 0);
         if (b) this.fc.attr = b[0x20 + 0x08];
-        this.fc.rate = ANM_FRAME_RATE;
+        this.fc.rate = ANM_FRAME_RATE();
     }
     /** MActor::setBck(name) (findName: the archive's name) */
     setBck(name: string) { this.setBckFromIndex(this.bcks.indexOf(name)); }
@@ -618,8 +618,8 @@ export class TWaterGun {
     /** isEmitting (canSpray): water, and the trigger nozzle firing or the others' trigger rising */
     isEmitting() {
         if (this.mCurrentWater === 0) return false;
-        // (PAL: a real function in WaterGun.cpp, and no emitting during a camera demo or a talk)
-        if (VERSION.pal) { const w = this.mMario.world; if (w.demoMode || w.talkMode) return false; }
+        // (WaterGun.cpp #if !defined(VERSION_GMSJ01): US and later, no emitting during a camera demo or a talk)
+        if (!V.GMSJ01) { const w = this.mMario.world; if (w.demoMode || w.talkMode) return false; }
         const n = this.getCurrentNozzle();
         if (n.getNozzleKind() === 1) return (n as TNozzleTrigger).getSprayState() === SPRAY_STATE.ACTIVE;
         return n.unk378 > 0;

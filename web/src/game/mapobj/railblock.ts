@@ -6,7 +6,8 @@
 // way there, keeping the turns it made; TRollBlock just rolls about its own Z at a set rate.
 // TRailMapObj itself is in cloud.ts.
 
-import { fr, V3, Mtx, mtx, MsMtxSetRotRPH, MsAngleDiff, MsWrap } from '../math.js';
+import { V } from '../version.js';
+import { fr, V3, Mtx, mtx, MsMtxSetRotRPH, MsAngleDiff, MsWrap, MsMtxSetXYZRPH } from '../math.js';
 import { World, Stream, Actor, LF, CUE_ENTRY } from '../engine.js';
 import { register } from '../scene.js';
 import { MapObjBase } from './base.js';
@@ -183,7 +184,11 @@ export class RollBlock extends MapObjBase {
     setGroundCollision() { if (this.colMgr) this.colMgr.moveActiveCollisionMtx(this.rootMtx()); }
     getRootJointMtx() { return this.rootMtx(); }
     calcRootMatrix() {
-        super.calcRootMatrix();
+        // (MapObjRailBlock.cpp #if !defined(VERSION_GMSJ01): US and later turn it by its placed
+        // rotation, JP 1.0 by its current one)
+        const R = !V.GMSJ01 ? this.initialRot : this.rot;
+        MsMtxSetXYZRPH(this.baseTR, this.pos.x, fr(this.pos.y - this.yOffset), this.pos.z, R.x, R.y, R.z);
+        this.anmMtx0 = null;
         const r = mtx();
         MsMtxSetRotZ(r, this.unk138);
         MTXConcat(this.baseTR, r, this.baseTR);

@@ -76,6 +76,10 @@ function parseSmsGhost(buffer) {
   };
   const header = {
     version, region, route,
+    // 0x20 gameId (GMSJ / GMSE / GMSP) and 0x24 discRevision: which build the run was played on,
+    // so the replay runs that build's code (src/game/version.ts). Moonshine's spec: discRevision 0;
+    // the decomp's JP 1.1 is GMSJ revision 1 and the Korean image GMSE revision 48.
+    gameId: text(0x20, 4), discRevision: bytes[0x24],
     routeLabel: ghostRouteLabel(route),
     runFlags: dv.getUint32(0x1c),
     resultQf: dv.getUint32(0x34),

@@ -24,6 +24,7 @@
 // (told as world events), the help balloons (showMessage / unk2A0), the rumble, the BGM, the demo
 // camera and streaming movie, getModel()->calc() (the joints are worked out when asked).
 
+import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, Quat, matan, MsMtxSetRotRPH, JMASSin, JMASCos, s16 } from '../math.js';
 import { jgSqrt } from '../vecops.js';
 import { World, Stream, HitActor, LiveActor, TakeActor, LF, MSG, ANM_BCK, ANM_FRAME_RATE, readParams, PSchema } from '../engine.js';
@@ -266,9 +267,16 @@ export class Bathtub extends MapObjBase {
         return this.baseTR;
     }
     perform(cue: number) {
+        // (MapObjCorona.cpp #if !defined(VERSION_GMSJ01) && !defined(VERSION_GMSE01): PAL, JP 1.1 and
+        // 3D All-Stars calculate the tub at a whole-number frame)
+        if (!V.GMSJ01 && !V.GMSE01) this.onLiveFlag(LF.CALC_INT_FRAME);
         super.perform(cue);
-        this.joints = null;
+        if (!(this.liveFlag & LF.CALC_INT_FRAME)) this.joints = null;
         // (the shine model, the help balloons by getNumGripsDead and mMoveTickCount: drawing / 2D only)
+    }
+    /** the joints as the game's calc leaves them: worked out now, at the whole-number frame (the matrices control() reads next frame) */
+    calcModel(intFrame: boolean) {
+        if (intFrame && this.mactor) this.joints = this.mactor.anmMtxAll(this.baseTR, this.scale);
     }
     /** the ending demo: Mario held by the "mario" joint while the overturn BCKs play */
     private takeMario() {
@@ -635,7 +643,7 @@ export class BathtubGrip extends MapObjBase {
                 if (this.unk244.unk16C.resetGrip !== 0) this.reset();
                 else this.kill();
             } else {
-                if (ctrl) ctrl.rate = fr(fr(ANM_FRAME_RATE * this.unk250) * 0.5);
+                if (ctrl) ctrl.rate = fr(fr(ANM_FRAME_RATE() * this.unk250) * 0.5);
                 const m = this.unk1A8[0].getRootJointMtx();
                 if (m) this.unk138[1].set(m[3], m[7], m[11]);
                 this.world.sound(SE.OBJ_STAND_BREAK, this.unk138[1]);

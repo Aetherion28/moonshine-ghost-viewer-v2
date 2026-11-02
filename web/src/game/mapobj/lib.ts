@@ -7,8 +7,8 @@
 // (SMS_GetMario*, TWaterGun) as the Mario the stage has can answer them.
 
 import { mat4 } from 'gl-matrix';
-import { fr, V3, Mtx, mtx, MsSin, MsCos, MsRandF, sinf, cosf, HALF_PI_F } from '../math.js';
-import { fmadd as FMA, fmsub as FMS } from '../player/fmath.js';
+import { fr, V3, Mtx, mtx, MsSin, MsCos, MsRandF, sinf, cosf, HALF_PI_F, mslSinf, mslCosf, jgNormalize } from '../math.js';
+import { fmadd as FMA, fmsub as FMS, fnmsub as FNMS } from '../player/fmath.js';
 import { vNormMs, vNorm } from '../vecops.js';
 import { World, NameRef, Stream, HitActor, LiveActor, parseSceneBin, SceneNode, CUE_MOVE, readParams } from '../engine.js';
 import { isPointInCube } from '../mapwire.js';
@@ -57,14 +57,43 @@ export function MTXConcat(a: Mtx, b: Mtx, out: Mtx) {
     out.set(r);
     return out;
 }
-/** PSMTXRotAxisRad around a unit axis: sinf/cosf of rad, PSVECNormalize (frsqrte + one Newton step) of the axis -- not Math.sin/cos/sqrt. */
-export function MTXRotAxisRad(m: Mtx, ax: V3, rad: number) {
+/**
+ * JGeometry::TRotation3::setRotate(axis, angle) (JGRotation3.hpp), as TMapObjBase::makeMtxRotByAxis
+ * (MapObjLib.cpp), TMapObjBall's roll (MapObjBall.cpp) and the other game code that builds a
+ * TPosition3f by axis and angle use it -- not the SDK's PSMTXRotAxisRad. Its axis goes through
+ * TVec3::normalize (setLength: a vector with squared length <= epsilon() becomes zero, so a zero
+ * axis gives the identity, where PSVECNormalize would give NaN); its sin / cos are game code's,
+ * math.h's C++ inline ::sin((double)x); every entry f11 * a * b -/+ f30 * c, f11 = 1 - cos.
+ * The rotation only: the translation column is zero.
+ */
+export function rotationSetRotate(m: Mtx, ax: V3, rad: number) {
+    const n = jgNormalize(ax.clone());
     const s = sinf(rad), c = cosf(rad), t = fr(1 - c);
+    const x = n.x, y = n.y, z = n.z;
+    const tx = fr(t * x), ty = fr(t * y);
+    m[0] = FMA(t, fr(x * x), c); m[1] = FMS(tx, y, fr(s * z)); m[2] = FMA(tx, z, fr(s * y)); m[3] = 0;
+    m[4] = FMA(tx, y, fr(s * z)); m[5] = FMA(t, fr(y * y), c); m[6] = FMS(ty, z, fr(s * x)); m[7] = 0;
+    m[8] = FMS(tx, z, fr(s * y)); m[9] = FMA(ty, z, fr(s * x)); m[10] = FMA(t, fr(z * z), c); m[11] = 0;
+    return m;
+}
+/**
+ * PSMTXRotAxisRad (dolphin mtx.c): sinf/cosf of rad, PSVECNormalize of the axis, then its
+ * paired-single asm, every product and sum a single-precision rounding, in its order:
+ * t = 1 - cos; tx = x*t, ty = y*t, tz = z*t; txy = tx*y, txx = tx*x, tyy = ty*y, txz = tx*z,
+ * tyz = ty*z, tzz = tz*z; xs = x*s, ys = y*s; then m[1] = fnmsubs(z, s, txy) and m[4] =
+ * fmadds(z, s, txy) (fused), every other entry a ps_sum (txx + c, txz + ys, ...).
+ */
+export function MTXRotAxisRad(m: Mtx, ax: V3, rad: number) {
+    // (mtx.c is C: its sinf / cosf are MSL's single-precision trigf.c, not math.h's C++ inline double ones)
+    const s = mslSinf(rad), c = mslCosf(rad), t = fr(1 - c);
     const n = vNorm(ax.clone());
     const x = n.x, y = n.y, z = n.z;
-    m[0] = fr(t * x * x + c); m[1] = fr(t * x * y - s * z); m[2] = fr(t * x * z + s * y); m[3] = 0;
-    m[4] = fr(t * x * y + s * z); m[5] = fr(t * y * y + c); m[6] = fr(t * y * z - s * x); m[7] = 0;
-    m[8] = fr(t * x * z - s * y); m[9] = fr(t * y * z + s * x); m[10] = fr(t * z * z + c); m[11] = 0;
+    const tx = fr(x * t), ty = fr(y * t), tz = fr(z * t);
+    const txy = fr(tx * y), tyy = fr(ty * y), txx = fr(tx * x), txz = fr(tx * z), tyz = fr(ty * z), tzz = fr(tz * z);
+    const xs = fr(x * s), ys = fr(y * s);
+    m[0] = fr(txx + c); m[1] = FNMS(z, s, txy); m[2] = fr(txz + ys); m[3] = 0;
+    m[4] = FMA(z, s, txy); m[5] = fr(c + tyy); m[6] = fr(tyz - xs); m[7] = 0;
+    m[8] = fr(txz - ys); m[9] = fr(xs + tyz); m[10] = fr(tzz + c); m[11] = 0;
     return m;
 }
 /** MsVECNormalize: the raw frsqrte estimate, no Newton step, no zero guard -- not a Math.sqrt-based normalize. */

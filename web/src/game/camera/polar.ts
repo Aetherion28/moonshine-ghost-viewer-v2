@@ -28,6 +28,7 @@
 // first camera key / input record), and directorState = 4 once play starts (TMarDirector mState:
 // the camera cubes and mode changes only run in state 4).
 
+import { V } from '../version.js';
 import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from '../player/fmath.js';
 import { fr, s16, matan, JMASSin, JMASCos } from '../math.js';
 import { World, LF } from '../engine.js';
@@ -83,6 +84,13 @@ const NORMAL = new Set<number>([CM.FOLLOW, CM.PARALLEL, CM.WALL_JUMP, CM.HIP_ATT
     CM.FOLLOW_E, CM.PARALLEL_C, CM.PARALLEL_D]);
 const isNormalMode = (m: number) => NORMAL.has(m);
 const isTowerMode = (m: number) => m === CM.TOWER_A || m === CM.TOWER_B || m === CM.TOWER_C || m === CM.TOWER_D || m === CM.TOWER_E;
+/**
+ * TMarDirector::setupObjects (MarDirectorSetupObjects.cpp:325): camera 1's aspect,
+ * SMSGetGameVideoWidth() * 0.9134614f / height, an fmuls then an fdivs (JP 1.0 at 0x8010D854).
+ * JP 1.0 and US divide by SMSGetGameVideoHeight (448 on an NTSC set), the later builds by
+ * SMSGetGameRenderHeight (448; 360 on 3DAS, whose width is 640): the same value off 3DAS.
+ */
+export const gameCameraAspect = () => V.GMSP01_NX ? fr(fr(640 * fr(0.9134614)) / 360) : fr(fr(660 * fr(0.9134614)) / 448);
 const isFollowMode = (m: number) => m === CM.FOLLOW || m === CM.FOLLOW_B || m === CM.FOLLOW_C || m === CM.FOLLOW_D || m === CM.FOLLOW_E;
 const isRailMode = (_m: number) => false;
 const isFixMode = (m: number) => (m >= CM.FIX_A && m <= CM.FIX_H) || m === CM.FIX_I;
@@ -217,7 +225,7 @@ function chaseFrameSA(v: number, d: number, frames: number) {
 export class PolarSubCamera implements SimCamera {
     // JDrama::TLookAtCamera
     mPosition = vcopy(CLBConstUpVec); mUp = vcopy(CLBConstUpVec); mTarget = vcopy(CLBConstUpVec);
-    mFovy = 0; mAspect = (640 * fr(0.9134614)) / 448; mNear = 10; mFar = 300000;
+    mFovy = 0; mAspect = gameCameraAspect(); mNear = 10; mFar = 300000;
 
     mMode = -1; mPrevMode = -1; mSavedModeBeforeTalk = -1; mInitialMode = -1;
     /** unk60: the modes to go back to (CameraUnk60Struct, 4 deep) */
@@ -1288,7 +1296,8 @@ export class PolarSubCamera implements SimCamera {
         const status = this.marioStatus(), prevStatus = this.M.mPrevStatus >>> 0, map = w.map;
         let mode: number;
         const has = (f: number) => (status & f) !== 0;
-        if (this.marioFlag(MF.HELMET_FLW_CAMERA)) mode = CM.DIVING;
+        if (!V.GMSJ01 && code === CM.FOLLOW_D) mode = code;
+        else if (this.marioFlag(MF.HELMET_FLW_CAMERA)) mode = CM.DIVING;
         else if (this.marioFlag(MF.UNK2)) mode = map === 9 ? CM.MARE_UNDER_GROUND : CM.UNDER_GROUND;
         else if (this.marioFlag(MF.FLUDD_EMITTING)) {
             mode = map !== 7 && (has(ST.FLAG_SWIMMING) || ((prevStatus & ST.FLAG_SWIMMING) && has(ST.FLAG_JUMPING))) ? CM.AQUATIC_TURBO : CM.TURBO;

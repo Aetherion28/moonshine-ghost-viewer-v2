@@ -8,6 +8,7 @@ import { MsSqrtf } from './move.js';
 import { fmul, fadd, fsub, fdiv, fmadd, fnmsub, sqrtf } from './fmath.js';
 import { S, MF, A, bg } from './base.js';
 import { SE } from '../soundids.js';
+import { V } from '../version.js';
 
 type JumpSlipRecord = { max: number; end: number; jump: number; c: number; d: number };
 const iconv = (v: number, t: number, inc: number, dec: number) => IConverge(Math.trunc(v), t, Math.trunc(inc), Math.trunc(dec));
@@ -43,7 +44,8 @@ export abstract class MarioRun extends MarioPhysics {
         const R = this.mRunParams;
         let sp = this.mIntendedMag > this.mForwardVel ? this.mIntendedMag : this.mForwardVel;
         if (sp < 4) sp = 4;
-        for (let loop = true; loop;) {
+        // (MarioRun.cpp #if !defined(VERSION_GMSJ01): US and later give up after five passes)
+        for (let loop = true, guard = 0; loop;) {
             switch (this.mAnimationId) {
                 default: case A.RUN2:
                     if (this.mForwardVel >= fr(this.mDeParams.mDashMax - 1)) { this.setAnimation(A.TURBO_DASH, 1); loop = false; }
@@ -71,6 +73,7 @@ export abstract class MarioRun extends MarioPhysics {
                     else { this.setAnimation(A.TURBO_DASH, FMA(sp, R.mRunAnmSpeedMult, R.mRunAnmSpeedBase)); loop = false; }
                     break;
             }
+            if (!V.GMSJ01 && ++guard > 4) break;
         }
         return 1;
     }

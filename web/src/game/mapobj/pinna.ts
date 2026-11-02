@@ -38,6 +38,7 @@ import { MapObjChangeStage } from './town.js';
 import { ObjCollision, KIND_MOVE, KIND_STATIC } from './objcol.js';
 import { MsMtxSetRotX, MTXConcat, setRootMtx, setJointWorlds, restJointMtx, marioOnYoshi, sendToMario } from './lib.js';
 import { itemCounts } from './item.js';
+import { V } from '../version.js';
 import type { ItemManager, Coin } from './item.js';
 
 const itemManager = (w: World) => mapObjGlobals(w).itemManager as ItemManager | null;
@@ -86,10 +87,10 @@ export class FerrisWheel extends MapObjBase {
     control() {
         super.control();
         if (this.isState(FERRIS_STATE_UNK2) && !this.isStateTimerEngaged()) {
-            if (this.unk140 > ANM_FRAME_RATE / 4) this.unk140 = fr(this.unk140 - fr(0.015));
+            if (this.unk140 > ANM_FRAME_RATE() / 4) this.unk140 = fr(this.unk140 - fr(0.015));
             else this.state = STATE_NORMAL;
         }
-        if (this.unk140 > ANM_FRAME_RATE / 4) this.world.sound(SE.OBJ_MAHRE_GATE_LIGHT, this.pos);
+        if (this.unk140 > ANM_FRAME_RATE() / 4) this.world.sound(SE.OBJ_MAHRE_GATE_LIGHT, this.pos);
         // (the joints as the last calc left them: before the frame moves on)
         const J = anmMtxs(this);
         const fc = this.mactor ? this.mactor.getFrameCtrl(ANM_BCK) : null;
@@ -113,7 +114,11 @@ export class FerrisWheel extends MapObjBase {
             this.unk13C[i] = g;
             g.appear();
         }
-        this.unk140 = this.world.stage === 2 ? 10 : ANM_FRAME_RATE / 4;
+        // (MapObjPinna.cpp #if !defined(VERSION_GMSJ01) && !defined(VERSION_GMSE01): PAL, JP 1.1 and 3D
+        // All-Stars spin it fast only in Pianta Village 2 and Pinna Park 4; JP 1.0 and US in any scenario 2)
+        const W = this.world;
+        const fast = !V.GMSJ01 && !V.GMSE01 ? (W.map === 13 && W.stage === 2) || (W.map === 5 && W.stage === 4) : W.stage === 2;
+        this.unk140 = fast ? 10 : ANM_FRAME_RATE() / 4;
     }
 }
 
@@ -517,8 +522,17 @@ export class AmiKing extends MapObjBase {
             }
         }
     }
+    // (MapObjPinna.cpp: JP 1.0 overrides calcRootMatrix with this, after TMapObjBase::calcRootMatrix;
+    // US and later override calc() instead, which TMapObjBase::perform runs before moveObject and
+    // frameUpdate, so joint 6 is last frame's, and runs while the King is clipped out too.)
+    // TODO: JP 1.0's version also runs before that frame's mMActor->calc(), so getAnmMtx(6) there is
+    // last frame's too; the lazy anmMtx below gives this frame's.
     calcRootMatrix() {
         super.calcRootMatrix();
+        if (V.GMSJ01) this.calcKing();
+    }
+    calc() { if (!V.GMSJ01) this.calcKing(); }
+    private calcKing() {
         if (!this.mactor) return;
         this.emit('amiking');
         if (!this.unk138) {
@@ -581,7 +595,7 @@ export class PinnaCoaster extends MapObjBase {
             r.setBck('coasterrail');
             MsMtxSetXYZRPH(this.unk138TR, this.pos.x, this.pos.y, this.pos.z, this.rot.x, this.rot.y, this.rot.z);
             const fc = r.getFrameCtrl(ANM_BCK);
-            if (fc) fc.rate = ANM_FRAME_RATE / 4;
+            if (fc) fc.rate = ANM_FRAME_RATE() / 4;
         }
         this.unk140.set(this.pos);
     }

@@ -13,6 +13,7 @@
 //
 // Not here: the particles (smoke, bomb), rumble, the looping flying sound and the animation sounds.
 
+import { V } from '../version.js';
 import { fr, V3, mtx, Mtx, MsRandF, MsMtxSetRotRPH, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsAngleWrap } from '../math.js';
 import { World, SpineEnemy, Stream, HitActor, LiveActor, LiveManager, LF, HF, HC, MSG, nerve, Spine } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -162,7 +163,9 @@ export class Rocket extends SmallEnemy {
     }
     getGravityY() { return this.spine!.current === RocketNerves.fly ? this.unk1A4.mSLFlyGravity : this.gravity; }
     isCollidMove(a: HitActor) {
-        if (this.spine!.current === RocketNerves.fly && a.receiveMessage(this, MSG.TRAMPLE)) this.kill();
+        // (rocket.cpp #if !defined(VERSION_GMSJ01): US and later only hit a boss or ENEMY_UNK1F)
+        const target = V.GMSJ01 || a.isHitCategory(HC.BOSS) || a.isActorType(AT.ENEMY_UNK1F);
+        if (this.spine!.current === RocketNerves.fly && target && a.receiveMessage(this, MSG.TRAMPLE)) this.kill();
         return false;
     }
     possessedNozzle() { this.mgrR.unk60 = 0; this.offLiveFlag(LF.UNK10); this.unk1A0 = 1; }

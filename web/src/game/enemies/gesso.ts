@@ -10,6 +10,7 @@
 //
 // Not here: the goop ball's particles and the stunned stars (effects only).
 
+import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, MsClamp, MsIsInSight, MsGetRotFromZaxisY, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, MsAtan2 } from '../math.js';
 import { World, Stream, HitActor, LF, HF, HC, MSG, ANM_BCK, CUE_MOVE, CUE_CALC_ANIM, nerve, Spine, PathNode, SpineEnemy, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -450,7 +451,8 @@ export class EnemyAttachment extends SpineEnemy {
     kill() { this.unk150 = 0; this.unk158 = 0; this.onHitFilter(HF.NO_COLLISION); }
     set() { this.pos.set(this.unk160!.pos); this.rot.set(this.unk160!.rot); }
     moveObject() {
-        if (this.unk150 === 1) this.set();
+        // (enemyAttachment.cpp #if !defined(VERSION_GMSJ01): US and later run setBehavior while it's set too)
+        if (this.unk150 === 1) { this.set(); if (!V.GMSJ01) this.setBehavior(); }
         else { this.calcRideMomentum(); this.sendMessage(); this.bind(); this.calcRidePos(); }
     }
     sendMessage() {

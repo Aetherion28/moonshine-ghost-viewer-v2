@@ -3,6 +3,7 @@
 // a TSamboHead (サンボヘッド, the hopping head) or a THanaSambo (the Pokey) hides; TSamboLeaf,
 // the leaves a head throws off coming up.
 
+import { V } from '../version.js';
 import { fr, V3, MsClamp, MsMtxSetRotRPH, mtx, mtxMultVec, MsGetRotFromZaxis, MsSin, MsCos } from '../math.js';
 import { Actor, World, SpineEnemy, EnemyManager, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, LiveActor, MActor, readParams, SPINE_PARAMS, PSchema, CUE_MOVE, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -219,7 +220,9 @@ export class HanaSambo extends SmallEnemy {
         if (this.checkLiveFlag(LF.CLIPPED_OUT)) this.unk194.pos.set(this.pos);
         else { const m = this.mactor!.anmMtx(HanaSambo.mHeadJntIndex, this.baseTR, this.scale); if (m) this.unk194.pos.set(m[12], m[13], m[14]); }
         this.unk194.checkHit();
-        this.pos.x = this.unk19C.x; this.pos.z = this.unk19C.z;
+        // (hanasambo.cpp #if !defined(VERSION_GMSJ01): US and later hold it to its spot only while it
+        // shows, or while hiding; JP 1.0 always)
+        if (V.GMSJ01 || !this.checkLiveFlag(LF.HIDDEN) || this.spine!.current === HanaNerves.hide) { this.pos.x = this.unk19C.x; this.pos.z = this.unk19C.z; }
     }
     kill() {
         if (this.checkLiveFlag(LF.DEAD)) return;

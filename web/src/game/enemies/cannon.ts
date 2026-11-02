@@ -22,6 +22,7 @@
 // The Bullet Bills (killerShoot's area-5 branch) come from enemies/killer.ts's キラーマネージャー.
 
 import { MSF } from '../flags.js';
+import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, MsClamp, MsWrap, MsSin, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsMtxSetRotRPH, MsMtxSetXYZRPH, JMASSin, JMASCos, MsRandF, s16 } from '../math.js';
 import { World, Stream, HitActor, LiveActor, MActor, LF, HF, HC, MSG, ANM_BCK, ANM_BTK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, nerve, Spine, PathNode, PSchema, SpineEnemy, MoveCollision } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -347,7 +348,12 @@ export class Cannon extends SmallEnemy {
     }
     getTakingMtx() {
         const c = this.unk1A8!;
-        if (this.checkLiveFlag(LF.CLIPPED_OUT)) return c.model.baseTR;
+        if (this.checkLiveFlag(LF.CLIPPED_OUT)) {
+            if (V.GMSJ01) return c.model.baseTR;
+            const t = this.unk1E4;
+            t.set(mtx()); t[3] = c.pos.x; t[7] = fr(800 + c.pos.y); t[11] = c.pos.z;
+            return t;
+        }
         const y = c.model.anmMtx(Cannon.mChorobeiHandJntIdx[0])[7];
         const m = this.unk1E4;
         m.set(mtx());
@@ -392,7 +398,7 @@ export class Cannon extends SmallEnemy {
         const speed = this.unk28C.mSLThrowXZSpeed;
         dir.y = speed; dir.x = fr(dir.x * speed); dir.z = fr(dir.z * speed);
         if (this.unk21C) { b.vel.set(dir.x, dir.y, dir.z); b.offLiveFlag(LF.UNK10); }
-        else { b.vel.set(dir); b.onLiveFlag(LF.AIRBORNE); b.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK); }
+        else { b.vel.set(dir); b.onLiveFlag(LF.AIRBORNE); b.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BCK); }
         b.pos.y = fr(b.pos.y + 2);
         b.receiveMessage(this, MSG.PUT);
     }

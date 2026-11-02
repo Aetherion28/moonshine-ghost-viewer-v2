@@ -7,6 +7,7 @@
 // 7, data 10000) and plays its jump; dropped it unfolds again, thrown it slides off in Mario's
 // facing; landed in water or off the map it's back where it started.
 
+import { V } from '../version.js';
 import { fr, V3, Mtx, MsCos, MsSin, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, JMASSin, JMASCos } from '../math.js';
 import { World, Stream, HitActor, TakeActor, LF, HF, MSG, CUE_ENTRY, CUE_MOVE, ANM_BCK, ANM_FRAME_RATE } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -129,7 +130,7 @@ export class JumpBase extends MapObjBase {
         const fc = a.getFrameCtrl(ANM_BCK);
         if (fc) {
             if (frame === 'end') { fc.frame = fc.end; fc.rate = 0; }
-            else { fc.frame = 0; fc.rate = ANM_FRAME_RATE; }
+            else { fc.frame = 0; fc.rate = ANM_FRAME_RATE(); }
         }
     }
     private bckEnds() { return !this.mactor || this.mactor.curAnmEndsNext(ANM_BCK); }
@@ -184,7 +185,11 @@ export class JumpBase extends MapObjBase {
         }
         super.control();
         const g = this.groundPlane;
-        if (g && (g.isIllegal() || g.isWaterSurface())) { this.makeObjDead(); this.makeObjDefault(); this.makeObjAppeared(); }
+        if (g && (g.isIllegal() || g.isWaterSurface())) {
+            this.makeObjDead(); this.makeObjDefault(); this.makeObjAppeared();
+            // (MapObjItem2.cpp #if !defined(VERSION_GMSJ01): US and later also put it back to unfolding)
+            if (!V.GMSJ01) { this.unk13C = 0; this.unk138 = JB.UNFOLDING; }
+        }
         if (this.holder) { this.groundPlane = marioGroundPlane(this.world); this.groundHeight = this.world.mario.pos.y; }
     }
 }

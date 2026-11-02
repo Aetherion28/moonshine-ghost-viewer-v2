@@ -18,6 +18,7 @@
 // sim) and the joints' rolls on top of a playing BCK (the viewer's joint locals replace the animated
 // ones, so they're dropped while one plays).
 
+import { V } from '../version.js';
 import { mat4 } from 'gl-matrix';
 import { fr, V3, Mtx, mtx, MsMtxSetRotRPH, MsMtxSetXYZRPH, MsRandF } from '../math.js';
 import { World, Stream, HitActor, HC, HF, MSG, ANM_BCK, ANM_BRK, CUE_MOVE } from '../engine.js';
@@ -353,7 +354,11 @@ export class ItemSlotDrum extends SlotDrum {
     getForcastResult(idx: number) {
         let ang = this.unk13C[idx], sp = this.unk138[idx];
         const face = this.unk168;
-        for (; ;) {
+        // (MapObjSirena.cpp #if !defined(VERSION_GMSJ01): US and later give up after 10001 steps and
+        // then read the angle as it is; JP 1.0 loops until it lands on a face)
+        const cap = !V.GMSJ01 ? 10001 : Infinity;
+        let landed = false;
+        for (let n = 0; n < cap; n++) {
             if (Math.abs(sp) > this.unk160) {
                 ang = fr(ang + sp);
                 sp = sp > 0 ? fr(sp - this.unk15C) : fr(sp + this.unk15C);
@@ -363,10 +368,10 @@ export class ItemSlotDrum extends SlotDrum {
                 ang = fr(ang + sp);
                 if (ang >= 360) ang = fr(ang - 360);
                 if (ang <= 0) ang = fr(ang + 360);
-                if (Math.trunc(Math.abs(ang)) % face === 0) break;
+                if (Math.trunc(Math.abs(ang)) % face === 0) { landed = true; break; }
             }
         }
-        ang = Math.trunc(fr(ang / face)) * face;
+        if (landed || V.GMSJ01) ang = Math.trunc(fr(ang / face)) * face;
         return this.getResultFromAng(ang);
     }
     getResultFromAng(a: number) { return a < 89 ? 0 : a < 179 ? 1 : a < 269 ? 2 : 3; }
@@ -472,8 +477,9 @@ export class Donchou extends MapObjBase {
         setBase(this, this.unk140);
         if (this.unk144 && this.unk144.unk194 && this.unk148 && this.unk148.unk194) this.unk13C = 1;
         if (this.unk13C === 0) return;
-        this.unk14C++;
-        if (this.unk14C <= 100 || !this.mactor) return;
+        // (MapObjSirena.cpp:888: after JP 1.0 the count pauses in a talk and the curtain waits 20, not 100)
+        if (V.GMSJ01 || !this.world.talkMode) this.unk14C++;
+        if (this.unk14C <= (V.GMSJ01 ? 100 : 20) || !this.mactor) return;
         if (this.mactor.checkCurAnm('donchou', ANM_BCK)) {
             if (this.mactor.curAnmEndsNext(ANM_BCK) && this.unk138) this.unk138.remove();
         } else {

@@ -1,7 +1,7 @@
 // Player/MarioJump.cpp: the jumps, the air control, landing on things, wall kicks, dives, the down
 // statuses in the air, and jumpMain.
 
-import { VERSION } from '../version.js';
+import { V } from '../version.js';
 import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
 import { fr, s16, JMASSin, JMASCos, matan, FConverge, IConverge } from '../math.js';
 import { HitActor, MSG } from '../engine.js';
@@ -76,7 +76,7 @@ export abstract class MarioJump extends MarioRun {
         const g = this.mGroundPlane;
         if (g.bgType === 0xA || g.bgType === 0x800A || g.bgType === 0x108 || bg.isBounceOnLanding(g) || bg.isThing2(g) || bg.isThing3(g)) strong = false;
         if (this.mVel.y > -70) strong = false;
-        if (VERSION.pal && !this.isMario()) strong = false;   // (PAL: only for Mario himself)
+        if (!V.GMSJ01 && !this.isMario()) strong = false;   // (MarioJump.cpp #if !defined(VERSION_GMSJ01): US and later, only for Mario himself)
         return strong;
     }
     jumpingBasic(onGround: number, anim: number, flags: number) {
@@ -175,8 +175,8 @@ export abstract class MarioJump extends MarioRun {
         return 0;
     }
     landing() {
-        // (PAL: not once the landing is in state 3, so the timer stops there)
-        if (this.mVel.y < 0 && (!VERSION.pal || this.mStatusArg < 3) && this.mStatusTimer++ > 240) { this.mStatusTimer = 240; this.mStatusArg = 3; }
+        // (MarioJump.cpp #if !defined(VERSION_GMSJ01): US and later, not once the landing is in state 3)
+        if (this.mVel.y < 0 && (V.GMSJ01 || this.mStatusArg < 3) && this.mStatusTimer++ > 240) { this.mStatusTimer = 240; this.mStatusArg = 3; }
         if (this.checkBackTrig()) return 1;
         if (this.rocketCheck()) return 1;
         const anim = this.mStatusArg === 1 ? A.SLPLA : this.mStatusArg === 3 ? A.THROWN : A.LAND;

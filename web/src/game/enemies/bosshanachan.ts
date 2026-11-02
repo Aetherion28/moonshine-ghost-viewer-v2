@@ -279,8 +279,8 @@ export abstract class BHPartsBase extends LiveActor {
         const c = this.mactor!.getFrameCtrl(ANM_BCK);
         if (!c) return;
         if (this.curAnm === ANM.TUMBLE_L || this.curAnm === ANM.TUMBLE_R) {
-            if (!(c.frame <= 40)) c.rate = chaseFrameF(c.rate, ANM_FRAME_RATE, fr(c.end - c.frame));
-        } else c.rate = ANM_FRAME_RATE;
+            if (!(c.frame <= 40)) c.rate = chaseFrameF(c.rate, ANM_FRAME_RATE(), fr(c.end - c.frame));
+        } else c.rate = ANM_FRAME_RATE();
     }
     moveMapCollision_() { this.unk104!.moveTrans(this.center()); }
     isCurBckAlreadyEnd_() {
@@ -922,7 +922,7 @@ export class BossHanachan extends SpineEnemy {
         const c = part.mactor!.getFrameCtrl(ANM_BCK);
         if (!c) return;
         const duration = fr(fr(1 / this.unk198) * absF(fr(this.unk194 - part.rot.z)));
-        c.rate = fr(fr(1 / duration) * fr(2 * fr(40 * ANM_FRAME_RATE)));
+        c.rate = fr(fr(1 / duration) * fr(2 * fr(40 * ANM_FRAME_RATE())));
     }
     setTumbleAnm(blend: boolean) {
         let anm: number;
@@ -962,7 +962,7 @@ export class BossHanachan extends SpineEnemy {
     setHeadAndBodyNonstopMotionBlendRatio_(r: number) { for (const p of this.allParts()) p.setNonstopMotionBlendRatio_(r); }
     copyFrameFromOldAnmToNewAnm_() { for (const p of this.allParts()) p.copyFrameFromOldAnmToNewAnm_(); }
     changeAnmRateAndFrameUpdate_() {
-        let doRate = true, rate = ANM_FRAME_RATE;
+        let doRate = true, rate = ANM_FRAME_RATE();
         const C = this.unk1C0, H = this.mHead;
         if (this.spine!.getLatestNerve() === BHNerves.tumble) {
             this.offHeadAndBodyNonstopMotionBlend_();
@@ -986,11 +986,11 @@ export class BossHanachan extends SpineEnemy {
                 }
                 this.setHeadAndBodyNonstopMotionBlendRatio_(rate);
             }
-            rate = fr(fr(this.marchSpeed * ANM_FRAME_RATE) * C.mSLWalkBckRateMagnif);
+            rate = fr(fr(this.marchSpeed * ANM_FRAME_RATE()) * C.mSLWalkBckRateMagnif);
             if (rate < C.mSLWalkBckRateMin) rate = C.mSLWalkBckRateMin;
         } else {
             this.offHeadAndBodyNonstopMotionBlend_();
-            rate = ANM_FRAME_RATE;
+            rate = ANM_FRAME_RATE();
         }
         for (const p of this.allParts()) {
             const a = p.mactor!;

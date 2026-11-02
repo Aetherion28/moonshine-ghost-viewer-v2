@@ -12,6 +12,7 @@
 
 import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, MsRandF, matan, MsMtxSetXYZRPH, sqDist } from '../math.js';
+import { jgSqrt } from '../vecops.js';
 import { World, Stream, HitActor, TakeActor, LF, HF, MSG, ANM_BCK, ANM_BTP, MActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -21,7 +22,7 @@ import type { WallCheck } from '../collision.js';
 import { MapObjBase, MapObjBaseManager, MOF, STATE_DEAD, STATE_NORMAL, OBJ_MAKERS, mapObjGlobals } from './base.js';
 import { MapObjGeneral, GS } from './general.js';
 import './item.js';
-import { MTXConcat, MTXRotAxisRad, setRootMtx, getWaterSpeed, getVerticalVecToTargetXZ, marioSpeedY, marioHeld } from './lib.js';
+import { MTXConcat, rotationSetRotate, setRootMtx, getWaterSpeed, getVerticalVecToTargetXZ, marioSpeedY, marioHeld } from './lib.js';
 
 const ABS = Math.abs;
 export const isHideObj = (a: HitActor) => [AT.HELP_ACTOR, AT.KOOPA_JR_SIGN_M, AT.CHIP_SHINE, AT.SIGN_CIRCLE, AT.SIGN_CROSS, AT.SIGN_TRIANGLE, AT.STAR_SIGN, AT.MAP_OBJ_TREE_SCALE]
@@ -173,8 +174,9 @@ export class MapObjBall extends MapObjGeneral {
         if (ABS(this.vel.x) < c && ABS(this.vel.z) < c && this.groundPlane.n[1] === 1) { this.vel.x = 0; this.vel.z = 0; }
         if (ABS(this.vel.x) > c || ABS(this.vel.z) > c) {
             const ax = getVerticalVecToTargetXZ(this, fr(this.pos.x + this.vel.x), fr(this.pos.z + this.vel.z));
-            const dist = fr(Math.sqrt(this.vel.x * this.vel.x + this.vel.z * this.vel.z));
-            MTXRotAxisRad(rot, ax, fr(fr(dist / this.bodyRadius) * 2));
+            // (MapObjBall.cpp: JGeometry::TUtil<f32>::sqrt, then rot.setRotate(axis, ...): TRotation3::setRotate)
+            const dist = jgSqrt(fr(fr(this.vel.x * this.vel.x) + fr(this.vel.z * this.vel.z)));
+            rotationSetRotate(rot, ax, fr(fr(dist / this.bodyRadius) * 2));
         }
         const a = Float64Array.from(this.rootMtx());
         a[3] = a[7] = a[11] = 0;

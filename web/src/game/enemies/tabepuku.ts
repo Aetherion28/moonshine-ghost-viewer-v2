@@ -204,7 +204,7 @@ export class TabePuku extends SmallEnemy {
     prepareDive() {
         this.diveStartY = this.pos.y;
         this.setBckAnm(BCK_SWIM);
-        this.mactor!.setFrameRate(2 * ANM_FRAME_RATE, ANM_BCK);
+        this.mactor!.setFrameRate(2 * ANM_FRAME_RATE(), ANM_BCK);
         this.marchSpeed = this.PT.mDiveSpeed;
     }
     /** doDive: straight down to the floor, then the drag */

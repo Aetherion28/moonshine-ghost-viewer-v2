@@ -38,7 +38,7 @@ export interface GhostSegment { area: number; episode: number; frames: GhostFram
  * A later segment without a startQf starts at its first frame (its anchor is that QF), as Moonshine's
  * do. A plain frame list is one segment of the header's route.
  */
-export function writeSmsGhost(run: GhostFrame[] | GhostSegment[], o: { area: number; episode: number; region: number; name?: string; author?: string }): ArrayBuffer {
+export function writeSmsGhost(run: GhostFrame[] | GhostSegment[], o: { area: number; episode: number; region: number; name?: string; author?: string; gameId?: string; discRevision?: number }): ArrayBuffer {
     const segs: GhostSegment[] = (run.length && !('frames' in (run[0] as any)) ? [{ area: o.area, episode: o.episode, frames: run as GhostFrame[] }] : (run as GhostSegment[])).filter((g) => g.frames.length);
     if (!segs.length) throw new Error('nothing recorded');
     const frames = segs.flatMap((g) => g.frames);
@@ -59,6 +59,9 @@ export function writeSmsGhost(run: GhostFrame[] | GhostSegment[], o: { area: num
     const be24 = (off: number, v: number) => { v &= 0xffffff; b[off] = v >>> 16; b[off + 1] = (v >>> 8) & 0xff; b[off + 2] = v & 0xff; };
     str(0, 'SGHF', 4);
     dv.setUint16(4, 7); dv.setUint32(8, size);
+    // 0x20 gameId and 0x24 discRevision: the build this was played on (version.ts reads them back)
+    if (o.gameId) str(0x20, o.gameId.slice(0, 4), 4);
+    b[0x24] = o.discRevision || 0;
     b[0x25] = o.region;
     b[0x2c] = segInfo[0].area; b[0x2d] = segInfo[0].episode; b[0x2e] = 0xff; b[0x2f] = 0; dv.setInt32(0x30, -1);
     dv.setUint32(0x34, endQf - startQf); dv.setUint32(0x38, startQf); dv.setUint32(0x3c, endQf); dv.setUint32(0x40, endQf - startQf);

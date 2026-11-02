@@ -2,11 +2,13 @@
 """Generates objdata.ts: the map objects' data table (sObjDataTable, MoveBG/MapObjInit.cpp) from
 the decomp, with the actor types and hit categories resolved to numbers.
 
-    python3 gen_objdata.py /path/to/sms-ai-decomp > objdata.ts
+    python3 gen_objdata.py /path/to/SMS-Decomp-PAL > objdata.ts
+
+(any of the public regional repositories, Aetherion28/SMS-Decomp-*: they share one source tree)
 """
 import json, re, sys
 
-root = sys.argv[1] if len(sys.argv) > 1 else '/home/claude/sms-ai-decomp'
+root = sys.argv[1] if len(sys.argv) > 1 else '../SMS-Decomp-PAL'
 src = open(root + '/src/MoveBG/MapObjInit.cpp', encoding='utf-8').read()
 src = re.sub(r'//[^\n]*', '', src)
 src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)

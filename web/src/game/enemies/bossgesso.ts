@@ -18,9 +18,10 @@
 // Not here: the camera shakes, rumble, the balloons and streaming movie (told as events), the
 // damage fog, the shadow, and the particles (effects by name).
 
+import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, MsWrap, MsClamp, MsAngleDiff, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsMtxSetXYZRPH, MsSin, MsCos, MsRandF, matan, frsqrte, JMASSin, JMASCos, jgNormalize } from '../math.js';
 import { vLen } from '../vecops.js';
-import { World, Stream, NameRef, HitActor, TakeActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, PathNode, MActor, LF, HF, HC, MSG, ANM_BCK, ANM_BTP, ANM_BTK, CUE_MOVE, CUE_CALC_ANIM, CUE_ENTRY, nerve, Spine, readParams, SPINE_PARAMS, PSchema } from '../engine.js';
+import { World, Stream, NameRef, HitActor, TakeActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, PathNode, MActor, LF, HF, HC, MSG, ANM_BCK, ANM_BTP, ANM_BTK, CUE_MOVE, CUE_CALC_ANIM, CUE_ENTRY, nerve, Spine, readParams, SPINE_PARAMS, PSchema, ANM_FRAME_RATE } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
@@ -351,7 +352,7 @@ export class BGTakeHit extends TakeActor {
         if (msg === MSG.TAKE) {
             const a = sender as TakeActor;
             if (a.held && a.held !== this) return false;
-            if (t.canTake()) { this.holder = a; t.changeStateAndFixNodes(TS_HELD); return true; }
+            if (t.canTake()) { this.holder = a; t.changeStateAndFixNodes(TS_HELD); if (!V.GMSJ01) t.owner.unk1A0 = 1; return true; }
         }
         if (msg === MSG.THROWN || msg === MSG.DETACH) {
             this.holder = null;
@@ -507,7 +508,7 @@ export class BGTentacle extends NameRef {
         else if (o.mAttackMode === ASTATE_SKIP_ROPE) s.setBckFromIndex(BCK_SHAND_JUMP);
         else s.setBckFromIndex(onGround ? BCK_SHAND_ATTACK : BCK_SHAND_FLY);
         const c = s.getFrameCtrl(ANM_BCK);
-        if (c) c.rate = fr(o.getAttackSpeed() * 2);   // (SMSGetAnmFrameRate)
+        if (c) c.rate = fr(o.getAttackSpeed() * ANM_FRAME_RATE());   // (SMSGetAnmFrameRate)
         this.unk4C = 0;
     }
     changeStateAndFixNodes(s: number) {

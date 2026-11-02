@@ -10,7 +10,7 @@
 // Everything the stage's other actors ask of Mario (MarioProxy's interface: pos, vel, faceAngle,
 // groundPlane, isJumping, hipDrop, marioFlags...) is here too, so they work on either.
 
-import { VERSION } from '../version.js';
+import { V } from '../version.js';
 import { V3, s16, JMASSin, JMASCos, matan, IConverge, Mtx, mtx, MsMtxSetRotRPH } from '../math.js';
 import { HitActor, TakeActor, LiveActor, MSG, HC, LF, Stream, CUE_MOVE, World, calcKeyCode, shineIDofExStage, FC_PINGPONG_LOOP, MActor, AnmData, ANM_BCK } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -673,7 +673,7 @@ export class PlayerMario extends TMarioSim {
         else { this.changePlayerStatus(S.BACK_JUMP, 0, false); this.mVel.y = this.mJumpParams.mGetOffYoshiY; this.mYoshi!.getOff(false); }
         this.setAnimation(A.JUMP, 1);
         this.unk78 &= ~0x100;
-        if (!VERSION.pal) this.pos.y = fadd(this.pos.y, 100);   // (PAL drops the lift)
+        if (V.GMSJ01) this.pos.y = fadd(this.pos.y, 100);   // (MarioMove.cpp: only JP 1.0 lifts Mario 100 getting off Yoshi)
         this.mForwardVel = -8;
         const G = this.mWaterGun;
         if (G) { G.changeNozzle(NOZZLE.Hover, true); this.normalizeNozzle(); G.resetWaterToFull(); }
@@ -1303,7 +1303,11 @@ export class PlayerMario extends TMarioSim {
             a.receiveMessage(wa, MSG.SPRAYED_BY_WATER);
         }
     }
-    hitHipDrop(a: HitActor) { if (this.mStatus === S.HIP_DROP && this.mStatusState === 2 && a.pos.y < this.pos.y) a.receiveMessage(this, MSG.HIP_DROP); }
+    /** TMario::hitHipDrop (MarioCheckCol.cpp): US and later (#if !defined(VERSION_GMSJ01)) also hit in status state 3 */
+    hitHipDrop(a: HitActor) {
+        const ss = this.mStatusState;
+        if (this.mStatus === S.HIP_DROP && (ss === 2 || (!V.GMSJ01 && ss === 3)) && a.pos.y < this.pos.y) a.receiveMessage(this, MSG.HIP_DROP);
+    }
     hitPushup(a: HitActor) { if (this.checkStatusType(S.FLAG_JUMPING) && this.mVel.y > 0) a.receiveMessage(this, MSG.PUSH_UP); this.hitNormal(a); }
     keepDistanceA(a: HitActor) { this.keepDistance(a.pos, a.damageRadius, 0); }
     hitMario(a: HitActor) { if (this.mHeldObject !== a && this.holder !== a) this.keepDistanceA(a); this.wantToTakeActor(a); this.hitNormal(a); }
@@ -1614,7 +1618,8 @@ export class PlayerMario extends TMarioSim {
             this.mFloorHitActor.pos.z = fadd(this.pos.z, JMASCos(this.mFaceAngle.y));
             const E = this.mDmgParamsGraffitoElec;
             this.damageExec(this.mFloorHitActor, 0, 3, E.mWaterEmit, E.mMinSpeed, E.mMotor, 0, 0x3C);
-            return this.changePlayerStatus(S.WAIT, 0, true);
+            // (MarioAutodemo.cpp #if !defined(VERSION_GMSJ01): US and later go to ROCKET_LANDING, JP 1.0 to WAIT)
+            return this.changePlayerStatus(!V.GMSJ01 ? S.ROCKET_LANDING : S.WAIT, 0, true);
         }
         return 0;
     }

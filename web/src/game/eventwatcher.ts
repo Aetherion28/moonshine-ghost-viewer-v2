@@ -36,6 +36,7 @@
 //   timer (TGCConsole2::setTimer(-1), its getFinishedTime) is updated once a frame after the
 //   movement ticks; the insert / remove animations (unk3F) as done at once.
 
+import { V } from './version.js';
 import { V3, fr, JMASSin, JMASCos } from './math.js';
 import { World, NameRef, HitActor, LiveActor, LF, HF, CUE_MOVE } from './engine.js';
 import { AT } from './actortypes.js';
@@ -428,6 +429,9 @@ const EV: Record<string, Ev> = {
     stopBGM: noop(1),
     startSE: noop(1),
     startEventSE: noop(1),
+    // EventWatcher.cpp:1381, after JP 1.0: the Monteman race's BGM and fanfare (sound only)
+    startMontemanBGM: noop(0),
+    startMontemanFanfare: noop(0),
     startMiss: noop(0, (it) => call(marioAny(it), 'loserExec')),
     changeSunglass: (it, n) => {
         args(it, 1, n); const off = it.pop().getDataInt(); const m = marioAny(it);
@@ -585,8 +589,8 @@ function checkNerve(it: EvInterp, n: number, latest: boolean) {
     it.pushBool(cur ? cur.name === want : want === null);
 }
 
-/** TSpcTypedBinary<TEventWatcher>::initUserBuiltin (GMSJ01's list: no Monteman BGM builtins) */
+/** TSpcTypedBinary<TEventWatcher>::initUserBuiltin (JP 1.0 has no Monteman BGM builtins) */
 function initUserBuiltin(b: SpcBinary) {
-    for (const [k, f] of Object.entries(EV)) if (k !== 'setEventStart' && k !== 'setEventEnd') b.bindSystemDataToSymbol(k, f);
+    for (const [k, f] of Object.entries(EV)) if (k !== 'setEventStart' && k !== 'setEventEnd' && !(V.GMSJ01 && (k === 'startMontemanBGM' || k === 'startMontemanFanfare'))) b.bindSystemDataToSymbol(k, f);
     for (const [k, f] of Object.entries(NPC)) b.bindSystemDataToSymbol(k, f);
 }

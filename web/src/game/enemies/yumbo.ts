@@ -197,7 +197,7 @@ YumboNerves.hiding = nerve<Yumbo>('TNerveYumboHiding', (spine: S) => {
     const self = spine.body;
     if (spine.time === 0) {
         self.setBckAnm(4);
-        self.mactor!.setFrameRate(3 * ANM_FRAME_RATE, ANM_BCK);
+        self.mactor!.setFrameRate(3 * ANM_FRAME_RATE(), ANM_BCK);
         self.unk1D8 = 0;
     }
     if (!self.unk1D8 && self.mactor!.getFrameCtrl(ANM_BCK)!.checkPass(34)) {

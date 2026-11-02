@@ -10,6 +10,7 @@ import { World, SpineEnemy, EnemyManager, LiveManager, LiveActor, PathNode, Grap
 import { newAndRegisterObjByEventID } from '../mapobj/item.js';
 import { mapObjGlobals } from '../mapobj/base.js';
 import { AT } from '../actortypes.js';
+import { V } from '../version.js';
 import { register } from '../scene.js';
 import { jnormalize, setLength, ItemRef, itemByEventID, itemByName, appearItem } from './animal.js';
 
@@ -158,7 +159,7 @@ export abstract class RealoidActor extends LiveActor {
     getTakingMtx() { return this.takingMtx; }
     checkHitActors() {
         if (this.rflags & RF_UNK2_OR_UNK4) return;
-        for (const c of this.collisions) if (c.actorType === AT.MARIO) this.world.mario.receiveMessage(this, MSG.ATTACK);
+        for (const c of this.collisions) if (c.actorType === AT.MARIO && (V.GMSJ01 || V.GMSE01 || !(this.world.talkMode || this.world.demoMode))) this.world.mario.receiveMessage(this, MSG.ATTACK);
     }
     calcRootMatrixOnTaking() { const m = this.holder!.getTakingMtx(); if (m) this.baseTR.set(m); }
     calcBoidRootMatrix(b: Boid) {

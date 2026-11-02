@@ -12,8 +12,11 @@
 //
 // GMSJ01 / US code (the PAL version computes the direction in perform instead: VERSION_GMSP01).
 
-import { fr, V3, mtx, Mtx } from '../math.js';
-import { World, HitActor, LF, HF, HC, MSG, nerve, Spine, Stream, CUE_MOVE, SpineEnemy, PSchema } from '../engine.js';
+import { fr, V3, mtx, Mtx, HALF_PI_F, jgNormalize, psMtxMultVec } from '../math.js';
+import { vNorm, vLen } from '../vecops.js';
+import { MTXRotAxisRad } from '../mapobj/lib.js';
+import { V } from '../version.js';
+import { World, HitActor, LF, HF, HC, MSG, nerve, Spine, Stream, CUE_MOVE, CUE_CALC_ANIM, SpineEnemy, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH } from './smallEnemy.js';
 import { WalkerEnemy, walkerParams } from './walker.js';
@@ -96,6 +99,7 @@ export class AmiNoko extends WalkerEnemy {
         this.onLiveFlag(LF.UNK10);
         this.initialGraphNode();
         if (this.world.map === 8) this.unk210 = 0;
+        if (!V.GMSJ01) this.unkE8 = 0; // no riding the ground actor
         this.hit = new AmiHit(this);
     }
     reset() { super.reset(); }
@@ -128,21 +132,20 @@ export class AmiNoko extends WalkerEnemy {
         return msg === MSG.UNKB;
     }
     isCollidMove(_a: HitActor) { return false; }
-    calcRootMatrix() {
-        this.world.sound(SE.EN_AMINOKO_SPARK, this.pos);
-        const m = this.baseTR;
-        if (this.isBckAnm(BCK_FLYING_LOOP)) {
-            this.unk1CC[3] = this.pos.x; this.unk1CC[7] = this.pos.y; this.unk1CC[11] = this.pos.z;
-            m.set(this.unk1CC);
-            return;
-        }
-        const w = this.world;
-        const pos = V3.sub(this.goal.point(), this.pos);
-        if (pos.x === 0 && pos.y === 0 && pos.z === 0) pos.x = 1;
-        pos.normalize();
-        const rec: WallCheck = { center: [this.pos.x, this.pos.y, this.pos.z], radius: 10, maxResults: 4, flags: 0, results: [] };
+    /**
+     * The facing update. JP 1.0 does it inside calcRootMatrix; the later builds moved it to
+     * calcDirection (amiNoko.cpp:225), run from perform on the animation cue, before moveObject.
+     */
+    calcDirection() {
+        const w = this.world, P = this.pos;
+        const pos = V3.sub(this.goal.point(), P);
+        if (V.GMSJ01) {
+            if (pos.x === 0 && pos.y === 0 && pos.z === 0) pos.x = 1;
+            vNorm(pos);
+        } else if (isZero(pos)) pos.set(1, 0, 0);
+        else jgNormalize(pos);
+        const rec: WallCheck = { center: [P.x, P.y, P.z], radius: 10, maxResults: 4, flags: 0, results: [] };
         const n = w.col.checkWalls(rec);
-        const P = this.pos;
         const planeDist = (d: BGCheckData) => d.n[0] * P.x + d.n[1] * P.y + d.n[2] * P.z + d.d;
         let minDist = -1, bestIdx = -1;
         for (let i = 0; i < n; ++i) {
@@ -166,33 +169,52 @@ export class AmiNoko extends WalkerEnemy {
         const step = this.PA.mSLMtxRotSpeed;
         const normal = this.unk194 ? new V3(this.unk194.n[0], this.unk194.n[1], this.unk194.n[2]) : new V3(0, 1, 0);
         const u = this.unk19C;
-        u.x = converge(u.x, normal.x, step); u.y = converge(u.y, normal.y, step); u.z = converge(u.z, normal.z, step);
+        if (!V.GMSJ01 && normal.dot(u) <= -1) u.set(normal);
+        else {
+            u.x = converge(u.x, normal.x, step); u.y = converge(u.y, normal.y, step); u.z = converge(u.z, normal.z, step);
+            if (!V.GMSJ01) vNorm(u);
+        }
         if (this.unk1A8.dot(pos) < -0.1) {
-            // MTXRotAxisRad(normal, pi / 2): k x v + k (k . v)
-            const k = normal.clone().normalize();
-            const kv = k.dot(pos);
-            const c = new V3().cross(k, pos);
-            pos.set(fr(c.x + k.x * kv), fr(c.y + k.y * kv), fr(c.z + k.z * kv));
+            const rot = mtx();
+            MTXRotAxisRad(rot, normal, HALF_PI_F);
+            psMtxMultVec(rot, pos, pos);
         }
         const f = this.unk1A8;
         f.x = converge(f.x, pos.x, step); f.y = converge(f.y, pos.y, step); f.z = converge(f.z, pos.z, step);
-        f.normalize().fround();
-        let nrm = this.unk19C.clone(), fwd = this.unk1A8.clone();
-        const axis = new V3().cross(nrm, fwd);
+        vNorm(f);
+        if (V.GMSJ01) return;
+        const axis = new V3().cross(u, f).fround();
+        if (!isZero(axis)) { this.unk1B4.set(u); this.unk1C0.set(f); }
+        pos.cross(axis, u).fround();
+        if (!isZero(pos)) f.set(pos);
+    }
+    calcRootMatrix() {
+        this.world.sound(SE.EN_AMINOKO_SPARK, this.pos);
+        const m = this.baseTR, P = this.pos, u = this.unk19C;
+        if (this.isBckAnm(BCK_FLYING_LOOP)) {
+            this.unk1CC[3] = P.x; this.unk1CC[7] = P.y; this.unk1CC[11] = P.z;
+            m.set(this.unk1CC);
+            return;
+        }
+        if (V.GMSJ01) this.calcDirection();
+        let nrm = u.clone(), fwd = this.unk1A8.clone();
+        const axis = new V3().cross(nrm, fwd).fround();
         if (isZero(axis)) {
             nrm = this.unk1B4.clone(); fwd = this.unk1C0.clone();
-            axis.cross(nrm, fwd);
+            axis.cross(nrm, fwd).fround();
             if (isZero(axis)) axis.set(1, 0, 0);
-        } else { this.unk1B4.set(this.unk19C); this.unk1C0.set(this.unk1A8); }
-        axis.normalize();
-        fwd.cross(axis, nrm);
-        if (isZero(fwd)) fwd.set(0, 0, 1); else fwd.normalize();
-        nrm.cross(fwd, axis);
-        if (isZero(nrm)) nrm.set(0, 1, 0); else nrm.normalize();
+        } else if (V.GMSJ01) { this.unk1B4.set(u); this.unk1C0.set(this.unk1A8); }
+        vNorm(axis);
+        if (V.GMSJ01) {
+            fwd.cross(axis, nrm).fround();
+            if (isZero(fwd)) fwd.set(0, 0, 1); else vNorm(fwd);
+            nrm.cross(fwd, axis).fround();
+            if (isZero(nrm)) nrm.set(0, 1, 0); else vNorm(nrm);
+        }
         m[0] = axis.x; m[4] = axis.y; m[8] = axis.z;
         m[1] = nrm.x; m[5] = nrm.y; m[9] = nrm.z;
         m[2] = fwd.x; m[6] = fwd.y; m[10] = fwd.z;
-        m[3] = fr(P.x - 30 * u.x); m[7] = fr(P.y - 30 * u.y); m[11] = fr(P.z - 30 * u.z);
+        m[3] = fr(P.x - fr(30 * u.x)); m[7] = fr(P.y - fr(30 * u.y)); m[11] = fr(P.z - fr(30 * u.z));
         this.unk1CC.set(m);
     }
     bind() {
@@ -212,15 +234,25 @@ export class AmiNoko extends WalkerEnemy {
         } else super.bind();
     }
     perform(cue: number) {
+        if (!V.GMSJ01 && (cue & CUE_CALC_ANIM)) this.calcDirection();
         super.perform(cue);
         this.hit!.perform(cue);
     }
     getGravityY() { return this.spine!.current === AmiNokoNerves.die ? 0 : this.gravity; }
     creepToCurPathNode(s: number) {
+        if (!V.GMSJ01) {
+            const d = V3.sub(this.goal.point(), this.pos);
+            if (!isZero(d)) {
+                const speed = Math.min(s, vLen(d));
+                jgNormalize(d).scale(speed).fround();
+                this.posDelta.add(d).fround();
+            }
+            return;
+        }
         if (this.isBckAnm(BCK_RUN1_LOOP) || this.isBckAnm(BCK_RUN2_LOOP) || this.isBckAnm(BCK_TURN1_LOOP) || this.isBckAnm(BCK_TURN2_LOOP)) {
             const d = V3.sub(this.goal.point(), this.pos);
             if (d.x === 0 && d.y === 0 && d.z === 0) d.x = 1;
-            d.normalize().scale(s);
+            vNorm(d).scale(s);
             this.posDelta.add(d);
         }
     }
@@ -275,7 +307,7 @@ AmiNokoNerves.turn = nerve<AmiNoko>('TNerveAmiNokoTurn', (spine: S) => {
 AmiNokoNerves.attack = nerve<AmiNoko>('TNerveAmiNokoAttack', () => false);
 AmiNokoNerves.die = nerve<AmiNoko>('TNerveAmiNokoDie', (spine: S) => {
     const self = spine.body;
-    if (spine.time === 0) { self.setBckAnm(BCK_FLYING_START); self.onHitFilter(HF.NO_COLLISION); }
+    if (spine.time === 0) { self.setBckAnm(BCK_FLYING_START); self.onHitFilter(HF.NO_COLLISION); if (!V.GMSJ01) self.hit!.onHitFilter(HF.NO_COLLISION); }
     if (self.checkCurAnmEnd(0) && self.isBckAnm(BCK_FLYING_START)) {
         // (the direction away from Mario is worked out and thrown away: its up vector instead)
         const m = self.baseTR;

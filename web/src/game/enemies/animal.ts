@@ -12,10 +12,10 @@ import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 
 // ---------------------------------------------------------------- shared helpers
-/** SMSGetAnmFrameRate (60 / 30 vsyncs) */
+/** SMSGetAnmFrameRate() (60 / SMSGetVSyncTimesPerSec()) */
 export const RATE = ANM_FRAME_RATE;
 /** CLBPalFrame<int>: CLBRoundf(n / SMSGetAnmFrameRate()) */
-export const palFrame = (n: number) => { const v = n * (1 / RATE); return Math.trunc(v + (v > 0 ? 0.5 : -0.5)); };
+export const palFrame = (n: number) => { const v = n * (1 / RATE()); return Math.trunc(v + (v > 0 ? 0.5 : -0.5)); };
 /** CLBChaseGeneralConstantSpecifySpeed: value moved toward desired by at most speed (returned). */
 export function chase(value: number, desired: number, speed: number) {
     let d = desired - value;
@@ -179,7 +179,7 @@ export class AnimalBase extends SpineEnemy {
         const sv = this.save;
         if (this.mactor) this.mactor.setBckFromIndex(0);
         this.marchSpeed = 0;
-        this.turnSpeed = fr(sv.mSLWalkTurnSpeed * RATE);
+        this.turnSpeed = fr(sv.mSLWalkTurnSpeed * RATE());
         const fc = this.mactor ? this.mactor.getFrameCtrl(ANM_BCK) : null;
         if (fc) {
             const n = sv.mSLSharedAnmNum;
@@ -259,9 +259,9 @@ export class AnimalBase extends SpineEnemy {
     /** execWalk: speed up (or slow down) and fly toward the goal. */
     execWalk(moving: boolean) {
         const sv = this.save;
-        if (moving) this.marchSpeed = fr(chase(this.marchSpeed, sv.mSLMaxMarchSpeed * RATE, sv.mSLMarchAccel * RATE * RATE));
-        else this.marchSpeed = fr(chase(this.marchSpeed, 0, sv.mSLMarchDecrease * RATE * RATE));
-        this.turnSpeed = fr((this.marchSpeed < 0.001 ? sv.mSLWaitTurnSpeed : sv.mSLWalkTurnSpeed) * RATE);
+        if (moving) this.marchSpeed = fr(chase(this.marchSpeed, sv.mSLMaxMarchSpeed * RATE(), sv.mSLMarchAccel * RATE() * RATE()));
+        else this.marchSpeed = fr(chase(this.marchSpeed, 0, sv.mSLMarchDecrease * RATE() * RATE()));
+        this.turnSpeed = fr((this.marchSpeed < 0.001 ? sv.mSLWaitTurnSpeed : sv.mSLWalkTurnSpeed) * RATE());
         let turn = this.turnSpeed;
         const march = this.marchSpeed;
         const diff = V3.sub(this.goal.point(), this.pos);

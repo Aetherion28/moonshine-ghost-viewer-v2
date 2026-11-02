@@ -359,7 +359,7 @@ TamaNerves.sink = nerve<TamaNoko>('TNerveTamaNokoSink', (spine: S) => {
 /** TNerveTamaNokoHitWater: sprayed asleep: it shakes, and (after mSLWakeUpTimer, or once woken before) gets up */
 TamaNerves.hitWater = nerve<TamaNoko>('TNerveTamaNokoHitWater', (spine: S) => {
     const self = spine.body;
-    if (spine.time < 2) { self.setBckAnm(BCK_WATERHIT); self.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK); }
+    if (spine.time < 2) { self.setBckAnm(BCK_WATERHIT); self.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BCK); }
     if (self.checkCurAnmEnd(ANM_BCK)) {
         if (self.isBckAnm(BCK_WATERHIT)) self.setBckAnm(BCK_WATERHIT_LOOP);
         else if (self.isBckAnm(BCK_WATERHIT_LOOP)) {
@@ -383,7 +383,7 @@ TamaNerves.hitWater = nerve<TamaNoko>('TNerveTamaNokoHitWater', (spine: S) => {
 });
 TamaNerves.wait = nerve<TamaNoko>('TNerveTamaNokoWait', (spine: S) => {
     const self = spine.body;
-    if (spine.time < 2) { self.setBckAnm(BCK_WAIT_START); self.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK); }
+    if (spine.time < 2) { self.setBckAnm(BCK_WAIT_START); self.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BCK); }
     if (self.checkCurAnmEnd(ANM_BCK)) {
         if (self.isBckAnm(BCK_WAIT_START)) self.setBckAnm(BCK_WAIT);
         else if (self.isBckAnm(BCK_WAIT)) { if (spine.time > self.unk198.mSLWaitTime && self.isBckAnm(BCK_WAIT)) self.setBckAnm(BCK_WAIT_END); }

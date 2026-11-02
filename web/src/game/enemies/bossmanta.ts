@@ -160,7 +160,7 @@ MantaNerves.death = nerve<BossManta>('TNerveMantaDeath', (spine: MS) => {
     const self = spine.body, a = self.mactor;
     if (spine.getTime() === 0 && a) {
         a.setBckFromIndex(BCK_DEATH);
-        a.setFrameRate(ANM_FRAME_RATE, ANM_BCK);
+        a.setFrameRate(ANM_FRAME_RATE(), ANM_BCK);
         self.setBckMotionBlendRatio(0);
     }
     if (self.checkCurAnmEnd(0)) {
@@ -241,13 +241,13 @@ export class BossManta extends SpineEnemy {
         a.setBckFromIndex(BCK_WALK);
         this.mc.oldIdx = BCK_WALK_BLEND;   // (setBckOldMotionBlendAnmPtr(anm 4))
         this.setBckMotionBlendRatio(0.5);
-        a.setFrameRate(fr(sFrameRate[this.mGeneration] * ANM_FRAME_RATE), ANM_BCK);
+        a.setFrameRate(fr(sFrameRate[this.mGeneration] * ANM_FRAME_RATE()), ANM_BCK);
     }
     startDamageAnim() {
         const a = this.mactor;
         if (!a) return;
         a.setBckFromIndex(BCK_DAMAGE);
-        a.setFrameRate(fr(sFrameRate[this.mGeneration] * ANM_FRAME_RATE), ANM_BCK);
+        a.setFrameRate(fr(sFrameRate[this.mGeneration] * ANM_FRAME_RATE()), ANM_BCK);
         this.setBckMotionBlendRatio(0);
     }
     updateAnimBlend() {
