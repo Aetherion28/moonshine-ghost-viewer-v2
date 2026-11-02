@@ -33,9 +33,26 @@ export interface TraceGhost {
         ticks: TraceTick[];
         /** every libc rand() call: tick (QF), caller return address, post-seed, result */
         rng: { qf: Int32Array; caller: Uint32Array; seed: Uint32Array; result: Uint16Array; count: number };
+        /** the actors' recorded state (see TraceActors) */
+        actors: TraceActors;
     };
 }
 
+
+/**
+ * The stage's actors as the recorder saw them once a frame (ghost_trace.cpp roster(): every live
+ * manager's objects, enemy managers first, then the conductor's lone actors, each a copy of the
+ * object's first 0x150 or 0xF4 bytes, sent as the words that changed). Kept per record: the QF of
+ * the tick it was taken at, the recorder's id for the object (one per object pointer), the
+ * JDrama::TNameRef key code (+0x8), TPlacement's position (+0x10), TActor's scaling (+0x24) and
+ * rotation (+0x30), and TLiveActor's velocity (+0xAC) and mLiveFlag (+0xF0).
+ * ends: the QF where an object left the roster (deleted, or no longer in a manager).
+ */
+export interface TraceActors {
+    count: number; qf: Int32Array; id: Uint32Array; key: Uint16Array; created: Uint8Array; extent: Uint16Array;
+    pos: Float32Array; scale: Float32Array; rot: Float32Array; vel: Float32Array; liveFlag: Uint32Array;
+    ends: { qf: Int32Array; id: Uint32Array; count: number };
+}
 
 /** A view matrix's rotation (rows, world to view) as the camera's world orientation quaternion. */
 function viewQuat(m: number[]): [number, number, number, number] {
@@ -70,6 +87,9 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     let firstSeed: number | null = null, lastCamKey = -1e9, segNow = -1;
     /** the world tick at the current frame's start, and the recorder's (Mario-update) tick there */
     let worldTick = 0, frameTick: number | null = null;
+    const u32v = new Uint32Array(1), f32v = new Float32Array(u32v.buffer);
+    const ac = { qf: [] as number[], id: [] as number[], key: [] as number[], created: [] as number[], extent: [] as number[], pos: [] as number[], scale: [] as number[], rot: [] as number[], vel: [] as number[], liveFlag: [] as number[] };
+    const ae = { qf: [] as number[], id: [] as number[] };
     const worldQf = (t: number) => (frameTick === null ? t : worldTick + (t - frameTick)) - 1;
     const summary = replayMstr(buf, {
         onIdentity: (id) => { identity = id; },
@@ -80,6 +100,14 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             if (frameTick === null) worldTick = s.tick; else worldTick += 4;
             frameTick = s.tick;
         },
+        onActor: (aid, _ptr, extent, words, created, _frame, tick) => {
+            const fl = (n: number) => { u32v[0] = words[n]; return f32v[0]; };
+            const at = worldQf(tick);
+            ac.qf.push(at); ac.id.push(aid); ac.key.push(words[2] >>> 16); ac.created.push(created ? 1 : 0); ac.extent.push(extent);
+            ac.pos.push(fl(4), fl(5), fl(6)); ac.scale.push(fl(9), fl(10), fl(11)); ac.rot.push(fl(12), fl(13), fl(14));
+            if (extent >= 0xF4) { ac.vel.push(fl(43), fl(44), fl(45)); ac.liveFlag.push(words[60]); } else { ac.vel.push(0, 0, 0); ac.liveFlag.push(0); }
+        },
+        onActorEnd: (aid, _frame, tick) => { ae.qf.push(worldQf(tick)); ae.id.push(aid); },
         onRng: (c) => { rq.push(worldQf(c.tick)); rc.push(c.caller); rs.push(c.seed); rr.push(c.result); },
         onTick: (s) => {
             // v3: each frame also records the pad as the frame starts (cue 0, word 1's high bit), not a movement update
@@ -165,6 +193,11 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
         trace: {
             summary, identity: id, hz, ticks,
             rng: { qf: Int32Array.from(rq), caller: Uint32Array.from(rc), seed: Uint32Array.from(rs), result: Uint16Array.from(rr), count: rq.length },
+            actors: {
+                count: ac.qf.length, qf: Int32Array.from(ac.qf), id: Uint32Array.from(ac.id), key: Uint16Array.from(ac.key), created: Uint8Array.from(ac.created), extent: Uint16Array.from(ac.extent),
+                pos: Float32Array.from(ac.pos), scale: Float32Array.from(ac.scale), rot: Float32Array.from(ac.rot), vel: Float32Array.from(ac.vel), liveFlag: Uint32Array.from(ac.liveFlag),
+                ends: { qf: Int32Array.from(ae.qf), id: Uint32Array.from(ae.id), count: ae.qf.length },
+            },
         },
     };
 }

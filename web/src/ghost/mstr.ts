@@ -297,8 +297,8 @@ export function replayMstr(buf: ArrayBuffer, o: {
     onRng?: (c: MstrRngCall) => void;
     onIdentity?: (id: MstrIdentity) => void;
     onSession?: (b: Uint8Array, frame: number) => void;
-    onActor?: (id: number, pointer: number, extent: number, words: Uint32Array, created: boolean, frame: number) => void;
-    onActorEnd?: (id: number, frame: number) => void;
+    onActor?: (id: number, pointer: number, extent: number, words: Uint32Array, created: boolean, frame: number, tick: number) => void;
+    onActorEnd?: (id: number, frame: number, tick: number) => void;
 } = {}): MstrSummary {
     const st: MstrTickState = {
         frame: 0, tick: 0, scene: -1, context: 0, retrace: 0, osTick: 0, seed: 0, input: null,
@@ -350,10 +350,10 @@ export function replayMstr(buf: ArrayBuffer, o: {
                 if (!a || created) { a = { pointer, extent, words: new Uint32Array(extent >>> 2) }; actors.set(id, a); }
                 let p = 28;
                 for (let n = 0; n < (extent >>> 2); n++) if (bv.getUint32(16 + 4 * (n >> 5)) & (1 << (n & 31))) { a.words[n] = bv.getUint32(p); p += 4; }
-                if (o.onActor) o.onActor(id, pointer, extent, a.words, created, r.frame);
+                if (o.onActor) o.onActor(id, pointer, extent, a.words, created, r.frame, r.tick);
                 break;
             }
-            case K.ACTOR_END: { const id = bv.getUint32(0); actors.delete(id); if (o.onActorEnd) o.onActorEnd(id, r.frame); break; }
+            case K.ACTOR_END: { const id = bv.getUint32(0); actors.delete(id); if (o.onActorEnd) o.onActorEnd(id, r.frame, r.tick); break; }
         }
     });
     flushTick();

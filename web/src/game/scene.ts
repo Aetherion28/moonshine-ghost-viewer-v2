@@ -57,6 +57,8 @@ export class Stage {
      * code alone moves him ("Simulate").
      */
     pinMario: ((qf: number) => void) | null = null;
+    /** "Play recording": called at the end of each tick's movement (before the frame's CalcAnim) to put the stage's actors where the recording has them */
+    pinWorld: ((qf: number) => void) | null = null;
     frame = 0;
     seed = 0;
 
@@ -244,6 +246,7 @@ export class Stage {
             if (w.eventGroup) w.eventGroup.perform(CUE_MOVE);
             // PerformList Console (Group 2D: the talk window), then TMarDirector::movement (movement_game)
             if (w.talk) w.talk.tick(last, !!D && D.state === 4);
+            if (this.pinWorld) this.pinWorld(this.qf);
             if (last) {
                 // PerformList CalcAnim
                 this.clip();
