@@ -723,6 +723,13 @@ export class GameLayer {
                 if ((a as any).shadowOnly) {
                     mantaVolumeMaterials(inst, true);
                     const tw = new J3DModelInstanceSimple(inst.modelData);
+                    // (on the same pose: the sim's joints, as the back faces' instance has them; a twin left
+                    // at the bind pose made a different volume of its front faces: holes and strips)
+                    tw.jointMatrixCalcCallback = inst.jointMatrixCalcCallback;
+                    // (no culling by the joints' boxes: a shadow volume's count needs every face of it, and
+                    // a skinned mesh's joint boxes don't hold its faces scaled ten times high. The game
+                    // draws the whole mesh: drawMantaShadow)
+                    for (const x of [inst, tw]) { const cv = x.calcView.bind(x); x.calcView = (vm: any, _f: any) => cv(vm, null); }
                     tw.passMask = inst.passMask; (tw as any).isPlayer = true;
                     mantaVolumeMaterials(tw, false);
                     (mm as any).twin = tw;
