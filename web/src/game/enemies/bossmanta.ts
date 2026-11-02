@@ -418,6 +418,17 @@ export class BossManta extends SpineEnemy {
         this.unk164.set(a);
     }
     drawn() { return !this.checkLiveFlag(LF.DEAD); }
+    /**
+     * Play recording (runner.ts pinActorsToRecording): the recorder copies the first 0x150 bytes, so
+     * the heading (unk170, +0x170) isn't in it, but control() makes the velocity's x and z unk170's
+     * times the speed: the recorded velocity turns the heading the way the game's was going (its
+     * climb and its length across kept), so the drawn manta faces where it swims.
+     */
+    pinRecorded() {
+        const vx = this.vel.x, vz = this.vel.z, l = Math.hypot(vx, vz), h = Math.hypot(this.unk170.x, this.unk170.z);
+        if (!(l > 0) || !(h > 0)) return;
+        this.unk170.x = fr(vx / l * h); this.unk170.z = fr(vz / l * h);
+    }
     /** (drawing: TBossManta::drawObject is empty; the manager draws each manta only as its ground shadow, drawMantaShadow) */
     readonly shadowOnly = true;
 }

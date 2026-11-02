@@ -10,7 +10,7 @@ import ArrayBufferSlice from '../../noclip/ArrayBufferSlice.js';
 import type { GameFS } from '../disc.js';
 import { Stage, StageFiles, GameCamera } from './scene.js';
 import { MarioSample, MarioTrack } from './mario.js';
-import { LiveActor, NameRef, World, calcKeyCode } from './engine.js';
+import { LiveActor, NameRef, World, calcKeyCode, LF } from './engine.js';
 import { rngCtx, srand } from './math.js';
 import type { MarioView } from '../ghost/mstr.js';
 import type { TraceActors } from '../ghost/mstrghost.js';
@@ -655,45 +655,64 @@ export class SimRunner {
      * Play recording: the stage's actors placed as the trace's actor records have them (position,
      * rotation, scaling and, for a live actor, velocity). A record is the object's state at the end of
      * its frame: the one labelled ghost QF r is applied after the movement of stage tick r - q0 + 4.
-     * Each recorded object is paired, at its first record, with the simulated object of the same name
-     * (its JDrama key code) nearest to the recorded position; one the sim doesn't make stays unpaired.
-     * Animation frames, states and anything past the copied bytes still come from the game code.
+     * Each recorded object is paired with the simulated object of the same name (its JDrama key code)
+     * and the same place among those (see below); one the sim doesn't make stays unpaired. An enemy
+     * the game had dead is kept dead (see below). Animation frames, states and anything past
+     * the copied bytes still come from the game code.
      */
     private pinActorsToRecording(g: any, q0: number, st: Stage): (q: number) => void {
         const A = g.trace.actors as TraceActors;
-        const pair = new Map<number, LiveActor | null>(), used = new Set<LiveActor>();
-        let k = 0, cands: LiveActor[] | null = null;
-        const candidates = () => {
-            if (cands) return cands;
-            const out: LiveActor[] = [], P = st.player as any;
-            for (const m of st.world.conductor.liveManagers) for (const o of m.objs) if (o instanceof LiveActor && o !== P) out.push(o);
-            for (const o of st.world.conductor.aloneActors) if (o instanceof LiveActor && o !== P) out.push(o);
-            return (cands = out);
+        const pair = new Map<number, LiveActor>(), held = new Map<LiveActor, number>();
+        // each enemy's DEAD bit through the recording: the labels where it was recorded, and the bit there
+        const life = new Map<number, { qf: number[]; dead: number[] }>(), lifeAt = new Map<number, number>();
+        for (let i = 0; i < A.count; i++) if (A.extent[i] >= 0x150) { const id = A.id[i]; const T = life.get(id) || life.set(id, { qf: [], dead: [] }).get(id)!; T.qf.push(A.qf[i]); T.dead.push(A.liveFlag[i] & LF.DEAD); }
+        // the recorder's objects of each name in the order it first saw them, and the sim's in its
+        // managers' order: the n-th of a name is paired with the sim's n-th (a manager's pool of the
+        // same enemy is one array in both, so its members pair as the game numbers them)
+        const ordinal = new Map<number, number>(), nextOf = new Map<number, number>();
+        let k = 0;
+        const byKey = (): Map<number, LiveActor[]> => {
+            const out = new Map<number, LiveActor[]>(), P = st.player as any;
+            const add = (o: any) => { if (!(o instanceof LiveActor) || o === P) return; const key = o.keyCode || (o.keyCode = calcKeyCode(o.name)); (out.get(key) || out.set(key, []).get(key)!).push(o); };
+            for (const m of st.world.conductor.liveManagers) for (const o of m.objs) add(o);
+            for (const o of st.world.conductor.aloneActors) add(o);
+            return out;
         };
-        const keyOf = (o: LiveActor) => o.keyCode || (o.keyCode = calcKeyCode(o.name));
+        let sim: Map<number, LiveActor[]> | null = null;
         return (q: number) => {
             const label = q0 + q - 4;
-            if (k >= A.count || A.qf[k] > label) return;
-            cands = null;
+            if (k < A.count && A.qf[k] <= label) sim = null;
             for (; k < A.count && A.qf[k] <= label; k++) {
-                const id = A.id[k];
+                const id = A.id[k], key = A.key[k];
                 let o = pair.get(id);
-                if (o === undefined) {
-                    const x = A.pos[k * 3], y = A.pos[k * 3 + 1], z = A.pos[k * 3 + 2], key = A.key[k];
-                    let best = Infinity; o = null;
-                    for (const c of candidates()) {
-                        if (used.has(c) || keyOf(c) !== key) continue;
-                        const d = (c.pos.x - x) ** 2 + (c.pos.y - y) ** 2 + (c.pos.z - z) ** 2;
-                        if (d < best) { best = d; o = c; }
-                    }
-                    // (none yet: an object the game made that the sim hasn't, or never makes; tried again at its next record)
-                    if (o) { pair.set(id, o); used.add(o); }
+                if (!o) {
+                    let n = ordinal.get(id);
+                    if (n === undefined) { n = nextOf.get(key) || 0; nextOf.set(key, n + 1); ordinal.set(id, n); }
+                    const list = (sim || (sim = byKey())).get(key);
+                    // (none yet: one the sim hasn't made, or never makes; tried again at its next record)
+                    if (!list || n >= list.length) continue;
+                    o = list[n]; pair.set(id, o);
                 }
-                if (!o) continue;
                 o.pos.set(A.pos[k * 3], A.pos[k * 3 + 1], A.pos[k * 3 + 2]);
                 o.rot.set(A.rot[k * 3], A.rot[k * 3 + 1], A.rot[k * 3 + 2]);
                 o.scale.set(A.scale[k * 3], A.scale[k * 3 + 1], A.scale[k * 3 + 2]);
                 if (A.extent[k] >= 0xF4) o.vel.set(A.vel[k * 3], A.vel[k * 3 + 1], A.vel[k * 3 + 2]);
+                if (A.extent[k] >= 0x150) held.set(o, id);
+                // (an actor whose drawing hangs on state past the copied bytes takes it from these: BossManta's heading)
+                const pr = (o as any).pinRecorded; if (typeof pr === 'function') pr.call(o);
+            }
+            // An enemy (an enemy manager's object: 0x150 copied) the game had dead stays dead: a record
+            // comes only when an object changed, and the game code may revive a pool member the game
+            // left dead (a manta the game's water killed would swim on). Not while the recording has it
+            // alive again within the next two frames: the sim's own spawn comes before that record does.
+            for (const [o, id] of held) {
+                const T = life.get(id)!; let i = lifeAt.get(id) || 0;
+                while (i + 1 < T.qf.length && T.qf[i + 1] <= label) i++;
+                lifeAt.set(id, i);
+                if (!T.dead[i] || T.qf[i] > label) continue;
+                let soon = false;
+                for (let j = i + 1; j < T.qf.length && T.qf[j] <= label + 8; j++) if (!T.dead[j]) { soon = true; break; }
+                if (!soon) o.liveFlag |= LF.DEAD;
             }
         };
     }
