@@ -542,7 +542,10 @@ export class SimRunner {
         const pin = replay && this.playRecording && !!(g.trace && g.trace.ticks);
         const key = `${sceneName}|${segI}|${q0}|${replay}|${pin}`;
         const want = inp.t - q0;
-        if (this.key !== key || !this.stage || this.stage.qf > want + 4) {
+        // (before the stage's first tick (a replay from the stage load: the frames before Mario's), the
+        // stage is made once and held at its start: not made again every frame, which ran the page out
+        // of memory in under a minute at the start of a ghost, and on a phone in a few dozen frames)
+        if (this.key !== key || !this.stage || this.stage.qf > Math.max(want, 0) + 4) {
             this.key = key; this.q0 = q0; this.error = null;
             let intro = null, demoName: ((f: FlagManager) => string) | null = null;
             if (replay) {
