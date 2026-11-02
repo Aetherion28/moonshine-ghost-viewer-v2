@@ -16,6 +16,8 @@ import { frsqrte } from './math.js';
 const f64 = new Float64Array(1), i64 = new BigUint64Array(f64.buffer);
 /** Dolphin's Force25Bit (camera/lib.ts has the same): a single multiply's second operand */
 function force25(d: number) { f64[0] = d; const b = i64[0]; i64[0] = (b & 0xFFFFFFFFF8000000n) + (b & 0x8000000n); return f64[0]; }
+/** a paired multiply's lane 1 (camera/lib.ts trunc25) */
+function trunc25(d: number) { f64[0] = d; i64[0] = i64[0] & 0xFFFFFFFFF0000000n; return f64[0]; }
 
 export const enum BG {
     WATER = 0x100, DAMAGING_WATER = 0x101, SEA_WATER = 0x102, DAMAGING_SEA_WATER = 0x103, POOL = 0x104, INDOOR_POOL = 0x105,
@@ -46,8 +48,9 @@ export class BGCheckData {
             // MsVECNormalize: the raw frsqrte estimate, no Newton step (so a flat floor's n.y is
             // rarely exactly 1: TMapObjGeneral::calcVelocity's n.y == 1 test relies on it)
             const s = f(FMA(nz, nz, f(nx * nx)) + f(ny * ny));
-            const e = force25(frsqrte(s));
-            nx = f(nx * e); ny = f(ny * e); nz = f(nz * e);
+            const r = frsqrte(s), e = force25(r);
+            // (ps_muls0 for x and y, lane 1 taking the estimate truncated: camera/lib.ts trunc25; fmuls for z)
+            nx = f(nx * e); ny = f(ny * trunc25(r)); nz = f(nz * e);
             this.n = [nx, ny, nz];
             // (fmuls, fmadds, fnmadds)
             this.d = -FMA(nz, p1[2], FMA(nx, p1[0], f(ny * p1[1])));

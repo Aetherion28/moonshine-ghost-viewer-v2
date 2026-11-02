@@ -41,8 +41,8 @@ export abstract class MarioJump extends MarioRun {
         if (this.mVel.y < 0) { this.attackRadius = this.mDeParams.mTrampleRadius; this.attackHeight = this.mDeParams.mAttackHeight; }
         else { this.attackRadius = this.mDeParams.mPushupRadius; this.attackHeight = this.mDeParams.mPushupHeight; }
     }
-    /** canSpray for doJumping's rocket boost (no water gun: false) */
-    gunCanSpray() { return false; }
+    /** doJumping's rocket boost (MarioJump.cpp:89): mWaterGun->isEmitting() (no water gun: false) */
+    gunCanSpray() { const G = (this as any).mWaterGun; return !!G && G.isEmitting(); }
     /** doJumping (the DOL's float operations) */
     doJumping() {
         let side = 0;

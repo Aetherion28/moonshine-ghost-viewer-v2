@@ -134,8 +134,9 @@ export function revisionLookatByAngleX(vMin: number, vMax: number, o: Vec, io: V
 export function msVecNormalize(v: Vec, out: Vec) {
     const xx = fr(v.x * v.x), yy = fr(v.y * v.y);
     const s = fr(FMA(v.z, v.z, xx) + yy);
-    const e = force25(frsqrte(s));
-    out.x = fr(v.x * e); out.y = fr(v.y * e); out.z = fr(v.z * e);
+    const r = frsqrte(s), e = force25(r);
+    // (x and y: ps_muls0, lanes 0 and 1; z: fmuls. Lane 1 takes the estimate truncated, not rounded)
+    out.x = fr(v.x * e); out.y = fr(v.y * trunc25(r)); out.z = fr(v.z * e);
     return out;
 }
 /**
@@ -165,6 +166,13 @@ export function psVecMag(v: Vec) {
 const f64 = new Float64Array(1), i64 = new BigUint64Array(f64.buffer);
 /** Dolphin's Force25Bit: the multiplier's mantissa rounded to 24 fraction bits */
 export function force25(d: number) { f64[0] = d; const b = i64[0]; i64[0] = (b & 0xFFFFFFFFF8000000n) + (b & 0x8000000n); return f64[0]; }
+/**
+ * The second lane of a paired-single multiply (ps_muls0's ps1, ...): the multiplier's mantissa cut
+ * to 24 fraction bits, truncated where lane 0 and the scalar fmuls round (force25). Measured on
+ * the replays' recorded collision normals (TBGCheckData::setVertex -> MsVECNormalize): 1028 of
+ * 1028 n.y match this, against 857 with the rounding Dolphin applies to both lanes.
+ */
+export function trunc25(d: number) { f64[0] = d; i64[0] = i64[0] & 0xFFFFFFFFF0000000n; return f64[0]; }
 
 /** TVec3<f32>::normalize (JGeometry::TUtil<f32>::inv_sqrt: frsqrte + one Newton step, zero-guarded
  * at epsilon() = 2^-18, not 1/Math.sqrt with a l2 <= 0 guard) as the camera uses it for unk25C. */
