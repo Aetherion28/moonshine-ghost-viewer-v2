@@ -27,7 +27,8 @@ import type { mat4 } from 'gl-matrix';
 import { fr, s16, JMASSin, JMASCos, V3, Mtx, mtx, MsMtxSetRotRPH } from '../math.js';
 import { Params, PSchema, World, FrameCtrl, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM } from '../engine.js';
 import { EmitInfo, emitInfo } from '../water.js';
-import { Skeleton, parseBCK, jointMatrices } from '../skeleton.js';
+import { Skeleton, parseBCK, jointMatricesExact } from '../skeleton.js';
+import { concat } from '../j3dcalc.js';
 import { marioFile, ControllerWork } from './base.js';
 import { MF, S } from './tables.js';
 
@@ -89,11 +90,6 @@ export function mat4ToMtx(m: mat4 | Float32Array, out: Mtx = mtx()): Mtx {
     out[8] = m[2]; out[9] = m[6]; out[10] = m[10]; out[11] = m[14];
     return out;
 }
-/** post-multiply a joint's matrix (J3DSys::mCurrentMtx) by a 3x4 rotation: what its children see */
-function concatRot(m: mat4, r: Mtx) {
-    const a = Array.from(m);
-    for (let c = 0; c < 3; c++) for (let row = 0; row < 3; row++) m[c * 4 + row] = a[row] * r[c] + a[4 + row] * r[4 + c] + a[8 + row] * r[8 + c];
-}
 /**
  * MActor for one of FLUDD's models: its BCKs (by index or name, MActorAnmBck: setting one starts
  * it from frame 0 at SMSGetAnmFrameRate), and J3DModel::calc's anm matrices with the joint
@@ -137,12 +133,12 @@ export class GunModel {
         if (!this.sk) return;
         const name = this.bckName();
         const anm = name ? parseBCK(marioFile(`${this.folder}/${name}.bck`)) : null;
-        jointMatrices(this.sk, anm, this.fc.frame, this.baseTR, [1, 1, 1], [], (j, m) => {
-            mat4ToMtx(m, this.anm[j]);
-            for (let k = 0; k < 12; k++) this.anm[j][k] = fr(this.anm[j][k]);
+        jointMatricesExact(this.sk, anm, this.fc.frame, this.baseTR, [1, 1, 1], [], (j, cur, A) => {
+            const D = this.anm[j];
+            for (let k = 0; k < 12; k++) D[k] = A[k];
             const cb = this.callbacks.get(j);
             const r = cb ? cb() : null;
-            if (r) concatRot(m, r);
+            if (r) concat(cur, r, cur);
         });
     }
     getAnmMtx(j: number): Mtx | null { return j >= 0 && j < this.anm.length ? this.anm[j] : null; }

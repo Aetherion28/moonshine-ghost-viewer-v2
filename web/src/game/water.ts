@@ -9,6 +9,7 @@
 import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './player/fmath.js';
 import { V3, fr, rand, MsRandF, JMASSin, JMASCos, frsqrte } from './math.js';
 import { sqrtf } from './player/fmath.js';
+import { psVecNormalize } from './camera/lib.js';
 import { HitActor, Params, PSchema, World, HC, MSG, ObjHitCheck, Files } from './engine.js';
 import { AT } from './actortypes.js';
 import { BGCheckData, IGNORE_WATER_THROUGH, WallCheck } from './collision.js';
@@ -89,13 +90,13 @@ export class Water {
         const n = this.count;
         this.life[n] = e.alive; this.flag[n] = e.flag | 1; this.attack[n] = e.attack;
         this.pos[n].set(e.pos[0], e.pos[1], e.pos[2]);
-        let x = rand11(), y = rand11(), z = rand11();
-        x = FMA(x, e.dirTremble, e.dir[0]); y = FMA(y, e.dirTremble, e.dir[1]); z = FMA(z, e.dirTremble, e.dir[2]);
-        if (x === 0 && y === 0 && z === 0) y = -1;
-        const l = Math.sqrt(x * x + y * y + z * z);
-        x = fr(x / l); y = fr(y / l); z = fr(z / l);
+        // (VECScale by mDirTremble, VECAdd mDir, VECNormalize, VECScale by the power, VECAdd mV: the SDK's paired singles)
+        const d = { x: rand11(), y: rand11(), z: rand11() };
+        d.x = fr(e.dir[0] + fr(d.x * e.dirTremble)); d.y = fr(e.dir[1] + fr(d.y * e.dirTremble)); d.z = fr(e.dir[2] + fr(d.z * e.dirTremble));
+        if (d.x === 0 && d.y === 0 && d.z === 0) d.y = -1;
+        psVecNormalize(d, d);
         const sc = FMA(rand11(), e.powTremble, e.pow);
-        this.vel[n].set(FMA(x, sc, e.v[0]), FMA(y, sc, e.v[1]), FMA(z, sc, e.v[2]));
+        this.vel[n].set(fr(fr(d.x * sc) + e.v[0]), fr(fr(d.y * sc) + e.v[1]), fr(fr(d.z * sc) + e.v[2]));
         this.size[n] = FMA(rand11(), e.sizeTremble, e.size);
         this.type[n] = e.type;
         this.plane[n] = null; this.hit[n] = null;

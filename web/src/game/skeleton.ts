@@ -8,12 +8,15 @@ import { BCK, ANK1, JointTransformInfo, J3DLoadFlags } from '../../noclip/Common
 import { calcANK1JointAnimationTransform, calcJointMatrixFromTransform } from '../../noclip/Common/JSYSTEM/J3D/J3DGraphAnimator.js';
 import { quatFromEulerRadians } from '../../noclip/MathHelpers.js';
 import type { Mtx } from './math.js';
+import { RawAnk, calcJoints, type TI, type CalcMode, type ExactAnm } from './j3dcalc.js';
 
 const slice = (b: Uint8Array) => new ArrayBufferSlice(b.buffer as ArrayBuffer, b.byteOffset, b.byteLength);
 
 /** A BMD's joints: names, parents (hierarchy order), rest transforms, calc flags. */
 export class Skeleton {
     names: string[] = []; parent: number[] = []; order: number[] = []; rest: JointTransformInfo[] = []; calcFlags: number[] = [];
+    /** the rest transforms as J3DJoint keeps them (s16 rotations) */
+    restTI: TI[] = [];
     loadFlags = 0;
     static cache = new Map<Uint8Array, Skeleton | null>();
     static of(bmd: Uint8Array | null): Skeleton | null {
@@ -48,6 +51,7 @@ export class Skeleton {
             quatFromEulerRadians(t.rotation, v.getInt16(d + 0x10) / 0x7FFF * Math.PI, v.getInt16(d + 0x12) / 0x7FFF * Math.PI, v.getInt16(d + 0x14) / 0x7FFF * Math.PI);
             t.translation[0] = v.getFloat32(d + 0x18); t.translation[1] = v.getFloat32(d + 0x1C); t.translation[2] = v.getFloat32(d + 0x20);
             this.rest.push(t); this.calcFlags.push(b[d + 2]); this.names.push(nameAt[i] || '');
+            this.restTI.push({ sx: v.getFloat32(d + 4), sy: v.getFloat32(d + 8), sz: v.getFloat32(d + 0xC), rx: v.getInt16(d + 0x10), ry: v.getInt16(d + 0x12), rz: v.getInt16(d + 0x14), tx: v.getFloat32(d + 0x18), ty: v.getFloat32(d + 0x1C), tz: v.getFloat32(d + 0x20) });
             this.parent.push(-1);
         }
         // INF1's hierarchy: joints nest by Open / Close
@@ -74,8 +78,64 @@ export class Skeleton {
 const bckCache = new Map<Uint8Array, ANK1 | null>();
 export function parseBCK(b: Uint8Array | null): ANK1 | null {
     if (!b) return null;
-    if (!bckCache.has(b)) { let a: ANK1 | null = null; try { a = BCK.parse(slice(b)); } catch { } bckCache.set(b, a); }
+    if (!bckCache.has(b)) { let a: ANK1 | null = null; try { a = BCK.parse(slice(b)); } catch { } bckCache.set(b, a); if (a) { const r = RawAnk.of(b); if (r) rawOf.set(a, r); } }
     return bckCache.get(b)!;
+}
+/** the BCK's keys as the game reads them (for the exact joint calc) */
+const rawOf = new WeakMap<ANK1, RawAnk>();
+export const rawAnk = (a: ANK1 | null | undefined): RawAnk | null => (a && rawOf.get(a)) || null;
+const exA = (a: BlendAnm | null): ExactAnm | null => a ? { anm: rawAnk(a.anm), frame: a.frame } : null;
+/** an anm matrix (3x4 row-major) as a mat4 */
+export function rowToMat4(A: ArrayLike<number>, m: mat4 = mat4.create()): mat4 {
+    m[0] = A[0]; m[4] = A[1]; m[8] = A[2]; m[12] = A[3];
+    m[1] = A[4]; m[5] = A[5]; m[9] = A[6]; m[13] = A[7];
+    m[2] = A[8]; m[6] = A[9]; m[10] = A[10]; m[14] = A[11];
+    m[3] = 0; m[7] = 0; m[11] = 0; m[15] = 1;
+    return m;
+}
+const initMode = (sk: Skeleton): CalcMode => (sk.loadFlags & 0xF) === 1 ? 'softimage' : 'basic';
+/**
+ * jointMatrices, the game's way (j3dcalc.ts): MActorAnmBck's J3DMtxCalc(Softimage|Basic)Anm by the
+ * model's flags. post(j, cur) may change mCurrentMtx (3x4 row-major) for the joint's children
+ * after its anm matrix is stored. rows: each joint's anm matrix in the game layout.
+ */
+export function jointMatricesExact(sk: Skeleton, anm: ANK1 | null, frame: number, base: Mtx, scale: [number, number, number], out: mat4[] = [],
+    post?: ((j: number, cur: number[], anmMtx: number[]) => void) | null, rows: number[][] = []): mat4[] {
+    const mode: CalcMode = (sk.loadFlags & 1) ? 'softimage' : 'basic';
+    const a = { anm: rawAnk(anm), frame };
+    calcJoints(sk, initMode(sk), base, scale, () => ({ mode, nw: a.anm ? a : null, old: null, ratio: 0, blend: false }), post ? (j, cur) => post(j, cur, rows[j]) : null, rows);
+    for (const j of sk.order) out[j] = rowToMat4(rows[j], out[j] || mat4.create());
+    return out;
+}
+/** jointMatricesBlend, the game's way: M3UMtxCalcSIAnmBlendQuat (Softimage, or Basic when basic) */
+export function jointMatricesBlendExact(sk: Skeleton, nw: BlendAnm | null, old: BlendAnm | null, ratio: number, basic: boolean, base: Mtx, scale: [number, number, number],
+    out: mat4[] = [], post?: ((j: number, cur: number[], anmMtx: number[]) => void) | null,
+    upper?: { joint: number; anm: BlendAnm | null } | null, rows: number[][] = [], locals: mat4[] | null = null): mat4[] {
+    const mode: CalcMode = basic ? 'basic' : 'softimage';
+    const curs: number[][] = [];
+    const N = nw && nw.anm ? exA(nw) : null, O = old && old.anm ? exA(old) : null;
+    const U = upper && upper.anm && upper.anm.anm ? exA(upper.anm) : null;
+    const inUpper: boolean[] = [];
+    calcJoints(sk, initMode(sk), base, scale, (j) => {
+        if (upper) { const p = sk.parent[j]; inUpper[j] = j === upper.joint || (p >= 0 && !!inUpper[p]); }
+        if (upper && inUpper[j]) return { mode, nw: U, old: null, ratio: 0, blend: false };
+        if ((!N && !O) || (!N && ratio === 0) || (!O && ratio === 1)) return { mode, nw: null, old: null, ratio, blend: false };
+        if (ratio === 0 || !O) return { mode, nw: N, old: null, ratio, blend: false };
+        if (ratio === 1 || !N) return { mode, nw: O, old: null, ratio, blend: false };
+        return { mode, nw: N, old: O, ratio, blend: true };
+    }, (j, cur) => { if (post) post(j, cur, rows[j]); if (locals) curs[j] = cur.slice(); }, rows);
+    for (const j of sk.order) out[j] = rowToMat4(rows[j], out[j] || mat4.create());
+    if (locals) {
+        const P = mat4.create(), inv = mat4.create();
+        for (const j of sk.order) {
+            const p = sk.parent[j];
+            rowToMat4(p >= 0 ? curs[p] : base, P);
+            mat4.invert(inv, P);
+            locals[j] = locals[j] || mat4.create();
+            mat4.mul(locals[j], inv, out[j]);
+        }
+    }
+    return out;
 }
 
 const tmpT = new JointTransformInfo();

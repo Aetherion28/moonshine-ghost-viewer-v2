@@ -11,12 +11,12 @@
 // groundPlane, isJumping, hipDrop, marioFlags...) is here too, so they work on either.
 
 import { V } from '../version.js';
-import { V3, s16, JMASSin, JMASCos, matan, IConverge, Mtx, mtx, MsMtxSetRotRPH } from '../math.js';
+import { V3, s16, JMASSin, JMASCos, matan, IConverge, Mtx, mtx, MsMtxSetRotRPH, rand } from '../math.js';
 import { HitActor, TakeActor, LiveActor, MSG, HC, LF, Stream, CUE_MOVE, World, calcKeyCode, shineIDofExStage, FC_PINGPONG_LOOP, MActor, AnmData, ANM_BCK } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { POLLUTION_TYPE } from '../pollution.js';
 import { TMarioSim, j3dTRMtx } from './tmario.js';
-import { S, A, MF, ControllerWork, bg, marioBckInfo } from './base.js';
+import { S, A, MF, ControllerWork, bg, marioBckInfo, marioFile } from './base.js';
 import { ANIME_DATA } from './tables.js';
 import { SE } from '../soundids.js';
 import { EmitInfo, emitInfo } from '../water.js';
@@ -85,6 +85,8 @@ export const playerHooks: {
 } = { makeWaterGun: null, gunExec: null, makeCamera: null };
 
 // ---------------------------------------------------------------- the player
+/** see PlayerMario.calcAnim */
+export const CAP_TREMBLE_RNG = false;
 export class PlayerMario extends TMarioSim {
     /** this stage's Mario is the player (gpMarioOriginal) */
     isMario() { return true; }
@@ -398,6 +400,46 @@ export class PlayerMario extends TMarioSim {
         // FLUDD's water on the ground under him: TModelWaterManager::askHitWaterParticleOnGround
         // (super's offFlag(RECENTLY_LEFT_WATER) came just before, as in the game)
         if (this.isTouchGround4cm() && this.askHitWaterParticleOnGround()) this.onFlag(MF.RECENTLY_LEFT_WATER);
+    }
+    /**
+     * TMario::calcAnim: the body, then (calcAnimHands) mCap->perform(CUE_CALC_ANIM). The hat's rolls
+     * are in the replays (264 a tick from TTrembleModelEffect::tremble, 3 per vertex of ma_cap1), but
+     * CAP_TREMBLE_RNG stays off for now: with them the sim's rand() stream lines up call for call
+     * until the NPCs' and birds' first rolls, which the game makes 61 ticks before the sim does
+     * (Plaza replay: 18, 20, 55 against 79, 81, 116; birds 59 against 120), and from there the water's
+     * drops get other numbers. TODO: find what starts them earlier in the game, then turn this on.
+     */
+    calcAnim() {
+        super.calcAnim();
+        this.capCalcAnim();
+    }
+    /**
+     * TMarioCap::perform(CUE_CALC_ANIM) with the hat on (not in ANIM_DEMO_GATE_OUT_GET2): its
+     * TTrembleModelEffect clash(4 or 0) -> tremble, 2 MsRandF() - 1 for each of x, y, z of every
+     * vertex of ma_cap1 (J3DVertexData::mVtxNum, INF1's). Only the drawn hat shakes; the rolls are
+     * what the rest of the game sees.
+     */
+    capCalcAnim() {
+        if (!CAP_TREMBLE_RNG || this.mAnimationId === 0x12D || !(this.mCapModel & 1)) return;
+        const n = PlayerMario.capVtxNum();
+        for (let i = 0; i < n * 3; i++) rand();
+    }
+    private static capVtx = -1;
+    static capVtxNum() {
+        if (PlayerMario.capVtx >= 0) return PlayerMario.capVtx;
+        const b = marioFile('bmd/ma_cap1.bmd');
+        let n = 0;
+        if (b) {
+            const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+            for (let o = 0x20; o + 8 <= b.length;) {
+                const size = v.getUint32(o + 4);
+                if (b[o] === 0x49 && b[o + 1] === 0x4E && b[o + 2] === 0x46 && b[o + 3] === 0x31) { n = v.getUint32(o + 0x10); break; }
+                if (!size) break;
+                o += size;
+            }
+            PlayerMario.capVtx = n;
+        }
+        return n;
     }
     /** TMarioCap::unk4 (E_CAP_MODEL: 1 the hat, 2 the helmet, 4 the sunglasses) */
     mCapModel = 1;

@@ -10,7 +10,8 @@
 import { fr, V3, s16, JMASSin, JMASCos, matan, mtx, Mtx } from '../math.js';
 import { World, TakeActor, HitActor, Params, PSchema, FrameCtrl, FC_LOOP } from '../engine.js';
 import { BGCheckData, WallCheck, DONT_MOVE_XZ } from '../collision.js';
-import { Skeleton, parseBCK, jointMatricesBlend } from '../skeleton.js';
+import { Skeleton, parseBCK, jointMatricesBlendExact } from '../skeleton.js';
+import { concat } from '../j3dcalc.js';
 import type { mat4 } from 'gl-matrix';
 import * as P from './params.js';
 import { S, MF, A, ANIME_DATA, ANIME_FILES } from './tables.js';
@@ -112,6 +113,8 @@ export class MarioModel {
     }
     /** Each joint's matrix in its parent's (for the viewer's joint callback: a model rigged like Mario's). */
     locals: mat4[] = [];
+    /** each joint's anm matrix (3x4 row-major f32, J3DModel::getAnmMtx) after the last calc */
+    rows: number[][] = [];
     /**
      * J3DModel::calc: every joint's world matrix: the body's BCK blended with the slot's old one
      * (M3UModelMario unk24[0].unk4 = {new, 0x41}: M3UMtxCalcSIAnmBlendQuat by mMotionBlendRatio,
@@ -128,16 +131,10 @@ export class MarioModel {
             const b = this.anm[0] >= 0 ? marioFile(`bck/ma_${ANIME_FILES[this.anm[0]]}.bck`) : null;
             const ub = up ? marioFile(`bck/ma_${ANIME_FILES[this.anm[1]]}.bck`) : null;
             const upper = up ? { joint: this.upperJoint, anm: { anm: ub ? parseBCK(ub) : null, frame: this.fc[1].frame } } : null;
-            let own: any = null;
-            const post = J ? (j: number, m: mat4) => {
-                if (j !== J.joint) return;
-                own = Float32Array.from(m as any);
-                const a = Array.from(m), r = J.r;
-                for (let c = 0; c < 3; c++) for (let row = 0; row < 3; row++) m[c * 4 + row] = a[row] * r[c] + a[4 + row] * r[4 + c] + a[8 + row] * r[8 + c];
-            } : undefined;
+            // MarioWaistCtrl & co.: MTXConcat(J3DSys::mCurrentMtx, r, J3DSys::mCurrentMtx) after the joint's anm matrix
+            const post = J ? (j: number, cur: number[]) => { if (j === J.joint) concat(cur, J.r, cur); } : null;
             const ob = this.blendRatio !== 0 ? marioFile(`bck/ma_${ANIME_FILES[MarioModel.OLD_BODY_BCK]}.bck`) : null;
-            this.joints = jointMatricesBlend(sk, { anm: b ? parseBCK(b) : null, frame: this.fc[0].frame }, ob ? { anm: parseBCK(ob), frame: this.fc[0].frame } : null, this.blendRatio, false, this.baseTR, [1, 1, 1], this.joints || [], this.locals, post, upper);
-            if (J && own) (this.joints[J.joint] as any).set(own);
+            this.joints = jointMatricesBlendExact(sk, { anm: b ? parseBCK(b) : null, frame: this.fc[0].frame }, ob ? { anm: parseBCK(ob), frame: this.fc[0].frame } : null, this.blendRatio, false, this.baseTR, [1, 1, 1], this.joints || [], post, upper, this.rows, this.locals);
             this.jointsKey = key;
         }
         return this.joints;
