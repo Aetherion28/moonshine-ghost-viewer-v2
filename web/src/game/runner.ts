@@ -440,7 +440,7 @@ export function stageStartCopy(g: any, segI: number): boolean {
     return true;
 }
 
-/** The ghosts whose Mario the game code plays from the controller: the MSTR traces (src/ghost/mstrghost.ts). */
+/** The ghosts whose Mario the game code plays from the controller: the replays (MSTR, src/ghost/mstrghost.ts). A replay's controller observation is taken on its own movement tick, so it is read at that tick; an SGHF ghost's input leads by a tick (4 QF). */
 export const isInputTrace = (g: any) => !!g && !!g.header && g.header.format === 'mstr';
 
 export class SimRunner {
@@ -581,7 +581,7 @@ export class SimRunner {
         while (st.qf + 4 <= want) {
             st.camera = this.camera(inp, q0 + st.qf + 4, segI);
             rngCtx.roll = this.rng ? this.rng.roll : null; rngCtx.node = this.rng ? this.rng.node : null;
-            try { st.runFrame(track, st.player ? this.padAt(inp.ghost, st.qf + 4) : null); } catch (e) { this.error = e; console.warn('[game] frame', e); this.stage = null; return false; }
+            try { st.runFrame(track, st.player ? this.padAt(inp.ghost, st.qf + (isInputTrace(inp.ghost) ? 0 : 4)) : null); } catch (e) { this.error = e; console.warn('[game] frame', e); this.stage = null; return false; }
             finally { rngCtx.roll = null; rngCtx.node = null; }
             if (st.player && this.camKeys) {
                 const k = this.camKeys.get(q0 + st.qf);

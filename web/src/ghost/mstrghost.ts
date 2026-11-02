@@ -34,8 +34,6 @@ export interface TraceGhost {
     };
 }
 
-/** OSGetTick's rate, bus clock / 4: GameCube 162 MHz / 4, Wii 243 MHz / 4. */
-const OS_TICKS_PER_SEC = [40_500_000, 60_750_000];
 
 /** A view matrix's rotation (rows, world to view) as the camera's world orientation quaternion. */
 function viewQuat(m: number[]): [number, number, number, number] {
@@ -66,13 +64,11 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     const inp = { qf: [] as number[], buttons: [] as number[], stick: [] as number[], cstick: [] as number[], trig: [] as number[], analogAB: [] as number[] };
     const cam = { qf: [] as number[], pos: [] as number[], quat: [] as number[], fov: [] as number[], tag: [] as number[] };
     const rq: number[] = [], rc: number[] = [], rs: number[] = [], rr: number[] = [];
-    const frameTicks: { retrace: number; osTick: number }[] = [];
     const segs: { scene: number; first: number; startQf: number; endQf: number }[] = [];
     let firstSeed: number | null = null, lastCamKey = -1e9, segNow = -1;
     const summary = replayMstr(buf, {
         onIdentity: (id) => { identity = id; },
         onFrame: (s) => {
-            frameTicks.push({ retrace: s.retrace, osTick: s.osTick });
             if (firstSeed === null) firstSeed = s.seed;
         },
         onRng: (c) => { rq.push(c.tick); rc.push(c.caller); rs.push(c.seed); rr.push(c.result); },
@@ -104,24 +100,11 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             }
         },
     });
-    if (!summary.complete) warnings.push(`The trace stopped early (producer error ${summary.producerError}); it plays up to where it ends.`);
-    if (!ticks.length) throw new MstrError('The trace has no Mario movement updates.');
+    if (!summary.complete) warnings.push(`The replay stopped early (producer error ${summary.producerError}); it plays up to where it ends.`);
+    if (!ticks.length) throw new MstrError('The replay has no Mario movement updates.');
 
-    // refresh rate: OS ticks per VI retrace over the trace (frames can lag; both counters move
-    // together). The timer is bus / 4: 40.5 MHz on a GameCube, 60.75 MHz on a Wii (the r8 samples,
-    // recorded on a Wii, give 1013509 = 60.75 MHz / 59.94 Hz). The four (clock, rate) pairs are far
-    // apart, so the nearest one names both.
-    let hz = 60;
-    if (frameTicks.length > 2) {
-        const a = frameTicks[0], b = frameTicks[frameTicks.length - 1];
-        const per = ((b.osTick - a.osTick) >>> 0) / Math.max(1, (b.retrace - a.retrace) >>> 0);
-        let best = Infinity;
-        for (const clock of OS_TICKS_PER_SEC) for (const [rate, label] of [[60000 / 1001, 60], [50, 50]] as const) {
-            const e = Math.abs(per - clock / rate) / (clock / rate);
-            if (e < best) { best = e; hz = label; }
-        }
-        if (best > 0.01) warnings.push(`The trace's frame timing (${per.toFixed(0)} OS ticks a retrace) matches neither 50 nor 60 Hz; assuming ${hz} Hz.`);
-    }
+    // Ghosts are taken to be 60 Hz: the game code always runs at the 60 Hz frame rate.
+    const hz = 60;
 
     const id: MstrIdentity | null = identity;
     const gameId = id ? (id as MstrIdentity).gameId.slice(0, 4) : summary.header.gameCode;
@@ -142,7 +125,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     const lastQf = ticks[n - 1].qf;
     const header = {
         version: 'MSTR' + summary.header.version, format: 'mstr', region: AREA_NAMES_REGION[gameId] || '?', gameId, discRevision,
-        tvFormat: (gameId === 'GMSP' && hz === 50) ? 'PAL50' : 'NTSC60', refreshHz: hz,
+        tvFormat: 'NTSC60', refreshHz: hz,
         route: route0, routeLabel: '', runFlags: 0, resultQf: lastQf, startQf: 0, endQf: lastQf, durationQf: lastQf, sampleCount: n,
         created: 0, author: '', name, profileName: '',
         initialRng: firstSeed === null ? undefined : (firstSeed as number) >>> 0,
@@ -162,7 +145,6 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
         count: cam.qf.length, truncated: !summary.complete, qf: Float64Array.from(cam.qf), pos: Float32Array.from(cam.pos),
         quat: Float32Array.from(cam.quat), fov: Float32Array.from(cam.fov), tag: Uint8Array.from(cam.tag),
     } : null;
-    if (hz === 50) warnings.push('This run was played at 50 Hz.');
     return {
         header, segments, qf, pos, yaw, anim, phase: new Uint16Array(n), yoshi: new Uint8Array(n), held: new Uint8Array(n), attachments: [], segIndex,
         inputs, splits: [], camera, rng: null, warnings,

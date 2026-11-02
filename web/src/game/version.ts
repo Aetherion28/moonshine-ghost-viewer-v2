@@ -63,7 +63,7 @@ export function ghostVersion(g: any): { id: GameVersion; kr: boolean; pal50: boo
     const h = g && g.header;
     if (!h || !h.gameId) return null;
     const v = versionFor(h.gameId, h.discRevision | 0);
-    return v ? { ...v, pal50: h.tvFormat === 'PAL50' } : null;
+    return v ? { ...v, pal50: false } : null;   // ghosts are always 60 Hz
 }
 
 /** Make the ghost's version current (no change when it doesn't say). */
