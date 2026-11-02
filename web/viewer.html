@@ -7980,7 +7980,7 @@ void main() {
   // holds REC_CAM.hold s and then swings quickly back onto the recording, there by hold + swing.
   const REC_CAM = { hold: 0.5, swing: 0.45, rate: 12 };
   const _rcP = new THREE.Vector3(), _rcQ = new THREE.Quaternion(), _rcD = new THREE.Vector3(), _rcA = new THREE.Vector3();
-  const _rcSa = new THREE.Spherical(), _rcSb = new THREE.Spherical();
+  const _rcSa = new THREE.Spherical(), _rcSb = new THREE.Spherical(), _rcM = new THREE.Matrix4(), _rcU = new THREE.Vector3();
   let camLead = null;   // where the followed ghost was last frame (to carry the user's view along)
   function recordedView(g) {
     const d = g && g.data;
@@ -7998,7 +7998,11 @@ void main() {
   function applyRecordedView(rv, phase, dt, lead) {
     if (phase === 'user') return;
     _rcP.set(rv.pos[0], rv.pos[1], rv.pos[2]);
-    _rcQ.set(-rv.quat[0], -rv.quat[1], -rv.quat[2], rv.quat[3]);   // the view matrix's rotation inverted: the camera's own
+    if (rv.at) {
+      // a trace's view: the game's eye, look-at and up as rendered that tick (roll included)
+      _rcM.lookAt(_rcP, _rcA.set(rv.at[0], rv.at[1], rv.at[2]), _rcU.set(rv.up[0], rv.up[1], rv.up[2]));
+      _rcQ.setFromRotationMatrix(_rcM);
+    } else _rcQ.set(-rv.quat[0], -rv.quat[1], -rv.quat[2], rv.quat[3]);   // the view matrix's rotation inverted: the camera's own
     let fov = rv.fov;
     if (phase === 'swing') {
       // round the ghost (not through him): angle and distance from him a step closer each frame

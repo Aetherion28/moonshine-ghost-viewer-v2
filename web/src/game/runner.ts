@@ -585,7 +585,8 @@ export class SimRunner {
                     const at = inp.api.ghostCameraAt;
                     P.setStickCamera(recordedStickCamera((q) => at(g, q0 + q, segI), () => st0.qf, () => s16(P.mFaceAngle.y + 0x8000)), false);
                     cam = 'recorded';
-                } else if (g.camera && SimRunner.correctByRecordedCamera && P.simCamera && (P.simCamera as any).correctYawToRecorded) {
+                } else if (g.camera && !isInputTrace(g) && SimRunner.correctByRecordedCamera && P.simCamera && (P.simCamera as any).correctYawToRecorded) {
+                    // (not a trace: its camera is the game code's own, and its keys are the camera's orientation, not SGCA's view rotation)
                     this.camKeys = recordedCameraKeys(g, segI);
                     if (this.camKeys.size) cam = 'hybrid'; else this.camKeys = null;
                 }

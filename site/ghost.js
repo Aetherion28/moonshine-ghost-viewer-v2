@@ -501,6 +501,12 @@ function ghostCameraAt(g, t, seg) {
   }
   if (c.truncated && i + 1 === c.count && t > c.qf[i]) return null;
   const out = { pos: [c.pos[i * 3], c.pos[i * 3 + 1], c.pos[i * 3 + 2]], quat: [c.quat[i * 4], c.quat[i * 4 + 1], c.quat[i * 4 + 2], c.quat[i * 4 + 3]], fov: c.fov[i] };
+  // a trace (MSTR) has the game's view at every tick: that tick's, as it was rendered (no in-between), with
+  // its look-at point and up; its quat is the camera's own orientation (orientation: true)
+  if (c.everyTick) {
+    out.at = [c.at[i * 3], c.at[i * 3 + 1], c.at[i * 3 + 2]]; out.up = [c.up[i * 3], c.up[i * 3 + 1], c.up[i * 3 + 2]]; out.orientation = true;
+    return out;
+  }
   if (i + 1 === c.count || t <= c.qf[i] || c.tag[i + 1] !== seg) return out;
   const j = i + 1, f = (t - c.qf[i]) / (c.qf[j] - c.qf[i]);
   for (let k = 0; k < 3; k++) out.pos[k] += (c.pos[j * 3 + k] - out.pos[k]) * f;

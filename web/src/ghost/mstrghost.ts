@@ -81,7 +81,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     let identity: MstrIdentity | null = null;
     const ticks: TraceTick[] = [];
     const inp = { qf: [] as number[], buttons: [] as number[], stick: [] as number[], cstick: [] as number[], trig: [] as number[], analogAB: [] as number[] };
-    const cam = { qf: [] as number[], pos: [] as number[], quat: [] as number[], fov: [] as number[], tag: [] as number[] };
+    const cam = { qf: [] as number[], pos: [] as number[], quat: [] as number[], fov: [] as number[], tag: [] as number[], at: [] as number[], up: [] as number[] };
     const rq: number[] = [], rc: number[] = [], rs: number[] = [], rr: number[] = [];
     const segs: { scene: number; first: number; startQf: number; endQf: number }[] = [];
     let firstSeed: number | null = null, lastCamKey = -1e9, segNow = -1;
@@ -128,12 +128,16 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
                 inp.trig.push(p.triggerL, p.triggerR); inp.analogAB.push(p.analogA, p.analogB);
             }
             if (s.camera && c) {
-                // a key every 15 QF as SGCA keeps them, sooner on a scene change
-                if (qf - lastCamKey >= 15 || segs[segNow].first === ticks.length - 1) {
+                // a key every tick: the view the game rendered (its view matrix, +0x1EC: rows right, up,
+                // back and the translation), so the viewer's Follow shows exactly the game's camera
+                if (qf !== lastCamKey) {
                     const d = new DataView(s.camera.data.buffer, s.camera.data.byteOffset, s.camera.data.byteLength);
                     const v: number[] = []; for (let i = 0; i < 12; i++) v.push(d.getFloat32(CAMERA.view + 4 * i));
                     const q = viewQuat(v);
-                    cam.qf.push(qf); cam.pos.push(...c.eye); cam.quat.push(...q); cam.fov.push(c.fovy); cam.tag.push(segNow & 63);
+                    // eye = -R^T t; the forward is the back row negated, the up the up row
+                    const ex = -(v[0] * v[3] + v[4] * v[7] + v[8] * v[11]), ey = -(v[1] * v[3] + v[5] * v[7] + v[9] * v[11]), ez = -(v[2] * v[3] + v[6] * v[7] + v[10] * v[11]);
+                    cam.qf.push(qf); cam.pos.push(ex, ey, ez); cam.quat.push(...q); cam.fov.push(c.fovy); cam.tag.push(segNow & 63);
+                    cam.at.push(ex - v[8], ey - v[9], ez - v[10]); cam.up.push(v[4], v[5], v[6]);
                     lastCamKey = qf;
                 }
             }
@@ -186,6 +190,9 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     const camera = cam.qf.length ? {
         count: cam.qf.length, truncated: !summary.complete, qf: Float64Array.from(cam.qf), pos: Float32Array.from(cam.pos),
         quat: Float32Array.from(cam.quat), fov: Float32Array.from(cam.fov), tag: Uint8Array.from(cam.tag),
+        // (a trace's keys: one a tick, the camera's own orientation in quat (not SGCA's view rotation), and
+        // the view's look-at point one unit ahead and its up, for ghostCameraAt / the viewer's Follow)
+        everyTick: true, orientation: true, at: Float32Array.from(cam.at), up: Float32Array.from(cam.up),
     } : null;
     return {
         header, segments, qf, pos, yaw, anim, phase: new Uint16Array(n), yoshi: new Uint8Array(n), held: new Uint8Array(n), attachments: [], segIndex,
