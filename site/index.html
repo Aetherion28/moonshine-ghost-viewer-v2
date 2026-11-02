@@ -556,14 +556,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793660334103"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793660334103"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793660334103"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793660334103"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793660334103"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793660334103"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793660334103"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793660334103"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793661366494"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793661366494"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793661366494"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793661366494"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793661366494"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793661366494"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793661366494"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793661366494"><\/script>');
 </script>
 <script>
 (() => {
@@ -8413,7 +8413,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793660334103';
+  const BUILD_STAMP = '1793661366494';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
@@ -9014,7 +9014,7 @@ void main() {
   // drawn into one at the drawing buffer's size
   let clipCv = null, clipCx = null;
   function clipComposite(W, H) {
-    if (!clipCv) { clipCv = document.createElement('canvas'); clipCx = clipCv.getContext('2d', { alpha: false }); }
+    if (!clipCv) { clipCv = document.createElement('canvas'); clipCx = clipCv.getContext('2d', { alpha: false, willReadFrequently: true }); }
     if (clipCv.width !== W || clipCv.height !== H) { clipCv.width = W; clipCv.height = H; }
     const r0 = stageEl.getBoundingClientRect(), sx = W / (r0.width || 1), sy = H / (r0.height || 1);
     clipCx.fillStyle = '#000'; clipCx.fillRect(0, 0, W, H);
@@ -9063,7 +9063,13 @@ void main() {
     s.onerror = () => { muxerLoad = null; rej(new Error('Could not load the MP4 writer.')); };
     document.head.append(s);
   }));
+  // (a frame-by-frame save that never finished, the page gone with it, is remembered: the next save
+  // in this browser records in real time instead)
+  const CLIP_TRY = 'clipFrameByFrameTry';
+  const clipTried = () => { try { return localStorage.getItem(CLIP_TRY) === '1'; } catch (e) { return false; } };
+  const clipMark = (on) => { try { if (on) localStorage.setItem(CLIP_TRY, '1'); else localStorage.removeItem(CLIP_TRY); } catch (e) { } };
   async function clipStart(from, to, title) {
+    if (clipTried()) { console.warn('[clip] the last frame-by-frame save did not finish: recording in real time'); clipStartRecorder(from, to, title); return; }
     if (clipFrameByFrame()) {
       try { await clipStartEncoder(from, to, title); return; }
       catch (e) { console.warn('[clip] frame by frame', e); }
@@ -9090,6 +9096,7 @@ void main() {
     enc.configure(config);
     const first = Math.round(from / QF_PER_FRAME) * QF_PER_FRAME, n = Math.max(1, Math.floor((to - first) / QF_PER_FRAME) + 1);
     clip = { offline: true, enc, muxer, target, from: first, to, n, i: 0, fps, W, H, title, wait: 0, failed: () => failed };
+    clipMark(true);
     $('clipBtn').textContent = 'Stop'; $('clipBtn').classList.add('rec');
     setPlaying(false);
     t = first; update();
@@ -9116,6 +9123,7 @@ void main() {
     const c = clip;
     if (!c || c.stopping) return;
     c.stopping = true;
+    clipMark(false);
     try {
       await c.enc.flush(); c.enc.close();
       if (c.i === 0) { clipDone('Nothing to save.'); return; }
@@ -9148,8 +9156,11 @@ void main() {
       if (clipFrameReady() || ++clip.wait > 600) {
         clip.wait = 0;
         try {
-          const cv = clipComposite(clip.W, clip.H);
-          const vf = new VideoFrame(cv, { timestamp: Math.round(clip.i * 1e6 / clip.fps), duration: Math.round(1e6 / clip.fps) });
+          // (the frame's pixels read back here and handed to the encoder as plain memory: a VideoFrame
+          // made from a canvas shares it with the GPU, which took a phone's page down a frame or two in)
+          clipComposite(clip.W, clip.H);
+          const px = clipCx.getImageData(0, 0, clip.W, clip.H).data;
+          const vf = new VideoFrame(px, { format: 'RGBX', codedWidth: clip.W, codedHeight: clip.H, timestamp: Math.round(clip.i * 1e6 / clip.fps), duration: Math.round(1e6 / clip.fps) });
           clip.enc.encode(vf, { keyFrame: clip.i % 150 === 0 }); vf.close();
         } catch (e) { console.warn('[clip] frame', e); clipStop(); return; }
         clip.i++;
