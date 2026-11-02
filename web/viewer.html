@@ -9066,7 +9066,7 @@ void main() {
   }));
   // (a frame-by-frame save that never finished, the page gone with it, is remembered: the next save
   // in this browser records in real time instead)
-  const CLIP_TRY = 'clipFrameByFrameTry';
+  const CLIP_TRY = 'clipFrameByFrameTry2';   // (2: a save lost before the stage-start fix doesn't count)
   const clipTried = () => { try { return localStorage.getItem(CLIP_TRY) === '1'; } catch (e) { return false; } };
   const clipMark = (on) => { try { if (on) localStorage.setItem(CLIP_TRY, '1'); else localStorage.removeItem(CLIP_TRY); } catch (e) { } };
   async function clipStart(from, to, title) {
