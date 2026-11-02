@@ -9029,10 +9029,12 @@ void main() {
   }
   function clipSize() {
     const r = stageEl.getBoundingClientRect(), pr = renderer.getPixelRatio();
-    // (even, and at most 1920 wide: what the encoders take)
-    let W = Math.round(r.width * pr), H = Math.round(r.height * pr);
-    if (W > 1920) { H = Math.round(H * 1920 / W); W = 1920; }
-    return [Math.max(2, W & ~1), Math.max(2, H & ~1)];
+    // (multiples of 16, the longer side at most 1280: what every encoder takes, a phone's hardware
+    // one included, which doesn't take a tall 1080 x 2000 view)
+    let W = r.width * pr, H = r.height * pr;
+    const k = Math.min(1, 1280 / Math.max(W, H, 1));
+    W = Math.max(16, Math.round(W * k / 16) * 16); H = Math.max(16, Math.round(H * k / 16) * 16);
+    return [W, H];
   }
   const clipFrameByFrame = () => !!(window.VideoEncoder && window.VideoFrame);
   function clipFilename(type, from, title) {
@@ -9072,12 +9074,15 @@ void main() {
     const M = await loadMuxer();
     const [W, H] = clipSize(), fps = QF_PER_SECOND / QF_PER_FRAME;
     let config = null;
-    for (const codec of ['avc1.640033', 'avc1.640028', 'avc1.4d0028', 'vp09.00.40.08']) {
-      const c = { codec, width: W, height: H, bitrate: 8e6, framerate: fps, latencyMode: 'quality' };   // (8 Mbit/s: a whole ghost's clip is kept in memory until it's saved)
-      try { const r = await VideoEncoder.isConfigSupported(c); if (r && r.supported) { config = c; break; } } catch (e) { }
-    }
+    // (a software encoder first: a phone's hardware one has taken the whole page down with it;
+    // 8 Mbit/s: a whole ghost's clip is kept in memory until it's saved)
+    search: for (const hw of ['prefer-software', 'no-preference'])
+      for (const codec of ['avc1.4d0028', 'avc1.42e01f', 'vp09.00.40.08']) {
+        const c = { codec, width: W, height: H, bitrate: 8e6, framerate: fps, hardwareAcceleration: hw };
+        try { const r = await VideoEncoder.isConfigSupported(c); if (r && r.supported) { config = c; break search; } } catch (e) { }
+      }
     if (!config) throw new Error('no video codec');
-    console.info('[clip] frame by frame', config.codec, W + 'x' + H);
+    console.info('[clip] frame by frame', config.codec, config.hardwareAcceleration, W + 'x' + H);
     const target = new M.ArrayBufferTarget();
     const muxer = new M.Muxer({ target, video: { codec: config.codec.startsWith('avc') ? 'avc' : 'vp9', width: W, height: H }, fastStart: 'in-memory' });
     let failed = null;
@@ -9138,11 +9143,15 @@ void main() {
     if (clip && clip.offline && !clip.stopping) {
       // (this loop's drawing is of t: taken once the game code has caught up, else drawn again next loop)
       if (clip.failed()) { clipStop(); return; }
+      // (the encoder takes its time: no more than a few frames queued in it, each one a copy of the view)
+      if (clip.enc.encodeQueueSize > 2) { if (ce) clipDraw(); return; }
       if (clipFrameReady() || ++clip.wait > 600) {
         clip.wait = 0;
-        const cv = clipComposite(clip.W, clip.H);
-        const vf = new VideoFrame(cv, { timestamp: Math.round(clip.i * 1e6 / clip.fps), duration: Math.round(1e6 / clip.fps) });
-        clip.enc.encode(vf, { keyFrame: clip.i % 150 === 0 }); vf.close();
+        try {
+          const cv = clipComposite(clip.W, clip.H);
+          const vf = new VideoFrame(cv, { timestamp: Math.round(clip.i * 1e6 / clip.fps), duration: Math.round(1e6 / clip.fps) });
+          clip.enc.encode(vf, { keyFrame: clip.i % 150 === 0 }); vf.close();
+        } catch (e) { console.warn('[clip] frame', e); clipStop(); return; }
         clip.i++;
         $('ceBar').style.width = Math.min(100, clip.i / clip.n * 100) + '%';
         if (clip.i >= clip.n) { clipStop(); return; }
