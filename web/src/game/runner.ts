@@ -440,6 +440,9 @@ export function stageStartCopy(g: any, segI: number): boolean {
     return true;
 }
 
+/** The ghosts whose Mario the game code plays from the controller: the MSTR traces (src/ghost/mstrghost.ts). */
+export const isInputTrace = (g: any) => !!g && !!g.header && g.header.format === 'mstr';
+
 export class SimRunner {
     /** steer Mario by a v8 ghost's recorded camera instead of the sim's camera (debug; see where it's read) */
     static steerByRecordedCamera = false;
@@ -508,7 +511,9 @@ export class SimRunner {
         const live = stageStartCopy(g, segI);
         const q0 = seg.startQf - g.header.startQf - (segI > 0 && !live ? LATER_SEGMENT_LEAD : 0);
         const I = g.inputs;
-        const replay = this.inputReplay && !!I && I.count > 0 && (() => { for (let i = 0; i < I.count; i++) { const q = I.qf[i]; if (q >= q0 && q <= seg.endQf - g.header.startQf) return true; } return false; })();
+        // Only an MSTR trace (.msgt) is replayed from its inputs; an SGHF ghost (.smsghost) moves Mario by
+        // its recorded positions and animation.
+        const replay = this.inputReplay && isInputTrace(g) && !!I && I.count > 0 && (() => { for (let i = 0; i < I.count; i++) { const q = I.qf[i]; if (q >= q0 && q <= seg.endQf - g.header.startQf) return true; } return false; })();
         const key = `${sceneName}|${segI}|${q0}|${replay}`;
         const want = inp.t - q0;
         if (this.key !== key || !this.stage || this.stage.qf > want + 4) {
