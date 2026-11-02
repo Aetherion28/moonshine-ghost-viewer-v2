@@ -421,7 +421,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
         <div class="ceNow" id="ceNow"></div>
       </div>
       <div class="ceTimes"><span id="ceFrom"></span><span id="ceSpeed"></span><span id="ceTo"></span></div>
-      <div class="ceBtns"><button id="ceCancel" type="button">Cancel</button><button id="cePreview" type="button">Preview</button>
+      <div class="ceBtns"><button id="ceAll" type="button" title="The clip from the ghost's start to its end">Whole ghost</button><button id="ceCancel" type="button">Cancel</button><button id="cePreview" type="button">Preview</button>
         <button id="ceSave" type="button" class="primary">Save clip</button></div>
       <div class="ceProg" id="ceProg" hidden><div id="ceBar"></div></div>
     </div>
@@ -8920,16 +8920,22 @@ void main() {
   $('syncB').onclick = () => { if (splitOn()) { split.offset = 0; splitUi(); } };
 
   // ---------------------------------------------------------------- clip export
-  // MediaRecorder on the stage canvas; plays while recording and saves a .webm (or .mp4) at the end.
+  // A clip is the stage as drawn (the game layer under the page's own drawing and the HUD over it:
+  // every canvas in the stage, composited), saved as a video.
+  //  - Frame by frame where the browser has WebCodecs (VideoEncoder): each game frame of the stretch
+  //    is shown, waited on until the replay's game code has caught up with it, then encoded at its own
+  //    time (29.97 a second), so a slow stretch (the Phantamanta's 128 mantas) still comes out whole and
+  //    at the game's speed, however long the clip. Saved as .mp4 (mp4-muxer).
+  //  - Elsewhere, MediaRecorder on the composite while it plays at the current speed (.webm / .mp4).
   let clip = null;
   function clipMime() {
     const c = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
     return c.find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
   }
   // Clips work like a Twitch clip: Clip opens an editor on a stretch around this moment (the last
-  // 30 s by default, up to 60 s), trimmed with two handles; Save plays that stretch at the current
-  // speed while recording the stage, then saves the video.
-  const CLIP_DEFAULT = 30 * QF_PER_SECOND, CLIP_MAX = 60 * QF_PER_SECOND, CLIP_MIN = QF_PER_SECOND;
+  // 30 s by default), trimmed with two handles anywhere in the ghost (Whole ghost takes all of it);
+  // Save makes the video of that stretch.
+  const CLIP_DEFAULT = 30 * QF_PER_SECOND, CLIP_MIN = QF_PER_SECOND;
   let ce = null;
   function clipOpen() {
     if (!ghosts.length) { showNotice('Add a ghost to make a clip.'); return; }
@@ -8937,10 +8943,9 @@ void main() {
     const now = t, end = duration;
     let a = Math.max(0, now - CLIP_DEFAULT), b = now;
     if (b - a < 5 * QF_PER_SECOND) b = Math.min(end, a + CLIP_DEFAULT);
-    const w0 = Math.max(0, Math.min(a, now - 90 * QF_PER_SECOND)), w1 = Math.min(end, Math.max(b, now + 30 * QF_PER_SECOND));
-    ce = { a, b, w0, w1: Math.max(w1, w0 + 1), preview: false, back: now };
+    ce = { a, b, w0: 0, w1: Math.max(end, 1), preview: false, back: now };
     $('clipEd').hidden = false; $('ceProg').hidden = true;
-    ['ceCancel', 'cePreview', 'ceSave', 'ceName'].forEach((id) => { $(id).disabled = false; });
+    ['ceCancel', 'cePreview', 'ceSave', 'ceName', 'ceAll'].forEach((id) => { $(id).disabled = false; });
     clipDraw();
   }
   function clipClose(restore) {
@@ -8957,7 +8962,7 @@ void main() {
     $('ceLen').textContent = ((ce.b - ce.a) / QF_PER_SECOND).toFixed(1) + ' s';
     $('ceFrom').textContent = ghostFormatTime(Math.round(ce.a)); $('ceTo').textContent = ghostFormatTime(Math.round(ce.b));
     const sp = playbackSpeed();
-    $('ceSpeed').textContent = Math.abs(sp - 1) > 1e-3 ? `plays at ${fmtSpeed(sp)}` : '';
+    $('ceSpeed').textContent = clip && clip.offline ? `frame ${clip.i} of ${clip.n}` : clipFrameByFrame() ? '' : Math.abs(sp - 1) > 1e-3 ? `plays at ${fmtSpeed(sp)}` : '';
     $('cePreview').textContent = ce.preview ? 'Stop preview' : 'Preview';
   }
   (() => {   // dragging the handles or the whole selection
@@ -8975,8 +8980,8 @@ void main() {
     $('ceTrack').addEventListener('pointermove', (e) => {
       if (!drag || !ce) return;
       const q = qAt(e);
-      if (drag.kind === 'a') ce.a = Math.max(ce.w0, Math.max(ce.b - CLIP_MAX, Math.min(ce.b - CLIP_MIN, q)));
-      else if (drag.kind === 'b') ce.b = Math.min(ce.w1, Math.min(ce.a + CLIP_MAX, Math.max(ce.a + CLIP_MIN, q)));
+      if (drag.kind === 'a') ce.a = Math.max(ce.w0, Math.min(ce.b - CLIP_MIN, q));
+      else if (drag.kind === 'b') ce.b = Math.min(ce.w1, Math.max(ce.a + CLIP_MIN, q));
       else if (drag.kind === 'move') {
         const len = drag.b0 - drag.a0, a = Math.max(ce.w0, Math.min(ce.w1 - len, drag.a0 + q - drag.q0));
         ce.a = a; ce.b = a + len;
@@ -8993,50 +8998,161 @@ void main() {
     if (ce.preview) { t = ce.a; update(); setPlaying(true); } else setPlaying(false);
     clipDraw();
   };
+  $('ceAll').onclick = () => { if (!ce || clip) return; ce.a = 0; ce.b = Math.max(CLIP_MIN, duration); t = ce.a; update(); clipDraw(); };
   $('ceCancel').onclick = () => clipClose(true);
   $('ceSave').onclick = () => {
     if (!ce || clip) return;
     ce.preview = false;
     t = ce.a; update();
-    ['ceCancel', 'cePreview', 'ceSave', 'ceName'].forEach((id) => { $(id).disabled = true; });
+    ['ceCancel', 'cePreview', 'ceSave', 'ceName', 'ceAll'].forEach((id) => { $(id).disabled = true; });
     $('ceProg').hidden = false; $('ceBar').style.width = '0';
     clipStart(ce.a, ce.b, $('ceName').value.trim());
   };
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ce && !clip) clipClose(true); });
 
-  function clipStart(from, to, title) {
-    if (!window.MediaRecorder || !renderer.domElement.captureStream) { showNotice('This browser can\'t record the view.'); clipClose(false); return; }
-    const mime = clipMime(), stream = renderer.domElement.captureStream(60);
+  // every canvas the stage shows (the game layer, the page's WebGL, the HUD...), in stacking order,
+  // drawn into one at the drawing buffer's size
+  let clipCv = null, clipCx = null;
+  function clipComposite(W, H) {
+    if (!clipCv) { clipCv = document.createElement('canvas'); clipCx = clipCv.getContext('2d', { alpha: false }); }
+    if (clipCv.width !== W || clipCv.height !== H) { clipCv.width = W; clipCv.height = H; }
+    const r0 = stageEl.getBoundingClientRect(), sx = W / (r0.width || 1), sy = H / (r0.height || 1);
+    clipCx.fillStyle = '#000'; clipCx.fillRect(0, 0, W, H);
+    for (const c of stageEl.querySelectorAll('canvas')) {
+      if (c.hidden || !c.width || !c.height) continue;
+      const cs = getComputedStyle(c); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0) continue;
+      const r = c.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) continue;
+      try { clipCx.drawImage(c, (r.left - r0.left) * sx, (r.top - r0.top) * sy, r.width * sx, r.height * sy); } catch (e) { }
+    }
+    return clipCv;
+  }
+  function clipSize() {
+    const r = stageEl.getBoundingClientRect(), pr = renderer.getPixelRatio();
+    // (even, and at most 1920 wide: what the encoders take)
+    let W = Math.round(r.width * pr), H = Math.round(r.height * pr);
+    if (W > 1920) { H = Math.round(H * 1920 / W); W = 1920; }
+    return [Math.max(2, W & ~1), Math.max(2, H & ~1)];
+  }
+  const clipFrameByFrame = () => !!(window.VideoEncoder && window.VideoFrame);
+  function clipFilename(type, from, title) {
+    const g = leadGhost();
+    const base = (title || ((g ? (g.data.header.name || g.fileName).replace(/\.(smsghost|msgt)$/i, '') : 'ghost') + ' ' + ghostFormatTime(Math.round(from))))
+      .replace(/:/g, '-').replace(/[^\w\- .]+/g, '_');
+    return `${base}.${/mp4/.test(type) ? 'mp4' : 'webm'}`;
+  }
+  function clipDownload(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  }
+  function clipDone(msg) {
+    clip = null;
+    $('clipBtn').textContent = 'Clip'; $('clipBtn').classList.remove('rec');
+    clipClose(false);
+    showNotice(msg); setTimeout(() => { if ($('notice').textContent === msg) showNotice(''); }, 4000);
+  }
+  let muxerLoad = null;
+  const loadMuxer = () => muxerLoad || (muxerLoad = new Promise((res, rej) => {
+    if (window.Mp4Muxer) { res(window.Mp4Muxer); return; }
+    const s = document.createElement('script'); s.src = V2 + 'mp4-muxer.js?v=' + BUILD_STAMP;
+    s.onload = () => (window.Mp4Muxer ? res(window.Mp4Muxer) : rej(new Error('mp4-muxer did not load')));
+    s.onerror = () => { muxerLoad = null; rej(new Error('Could not load the MP4 writer.')); };
+    document.head.append(s);
+  }));
+  async function clipStart(from, to, title) {
+    if (clipFrameByFrame()) {
+      try { await clipStartEncoder(from, to, title); return; }
+      catch (e) { console.warn('[clip] frame by frame', e); }
+    }
+    clipStartRecorder(from, to, title);
+  }
+  async function clipStartEncoder(from, to, title) {
+    const M = await loadMuxer();
+    const [W, H] = clipSize(), fps = QF_PER_SECOND / QF_PER_FRAME;
+    let config = null;
+    for (const codec of ['avc1.640033', 'avc1.640028', 'avc1.4d0028', 'vp09.00.40.08']) {
+      const c = { codec, width: W, height: H, bitrate: 8e6, framerate: fps, latencyMode: 'quality' };   // (8 Mbit/s: a whole ghost's clip is kept in memory until it's saved)
+      try { const r = await VideoEncoder.isConfigSupported(c); if (r && r.supported) { config = c; break; } } catch (e) { }
+    }
+    if (!config) throw new Error('no video codec');
+    console.info('[clip] frame by frame', config.codec, W + 'x' + H);
+    const target = new M.ArrayBufferTarget();
+    const muxer = new M.Muxer({ target, video: { codec: config.codec.startsWith('avc') ? 'avc' : 'vp9', width: W, height: H }, fastStart: 'in-memory' });
+    let failed = null;
+    const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => { failed = e; } });
+    enc.configure(config);
+    const first = Math.round(from / QF_PER_FRAME) * QF_PER_FRAME, n = Math.max(1, Math.floor((to - first) / QF_PER_FRAME) + 1);
+    clip = { offline: true, enc, muxer, target, from: first, to, n, i: 0, fps, W, H, title, wait: 0, failed: () => failed };
+    $('clipBtn').textContent = 'Stop'; $('clipBtn').classList.add('rec');
+    setPlaying(false);
+    t = first; update();
+  }
+  function clipStartRecorder(from, to, title) {
+    if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) { showNotice('This browser can\'t record the view.'); clipClose(false); return; }
+    const [W, H] = clipSize();
+    clipComposite(W, H);
+    const mime = clipMime(), stream = clipCv.captureStream(30);
     const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 12e6 } : undefined);
     const parts = [];
     rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
     rec.onstop = () => {
-      const type = rec.mimeType || mime || 'video/webm', blob = new Blob(parts, { type });
-      const a = document.createElement('a'), g = leadGhost();
-      const base = (title || ((g ? (g.data.header.name || g.fileName).replace(/\.smsghost$/i, '') : 'ghost') + ' ' + ghostFormatTime(Math.round(clip.from))))
-        .replace(/:/g, '-').replace(/[^\w\- .]+/g, '_');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${base}.${/mp4/.test(type) ? 'mp4' : 'webm'}`;
-      document.body.append(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-      clip = null;
-      $('clipBtn').textContent = 'Clip'; $('clipBtn').classList.remove('rec');
-      clipClose(false);
-      showNotice('Clip saved.'); setTimeout(() => { if ($('notice').textContent === 'Clip saved.') showNotice(''); }, 4000);
+      const type = rec.mimeType || mime || 'video/webm';
+      clipDownload(new Blob(parts, { type }), clipFilename(type, clip.from, title));
+      clipDone('Clip saved.');
     };
-    clip = { rec, from, to };
+    clip = { rec, from, to, W, H };
     rec.start(250);
     $('clipBtn').textContent = 'Stop'; $('clipBtn').classList.add('rec');
     setPlaying(true);
   }
+  async function clipFinishEncoder() {
+    const c = clip;
+    if (!c || c.stopping) return;
+    c.stopping = true;
+    try {
+      await c.enc.flush(); c.enc.close();
+      if (c.i === 0) { clipDone('Nothing to save.'); return; }
+      c.muxer.finalize();
+      clipDownload(new Blob([c.target.buffer], { type: 'video/mp4' }), clipFilename('video/mp4', c.from, c.title));
+      clipDone('Clip saved.');
+    } catch (e) { console.warn('[clip]', e); clipDone('The clip could not be saved: ' + (e && e.message ? e.message : e)); }
+  }
   function clipStop() {
     if (!clip || clip.stopping) return;
+    if (clip.offline) { clipFinishEncoder(); return; }
     clip.stopping = true;
     setPlaying(false);
     clip.rec.stop();
   }
+  // the replay has caught up with the frame shown (the game code run to it), and the stage is loaded
+  function clipFrameReady() {
+    const R = gameLayer && gameLive ? gameLayer.sim : null;
+    // (SimRunner.update runs the stage while its next frame is due: caught up once it isn't)
+    if (R && R.stage && R.stage.qf + 4 <= t - R.q0) return false;
+    if (gameLayer && gameLayer.loading) return false;
+    return true;
+  }
   function clipFrame() {
+    if (clip && clip.offline && !clip.stopping) {
+      // (this loop's drawing is of t: taken once the game code has caught up, else drawn again next loop)
+      if (clip.failed()) { clipStop(); return; }
+      if (clipFrameReady() || ++clip.wait > 600) {
+        clip.wait = 0;
+        const cv = clipComposite(clip.W, clip.H);
+        const vf = new VideoFrame(cv, { timestamp: Math.round(clip.i * 1e6 / clip.fps), duration: Math.round(1e6 / clip.fps) });
+        clip.enc.encode(vf, { keyFrame: clip.i % 150 === 0 }); vf.close();
+        clip.i++;
+        $('ceBar').style.width = Math.min(100, clip.i / clip.n * 100) + '%';
+        if (clip.i >= clip.n) { clipStop(); return; }
+        t = clip.from + clip.i * QF_PER_FRAME; update();
+      }
+      if (ce) clipDraw();
+      return;
+    }
     if (clip && !clip.stopping) {
+      clipComposite(clip.W, clip.H);
       $('ceBar').style.width = Math.min(100, Math.max(0, (t - clip.from) / (clip.to - clip.from) * 100)) + '%';
       if (t >= clip.to || (!playing && clip.wasPlaying)) clipStop();
       clip.wasPlaying = clip.wasPlaying || playing;
