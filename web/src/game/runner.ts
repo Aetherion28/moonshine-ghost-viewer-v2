@@ -693,6 +693,11 @@ export class SimRunner {
                     if (!list || n >= list.length) continue;
                     o = list[n]; pair.set(id, o);
                 }
+                // an enemy the recording has alive that the sim has dead: its own pinRevive brings it in
+                // (a pool member the game used where the sim used another: BossManta's split)
+                if (A.extent[k] >= 0x150 && !(A.liveFlag[k] & LF.DEAD) && o.checkLiveFlag(LF.DEAD)) {
+                    const rv = (o as any).pinRevive; if (typeof rv === 'function') rv.call(o, A.scale[k * 3]);
+                }
                 o.pos.set(A.pos[k * 3], A.pos[k * 3 + 1], A.pos[k * 3 + 2]);
                 o.rot.set(A.rot[k * 3], A.rot[k * 3 + 1], A.rot[k * 3 + 2]);
                 o.scale.set(A.scale[k * 3], A.scale[k * 3 + 1], A.scale[k * 3 + 2]);

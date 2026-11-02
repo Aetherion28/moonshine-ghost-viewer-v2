@@ -424,6 +424,17 @@ export class BossManta extends SpineEnemy {
      * times the speed: the recorded velocity turns the heading the way the game's was going (its
      * climb and its length across kept), so the drawn manta faces where it swims.
      */
+    /**
+     * Play recording: the game has this pool member alive and the sim has it dead (the sim's split
+     * took another member). It starts as the generation its recorded width is (sScale: 20 10 5 2 1, 1);
+     * width 1 is the 4th generation, or the 5th once the sim's other mantas are (the last phase's).
+     */
+    pinRevive(width: number) {
+        let gen = sScale.indexOf(width);
+        if (gen < 0) return;
+        if (gen === 4) for (const o of this.mantaManager.objs as BossManta[]) if (!o.checkLiveFlag(LF.DEAD) && o.mGeneration === 5) { gen = 5; break; }
+        this.initNthGeneration(gen);
+    }
     pinRecorded() {
         const vx = this.vel.x, vz = this.vel.z, l = Math.hypot(vx, vz), h = Math.hypot(this.unk170.x, this.unk170.z);
         if (!(l > 0) || !(h > 0)) return;
