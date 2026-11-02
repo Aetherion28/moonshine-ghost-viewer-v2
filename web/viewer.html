@@ -9889,11 +9889,17 @@ void main() {
     if (!gameLayer) { showNotice('This browser can\'t run the game renderer (it needs WebGL 2).'); return; }
     GameDisc.openDisc(f).then((d) => { const r = useDisc(d); DiscStore.put(f); return r; }, (e) => showNotice(e.message || String(e)));
   }
+  // Phones and tablets know no file type for .iso / .gcm / .smsghost / .msgt (Android names an ISO
+  // application/x-iso9660-image, iOS has no type at all), so a picker filtered by them greys the files
+  // out: there the pickers show every file, and a file that isn't one is turned down once it's read.
+  const touchPicker = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (touchPicker) { $('isoFile').removeAttribute('accept'); $('ghostFile').removeAttribute('accept'); }
   $('pickDisc').onclick = async () => {
     if (!gameLayer) { showNotice('This browser can\'t run the game renderer (it needs WebGL 2).'); return; }
     if (window.showOpenFilePicker) {
       try {
-        const [h] = await window.showOpenFilePicker({ types: [{ description: 'GameCube disc image', accept: { 'application/octet-stream': ['.iso', '.gcm'] } }] });
+        const [h] = await window.showOpenFilePicker(touchPicker ? {} : { types: [{ description: 'GameCube disc image', accept: { 'application/octet-stream': ['.iso', '.gcm'] } }] });
         const hf = await h.getFile();
         await useDisc(await GameDisc.openDisc(hf));
         DiscStore.put(hf);
