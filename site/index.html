@@ -506,7 +506,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
       <div class="discLine">Disc: <span class="discInfo" id="discInfo">none loaded</span> <span class="discInfo" id="padInfo" hidden></span> <span class="discInfo" id="padRec" hidden></span></div>
       <label title="The game's HUD from the disc (life meter, coins, Shines, blue and red coins, FLUDD's tank) and the stage's opening words"><input type="checkbox" id="optHud" checked disabled> Show HUD</label>
-      <label title="With a replay (.msgt): Mario is played by the game's own code from its controller inputs (the camera too), instead of following its recorded positions. A .smsghost always plays its recorded positions and animation. Where the replay drifts from the trace is shown here."><input type="checkbox" id="optReplay" checked disabled> Input replay <span class="discInfo" id="replayInfo"></span></label>
+      <label title="With a replay (.msgt). Play recording: the game's own code plays Mario from his controller inputs, and every tick he is put where the trace recorded him, so the stage reacts to exactly what happened. Simulate: the game's code alone, from the inputs (where it drifts from the trace is shown here). Recorded positions: Mario follows his recorded positions and animation. A .smsghost always plays its recorded positions and animation."><select id="optReplayMode" disabled><option value="record" selected>Play recording</option><option value="sim">Simulate</option><option value="positions">Recorded positions</option></select> <span class="discInfo" id="replayInfo"></span></label>
       <label title="When the input replay drifts more than a unit from the ghost, Mario follows the ghost's own position and animation until the ghost next stands on the ground, then the inputs take over again from there."><input type="checkbox" id="optSnap" checked> Snap Mario back to the ghost</label>
       <label title="Read the game from an extracted game folder instead of a disc image"><button type="button" id="pickFolder" class="linkBtn">Use an extracted game folder…</button></label>
       <label id="gcAdapterRow" title="Nintendo's GameCube controller adapter (WUP-028, for Wii U / Switch) read directly over USB, as Dolphin does: its four ports show up as controllers. No driver needed (it is read as a HID device); one set up for Dolphin with Zadig works too."><button type="button" id="gcAdapterBtn" class="linkBtn">Connect a GameCube adapter (WUP-028)…</button> <span class="discInfo" id="gcAdapterInfo"></span></label>
@@ -556,14 +556,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793637099981"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793637099981"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793637099981"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793637099981"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793637099981"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793637099981"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793637099981"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793637099981"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793637898658"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793637898658"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793637898658"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793637898658"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793637898658"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793637898658"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793637898658"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793637898658"><\/script>');
 </script>
 <script>
 (() => {
@@ -8409,7 +8409,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793637099981';
+  const BUILD_STAMP = '1793637898658';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
@@ -9786,15 +9786,26 @@ void main() {
     const main = splitOn() ? followGhost : ghosts.find((g) => g.data && g.marker && g.marker.parent);
     return main ? { t, ghost: main.data, api: { ...RAW, ghostCameraAt: typeof ghostCameraAt === 'function' ? ghostCameraAt : undefined } } : null;
   }
-  // the "Input replay" line: in sync, or where Mario first drifted from the ghost (and by how much)
+  // the replay mode (Play recording / Simulate / Recorded positions) onto a layer's SimRunner
+  function applyReplayMode(sim) {
+    const v = $('optReplayMode').value;
+    sim.inputReplay = v !== 'positions';
+    sim.playRecording = v === 'record';
+  }
+  // the replay line: in sync, or where Mario first drifted from the ghost (and by how much)
   function replayStatus() {
+    if (!$('optReplayMode').disabled) layerSlots.forEach((x) => { if (x.layer && x.layer.sim) applyReplayMode(x.layer.sim); });
     const R = gameLayer && gameLive ? gameLayer.sim : null, S = R ? R.sync : null;
     const main = ghosts.find((g) => g.data && g.marker && g.marker.parent);
     let s = '';
     const trace = !!(main && main.data && main.data.header && main.data.header.format === 'mstr');
     if (R && R.inputReplay && main && !trace) s = 'replays only: this ghost plays its recorded positions';
     else if (R && R.inputReplay) {
-      if (S && S.replay) {
+      if (S && S.replay && R.playRecording && trace) {
+        // Play recording: Mario is put on the trace every tick; say where the game code alone first differed
+        s = 'playing the recording' + (R.firstPinQf < 0 ? ' · the game code matches it so far' : ` · the game code alone first differs at ${ghostFormatTime(R.firstPinQf)}s (put back ${R.pinCount}×)`);
+        if (R.history && R.history.last < t - 8) s += ' · catching up…';
+      } else if (S && S.replay) {
         s = S.firstDriftQf < 0 ? 'in sync' : `drifted at ${ghostFormatTime(S.firstDriftQf)}s (by ${S.driftErr < 10 ? S.driftErr.toFixed(1) : Math.round(S.driftErr)} units)`;
         if (S.corrections) s += ` · put back on the ghost ${S.corrections}×`;
         if (S.camera === 'approx') s += ' · camera approximate';
@@ -9825,8 +9836,8 @@ void main() {
       if (layerSlots[1].layer) await layerSlots[1].layer.setDisc(fs, gameLayerA.common);
       discLabel = fs.label + (fs.id ? ' · ' + fs.id : '');
       $('discInfo').textContent = discLabel;
-      $('optReplay').disabled = false;
-      layerSlots.forEach((s) => { if (s.layer && s.layer.sim) s.layer.sim.inputReplay = $('optReplay').checked; });
+      $('optReplayMode').disabled = false;
+      layerSlots.forEach((s) => { if (s.layer && s.layer.sim) applyReplayMode(s.layer.sim); });
       $('pickDisc').textContent = 'Game disc ✓';
       $('discInfo').textContent = discLabel + ' · reading the stages…';
       v1data = new V1Data(fs);
@@ -9904,7 +9915,7 @@ void main() {
     e.target.value = '';
   };
   $('optSnap').onchange = (e) => { if (window.GameSim) window.GameSim.setCorrectDrift(e.target.checked); };
-  $('optReplay').onchange = (e) => { layerSlots.forEach((s) => { if (s.layer && s.layer.sim) s.layer.sim.inputReplay = e.target.checked; }); update(); };
+  $('optReplayMode').onchange = () => { layerSlots.forEach((s) => { if (s.layer && s.layer.sim) applyReplayMode(s.layer.sim); }); update(); };
   // the disc kept from last time opens by itself; else the button for the one picked last time
   if (gameLayer) DiscStore.get().then(async (f) => {
     if (f) {

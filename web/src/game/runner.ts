@@ -12,6 +12,7 @@ import { Stage, StageFiles, GameCamera } from './scene.js';
 import { MarioSample, MarioTrack } from './mario.js';
 import { LiveActor, NameRef, World, calcKeyCode } from './engine.js';
 import { rngCtx, srand } from './math.js';
+import type { MarioView } from '../ghost/mstr.js';
 import './npc/manager.js';
 import './enemies/pakkun.js';
 import './enemies/sambo.js';
@@ -460,6 +461,17 @@ export class SimRunner {
     private rng: RngReplay | null = null;
     /** run Mario from the ghost's inputs where it has them (the viewer's "Input replay") */
     inputReplay = true;
+    /**
+     * The replay mode for a trace (.msgt), with the input replay on. true ("Play recording"): the game
+     * code runs Mario from the inputs as in "Simulate", and after his movement each tick he is put in
+     * the state the trace recorded for that tick (pinToRecording), so the world reacts to the Mario the
+     * game had even where the simulation alone would drift. false ("Simulate"): the game code alone.
+     */
+    playRecording = true;
+    /** Play recording: the first ghost QF where the game code's Mario differed from the trace before he was put back (-1: none yet) */
+    firstPinQf = -1;
+    /** Play recording: the ticks where he was put back */
+    pinCount = 0;
     /** this stage's input replay (null: the ghost's samples move Mario) */
     sync: ReplaySync | null = null;
     /** the replay's Mario so far (null: the ghost's samples move Mario) */
@@ -514,7 +526,8 @@ export class SimRunner {
         // Only an MSTR trace (.msgt) is replayed from its inputs; an SGHF ghost (.smsghost) moves Mario by
         // its recorded positions and animation.
         const replay = this.inputReplay && isInputTrace(g) && !!I && I.count > 0 && (() => { for (let i = 0; i < I.count; i++) { const q = I.qf[i]; if (q >= q0 && q <= seg.endQf - g.header.startQf) return true; } return false; })();
-        const key = `${sceneName}|${segI}|${q0}|${replay}`;
+        const pin = replay && this.playRecording && !!(g.trace && g.trace.ticks);
+        const key = `${sceneName}|${segI}|${q0}|${replay}|${pin}`;
         const want = inp.t - q0;
         if (this.key !== key || !this.stage || this.stage.qf > want + 4) {
             this.key = key; this.q0 = q0; this.error = null;
@@ -555,6 +568,8 @@ export class SimRunner {
             const C0: any = st0.player && st0.player.simCamera;
             if (C0 && demoName) C0.stageDemoName = demoName(st0.world.flags);
             this.pads = null; this.sync = null; this.history = null; this.camKeys = null; this.camCorrections = [];
+            this.firstPinQf = -1; this.pinCount = 0;
+            if (pin && st0.player) st0.pinMario = this.pinToRecording(g, q0, st0.player);
             if (st0.player) {
                 const P = st0.player;
                 this.pads = new Map();
@@ -608,6 +623,31 @@ export class SimRunner {
             if (performance.now() - t0 > budgetMs) return false;
         }
         return true;
+    }
+    /**
+     * Play recording: after Mario's movement at stage QF q, his state as the trace recorded it at that
+     * tick (ghost QF q0 + q): position, velocities, angles, status, input, flags, health and animation.
+     * Where the game code had him elsewhere, firstPinQf / pinCount note it.
+     */
+    private pinToRecording(g: any, q0: number, P: PlayerMario): (q: number) => void {
+        const at = new Map<number, MarioView>();
+        for (const t of g.trace.ticks as { qf: number; mario: MarioView | null }[]) if (t.mario) at.set(t.qf, t.mario);
+        const f = Math.fround, M: any = P;
+        return (q: number) => {
+            const m = at.get(q0 + q);
+            if (!m) return;
+            const off = M.mStatus >>> 0 !== m.status >>> 0 || f(P.pos.x) !== f(m.pos[0]) || f(P.pos.y) !== f(m.pos[1]) || f(P.pos.z) !== f(m.pos[2])
+                || (M.mFaceAngle.y << 16 >> 16) !== m.faceAngle[1] || f(M.mForwardVel) !== f(m.forwardVel);
+            if (off) { this.pinCount++; if (this.firstPinQf < 0) this.firstPinQf = q0 + q; }
+            P.pos.x = f(m.pos[0]); P.pos.y = f(m.pos[1]); P.pos.z = f(m.pos[2]);
+            M.mVel.x = f(m.vel[0]); M.mVel.y = f(m.vel[1]); M.mVel.z = f(m.vel[2]);
+            M.mForwardVel = f(m.forwardVel); M.mSlideVelX = f(m.slideVel[0]); M.mSlideVelZ = f(m.slideVel[1]);
+            M.mFaceAngle.x = m.faceAngle[0]; M.mFaceAngle.y = m.faceAngle[1]; M.mFaceAngle.z = m.faceAngle[2]; M.mModelFaceAngle = m.modelFaceAngle;
+            M.mStatus = m.status >>> 0; M.mPrevStatus = m.prevStatus >>> 0; M.mStatusState = m.statusState; M.mStatusTimer = m.statusTimer;
+            M.mInput = m.input >>> 0; M.mIntendedMag = f(m.intendedMag); M.mIntendedYaw = m.intendedYaw;
+            M.mFlag = m.flag >>> 0; M.mHealth = m.health;
+            if ((M.mAnimationId & 0xFFFF) !== m.animationId && typeof M.setAnimation === 'function') { try { M.setAnimation(m.animationId, 1); } catch { /* an id the model hasn't */ } }
+        };
     }
     /** the frame's PADStatus (its record's QF is the frame's last tick); none recorded: a neutral pad */
     private padAt(g: any, q: number): PadStatus {

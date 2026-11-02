@@ -51,6 +51,12 @@ export class Stage {
     liveClip = false;
     /** QF of the movement tick last run (0: the stage's first). */
     qf = 0;
+    /**
+     * "Play recording": called after the player's movement each tick (before the camera's) with that
+     * tick's QF, to put Mario where the recording has him (SimRunner.pinToRecording). null: the game
+     * code alone moves him ("Simulate").
+     */
+    pinMario: ((qf: number) => void) | null = null;
     frame = 0;
     seed = 0;
 
@@ -226,7 +232,7 @@ export class Stage {
             w.conductor.perform(CUE_MOVE);
             // the manager group: the wires
             if (w.mapWires) w.mapWires.perform(CUE_MOVE);
-            if (P) { P.testPerform(CUE_MOVE); P.cameraTick((tick === 0 ? 1 : 0) | (last ? 2 : 0)); }
+            if (P) { P.testPerform(CUE_MOVE); if (this.pinMario) this.pinMario(this.qf); P.cameraTick((tick === 0 ? 1 : 0) | (last ? 2 : 0)); }
             else {
                 const m = w.mario as MarioProxy;
                 m.update(this.qf);
