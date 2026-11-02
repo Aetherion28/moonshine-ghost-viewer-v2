@@ -87,6 +87,8 @@ export class MarioModel {
     /** unk24[1].unk0: the joint the upper-body motion set starts at (jnt_chest) */
     upperJoint = -1;
     blendRatio = 0;
+    /** the body slot's old BCK (TMario::initModel: setInfo[0].unk4[1]) */
+    static readonly OLD_BODY_BCK = 0x41;
     baseTR: Mtx = mtx();
     /**
      * a joint callback's rotation as of the last calcAnim (TMario::addCallBack: MarioWaistCtrl on
@@ -110,11 +112,16 @@ export class MarioModel {
     }
     /** Each joint's matrix in its parent's (for the viewer's joint callback: a model rigged like Mario's). */
     locals: mat4[] = [];
-    /** J3DModel::calc: every joint's world matrix: the body's BCK, the chest down the upper body's while unk24[1].unk3 isn't 0xff (the motion blend isn't applied). */
+    /**
+     * J3DModel::calc: every joint's world matrix: the body's BCK blended with the slot's old one
+     * (M3UModelMario unk24[0].unk4 = {new, 0x41}: M3UMtxCalcSIAnmBlendQuat by mMotionBlendRatio,
+     * both at the body's frame; TMario::doRunningAnimation sets the ratio), the chest down the upper
+     * body's while unk24[1].unk3 isn't 0xff (that slot's ratio stays 0).
+     */
     calc(): mat4[] | null {
         const up = this.upperCalc !== -1 && this.upperJoint >= 0 && this.anm[1] >= 0;
         const J = this.jointCtrl;
-        const key = this.anm[0] + '|' + this.fc[0].frame + '|' + (up ? this.anm[1] + '@' + this.fc[1].frame : '-') + '|' + Array.from(this.baseTR).join(',') + (J ? '|' + J.joint + ':' + Array.from(J.r).join(',') : '');
+        const key = this.anm[0] + '|' + this.fc[0].frame + '|' + this.blendRatio + '|' + (up ? this.anm[1] + '@' + this.fc[1].frame : '-') + '|' + Array.from(this.baseTR).join(',') + (J ? '|' + J.joint + ':' + Array.from(J.r).join(',') : '');
         if (!this.joints || key !== this.jointsKey) {
             const sk = Skeleton.of(marioFile('bmd/ma_mdl1.bmd'));
             if (!sk) return null;
@@ -128,7 +135,8 @@ export class MarioModel {
                 const a = Array.from(m), r = J.r;
                 for (let c = 0; c < 3; c++) for (let row = 0; row < 3; row++) m[c * 4 + row] = a[row] * r[c] + a[4 + row] * r[4 + c] + a[8 + row] * r[8 + c];
             } : undefined;
-            this.joints = jointMatricesBlend(sk, { anm: b ? parseBCK(b) : null, frame: this.fc[0].frame }, null, 0, false, this.baseTR, [1, 1, 1], this.joints || [], this.locals, post, upper);
+            const ob = this.blendRatio !== 0 ? marioFile(`bck/ma_${ANIME_FILES[MarioModel.OLD_BODY_BCK]}.bck`) : null;
+            this.joints = jointMatricesBlend(sk, { anm: b ? parseBCK(b) : null, frame: this.fc[0].frame }, ob ? { anm: parseBCK(ob), frame: this.fc[0].frame } : null, this.blendRatio, false, this.baseTR, [1, 1, 1], this.joints || [], this.locals, post, upper);
             if (J && own) (this.joints[J.joint] as any).set(own);
             this.jointsKey = key;
         }

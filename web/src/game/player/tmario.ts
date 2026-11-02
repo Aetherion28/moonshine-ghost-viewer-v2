@@ -3,7 +3,8 @@
 // MarioDraw.cpp's model placement (calcBaseMtx, calcAnim's body, setPositions).
 
 import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from './fmath.js';
-import { fr, s16, JMASSin, JMASCos, mtx, Mtx, V3, MsMtxSetRotRPH } from '../math.js';
+import { fr, s16, JMASSin, JMASCos, mtx, Mtx, V3, MsMtxSetRotRPH, jgNormalize } from '../math.js';
+import { vNormMs } from '../vecops.js';
 import { HitActor, MSG } from '../engine.js';
 import { MarioSpecial } from './special.js';
 import { S, A, MF } from './base.js';
@@ -167,13 +168,13 @@ export abstract class TMarioSim extends MarioSpecial {
                 const [p1, p2, p3] = P;
                 const avgY = fr((p1.y + p2.y + p3.y) / 3);
                 const fwd = new V3(JMASSin(this.mFaceAngle.y), 0, JMASCos(this.mFaceAngle.y));
-                const v1 = V3.sub(p2, p1), v2 = V3.sub(p3, p2);
-                // cross2(v2, v1): v1 x v2
-                const c = new V3(v1.y * v2.z - v1.z * v2.y, v1.z * v2.x - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x).normalize();
+                const v1 = V3.sub(p2, p1).fround(), v2 = V3.sub(p3, p2).fround();
+                // cross2(v2, v1) is v2 x v1 (JGVec3.hpp: cross2(a, b) = a x b), then TVec3::normalize
+                const c = jgNormalize(new V3(FMS(v2.y, v1.z, fr(v2.z * v1.y)), FMS(v2.z, v1.x, fr(v2.x * v1.z)), FMS(v2.x, v1.y, fr(v2.y * v1.x))));
                 const nc = new V3(-c.x, -c.y, -c.z);
-                const axis = new V3().cross(nc, fwd).normalize();
-                const bin = new V3().cross(axis, nc);
-                nc.normalize();
+                const axis = vNormMs(new V3().cross(nc, fwd).fround());   // MsVECNormalize
+                const bin = new V3().cross(axis, nc).fround();
+                vNormMs(nc);
                 m[0] = axis.x; m[1] = nc.x; m[2] = bin.x; m[3] = this.pos.x;
                 m[4] = axis.y; m[5] = nc.y; m[6] = bin.y; m[7] = avgY < this.pos.y ? this.pos.y : avgY;
                 m[8] = axis.z; m[9] = nc.z; m[10] = bin.z; m[11] = this.pos.z;
@@ -217,8 +218,9 @@ export abstract class TMarioSim extends MarioSpecial {
      * - else in a 0x8000 status (squatting) off Yoshi, the nozzle aimed down (getGunAngle() > 0, the
      *   stick's pitch: calcGunAngle): RPH(0, 0, gunAngle). (Aimed up, < 0, it's the nozzle joint's
      *   own callback, NozzleCtrl.)
-     * The running lean (run1 / run2 / ride_shell not spraying: mWaistRoll / mWaistPitch) isn't
-     * simulated (it bends only while FLUDD isn't putting out water).
+     * - else in RUN1 / RUN2 (or RIDE_SHELL with no 0x4000-type status: the check reads mStatus with
+     *   MARIO_FLAG_FLUDD_EMITTING's value), the running lean: RPH((s16)mWaistRoll, 0, (s16)mWaistPitch)
+     *   (considerWaist sets them each calcAnimBody).
      */
     waistCtrl(): Mtx | null {
         const K = 0.0054931640625;
@@ -227,15 +229,45 @@ export abstract class TMarioSim extends MarioSpecial {
             const r = mtx(); MsMtxSetRotRPH(r, 0, 0, fr(s16(C.cur.pitch) * K)); return r;
         }
         const G: any = (this as any).mWaterGun;
-        if ((this.mStatus & 0x8000) && !this.onYoshi() && G && G.getCurrentNozzle) {
-            const a = s16(G.getCurrentNozzle().getGunAngle());
+        // (checkStatusType(MARIO_FLAG_HAS_FLUDD): the status read with the flag's value, 0x8000)
+        if ((this.mStatus & 0x8000) && !this.onYoshi()) {
+            const a = G && G.getCurrentNozzle ? s16(G.getCurrentNozzle().getGunAngle()) : 0;
             if (a > 0) { const r = mtx(); MsMtxSetRotRPH(r, 0, 0, fr(a * K)); return r; }
+            return null;
+        }
+        const an = this.mAnimationId;
+        if (an === A.RUN1 || an === A.RUN2 || (an === A.RIDE_SHELL && !(this.mStatus & MF.FLUDD_EMITTING))) {
+            const r = mtx();
+            MsMtxSetRotRPH(r, fr(Math.trunc(this.mWaistRoll) * K), 0, fr(Math.trunc(this.mWaistPitch) * K));
+            return r;
         }
         return null;
+    }
+    /** TMario::considerWaist (MarioDraw.cpp:1414): the running lean eased toward forward speed (pitch) and turning (roll). */
+    mWaistRoll = 0; mWaistPitch = 0;
+    considerWaist() {
+        const surf = (this.mStatus & 0x10000) !== 0, water = surf && this.mGroundPlane.isWaterSurface();
+        const pumping = this.checkFlag(MF.HAS_FLUDD) && this.isUpperPumpingStyle();
+        const holding = !!(this as any).held;
+        const SP = water ? this.mSurfingParamsWaterRed : this.mSurfingParamsGroundRed;
+        let P: any = surf ? SP : (pumping || holding ? this.mBodyAngleParamsWaterGun : this.mBodyAngleParamsFree);
+        let maxPitch = P.mWaistPitchMax, rate = P.mWaistAngleChangeRate;
+        let tp = fr(P.mWaistPitch * this.mForwardVel);
+        if (tp > maxPitch) tp = maxPitch;
+        if (tp < -maxPitch) tp = -maxPitch;
+        this.mWaistPitch = FMA(rate, fr(tp - this.mWaistPitch), this.mWaistPitch);
+        const diff = s16(this.mFaceAngle.y - this.unk9C);
+        P = surf ? SP : (pumping ? this.mBodyAngleParamsWaterGun : this.mBodyAngleParamsFree);
+        const rollMax = P.mWaistRollMax; rate = P.mWaistAngleChangeRate;
+        let tr = fr(fr(P.mWaistRoll * diff) * this.mForwardVel);
+        if (tr > rollMax) tr = rollMax;
+        if (tr < -rollMax) tr = -rollMax;
+        this.mWaistRoll = FMA(rate, fr(tr - this.mWaistRoll), this.mWaistRoll);
     }
     calcAnim() {
         this.addUpper();
         this.calcBaseMtx(this.mModel.baseTR);
+        this.considerWaist();
         this.mModel.update();
         const w = this.waistCtrl();
         this.mModel.jointCtrl = w ? { joint: this.mJointIdChnChest, r: w } : null;
