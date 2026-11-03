@@ -21,13 +21,13 @@ export class GfxRenderDynamicUniformBuffer {
     }
 
     private findPageIndex(byteOffset: number): number {
-        return (byteOffset / this.uniformBufferMaxPageByteSize * 4) | 0;
+        return (byteOffset / this.uniformBufferMaxPageByteSize) | 0;
     }
 
     public allocateChunk(wordCount: number): number {
-        wordCount = alignNonPowerOfTwo(wordCount, this.uniformBufferByteAlignment);
-
-        const byteSize = wordCount * 4;
+        // (the chunk's size in bytes rounded to the offset alignment: rounding the word count to it, as
+        // this did, made every chunk 4 times the alignment at least and the frame's upload ~4 times its data)
+        const byteSize = alignNonPowerOfTwo(wordCount * 4, this.uniformBufferByteAlignment);
         assert(byteSize <= this.uniformBufferMaxPageByteSize);
         let byteOffset = this.currentByteOffset;
 

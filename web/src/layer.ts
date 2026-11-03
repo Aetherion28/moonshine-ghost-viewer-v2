@@ -1007,17 +1007,37 @@ export class GameLayer {
             const w = 1 << L.pos.lw, h = 1 << L.pos.lh, m = L.map as Uint8Array;
             // (only a layer whose texels changed since its last upload goes to the GPU again, from buffers kept per layer)
             const kept = G.bufs[i] && G.bufs[i].last.length === m.length ? G.bufs[i] : (G.bufs[i] = { last: new Uint8Array(m.length), rgba: new Uint8Array(w * h * 4), sent: false });
-            if (kept.sent && sameBytes(kept.last, m)) return;
-            kept.last.set(m); kept.sent = true;
-            const rgba = kept.rgba;
-            // I8: 8x4 texel blocks
-            let o = 0;
-            for (let by = 0; by < h; by += 4) for (let bx = 0; bx < w; bx += 8)
-                for (let y = 0; y < 4; y++) for (let x = 0; x < 8; x++, o++) {
+            // Only the rows of 8x4 I8 blocks whose texels changed since the last upload are turned into
+            // RGBA and sent (the manta's stamps touch a few blocks a frame; a whole 512 x 512 layer is a
+            // megabyte to convert and upload each frame).
+            const first = !kept.sent, last = kept.last, rgba = kept.rgba, bw = w >> 3, nBlocks = (w >> 3) * (h >> 2);
+            let r0 = h, r1 = -1;
+            for (let b = 0; b < nBlocks; b++) {
+                const o0 = b * 32;
+                let same = !first;
+                if (same) for (let k = 0; k < 32; k++) if (last[o0 + k] !== m[o0 + k]) { same = false; break; }
+                if (same) continue;
+                const by = Math.floor(b / bw) * 4, bx = (b % bw) * 8;
+                for (let y = 0, o = o0; y < 4; y++) for (let x = 0; x < 8; x++, o++) {
                     const d = ((by + y) * w + bx + x) * 4, v = m[o];
                     rgba[d] = rgba[d + 1] = rgba[d + 2] = rgba[d + 3] = v;
                 }
-            try { this.device.uploadTextureData(gfx, 0, [rgba]); } catch { }
+                if (by < r0) r0 = by;
+                if (by + 4 > r1) r1 = by + 4;
+            }
+            kept.last.set(m); kept.sent = true;
+            if (r1 < 0) return;
+            try {
+                const D: any = this.device, gl: WebGL2RenderingContext | undefined = D.gl, T: any = gfx;
+                if (first || !gl || !T.gl_texture || T.width !== w || T.height !== h) this.device.uploadTextureData(gfx, 0, [rgba]);
+                else {
+                    // (the rows r0..r1 of level 0, as GfxDevice's uploadTextureData would send the whole of it)
+                    if (D._setActiveTexture) D._setActiveTexture(gl.TEXTURE0);
+                    if (D._currentTextures) D._currentTextures[0] = null;
+                    gl.bindTexture(gl.TEXTURE_2D, T.gl_texture);
+                    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r0, w, r1 - r0, D.translateTextureFormat(T.pixelFormat), D.translateTextureType(T.pixelFormat), rgba, r0 * w * 4);
+                }
+            } catch { }
         });
     }
 
