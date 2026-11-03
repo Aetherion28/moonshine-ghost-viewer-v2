@@ -419,26 +419,28 @@ export class BossManta extends SpineEnemy {
     }
     drawn() { return !this.checkLiveFlag(LF.DEAD); }
     /**
-     * Play recording (runner.ts pinActorsToRecording): the recorder copies the first 0x150 bytes, so
-     * the heading (unk170, +0x170) isn't in it, but control() makes the velocity's x and z unk170's
-     * times the speed: the recorded velocity turns the heading the way the game's was going (its
-     * climb and its length across kept), so the drawn manta faces where it swims.
+     * Play recording (runner.ts pinActorsToRecording), from this pool member's record. The recorder
+     * copies the first 0x150 bytes: its width (scale.x) is there, its generation and heading
+     * (mGeneration, unk170 at +0x170) aren't, and the game's mVelocity is 0 (control's speed goes
+     * straight to the position), so:
+     *  - alive in the recording and dead here (the sim's split took another member): it starts as the
+     *    generation its width is (sScale: 20 10 5 2 1, 1);
+     *  - alive in both, its generation is the one its width is (so the battle's second state, all of
+     *    them the 4th, comes when the game's did); width 1 is the 4th or the 5th (the last state's),
+     *    whichever it is here already;
+     *  - its heading is turned the way it moved since its last record (climb and length across kept).
      */
-    /**
-     * Play recording: the game has this pool member alive and the sim has it dead (the sim's split
-     * took another member). It starts as the generation its recorded width is (sScale: 20 10 5 2 1, 1);
-     * width 1 is the 4th generation, or the 5th once the sim's other mantas are (the last phase's).
-     */
-    pinRevive(width: number) {
-        let gen = sScale.indexOf(width);
+    pinRecorded(r: { alive: boolean; width: number; dx: number; dz: number }) {
+        if (!r.alive) return;
+        let gen = sScale.indexOf(r.width);
         if (gen < 0) return;
-        if (gen === 4) for (const o of this.mantaManager.objs as BossManta[]) if (!o.checkLiveFlag(LF.DEAD) && o.mGeneration === 5) { gen = 5; break; }
-        this.initNthGeneration(gen);
-    }
-    pinRecorded() {
-        const vx = this.vel.x, vz = this.vel.z, l = Math.hypot(vx, vz), h = Math.hypot(this.unk170.x, this.unk170.z);
-        if (!(l > 0) || !(h > 0)) return;
-        this.unk170.x = fr(vx / l * h); this.unk170.z = fr(vz / l * h);
+        if (gen === 4 && (this.mGeneration === 4 || this.mGeneration === 5)) gen = this.mGeneration;
+        else if (gen === 4) for (const o of this.mantaManager.objs as BossManta[]) if (!o.checkLiveFlag(LF.DEAD) && o.mGeneration === 5) { gen = 5; break; }
+        if (this.checkLiveFlag(LF.DEAD) || this.mGeneration !== gen) this.initNthGeneration(gen);
+        const l = Math.hypot(r.dx, r.dz), h = Math.hypot(this.unk170.x, this.unk170.z);
+        if (!(l > 0.01)) return;
+        if (!(h > 0)) { this.unk170.set(fr(r.dx / l), 0, fr(r.dz / l)); return; }
+        this.unk170.x = fr(r.dx / l * h); this.unk170.z = fr(r.dz / l * h);
     }
     /** (drawing: TBossManta::drawObject is empty; the manager draws each manta only as its ground shadow, drawMantaShadow) */
     readonly shadowOnly = true;

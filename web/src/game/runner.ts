@@ -677,7 +677,7 @@ export class SimRunner {
      */
     private pinActorsToRecording(g: any, q0: number, st: Stage): (q: number) => void {
         const A = g.trace.actors as TraceActors;
-        const pair = new Map<number, LiveActor>(), held = new Map<LiveActor, number>();
+        const pair = new Map<number, LiveActor>(), held = new Map<LiveActor, number>(), lastPos = new Map<number, number[]>();
         // each enemy's DEAD bit through the recording: the labels where it was recorded, and the bit there
         const life = new Map<number, { qf: number[]; dead: number[] }>(), lifeAt = new Map<number, number>();
         for (let i = 0; i < A.count; i++) if (A.extent[i] >= 0x150) { const id = A.id[i]; const T = life.get(id) || life.set(id, { qf: [], dead: [] }).get(id)!; T.qf.push(A.qf[i]); T.dead.push(A.liveFlag[i] & LF.DEAD); }
@@ -708,18 +708,20 @@ export class SimRunner {
                     if (!list || n >= list.length) continue;
                     o = list[n]; pair.set(id, o);
                 }
-                // an enemy the recording has alive that the sim has dead: its own pinRevive brings it in
-                // (a pool member the game used where the sim used another: BossManta's split)
-                if (A.extent[k] >= 0x150 && !(A.liveFlag[k] & LF.DEAD) && o.checkLiveFlag(LF.DEAD)) {
-                    const rv = (o as any).pinRevive; if (typeof rv === 'function') rv.call(o, A.scale[k * 3]);
-                }
+                // (the move since its last record, for an actor whose heading isn't in the copy)
+                const last = lastPos.get(id), x = A.pos[k * 3], z = A.pos[k * 3 + 2];
+                const moved = last ? { dx: x - last[0], dz: z - last[1] } : { dx: 0, dz: 0 };
+                lastPos.set(id, [x, z]);
+                // an actor whose state past the copied bytes the record still shows takes it from the
+                // record (BossManta: brought in when the sim has it dead, its generation from its width,
+                // its heading from its move)
+                const pr = (o as any).pinRecorded;
+                if (typeof pr === 'function') pr.call(o, { alive: !(A.liveFlag[k] & LF.DEAD), width: A.scale[k * 3], ...moved });
                 o.pos.set(A.pos[k * 3], A.pos[k * 3 + 1], A.pos[k * 3 + 2]);
                 o.rot.set(A.rot[k * 3], A.rot[k * 3 + 1], A.rot[k * 3 + 2]);
                 o.scale.set(A.scale[k * 3], A.scale[k * 3 + 1], A.scale[k * 3 + 2]);
                 if (A.extent[k] >= 0xF4) o.vel.set(A.vel[k * 3], A.vel[k * 3 + 1], A.vel[k * 3 + 2]);
                 if (A.extent[k] >= 0x150) held.set(o, id);
-                // (an actor whose drawing hangs on state past the copied bytes takes it from these: BossManta's heading)
-                const pr = (o as any).pinRecorded; if (typeof pr === 'function') pr.call(o);
             }
             // An enemy (an enemy manager's object: 0x150 copied) the game had dead stays dead: a record
             // comes only when an object changed, and the game code may revive a pool member the game
