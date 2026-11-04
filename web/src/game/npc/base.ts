@@ -284,8 +284,15 @@ class NpcSink {
     constructor(public unk0: number, public unk4: number) { }
     doThing() { this.unk0 += 1; if (this.unk0 >= this.unk4) { this.unk0 = this.unk4; return true; } return false; }
 }
-/** initSinkNpc_'s static counter (one per stage) */
+/**
+ * initSinkNpc_'s function-static counter (sCheckPollutedStartCounter): it staggers the goop NPCs' checks and
+ * survives stage changes, so where it starts depends on the stages before. npcSinkSetup.start is where the
+ * next stage built starts it (a trace's recorded phase, MSGT stage schema 2; the runner sets it), 0 by default.
+ */
 const SINK_COUNTER = new WeakMap<World, { n: number }>();
+export const npcSinkSetup = { start: 0 };
+/** Where a stage left the counter (null: no goop NPC set it up), for the next stage to go on from. */
+export function npcSinkCounterOf(w: World): number | null { const c = SINK_COUNTER.get(w); return c ? c.n : null; }
 
 // sBaseActionFlagTable (NpcInitActionData.cpp)
 const MONTE_ACTIONS = [0, 1, 2, 16, 32, 33, 0x80, 0x88, 0x40, 0, 0, 4, 0x1080, 0, 2, 16, 32, 8, 10, 0x18, 0x28, 0x80, 0, 0x0400, 0x4088];
@@ -489,7 +496,7 @@ export class BaseNPC extends SpineEnemy {
         if (this.isJellyFishMare() || this.isSunflower() || this.actorType === T.NPC_MONTE_MF) this.onLiveFlag(LF.UNK10);
         if (this.isPollutionNpc()) {
             let c = SINK_COUNTER.get(this.world);
-            if (!c) { c = { n: 0 }; SINK_COUNTER.set(this.world, c); }
+            if (!c) { c = { n: npcSinkSetup.start }; SINK_COUNTER.set(this.world, c); }
             const f = palFrame(30);
             this.sink = new NpcSink(c.n, f);
             c.n += 1; if (c.n >= f) c.n = 0;

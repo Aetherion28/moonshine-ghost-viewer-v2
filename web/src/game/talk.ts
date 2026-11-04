@@ -742,6 +742,9 @@ export class TalkDirector {
     }
     private startQueuedDemo() {
         const d = this.demoQueue[this.demoHead], C: any = this.camera();
+        // (the game reads the queue's slot whatever is in it; with nothing queued here, e.g. a demo state
+        // reached by a recording's pinned Mario rather than the sim's own, there's nothing to start)
+        if (!d) return;
         if (C && !C.bckSource) C.bckSource = (name: string) => this.demoBck(name);
         if (C && C.startDemoCamera) C.startDemoCamera(d.name, d.offset, d.frames, d.angle, d.timed);
         // (the demo's callback, unk14(unk18, 0): e.g. TShine::appearWithTimeCallback)

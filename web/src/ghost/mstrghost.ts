@@ -11,7 +11,7 @@
 // four ticks a frame from the frame records instead. The first tick is QF 0 (a trace starts where
 // its capture started, not at a level timer).
 
-import { replayMstr, readMstr, marioView, cameraView, padView, contactTriangle, MstrError, MstrSummary, MstrIdentity, MarioView, CameraView, CAMERA, K } from './mstr.js';
+import { replayMstr, readMstr, marioView, cameraView, padView, contactTriangle, MstrError, MstrSummary, MstrIdentity, MstrStageStart, MarioView, CameraView, CAMERA, K } from './mstr.js';
 
 export interface TraceTick {
     qf: number; frame: number; scene: number;
@@ -35,6 +35,12 @@ export interface TraceGhost {
         rng: { qf: Int32Array; caller: Uint32Array; seed: Uint32Array; result: Uint16Array; count: number };
         /** the actors' recorded state (see TraceActors) */
         actors: TraceActors;
+        /** TMarDirector's state changes as the frames began (the world QF of the frame's first tick, the new state) */
+        director: { qf: Int32Array; state: Int32Array; count: number };
+        /** the stage-start record (kind 22), null without one */
+        stageStart: MstrStageStart | null;
+        /** the GPU results the game used (Feedback consumers), in the order it read them */
+        feedback: TraceFeedback;
     };
 }
 
@@ -72,6 +78,22 @@ function viewQuat(m: number[]): [number, number, number, number] {
 
 const AREA_NAMES_REGION: Record<string, string> = { GMSJ: 'JP', GMSE: 'US', GMSP: 'PAL' };
 
+/** What a GPU-feedback observation fed (Moonshine's ghostRenderFeedback consumer numbers). */
+export const enum Feedback { CAMERA = 0, SILHOUETTE = 1, WATER = 2 }
+/**
+ * The kind-15 records that are not MSL rand() calls but literal observations of a value the GPU gave the
+ * game (ghost_render_feedback.hxx; their caller is the consumer's site + 4): Mario's occlusion flag where
+ * CPolarSubCamera::ctrlNormalOrTowerCamera_ and TSilhouette::perform read it, and the height
+ * TBathWaterManager::getWaterHeight returns (an IEEE-754 single's bits). Per game ID.
+ */
+const FEEDBACK_SITES: Record<string, [number, number, number]> = {
+    GMSJ: [0x80359ca8, 0x800c2d10, 0x801fabf4],
+    GMSE: [0x8002a120, 0x80227960, 0x801a90b0],
+    GMSP: [0x8002a1d8, 0x8021f8b4, 0x801a1938],
+};
+/** A GPU-feedback observation: the world QF (the tick's label, as Mario's) and the value the game used. */
+export interface TraceFeedback { count: number; qf: Int32Array; consumer: Uint8Array; value: Uint32Array; }
+
 /**
  * Decode a trace into a ghost. Every tick is a pose sample (QF interval 1), every tick with an
  * observation an input, every tick with a camera block a camera key.
@@ -83,6 +105,9 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     const inp = { qf: [] as number[], buttons: [] as number[], stick: [] as number[], cstick: [] as number[], trig: [] as number[], analogAB: [] as number[] };
     const cam = { qf: [] as number[], pos: [] as number[], quat: [] as number[], fov: [] as number[], tag: [] as number[], at: [] as number[], up: [] as number[] };
     const rq: number[] = [], rc: number[] = [], rs: number[] = [], rr: number[] = [];
+    const fb = { qf: [] as number[], consumer: [] as number[], value: [] as number[] };
+    const ds = { qf: [] as number[], state: [] as number[] };
+    let stageStart: MstrStageStart | null = null, runFlags = 0, provenance = false;
     const segs: { scene: number; first: number; startQf: number; endQf: number }[] = [];
     let firstSeed: number | null = null, lastCamKey = -1e9, segNow = -1;
     /** the world tick at the current frame's start, and the recorder's (Mario-update) tick there */
@@ -99,6 +124,8 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             // stops the world for a Shine's appear demo: the recorder's tick counts Mario's updates)
             if (frameTick === null) worldTick = s.tick; else worldTick += 4;
             frameTick = s.tick;
+            // TMarDirector's state as the frame began: a change is listed at the world QF of the tick before it (the changeState after that tick, or one earlier in the frame before, made it)
+            if (s.directorState !== -1 && (!ds.state.length || ds.state[ds.state.length - 1] !== s.directorState)) { ds.qf.push(worldQf(s.tick)); ds.state.push(s.directorState); }
         },
         onActor: (aid, _ptr, extent, words, created, _frame, tick) => {
             const fl = (n: number) => { u32v[0] = words[n]; return f32v[0]; };
@@ -108,7 +135,15 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             if (extent >= 0xF4) { ac.vel.push(fl(43), fl(44), fl(45)); ac.liveFlag.push(words[60]); } else { ac.vel.push(0, 0, 0); ac.liveFlag.push(0); }
         },
         onActorEnd: (aid, _frame, tick) => { ae.qf.push(worldQf(tick)); ae.id.push(aid); },
-        onRng: (c) => { rq.push(worldQf(c.tick)); rc.push(c.caller); rs.push(c.seed); rr.push(c.result); },
+        onRng: (c) => {
+            // (a literal record at a GPU-feedback site is an observation, not a roll)
+            const sites = c.raw && FEEDBACK_SITES[(identity as MstrIdentity | null)?.gameId.slice(0, 4) || ''];
+            const which = sites ? sites.indexOf(c.caller >>> 0) : -1;
+            if (which >= 0) { fb.qf.push(worldQf(c.tick)); fb.consumer.push(which); fb.value.push(c.result >>> 0); return; }
+            rq.push(worldQf(c.tick)); rc.push(c.caller); rs.push(c.seed); rr.push(c.result);
+        },
+        onStageStart: (s) => { if (!stageStart) stageStart = s; },
+        onProvenance: (f) => { runFlags |= f; provenance = true; },
         onTick: (s) => {
             // v3: each frame also records the pad as the frame starts (cue 0, word 1's high bit), not a movement update
             if (s.input && s.input.length >= 8 && (s.input[4] & 0x80)) return;
@@ -169,7 +204,9 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     const header = {
         version: 'MSTR' + summary.header.version, format: 'mstr', region: AREA_NAMES_REGION[gameId] || '?', gameId, discRevision,
         tvFormat: 'NTSC60', refreshHz: hz,
-        route: route0, routeLabel: '', runFlags: 0, resultQf: lastQf, startQf: 0, endQf: lastQf, durationQf: lastQf, sampleCount: n,
+        route: route0, routeLabel: '',
+        // kind 28 (ghost_run_flags.h): 1 assisted, 2 a savestate used, 4 fast-forward, 8 incomplete, 16 a custom route, 32 TAS
+        runFlags, runFlagsRecorded: provenance, resultQf: lastQf, startQf: 0, endQf: lastQf, durationQf: lastQf, sampleCount: n,
         created: 0, author: '', name, profileName: '',
         initialRng: firstSeed === null ? undefined : (firstSeed as number) >>> 0,
         // MSTR v3 starts recording before the stage loads: frames go by before Mario's first update, and
@@ -199,6 +236,9 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
         inputs, splits: [], camera, rng: null, warnings,
         trace: {
             summary, identity: id, hz, ticks,
+            stageStart: stageStart as MstrStageStart | null,
+            director: { qf: Int32Array.from(ds.qf), state: Int32Array.from(ds.state), count: ds.qf.length },
+            feedback: { count: fb.qf.length, qf: Int32Array.from(fb.qf), consumer: Uint8Array.from(fb.consumer), value: Uint32Array.from(fb.value) } as TraceFeedback,
             rng: { qf: Int32Array.from(rq), caller: Uint32Array.from(rc), seed: Uint32Array.from(rs), result: Uint16Array.from(rr), count: rq.length },
             actors: {
                 count: ac.qf.length, qf: Int32Array.from(ac.qf), id: Uint32Array.from(ac.id), key: Uint16Array.from(ac.key), created: Uint8Array.from(ac.created), extent: Uint16Array.from(ac.extent),

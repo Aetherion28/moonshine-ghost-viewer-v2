@@ -548,7 +548,8 @@ export abstract class MarioSpecial extends MarioSwim {
     }
     /** let go of the wire jumping (wireWait, wireSWait) */
     private wireLetGo() {
-        (this.holder as HitActor).receiveMessage(this, MSG.DETACH);
+        // (playing a recording, Mario can be put on a wire the sim never hung him on: no holder then)
+        if (this.holder) (this.holder as HitActor).receiveMessage(this, MSG.DETACH);
         this.holder = null;
         const r = this.changePlayerStatus(S.WIRE_JUMP, 0, false);
         this.setPlayerVelocity(0);
@@ -648,7 +649,7 @@ export abstract class MarioSpecial extends MarioSwim {
         const room = fr(this.mFloorPosition.x - this.mFloorPosition.y) >= 160;
         if ((this.mInput & 2) && room) { this.mWireBounceVel = 5; return this.changePlayerStatus(S.WIRE_RETURN, 0, false); }
         if (this.mInput & 0x8000) {
-            (this.holder as HitActor).receiveMessage(this, MSG.DETACH);
+            if (this.holder) (this.holder as HitActor).receiveMessage(this, MSG.DETACH);
             this.holder = null;
             return this.startHangLanding(S.WIRE_HANG_LAND_SAFE_DOWN);
         }

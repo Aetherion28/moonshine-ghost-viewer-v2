@@ -2047,7 +2047,25 @@ export function sawFludd(I: any, q0: number, q1: number) {
     }
     return false;
 }
+/**
+ * The camera demo's end with a trace's frame records: they say which frame it ended in (td: the tick
+ * before the first frame that began out of STATE_UNK1, so the end is one of td - 3 .. td, the
+ * changeStates after a frame's ticks), the rolling start's APPEAR animation (when the ghost has it)
+ * which tick of them; without it, the frame's start (the changeState after the frame before's last tick).
+ */
+export function introDemoEndInFrame(samples: { qf: number; anim: number; phase: number }[], td: number): number {
+    const a = appearDemoEnd(samples);
+    return a === null ? td : Math.min(td, Math.max(td - 3, a));
+}
 export function introDemoEnd(samples: { qf: number; anim: number; phase: number }[]): number {
+    const a = appearDemoEnd(samples);
+    if (a !== null) return a;
+    // Moonshine's first sample is the end of the frame after setMario's: the tick within the frame
+    // depends on the console's wipe (not simulated); the Bianco 3 secret's is its third (coro_ex1: QF 92, 87)
+    return samples.length ? samples[0].qf - 5 : 0;
+}
+/** The demo's end fitted to the rolling start's APPEAR animation phases, null without them. */
+function appearDemoEnd(samples: { qf: number; anim: number; phase: number }[]): number | null {
     const ap = samples.filter((s) => s.anim === A.DEMO_GATE_OUT_APPEAR || s.anim === A.DEMO_GATE_OUT_APPEAR_GET).slice(0, 12);
     if (ap.length >= 2) {
         const end = marioBckInfo(ANIME_DATA[ap[0].anim][0])[0];
@@ -2065,8 +2083,6 @@ export function introDemoEnd(samples: { qf: number; anim: number; phase: number 
         }
         return best;
     }
-    // Moonshine's first sample is the end of the frame after setMario's: the tick within the frame
-    // depends on the console's wipe (not simulated); the Bianco 3 secret's is its third (coro_ex1: QF 92, 87)
-    return samples.length ? samples[0].qf - 5 : 0;
+    return null;
 }
 export { calcKeyCode, IConverge };

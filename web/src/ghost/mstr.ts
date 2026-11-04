@@ -17,12 +17,13 @@ export const MSTR_MAGIC = 0x4d535452, MSTR_DONE = 0x444f4e45;
 export const enum K {
     SESSION = 1, FRAME = 2, MARIO = 3, CAMERA = 4, FLAGS = 5, ACTOR = 6, ACTOR_END = 7, FLUDD = 8, YOSHI = 9,
     SOUND = 10, PARTICLE = 11, END = 12, WORLD_SUMMARY = 13, INPUT = 14, RNG = 15, WATER = 16, IDENTITY = 17,
-    RNG_BLOCK = 18, CONTACT = 19, INPUT_DELTA = 20, CAMERA_META = 21,
+    RNG_BLOCK = 18, CONTACT = 19, INPUT_DELTA = 20, CAMERA_META = 21, STAGE_START = 22, PROVENANCE = 28,
 }
 export const KIND_NAMES: Record<number, string> = {
     1: 'session', 2: 'frame', 3: 'Mario', 4: 'camera', 5: 'flags', 6: 'actor', 7: 'actor_removed', 8: 'FLUDD', 9: 'Yoshi',
     10: 'sound', 11: 'particle', 12: 'end', 13: 'world_summary', 14: 'controller', 15: 'RNG_call', 16: 'water_request',
     17: 'identity', 18: 'RNG_block', 19: 'contact', 20: 'controller_delta', 21: 'camera_metadata',
+    22: 'stage_start', 23: 'visual', 24: 'pad_mirrors', 25: 'pad_mirrors_delta', 26: 'world_witness', 27: 'continuation', 28: 'run_provenance',
 };
 /** Capability bits (header word 7 and the footer). */
 export const CAP = {
@@ -268,6 +269,13 @@ function checkActor(bv: DataView, size: number) {
 export interface MstrContact { role: number; pointer: number; valid: boolean; triangle: Uint8Array; }
 /** Kind 21: the camera's mode and its in-between (interpolation) child. */
 export interface MstrCameraMeta { pointer: number; mode: number; child: number; valid: number; inbetween: Uint8Array; }
+/**
+ * Kind 22: what the stage started with. npcSinkPhase (schema 2+) is TBaseNPC::initSinkNpc_'s static
+ * sCheckPollutedStartCounter (0..29) as setup began, null when not recorded; observations (schema 3)
+ * says which GPU results the kind-15 literal records carry: bit 0 Mario's occlusion at the camera and the
+ * silhouette, bit 1 run provenance on every frame, bit 2 Bowser's bath-water height.
+ */
+export interface MstrStageStart { schema: number; npcSinkPhase: number | null; observations: number; }
 /** Kind 17: the disc header's first two words, the trace schema, and Moonshine's regional ordinal. */
 export interface MstrIdentity { disc0: number; disc1: number; schema: number; regional: number; gameId: string; discRevision: number; }
 
@@ -276,6 +284,8 @@ export interface MstrTickState {
     frame: number; tick: number; scene: number;
     /** frame record words: application context, VI retrace count, OS tick, libc seed, cumulative movement ticks */
     context: number; retrace: number; osTick: number; seed: number;
+    /** the frame record's TMarDirector state as the frame began (word 6; -1 none) */
+    directorState: number;
     /** the 300-byte controller observation (null before the first) */
     input: Uint8Array | null;
     mario: BlobState | undefined; camera: BlobState | undefined; fludd: BlobState | undefined; yoshi: BlobState | undefined; flags: BlobState | undefined;
@@ -299,9 +309,13 @@ export function replayMstr(buf: ArrayBuffer, o: {
     onSession?: (b: Uint8Array, frame: number) => void;
     onActor?: (id: number, pointer: number, extent: number, words: Uint32Array, created: boolean, frame: number, tick: number) => void;
     onActorEnd?: (id: number, frame: number, tick: number) => void;
+    /** kind 22: the stage-start record (schema 1: 960 bytes, 2: + the NPC goop-check phase, 3: + the observations word) */
+    onStageStart?: (s: MstrStageStart, frame: number, tick: number) => void;
+    /** kind 28: the run's cumulative attribute flags (ghost_run_flags.h) as of this frame */
+    onProvenance?: (runFlags: number, frame: number) => void;
 } = {}): MstrSummary {
     const st: MstrTickState = {
-        frame: 0, tick: 0, scene: -1, context: 0, retrace: 0, osTick: 0, seed: 0, input: null,
+        frame: 0, tick: 0, scene: -1, context: 0, retrace: 0, osTick: 0, seed: 0, directorState: -1, input: null,
         mario: undefined, camera: undefined, fludd: undefined, yoshi: undefined, flags: undefined, contacts: [null, null, null, null], cameraMeta: null,
     };
     const blobs = new Map<number, BlobState>();
@@ -323,6 +337,7 @@ export function replayMstr(buf: ArrayBuffer, o: {
                 const scene = bv.getUint32(0);
                 if (scene !== st.scene) { blobs.clear(); actors.clear(); st.scene = scene; st.input = null; st.contacts = [null, null, null, null]; st.cameraMeta = null; }
                 st.context = bv.getUint32(4); st.retrace = bv.getUint32(8); st.osTick = bv.getUint32(12); st.seed = bv.getUint32(16);
+                st.directorState = r.body.length >= 28 ? bv.getUint32(24) | 0 : -1;
                 if (o.onFrame) { st.mario = blobs.get(K.MARIO); st.camera = blobs.get(K.CAMERA); o.onFrame(st); }
                 break;
             }
@@ -333,6 +348,11 @@ export function replayMstr(buf: ArrayBuffer, o: {
             case K.CONTACT: st.contacts[bv.getUint32(0)] = { role: bv.getUint32(0), pointer: bv.getUint32(4), valid: bv.getUint32(8) !== 0, triangle: r.body.slice(16, 88) }; break;
             case K.CAMERA_META: st.cameraMeta = { pointer: bv.getUint32(0), mode: bv.getUint32(4) | 0, child: bv.getUint32(8), valid: bv.getUint32(12), inbetween: r.body.slice(16, 88) }; break;
             case K.IDENTITY: if (o.onIdentity) o.onIdentity(identityOf(bv)); break;
+            case K.STAGE_START: if (o.onStageStart) {
+                const n = r.body.length;
+                o.onStageStart({ schema: bv.getUint32(0), npcSinkPhase: n >= 964 ? bv.getUint32(960) : null, observations: n >= 968 ? bv.getUint32(964) : 0 }, r.frame, r.tick);
+            } break;
+            case K.PROVENANCE: if (o.onProvenance && r.body.length >= 8) o.onProvenance(bv.getUint32(4), r.frame); break;
             case K.SESSION: if (o.onSession) o.onSession(r.body, r.frame); break;
             case K.RNG: if (o.onRng) o.onRng({ frame: r.frame, tick: r.tick, caller: bv.getUint32(0), result: bv.getUint32(4), seed: bv.getUint32(8), raw: true }); break;
             case K.RNG_BLOCK: if (o.onRng) {

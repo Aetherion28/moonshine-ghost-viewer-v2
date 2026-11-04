@@ -28,6 +28,7 @@
 
 import { fr, V3, Quat } from './math.js';
 import { jgSqrt } from './vecops.js';
+import { takeFeedback, feedbackFloat, FeedbackConsumer } from './feedback.js';
 import { World, Stream, NameRef, CUE_MOVE, HitActor, MSG, HF, HC, readParams, PSchema } from './engine.js';
 import { AT } from './actortypes.js';
 import { register } from './scene.js';
@@ -431,7 +432,12 @@ export class BathWaterManager extends NameRef {
         }
     }
     getWaterHeight(x: number, z: number) {
-        if (this.unk24 && this.unk30) return this.unk30.getHeight(x, z);
+        if (this.unk24 && this.unk30) {
+            const h = this.unk30.getHeight(x, z);
+            // the mesh renderer's height is the GPU's (a Z-buffer copy): a trace's recorded one when it has it (game/feedback.ts)
+            const v = takeFeedback(FeedbackConsumer.WATER);
+            return v !== null ? feedbackFloat(v) : h;
+        }
         return 0;
     }
     /** The mesh renderer's height grid for the viewer (null with the flat renderer / before the first one):

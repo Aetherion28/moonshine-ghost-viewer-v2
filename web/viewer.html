@@ -7872,6 +7872,17 @@ void main() {
         tag.title = h.format === 'mstr' ? `Replay: Mario is played from its inputs by this build's game code` : 'Played on this build; Mario follows the ghost\'s recorded positions and animation';
         name.append(tag);
       }
+      // a trace's run attributes (Moonshine's kind-28 provenance, ghost_run_flags.h; TAS has its own tag below): savestates, fast-forward
+      if (h.format === 'mstr' && h.runFlags) {
+        const f = h.runFlags, said = [f & 2 && 'savestate', f & 4 && 'fast-forward', f & 1 && !(f & 32) && 'assisted', f & 16 && 'custom route', f & 8 && 'incomplete'].filter(Boolean);
+        if (said.length) {
+          const tag = document.createElement('span');
+          tag.className = 'build';
+          tag.textContent = ' · ' + said.join(', ');
+          tag.title = 'What the recorder says about how this run was made (practice aids, savestates, fast-forward)';
+          name.append(tag);
+        }
+      }
       // Older ghost formats (an older Moonshine): a ⚠ with what the file is missing.
       if (h.version < GHOST_LATEST) {
         const list = (a) => a.join(', ').replace(/, ([^,]*)$/, a.length > 2 ? ', or $1' : ' or $1');

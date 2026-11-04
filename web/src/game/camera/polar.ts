@@ -31,6 +31,7 @@
 import { V } from '../version.js';
 import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from '../player/fmath.js';
 import { fr, s16, matan, JMASSin, JMASCos } from '../math.js';
+import { takeFeedback, FeedbackConsumer } from '../feedback.js';
 import { World, LF } from '../engine.js';
 import { BGCheckData, WallCheck } from '../collision.js';
 import { AT } from '../actortypes.js';
@@ -289,6 +290,8 @@ export class PolarSubCamera implements SimCamera {
     private marioAngleY() { return s16(this.M.mFaceAngle.y); }
     private marioStatus() { return this.M.mStatus >>> 0; }
     private marioFlag(f: number) { return (this.M.mFlag & f) !== 0; }
+    /** SMS_CheckMarioFlag(MARIO_FLAG_OCCLUDED) here: set from the Z buffer, so a trace's recorded read when it has one (game/feedback.ts) */
+    private marioOccluded() { const v = takeFeedback(FeedbackConsumer.CAMERA); return v !== null ? v !== 0 : this.marioFlag(MF.OCCLUDED); }
     private touchGround4cm() { const m = this.M; return m.isTouchGround4cm ? !!m.isTouchGround4cm() : m.pos.y <= fr(m.mFloorPosition.y + 4); }
     private onWire() { const m = this.M; return m.isOnWire ? !!m.isOnWire() : !!(m.holder && m.holder.actorType === AT.MAP_WIRE_ACTOR); }
     private openingDoor() { const s = this.marioStatus(); return s === ST.DOOR_OPEN_R || s === ST.DOOR_OPEN_L; }
@@ -589,7 +592,7 @@ export class PolarSubCamera implements SimCamera {
                         else f30 = fr(0.5 * fr(1 - JMASCos((a - this.unk258) * 2)));
                         let f29 = 1;
                         if (this.unk2CA !== -1) f29 = lerpF(this.P.mInHouseMaginfXmin, this.P.mInHouseMaginfXmax, this.cur.ratio);
-                        else if (this.marioFlag(MF.OCCLUDED)) f29 = lerpF(this.P.mObstructMaginfXmin, this.P.mObstructMaginfXmax, this.cur.ratio);
+                        else if (this.marioOccluded()) f29 = lerpF(this.P.mObstructMaginfXmin, this.P.mObstructMaginfXmax, this.cur.ratio);
                         if (Math.trunc(C[2]) & 0xFF) f29 = fr(f29 * lerpF(this.P.mLFollowMaginfXmin, this.P.mLFollowMaginfXmax, this.cur.ratio));
                         const f4 = this.mMode === CM.DIVING || this.mMode === CM.HOVERING ? 100 : this.cmd.H;
                         let k = fr(this.unk288 * fr(f4 * fr(f29 * fr(this.unk250 * f30))));

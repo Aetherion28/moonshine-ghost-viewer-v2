@@ -12,6 +12,8 @@ import { Stage, StageFiles, GameCamera } from './scene.js';
 import { MarioSample, MarioTrack } from './mario.js';
 import { LiveActor, NameRef, World, calcKeyCode, LF } from './engine.js';
 import { rngCtx, srand } from './math.js';
+import { feedbackCtx, FeedbackReplay } from './feedback.js';
+import { npcSinkSetup, npcSinkCounterOf } from './npc/base.js';
 import type { MarioView } from '../ghost/mstr.js';
 import type { TraceActors } from '../ghost/mstrghost.js';
 import './npc/manager.js';
@@ -77,7 +79,7 @@ import { mapObjWorldHooks } from './mapobj/index.js';
 import './player/emario.js';
 import { setMarioArchive } from './player/base.js';
 import { setYoshiArchive } from './player/yoshi.js';
-import { PlayerMario, introTiming } from './player/player.js';
+import { PlayerMario, introTiming, introDemoEndInFrame } from './player/player.js';
 import type { PadStatus } from './player/pad.js';
 import { NO_PAD } from './player/pad.js';
 import type { StickCamera } from './camera/types.js';
@@ -405,6 +407,19 @@ export class ReplayHistory {
 }
 
 /**
+ * The stage tick after which TMarDirector's camera demo (STATE_UNK1) ended, from a trace's frame records
+ * (the frame's director state; mstrghost.ts trace.director): the first change from it in the segment.
+ * null without a trace, or when the segment has no demo.
+ */
+export function traceDemoEnd(g: any, segment: number, q0: number): number | null {
+    const D = g && g.trace && g.trace.director, seg = g && g.segments && g.segments[segment];
+    if (!D || !D.count || !seg) return null;
+    const lo = segment === 0 ? -Infinity : seg.startQf - 240, hi = seg.endQf;
+    for (let i = 1; i < D.count; i++) if (D.state[i - 1] === 1 && D.state[i] !== 1 && D.qf[i] >= lo && D.qf[i] <= hi) return D.qf[i] - q0;
+    return null;
+}
+
+/**
  * The RNG tape's SEED for a segment (MSL rand()'s next when that stage began): the first SEED in the
  * segment that comes before any of its rolls (ghost.js parseRngTape's tape.seeds); null without one.
  */
@@ -481,6 +496,10 @@ export class SimRunner {
      * game had even where the simulation alone would drift. false ("Simulate"): the game code alone.
      */
     playRecording = true;
+    /** the current stage's recorded GPU feedback (null: the trace has none) */
+    feedback: FeedbackReplay | null = null;
+    /** where the last stage built left initSinkNpc_'s counter */
+    private sinkCarry: { seg: number; n: number } | null = null;
     /** Play recording: the first ghost QF where the game code's Mario differed from the trace before he was put back (-1: none yet) */
     firstPinQf = -1;
     /** Play recording: the ticks where he was put back */
@@ -552,6 +571,9 @@ export class SimRunner {
                 const ss: { qf: number; anim: number; phase: number }[] = [];
                 for (let i = seg.firstSample; i < seg.firstSample + seg.sampleCount; i++) { const q = g.qf[i] - q0; if (q > 0) ss.push({ qf: q, anim: g.anim[i], phase: g.phase[i] }); }
                 intro = introTiming(ss, I, q0, seg.endQf - g.header.startQf);
+                // a trace records TMarDirector's state every frame: the camera demo's end is there, not guessed from Mario's samples
+                const td = traceDemoEnd(g, segI, q0);
+                if (td !== null) intro.demoEndTick = introDemoEndInFrame(ss, td);
                 // Delfino Plaza's own opening demo (DEMO_FLAG_CAMERA_DEMO_ON_START): Mario comes in late, the
                 // first sample 7 ticks after setMario (stagechange.ts LiveDirector), as a live run records it
                 if (seg.route.area === 1 && (segI === 0 || live) && (intro.firstSample ?? 0) > 12) { intro.plazaDemo = true; intro.demoEndTick = (intro.firstSample ?? 0) - 7; }
@@ -576,8 +598,14 @@ export class SimRunner {
             const fromLoad = segI === 0 && !!(g.header && g.header.fromLoad && g.header.initialRng !== undefined);
             if (intro && fromLoad) intro.fromLoad = true;
             const seed = fromLoad ? g.header.initialRng : stageSeed(g, segI);
+            // TBaseNPC::initSinkNpc_'s counter as this stage's setup began: the trace's record for its first
+            // stage (stage schema 2+), where the stage before left it for a later one built here, else 0
+            const prevSink = segI > 0 && this.sinkCarry && this.sinkCarry.seg === segI - 1 ? this.sinkCarry.n : null;
+            npcSinkSetup.start = segI === 0 ? (g.trace && g.trace.stageStart && g.trace.stageStart.npcSinkPhase !== null ? g.trace.stageStart.npcSinkPhase : 0) : (prevSink ?? 0);
             try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, seed ?? 0, 0, intro); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
+            finally { npcSinkSetup.start = 0; }
+            { const n = npcSinkCounterOf(this.stage.world); this.sinkCarry = { seg: segI, n: n ?? npcSinkSetup.start }; }
             // V9: rand()'s state at the first recorded pose (the stage's QF 0, after its lead frames)
             if (segI === 0 && !fromLoad && g.header && g.header.initialRng !== undefined) srand(g.header.initialRng);
             const st0 = this.stage;
@@ -609,6 +637,8 @@ export class SimRunner {
                 this.sync = { replay: true, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: cam, lostLives: P.lostLives, lateInputsQf: -1, controlQf: -1 };
             } else this.sync = { replay: false, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: '', lostLives: [], lateInputsQf: -1, controlQf: -1 };
             this.rng = g.rng ? new RngReplay(g.rng, segI, q0, () => q0 + st0.qf) : null;
+            // a trace's GPU results (the camera's read of Mario's occlusion, Bowser's bath-water height): game/feedback.ts
+            this.feedback = g.trace && g.trace.feedback && g.trace.feedback.count ? new FeedbackReplay(g.trace.feedback, q0, () => st0.qf) : null;
         }
         const st = this.stage!;
         const track = this.track(inp, segI);
@@ -616,8 +646,9 @@ export class SimRunner {
         while (st.qf + 4 <= want) {
             st.camera = this.camera(inp, q0 + st.qf + 4, segI);
             rngCtx.roll = this.rng ? this.rng.roll : null; rngCtx.node = this.rng ? this.rng.node : null;
+            feedbackCtx.take = this.feedback ? this.feedback.take : null;
             try { st.runFrame(track, st.player ? this.padAt(inp.ghost, st.qf + (isInputTrace(inp.ghost) ? 0 : 4)) : null); } catch (e) { this.error = e; console.warn('[game] frame', e); this.stage = null; return false; }
-            finally { rngCtx.roll = null; rngCtx.node = null; }
+            finally { rngCtx.roll = null; rngCtx.node = null; feedbackCtx.take = null; }
             if (st.player && this.camKeys) {
                 const k = this.camKeys.get(q0 + st.qf);
                 const turn = k ? (st.player.simCamera as any).correctYawToRecorded(k.fwd, k.pos) : 0;
