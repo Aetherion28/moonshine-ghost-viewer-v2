@@ -500,7 +500,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="The stage's music, played from the game disc by the game's own sequences and instruments"><input type="checkbox" id="optMusic"> Music</label>
       <label title="Mario's and the objects' sounds, from the game disc"><input type="checkbox" id="optSfx"> Sound effects <span class="discInfo" id="audioInfo"></span></label>
       <label><input type="checkbox" id="optPath" checked> Show full route lines</label>
-      <label title="The box of Mario's position, speed, animation and FLUDD in the view's corner"><input type="checkbox" id="optInfo" checked> Show info box</label>
+      <label title="The box of Mario's position, speed, animation and FLUDD in the view's corner"><input type="checkbox" id="optInfo"> Show info box</label>
       <label title="Frames drawn per second, and in live play the game frames run per second (the game runs at 30)"><input type="checkbox" id="optFps" checked> Show frame rate</label>
       <label title="The coloured circle at each ghost's feet that tells ghosts apart"><input type="checkbox" id="optRing" checked> Show ghost circles</label>
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
@@ -556,14 +556,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793822111302"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793822111302"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793822111302"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793822111302"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793822111302"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793822111302"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793822111302"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793822111302"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793824730588"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793824730588"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793824730588"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793824730588"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793824730588"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793824730588"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793824730588"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793824730588"><\/script>');
 </script>
 <script>
 (() => {
@@ -8424,7 +8424,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793822111302';
+  const BUILD_STAMP = '1793824730588';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
@@ -9322,7 +9322,8 @@ void main() {
   $('camFree').onclick = () => setCameraMode('free');
   $('camTop').onclick = () => setCameraMode('top');
   $('optPath').onchange = (e) => ghosts.forEach((g) => { g.path.visible = e.target.checked && g.visible; });
-  try { if (localStorage.getItem('ghostViewer.infoBox') === '0') $('optInfo').checked = false; } catch (e) { }
+  // (off by default; on only where the viewer turned it on)
+  try { if (localStorage.getItem('ghostViewer.infoBox') === '1') $('optInfo').checked = true; } catch (e) { }
   try { if (localStorage.getItem('ghostViewer.fps') === '0') $('optFps').checked = false; } catch (e) { }
   $('optFps').onchange = (e) => { try { localStorage.setItem('ghostViewer.fps', e.target.checked ? '1' : '0'); } catch (err) { } };
   $('optInfo').onchange = (e) => { try { localStorage.setItem('ghostViewer.infoBox', e.target.checked ? '1' : '0'); } catch (err) { } hudKey = null; };

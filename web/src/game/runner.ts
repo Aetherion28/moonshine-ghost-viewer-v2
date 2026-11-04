@@ -804,7 +804,9 @@ export class SimRunner {
             if (!m) return;
             const off = M.mStatus >>> 0 !== m.status >>> 0 || f(P.pos.x) !== f(m.pos[0]) || f(P.pos.y) !== f(m.pos[1]) || f(P.pos.z) !== f(m.pos[2])
                 || (M.mFaceAngle.y << 16 >> 16) !== m.faceAngle[1] || f(M.mForwardVel) !== f(m.forwardVel);
-            if (off) { this.pinCount++; if (this.firstPinQf < 0) this.firstPinQf = q0 + q; }
+            // (not counted while he's still in the stage's load pose (0x133F): the record is taken after the
+            // tick's changeState, whose setMario the pin, right after his movement, comes before)
+            if (off && M.mStatus >>> 0 !== 0x133F) { this.pinCount++; if (this.firstPinQf < 0) this.firstPinQf = q0 + q; }
             P.pos.x = f(m.pos[0]); P.pos.y = f(m.pos[1]); P.pos.z = f(m.pos[2]);
             M.mVel.x = f(m.vel[0]); M.mVel.y = f(m.vel[1]); M.mVel.z = f(m.vel[2]);
             M.mForwardVel = f(m.forwardVel); M.mSlideVelX = f(m.slideVel[0]); M.mSlideVelZ = f(m.slideVel[1]);

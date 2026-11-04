@@ -573,9 +573,50 @@ export class GameHud {
     private overlayOn = false;
     private wipe: Wipe | null = null;
     /** the overlay: the fader's miss wipes, then the screen the live runner shows (a menu, a movie) */
+    /**
+     * A trace's pause menu at time t (QF from the ghost's start): TMarDirector's STATE_PAUSE_MENU (the
+     * frame records' director state) with TPauseMenu2 run frame by frame on the pad each paused frame
+     * began with (the trace's frame-start pad records), so its cursor moves as the player moved it.
+     * null outside a pause.
+     */
+    private replayPause: { key: string; menu: any; frames: number } | null = null;
+    private replayPauseAt(f: HudFrame): { kind: 'pause'; menu: any } | null {
+        const d = f.ghost, D = d && d.trace && d.trace.director, FP = d && d.inputs && d.inputs.framePads;
+        if (!D || !D.count || !FP || !FP.count || !this.screens) return null;
+        const t = f.t + (d.header ? d.header.startQf || 0 : 0);
+        let i = -1;
+        for (let k = 0; k + 1 < D.count; k++) if (D.state[k] === 5 && t > D.qf[k] && t <= D.qf[k + 1] + 4) { i = k; break; }
+        if (i < 0) { this.replayPause = null; return null; }
+        const s = D.qf[i], key = `${d.header && d.header.created}|${s}`;
+        // the paused frames up to t: the first begins the tick after s (its changeState opened the menu)
+        const want = Math.floor((t - s - 1) / 4) + 1;
+        let P = this.replayPause;
+        if (!P || P.key !== key || P.frames > want) {
+            const seg = this.segAt(d, f.api, f.t);
+            const menu = this.screens.pauseMenu({ area: seg ? seg.area : 1, episode: seg ? seg.episode : 0 });
+            if (!menu) return null;
+            P = this.replayPause = { key, menu, frames: 0 };
+        }
+        const pads = this.framePadIndex(FP);
+        while (P.frames < want) {
+            const j = pads.get(s + 1 + 4 * P.frames);
+            const pad = j === undefined ? null : { button: FP.buttons[j], stickX: FP.stick[j * 2], stickY: FP.stick[j * 2 + 1], substickX: FP.cstick[j * 2], substickY: FP.cstick[j * 2 + 1],
+                triggerLeft: FP.trig[j * 2], triggerRight: FP.trig[j * 2 + 1], analogA: FP.analogAB[j * 2], analogB: FP.analogAB[j * 2 + 1] };
+            P.menu.frame(pad);
+            P.frames++;
+        }
+        return { kind: 'pause', menu: P.menu };
+    }
+    private fpIndex = new WeakMap<object, Map<number, number>>();
+    private framePadIndex(FP: any): Map<number, number> {
+        let m = this.fpIndex.get(FP);
+        if (!m) { m = new Map(); for (let i = 0; i < FP.count; i++) m.set(FP.qf[i], i); this.fpIndex.set(FP, m); }
+        return m;
+    }
     private overlayFrame(f: HudFrame) {
         const R: any = f.sim, c = this.overlay;
         let scr = R && R.screen ? R.screen : null;
+        if (!scr && !f.live) scr = this.replayPauseAt(f);
         const st = f.on && R && R.stage ? R.stage : null, D = st ? st.director : null;
         const mw = f.live && D && D.missWipe ? D.missWipe : null;
         if (!this.ready || (!scr && !mw)) {

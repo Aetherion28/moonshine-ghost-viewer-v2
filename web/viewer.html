@@ -500,7 +500,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="The stage's music, played from the game disc by the game's own sequences and instruments"><input type="checkbox" id="optMusic"> Music</label>
       <label title="Mario's and the objects' sounds, from the game disc"><input type="checkbox" id="optSfx"> Sound effects <span class="discInfo" id="audioInfo"></span></label>
       <label><input type="checkbox" id="optPath" checked> Show full route lines</label>
-      <label title="The box of Mario's position, speed, animation and FLUDD in the view's corner"><input type="checkbox" id="optInfo" checked> Show info box</label>
+      <label title="The box of Mario's position, speed, animation and FLUDD in the view's corner"><input type="checkbox" id="optInfo"> Show info box</label>
       <label title="Frames drawn per second, and in live play the game frames run per second (the game runs at 30)"><input type="checkbox" id="optFps" checked> Show frame rate</label>
       <label title="The coloured circle at each ghost's feet that tells ghosts apart"><input type="checkbox" id="optRing" checked> Show ghost circles</label>
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
@@ -9322,7 +9322,8 @@ void main() {
   $('camFree').onclick = () => setCameraMode('free');
   $('camTop').onclick = () => setCameraMode('top');
   $('optPath').onchange = (e) => ghosts.forEach((g) => { g.path.visible = e.target.checked && g.visible; });
-  try { if (localStorage.getItem('ghostViewer.infoBox') === '0') $('optInfo').checked = false; } catch (e) { }
+  // (off by default; on only where the viewer turned it on)
+  try { if (localStorage.getItem('ghostViewer.infoBox') === '1') $('optInfo').checked = true; } catch (e) { }
   try { if (localStorage.getItem('ghostViewer.fps') === '0') $('optFps').checked = false; } catch (e) { }
   $('optFps').onchange = (e) => { try { localStorage.setItem('ghostViewer.fps', e.target.checked ? '1' : '0'); } catch (err) { } };
   $('optInfo').onchange = (e) => { try { localStorage.setItem('ghostViewer.infoBox', e.target.checked ? '1' : '0'); } catch (err) { } hudKey = null; };
