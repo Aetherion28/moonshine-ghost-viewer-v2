@@ -33,6 +33,8 @@ export interface MarioTrack {
     closingCopyQf?: number;
     /** a trace's: it has a sample on exactly the ticks Mario moved (none while the game froze him) */
     everyMove?: boolean;
+    /** a trace's last moving tick before the recording's closing ticks (a gap, then the few written as the run ended): frozen-or-moving isn't checked past it */
+    lastMove?: number;
 }
 
 // Mario's animations (MarioAnimation ids, as the ghost records them) that mean a status.

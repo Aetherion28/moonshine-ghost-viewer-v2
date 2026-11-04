@@ -112,7 +112,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     const segs: { scene: number; first: number; startQf: number; endQf: number }[] = [];
     let firstSeed: number | null = null, lastCamKey = -1e9, segNow = -1;
     /** the world tick at the current frame's start, and the recorder's (Mario-update) tick there */
-    let worldTick = 0, frameTick: number | null = null;
+    let worldTick = 0, frameTick: number | null = null, lastMenu = false;
     const u32v = new Uint32Array(1), f32v = new Float32Array(u32v.buffer);
     const ac = { qf: [] as number[], id: [] as number[], key: [] as number[], created: [] as number[], extent: [] as number[], pos: [] as number[], scale: [] as number[], rot: [] as number[], vel: [] as number[], liveFlag: [] as number[] };
     const ae = { qf: [] as number[], id: [] as number[] };
@@ -123,7 +123,10 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             if (firstSeed === null) firstSeed = s.seed;
             // a frame is four world ticks however many of them moved Mario (none while the director
             // stops the world for a Shine's appear demo: the recorder's tick counts Mario's updates)
-            if (frameTick === null) worldTick = s.tick; else worldTick += 4;
+            // (Moonshine's menu stops the game: the frames whose own record or the next one's has it shown
+            // (words[7] bit 0) run no world ticks, so the frame after starts where they did)
+            if (frameTick === null) worldTick = s.tick; else if (!lastMenu && !s.menuShown) worldTick += 4;
+            lastMenu = s.menuShown;
             frameTick = s.tick;
             // TMarDirector's state as the frame began: a change is listed at the world QF of the tick before it (the changeState after that tick, or one earlier in the frame before, made it)
             if (s.directorState !== -1 && (!ds.state.length || ds.state[ds.state.length - 1] !== s.directorState)) { ds.qf.push(worldQf(s.tick)); ds.state.push(s.directorState); }
@@ -149,6 +152,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             // v3: each frame also records the pad as the frame starts (cue 0, word 1's high bit), not a movement update
             // (kept apart: the pad of a frame Mario doesn't move in, a paused one's, labelled as its first tick would be)
             if (s.input && s.input.length >= 8 && (s.input[4] & 0x80)) {
+                if (lastMenu) return;   // (the menu's frames: the game didn't read it)
                 const p = padView(s.input);
                 fp.qf.push(worldTick); fp.buttons.push(p.button); fp.stick.push(p.stickX, p.stickY); fp.cstick.push(p.substickX, p.substickY);
                 fp.trig.push(p.triggerL, p.triggerR); fp.analogAB.push(p.analogA, p.analogB);

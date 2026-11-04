@@ -297,6 +297,8 @@ export interface MstrTickState {
     context: number; retrace: number; osTick: number; seed: number;
     /** the frame record's TMarDirector state as the frame began (word 6; -1 none) */
     directorState: number;
+    /** frame word 7 bit 0: Moonshine's menu is shown (the game doesn't run that frame: no movement ticks) */
+    menuShown: boolean;
     /** the 300-byte controller observation (null before the first) */
     input: Uint8Array | null;
     mario: BlobState | undefined; camera: BlobState | undefined; fludd: BlobState | undefined; yoshi: BlobState | undefined; flags: BlobState | undefined;
@@ -326,7 +328,7 @@ export function replayMstr(buf: ArrayBuffer, o: {
     onProvenance?: (runFlags: number, frame: number) => void;
 } = {}): MstrSummary {
     const st: MstrTickState = {
-        frame: 0, tick: 0, scene: -1, context: 0, retrace: 0, osTick: 0, seed: 0, directorState: -1, input: null,
+        frame: 0, tick: 0, scene: -1, context: 0, retrace: 0, osTick: 0, seed: 0, directorState: -1, menuShown: false, input: null,
         mario: undefined, camera: undefined, fludd: undefined, yoshi: undefined, flags: undefined, contacts: [null, null, null, null], cameraMeta: null,
     };
     const blobs = new Map<number, BlobState>();
@@ -349,6 +351,7 @@ export function replayMstr(buf: ArrayBuffer, o: {
                 if (scene !== st.scene) { blobs.clear(); actors.clear(); st.scene = scene; st.input = null; st.contacts = [null, null, null, null]; st.cameraMeta = null; }
                 st.context = bv.getUint32(4); st.retrace = bv.getUint32(8); st.osTick = bv.getUint32(12); st.seed = bv.getUint32(16);
                 st.directorState = r.body.length >= 28 ? bv.getUint32(24) | 0 : -1;
+                st.menuShown = r.body.length >= 32 ? (bv.getUint32(28) & 1) !== 0 : false;
                 if (o.onFrame) { st.mario = blobs.get(K.MARIO); st.camera = blobs.get(K.CAMERA); o.onFrame(st); }
                 break;
             }

@@ -444,6 +444,21 @@ export function traceDemoEnd(g: any, segment: number, q0: number): number | null
     return null;
 }
 
+/**
+ * A trace's last moving tick in a segment before the ticks written as the recording closed: when the
+ * segment ends with a gap (the game frozen, or the recorder waiting) followed by no more than a few
+ * ticks, the tick before that gap (as a stage tick); else the segment's last.
+ */
+export function traceLastMove(g: any, segment: number, q0: number): number | undefined {
+    const seg = g && g.segments && g.segments[segment];
+    if (!g || !g.trace || !seg) return undefined;
+    const q: number[] = [];
+    for (const t of g.trace.ticks as { qf: number }[]) if (t.qf >= seg.startQf && t.qf <= seg.endQf) q.push(t.qf);
+    if (!q.length) return undefined;
+    for (let i = q.length - 2; i >= 0 && q.length - 1 - i <= 8; i--) if (q[i + 1] - q[i] > 4) return q[i] - q0;
+    return q[q.length - 1] - q0;
+}
+
 /** a trace's first Mario record in the segment past the stage's load pose (0x133F): setMario's, as a stage tick; null without one */
 export function traceFirstSet(g: any, segment: number, q0: number): number | null {
     const seg = g && g.segments && g.segments[segment];
@@ -597,6 +612,7 @@ export class SimRunner {
             // (this segment's: a later stage starts before its first sample, where the sample at q0 is the stage before's)
             closingCopyQf: closingCopyQf(g, segI, q0),
             everyMove: !!g.trace,
+            lastMove: g.trace ? traceLastMove(g, segI, q0) : undefined,
             at: (q: number): MarioSample | null => {
                 const t = q0 + q;
                 // a trace records every tick Mario moves: none while the world stops (a Shine's demo), nothing to hold there

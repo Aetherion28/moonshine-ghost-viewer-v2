@@ -1832,6 +1832,7 @@ export class PlayerMario extends TMarioSim {
         const T = this.track;
         if (!T || !T.everyMove || q - 4 <= this.driftFrom || this.drift.firstQf >= 0) return;
         if (T.closingCopyQf !== undefined && q >= T.closingCopyQf) return;
+        if (T.lastMove !== undefined && q > T.lastMove) return;
         let game = false;
         for (let l = q - 4; l < q && !game; l++) if (T.at(l)) game = true;
         const sim = this.driftCheckedQf > q - 4;
@@ -1849,6 +1850,7 @@ export class PlayerMario extends TMarioSim {
         const s = this.track!.at(q);
         if (!s) return;
         if (this.track!.closingCopyQf !== undefined && q >= this.track!.closingCopyQf) return;
+        if (this.track!.lastMove !== undefined && q > this.track!.lastMove) return;
         const d = this.drift;
         const e = Math.hypot(this.pos.x - s.x, this.pos.y - s.y, this.pos.z - s.z);
         d.frames++;
