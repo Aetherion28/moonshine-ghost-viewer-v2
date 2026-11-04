@@ -111,6 +111,44 @@ Everything below runs in the cloud workspace; paths under `/tmp/claude-0` are th
   - Batch: `RUNS=runsNN ./run.sh <path> <region> <end>` per trace, e.g. `cat list4.txt | xargs -P 2 -L 1 ./run.sh`, then `python3 cmp.py runs_old runs_new` prints the bucket table and each run better / worse. A batch takes about two hours with 2 processes; run it in the background.
 - The latest full batch is `/tmp/claude-0/up3/runs20` (plus the occlusion fix, re-run for its 17 traces in `runs22`).
 
+## How to investigate a drift (the workflow that has worked)
+
+1. Find the first drift: the run's log in the latest batch (`grep drifted`), or `node pm.mjs auto <trace> <end>`.
+2. `tdiff.sh <trace> <first-30> <first+5>`: the first tick where any field differs (position, forward speed, vy, face angle, status, Mario's flag word) is the real start; the position drift threshold comes later.
+   The trace's Mario record holds much more than the harness prints (MARIO offsets in `ghost/mstr.ts`: slideVel 0xb4/0xb8, floor 0xe8, flag 0x118, …), so compare the field the suspect code reads.
+3. Work out which input changed: intended yaw (`giy`) → camera yaw (`cyaw`, `CAMX` compares the sim's camera with the trace's eye / look-at every tick: rec `eye` is unk124 / mPosition, rec `target` is unk148), a flag bit (often set by something other than Mario), a status change.
+4. If the RNG is involved, compare call sites: `rk.mjs <trace> a b [regex]` lists the game's calls with callers; map a JP caller to a function with the JP `symbols.txt` (see the snippet below). `RNGSYNC=1 RNGCMP=n` reports the first seed or tick mismatch, but it allows ±4 ticks, so a call made at the wrong site in the same frame can hide; use `RNGSTK` (pm_debug) to see the sim's site for each call.
+5. Read the decomp function, then the DOL where the decomp is unsure, and compare with the port line by line. Fix only what disagrees.
+6. Run that trace, then the full batch, then commit, then update this file.
+
+Caller lookup (JP traces' callers):
+
+```python
+import re
+syms=[(int(m[2],16),int(m[3],16),m[1]) for l in open('/home/claude/pub/SMS-Decomp-JP-1.0/config/GMSJ01/symbols.txt')
+      for m in [re.match(r'(\S+) = \.text:0x([0-9A-F]+); // type:function size:0x([0-9A-F]+)',l)] if m]
+def who(a): return [(n,hex(a-s)) for s,z,n in syms if s<=a<s+z]
+```
+
+Common JP callers: 0x800c2458/24ac/2504 TTrembleModelEffect::tremble (Mario's cap, 264 calls a tick), 0x80363904 TBoidLeader::calcForces (fish / birds, on frame ticks), 0x801ebcb0/cec TPollutionLayer::action, 0x80168ad0 TBaseNPC::npcWetIn, 0x80169ee0/f7c and 0x80171818 NPC code, the water sites listed above. The GPU-feedback "callers" per game ID are in `mstrghost.ts` (`FEEDBACK_SITES`).
+
+## Trace contents worth knowing
+
+- Record kinds (`ghost/mstr.ts` `KIND_NAMES`): session, frame, Mario, camera, flags, actor, actor_removed, FLUDD, Yoshi, sound, particle, the RNG (15, which also carries the feedback literals), stage start (22), run flags (28: 1 assisted, 2 savestate, 4 fast-forward, 8 incomplete, 16 custom route, 32 TAS).
+- Actor records are the actor object's first 0xF4 or 0x150 bytes, sent as changed words. Offsets: position 0x10, THitActor type 0x4C, attack radius 0x50, attack height 0x54, damage radius 0x58, damage height 0x5C, entry radius 0x60, hit filter 0x64; velocity words 43–45, live flag word 60 (0x150 records). Only some actors are recorded.
+- A Mario / camera blob persists between records (only changed words are sent), so each tick's view is the real memory state.
+- Water requests (`wreq`) are the TWaterEmitInfo the game passed to emitRequest: pos, v, dir, pow, size, tremble values, type, flag.
+
+## Pitfalls
+
+- `pgrep -f` matches itself and hangs watch loops; use background jobs and their notifications instead.
+- The harness (pm.ts) re-implements setup; if you add a runner feature, mirror it there or the batch won't test it.
+- `RNGSTK` prints one call late, and its sim tick label is `tickCount - 1`.
+- The drift check (`checkMoved`): for a trace, the game moved in frame q iff a Mario record exists for one of q-4..q-1; the run's closing ticks (after `traceLastMove`) aren't checked.
+- Remember the frame structure when comparing order: in `Stage.runFrame` each tick runs the hit check (every 4th move tick), the Movement list (conductor, wires, player and camera, water, events), the console, and on the last tick CalcAnim. The game's object order inside a list decides RNG order; check it with the trace's callers.
+- A test hook in game code (e.g. `process.env` checks) must not be committed; keep experiments as patches.
+- Background batches outlive a turn only as harness-tracked background tasks; a plain `&` job is killed.
+
 ## Current results (2026-11-04)
 
 First drift per run, 143 traces:
