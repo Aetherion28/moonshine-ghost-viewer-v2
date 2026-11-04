@@ -271,7 +271,8 @@ export class PolarSubCamera implements SimCamera {
     /** TMarDirector::isTalkModeNow / isTalkOrDemoModeNow */
     talkModeNow = false; demoModeNow = false;
     /** TMarDirector::unkD0 (the start position's number, for 開始後カメラ%d) */
-    marioPosIdx = 0;
+    /** TMarDirector's unkD0 (decideMarioPosIdx), read by loadAfter's 開始後カメラN: the world's */
+    get marioPosIdx() { return this.world.marioPosIdx; }
     /** The demo cameras' .bck files by name (TCameraBck::isFileExist / startDemo), e.g. 'startcamera'. */
     bckSource: ((name: string) => DemoBck | null) | null = null;
     /** The projection / view the game last set (unk16C perspective, unk1EC look-at), for the notice clip test */

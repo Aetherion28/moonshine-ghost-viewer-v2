@@ -75,6 +75,7 @@ export class Stage {
         if (carried) w.flags = carried;
         w.exShineGot = carried ? shineIDofExStage(map) !== 0xFF && w.flags.getShineFlag(shineIDofExStage(map)) : !!(intro && intro.exShineGot);
         w.flags.setupStage(map, stage, w.exShineGot, shineIDofExStage(map), !carried);
+        w.marioPosIdx = intro && intro.marioPosIdx ? intro.marioPosIdx : 0;
         w.groups = GROUP_NAMES.map(() => []);
         // the map's collision (TMap: the grid size from the scene's Map object, filled from map.col)
         const sb = files.scene('map/scene.bin');

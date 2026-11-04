@@ -601,12 +601,14 @@ export class SimRunner {
                 if (td !== null) intro.demoEndTick = introDemoEndInFrame(ss, td);
                 // Delfino Plaza's own opening demo (DEMO_FLAG_CAMERA_DEMO_ON_START): Mario comes in late, the
                 // first sample 7 ticks after setMario (stagechange.ts LiveDirector), as a live run records it
-                if (seg.route.area === 1 && (segI === 0 || live) && (intro.firstSample ?? 0) > 12) { intro.plazaDemo = true; intro.demoEndTick = (intro.firstSample ?? 0) - 7; }
+                if (seg.route.area === 1 && td !== null) intro.plazaDemo = true;   // (a trace: its director went through the demo, which ended at td)
+                else if (seg.route.area === 1 && (segI === 0 || live) && (intro.firstSample ?? 0) > 12) { intro.plazaDemo = true; intro.demoEndTick = (intro.firstSample ?? 0) - 7; }
                 if (live) {
                     // a live recording's later stage: the save's flags and the area the run carried in
                     // (stagechange.ts liveRunCarry), the entrance from them as LiveRunner.build has it
                     const area = seg.route.area, c = liveRunCarry(g, segI), got = gotShineFromSamples(ss);
                     (intro as LiveTiming).flags = c.flags;
+                    intro.marioPosIdx = decideMarioPosIdx(c.flags.clone(), area, c.prevArea).posIdx;
                     intro.start = (m) => entranceStart(m.world, decideMarioPosIdx(m.world.flags, area, c.prevArea), c.prevArea, got)(m);
                     const plazaDemo = !!intro.plazaDemo;
                     demoName = (f: FlagManager) => stageDemoName(f, area, seg.route.episode, plazaDemo);
@@ -618,11 +620,15 @@ export class SimRunner {
                     // sooner in as many ghosts as it held longer, so something else still reads them differently.)
                     const c = traceStageCarry(g, segI)!, area = seg.route.area, got = gotShineFromSamples(ss);
                     const first = g.trace.ticks.find((t: any) => t.mario && t.mario.status >>> 0 !== 0x133F) as { mario: MarioView } | undefined;   // (past the stage's load pose: setMario's first)
-                    if (area === 1 && first) intro.start = (m) => plazaTraceStart(m, c, got, first.mario.pos);
+                    if (area === 1 && first) {
+                        intro.marioPosIdx = decideMarioPosIdx(traceStageCarry(g, segI)!.flags, area, c.prevArea).posIdx;
+                        intro.start = (m) => plazaTraceStart(m, c, got, first.mario.pos);
+                    }
                 } else if (segI > 0 && g.segments[segI - 1] && seg.route.area === 1) {
                     // a later segment: the entrance the stage before leads to (decideMarioPosIdx: Delfino's door
                     // or pipe of the course left), the Shine got there as its APPEAR animation shows
                     const area = seg.route.area, prev = g.segments[segI - 1].route.area, got = gotShineFromSamples(ss);
+                    intro.marioPosIdx = decideMarioPosIdx(new FlagManager(), area, prev).posIdx;
                     intro.start = (m) => entranceStart(m.world, decideMarioPosIdx(m.world.flags, area, prev), prev, got)(m);
                 }
             }

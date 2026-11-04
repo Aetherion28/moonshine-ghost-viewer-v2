@@ -51,6 +51,8 @@ export class FlagManager {
         if (!d || flag >= d[0] || (bools !== null && d[1] !== bools)) return null;
         return this.banks[bank];
     }
+    /** a copy (to ask decideMarioPosIdx, which clears flags, without touching these) */
+    clone(): FlagManager { const f = new FlagManager(); for (const b in this.banks) f.banks[b] = this.banks[b].slice(); return f; }
     getFlag(flag: number): number { const s = this.slot(flag, null); return s ? s[flag & 0xFFFF] : 0; }
     setFlag(flag: number, value: number) {
         const s = this.slot(flag, null); if (!s) return;
