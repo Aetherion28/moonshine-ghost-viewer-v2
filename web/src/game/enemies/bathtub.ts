@@ -271,6 +271,8 @@ export class BathtubKiller extends SmallEnemy {
     mactors: MActor[] = [];
     constructor(w: World, name = 'バスタブキラー') { super(w, name); }
     get KP(): KillerParams { return this.getSaveParam(); }
+    /** what Bowser Jr's submarine reads when it lobs a Bullet Bill (makeKillerVelocity) */
+    getSaveParam2(): KillerParams { return this.KP; }
     init(m: any) {
         super.init(m);
         this.actorType = AT.BATHTUB_KILLER;
