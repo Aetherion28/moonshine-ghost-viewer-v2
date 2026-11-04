@@ -264,6 +264,7 @@ export class Stage {
             }
             if (D && !last) D.changeState(this.qf);
         }
+        if (P) P.checkMoved(w.tickCount);
         // the frame's drawing: the goop's stamps
         if (w.pollution) w.pollution.draw();
         // the console's timer (TGCConsole2: the scripts' getTime)

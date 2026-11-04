@@ -1820,8 +1820,29 @@ export class PlayerMario extends TMarioSim {
     following = false;
     followAnim: { anim: number; phase: number } | null = null;
     /** the ghost's sample at the end of each frame: how far the sim is from it */
+    /** the last tick Mario's movement ran on (perform with CUE_MOVE: checkDrift's call) */
+    driftCheckedQf = -1;
+    /**
+     * After a frame (its ticks q - 3 .. q): with a trace, whose Mario records are the ticks the game
+     * moved him (the frame's labelled q - 4 .. q - 1: each the state as the next one began), Mario not
+     * moving in the sim while the game moved him, or moving while the game froze him (a cutscene in
+     * one only), is a drift too, which checkDrift (run from his movement) can't see.
+     */
+    checkMoved(q: number) {
+        const T = this.track;
+        if (!T || !T.everyMove || q - 4 <= this.driftFrom || this.drift.firstQf >= 0) return;
+        if (T.closingCopyQf !== undefined && q >= T.closingCopyQf) return;
+        let game = false;
+        for (let l = q - 4; l < q && !game; l++) if (T.at(l)) game = true;
+        const sim = this.driftCheckedQf > q - 4;
+        if (game === sim) return;
+        const d = this.drift;
+        d.firstQf = q; d.firstErr = 0;
+        if (!d.warned) { d.warned = true; console.warn(`[player] input replay drifted from the ghost at stage QF ${q} (${(q / 120).toFixed(2)} s): Mario ${game ? 'frozen here, moving in the game' : 'moving here, frozen in the game'}`); }
+    }
     checkDrift() {
         const q = this.world.tickCount;
+        this.driftCheckedQf = q;
         if (q & 3) return;
         // (before setMario the ghost has no samples of its own: its first one is copied back to the segment's start)
         if (q <= this.driftFrom) return;

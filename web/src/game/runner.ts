@@ -596,6 +596,7 @@ export class SimRunner {
         return {
             // (this segment's: a later stage starts before its first sample, where the sample at q0 is the stage before's)
             closingCopyQf: closingCopyQf(g, segI, q0),
+            everyMove: !!g.trace,
             at: (q: number): MarioSample | null => {
                 const t = q0 + q;
                 // a trace records every tick Mario moves: none while the world stops (a Shine's demo), nothing to hold there
