@@ -151,3 +151,20 @@ export class FlagManager {
         return this.getFlag(MSF.NOZZLE_BASE + (st - 1) * 2 + nozzle) !== 0;
     }
 }
+
+/**
+ * A FlagManager holding a trace's initial flags (MSGT stage-start record, Moonshine
+ * GhostTraceInitialFlags::decode/restore): the card, game and stage banks' bools and ints as the stage's
+ * setup began. The option banks keep FlagManager's defaults. null when the image isn't 896 bytes.
+ */
+export function flagsFromTraceImage(img: Uint8Array): FlagManager | null {
+    if (img.length !== 896) return null;
+    const f = new FlagManager(), dv = new DataView(img.buffer, img.byteOffset, img.byteLength);
+    const bools = (off: number, n: number, bank: number) => { for (let i = 0; i < n; i++) f.setFlag((bank << 16) + i, (img[off + (i >> 3)] >> (i & 7)) & 1); };
+    const ints = (off: number, n: number, bank: number) => { for (let i = 0; i < n; i++) f.setFlag((bank << 16) + i, dv.getInt32(off + 4 * i)); };
+    bools(0x000, 948, 1); ints(0x078, 21, 2);
+    bools(0x0CC, 29, 3); ints(0x0D0, 5, 4);
+    bools(0x0E4, 100, 5); ints(0x0F4, 100, 6);
+    return f;
+}
+

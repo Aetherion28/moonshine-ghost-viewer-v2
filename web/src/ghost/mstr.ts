@@ -275,7 +275,18 @@ export interface MstrCameraMeta { pointer: number; mode: number; child: number; 
  * says which GPU results the kind-15 literal records carry: bit 0 Mario's occlusion at the camera and the
  * silhouette, bit 1 run provenance on every frame, bit 2 Bowser's bath-water height.
  */
-export interface MstrStageStart { schema: number; npcSinkPhase: number | null; observations: number; }
+export interface MstrStageStart {
+    schema: number; npcSinkPhase: number | null; observations: number;
+    /** the scene the run came from and the one loading (area, episode) */
+    previous: { area: number; episode: number }; current: { area: number; episode: number };
+    /**
+     * TFlagManager's values as setup began (flag word 1 bit 0; null without): 896 bytes, Moonshine's
+     * GhostTraceInitialFlags image: card bools (948 bits) at 0, card ints (21) at 0x78, game bools (29
+     * bits) at 0xCC, game ints (5) at 0xD0, stage bools (100 bits) at 0xE4, stage ints (100) at 0xF4;
+     * bools little-endian within each byte, ints big-endian. See flagsFromTraceImage (game/flags.ts).
+     */
+    flagImage: Uint8Array | null;
+}
 /** Kind 17: the disc header's first two words, the trace schema, and Moonshine's regional ordinal. */
 export interface MstrIdentity { disc0: number; disc1: number; schema: number; regional: number; gameId: string; discRevision: number; }
 
@@ -350,7 +361,12 @@ export function replayMstr(buf: ArrayBuffer, o: {
             case K.IDENTITY: if (o.onIdentity) o.onIdentity(identityOf(bv)); break;
             case K.STAGE_START: if (o.onStageStart) {
                 const n = r.body.length;
-                o.onStageStart({ schema: bv.getUint32(0), npcSinkPhase: n >= 964 ? bv.getUint32(960) : null, observations: n >= 968 ? bv.getUint32(964) : 0 }, r.frame, r.tick);
+                const sf = bv.getUint32(4);
+                o.onStageStart({
+                    schema: bv.getUint32(0), npcSinkPhase: n >= 964 ? bv.getUint32(960) : null, observations: n >= 968 ? bv.getUint32(964) : 0,
+                    previous: { area: r.body[12], episode: r.body[13] }, current: { area: r.body[16], episode: r.body[17] },
+                    flagImage: (sf & 1) && n >= 960 ? r.body.slice(64, 960) : null,
+                }, r.frame, r.tick);
             } break;
             case K.PROVENANCE: if (o.onProvenance && r.body.length >= 8) o.onProvenance(bv.getUint32(4), r.frame); break;
             case K.SESSION: if (o.onSession) o.onSession(r.body, r.frame); break;
