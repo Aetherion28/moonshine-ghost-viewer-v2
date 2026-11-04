@@ -449,6 +449,18 @@ export class PlayerMario extends TMarioSim {
     setDivHelm() { this.mCapModel |= 2; }
     /** TMario::isWearingHelm */
     isWearingHelm() { return (this.mCapModel & 2) !== 0; }
+    /** TMario::wearGlass / takeOffGlass (MarioDraw.cpp): the sunglasses model (E_CAP_MODEL_SUNGLASSES); emitGetEffect is a visual */
+    wearGlass() { this.mCapModel |= 4; }
+    takeOffGlass() { this.mCapModel &= ~4; }
+    /** TMario::startTalking (MarioWait.cpp) */
+    startTalking() {
+        if (this.mGroundPlane.isLegal()) {
+            this.pos.y = fr(1 + this.mFloorPosition.y);
+            this.changePlayerStatus(S.READ_BILLBOARD, 0, true);
+            return 1;
+        }
+        return 0;
+    }
     /**
      * thinkParams (0x8012e324) out of the water: without his hat (taken by a Doro Hane / Hamu Kuri)
      * the sun takes 1 HP every mHotTimer ticks (and his invincibility for unk55C)
@@ -639,7 +651,8 @@ export class PlayerMario extends TMarioSim {
     /** the cart (map/map/Torocco), the track (Pinna_rail for stage 0, Koopa_rail for 1: joint 0 runs along it on BCK 0) */
     mTorocco: MActor | null = null; mPinaRail: MActor | null = null; mKoopaRail: MActor | null = null;
     mRailType = 0; mToroccoAngle = 0; mToroccoPos = new V3();
-    private toroccoTR: Mtx = mtx(); private railTR: Mtx = mtx();
+    /** the cart's base matrix (the track's joint 0): the viewer draws the cart on it (layer.ts) */
+    toroccoTR: Mtx = mtx(); private railTR: Mtx = mtx();
     private static readonly ONE = new V3(1, 1, 1);
     /** MActor::calcAnm: the frames on, then the joints (here: joint j's world matrix as a game Mtx) */
     private static calcAnmMtx(a: MActor, base: Mtx, j: number): Mtx | null {
@@ -1913,9 +1926,13 @@ export class PlayerMario extends TMarioSim {
 
 // ---------------------------------------------------------------- TMarDirector: the stage's opening
 /** TMarDirector's states (STATE_UNK0 ... STATE_UNK4: the game) */
-export const DIR = { BOOT: 0, DEMO: 1, UNK2: 2, WIPE_OPEN: 3, GAME: 4, GAME_OVER: 7, MOVE_STAGE: 9 };
+export const DIR = { BOOT: 0, DEMO: 1, UNK2: 2, WIPE_OPEN: 3, GAME: 4, PAUSE_MENU: 5, GAME_OVER: 7, MOVE_STAGE: 9 };
+/** the states direct runs its ticks without CUE_MOVE (and CUE_CALC_ANIM) in: the pause menu, the guide, the card save, the reset */
+export const NO_MOVE_STATES = new Set([5, 10, 11, 12]);
 /** stages whose opening is always the camera demo (changeState STATE_UNK0) */
 const DEMO_STAGES = new Set([2, 3, 4, 5, 6, 8, 9, 0x34]);
+/** decideMarioPosIdx (MarDirectorSetupObjects.cpp): the stages setMario rolls Mario in on (unkD1 1) */
+const ROLLING_START_STAGES = new Set([2, 3, 4, 5, 6, 8, 9]);
 /** TConsoleStr: the open wipe's ticks (startOpenWipe to unk2BC 6) */
 export const OPEN_WIPE_TICKS = 31;
 
@@ -1941,6 +1958,11 @@ export interface IntroTiming {
     plazaDemo?: boolean;
     /** decideMarioPosIdx's position index for the stage (set before the objects load: the camera's 開始後カメラN reads it); 0 by default */
     marioPosIdx?: number;
+    /**
+     * A trace's pause menu closes (runner.ts tracePauseExits): the changeState after stage tick t takes
+     * the director from STATE_PAUSE_MENU to the state it maps to (the menu itself isn't simulated)
+     */
+    pauseExits?: Map<number, number>;
 }
 
 /**
@@ -1963,7 +1985,8 @@ export class PlayerDirector {
         const m = this.mario;
         if (this.timing.start) this.timing.start(m);   // (stagechange.ts: decideMarioPosIdx's entrance)
         else if (this.timing.sleepPhase != null) m.sleepingStart(this.timing.sleepPhase);
-        else if (DEMO_STAGES.has(this.map)) m.rollingStart(null, 0);
+        // decideMarioPosIdx's unkD1 1 (the rolling start) is for the main stages 2-6, 8, 9 only: Corona Mountain (0x34) has the camera demo but waitingStart
+        else if (ROLLING_START_STAGES.has(this.map)) m.rollingStart(null, 0);
         else m.waitingStart(null, 0);
         if (m.checkFlag(MF.HAS_FLUDD) && m.mWaterGun) {
             switch (this.map) {
@@ -1977,6 +2000,7 @@ export class PlayerDirector {
     private enter(next: number, tick: number) {
         const prev = this.state;
         // currentStateFinalize
+        if (prev === DIR.PAUSE_MENU) this.mario.mGamePad.offFlag(PAD_FLAG.MENU_INPUT);
         if (prev === DIR.DEMO) {
             this.mario.mGamePad.offFlag(PAD_FLAG.MENU_INPUT);
             // gpCamera->endDemoCamera (endReproduceDemoCamera_: onNeutralMarioKey, the stick eased in; the
@@ -1997,7 +2021,17 @@ export class PlayerDirector {
         switch (next) {
             case DIR.DEMO: this.mario.mGamePad.onFlag(PAD_FLAG.MENU_INPUT); break;
             case DIR.WIPE_OPEN: case DIR.UNK2: this.setMario(); break;
-            case DIR.GAME: this.setMario(); this.mario.mGamePad.onFlag(PAD_FLAG.GAME_INPUT); this.gameTick = tick; break;
+            case DIR.GAME: {
+                this.setMario();
+                // (OSStartStopwatch in GAME_MODE_NORMAL)
+                const T = this.mario.world.talk;
+                if (T && T.unk124 === 0) T.stopwatchOn = true;
+                this.mario.mGamePad.onFlag(PAD_FLAG.GAME_INPUT);
+                if (this.gameTick < 0) this.gameTick = tick;
+                break;
+            }
+            // (THPPlayerPause, the rumble's pause, the menu's draw: not simulated)
+            case DIR.PAUSE_MENU: this.mario.mGamePad.onFlag(PAD_FLAG.MENU_INPUT); break;
         }
     }
     changeState(tick: number) {
@@ -2022,12 +2056,19 @@ export class PlayerDirector {
             // STATE_UNK4: updateGameMode (its talk part: talk.ts)
             case DIR.GAME:
                 if (m.world.talk) {
+                    m.world.talk.pausesRecorded = !!this.timing.pauseExits;
                     m.world.talk.updateGameMode();
                     // the states it asks for that are simulated: the stage change's fade (STATE_UNK9), the game over (STATE_UNK7)
                     const n = m.world.talk.nextState;
-                    if (n === DIR.MOVE_STAGE || n === DIR.GAME_OVER) this.enter(n, tick);
+                    if (n === DIR.MOVE_STAGE || n === DIR.GAME_OVER || (n === DIR.PAUSE_MENU && this.timing.pauseExits)) this.enter(n, tick);
                 }
                 break;
+            // TPauseMenu2::getNextState: 0 back to STATE_UNK4, 5 the area's exit (moveStage, STATE_UNK9), 1 the reset (STATE_UNK12)
+            case DIR.PAUSE_MENU: {
+                const n = this.timing.pauseExits ? this.timing.pauseExits.get(tick) : undefined;
+                if (n !== undefined) this.enter(n, tick);
+                break;
+            }
         }
     }
 }
@@ -2060,9 +2101,12 @@ export function sawFludd(I: any, q0: number, q1: number) {
  * changeStates after a frame's ticks), the rolling start's APPEAR animation (when the ghost has it)
  * which tick of them; without it, the frame's start (the changeState after the frame before's last tick).
  */
-export function introDemoEndInFrame(samples: { qf: number; anim: number; phase: number }[], td: number): number {
+export function introDemoEndInFrame(samples: { qf: number; anim: number; phase: number }[], td: number, firstSet: number | null = null): number {
     const a = appearDemoEnd(samples);
-    return a === null ? td : Math.min(td, Math.max(td - 3, a));
+    if (a !== null) return Math.min(td, Math.max(td - 3, a));
+    // a trace's first Mario record past the load pose (0x133F): its label is the tick whose changeState ran setMario
+    if (firstSet !== null && firstSet >= td - 3 && firstSet <= td) return firstSet;
+    return td;
 }
 export function introDemoEnd(samples: { qf: number; anim: number; phase: number }[]): number {
     const a = appearDemoEnd(samples);

@@ -13,7 +13,7 @@ import {
 } from './engine.js';
 import { MapCollision, mapGridFromPayload } from './collision.js';
 import { MarioProxy, MarioTrack } from './mario.js';
-import { PlayerMario, PlayerDirector, IntroTiming } from './player/player.js';
+import { PlayerMario, PlayerDirector, IntroTiming, NO_MOVE_STATES } from './player/player.js';
 import type { PadStatus } from './player/pad.js';
 import { Water, Fludd } from './water.js';
 import { Pollution } from './pollution.js';
@@ -212,10 +212,19 @@ export class Stage {
             // (the changeState after the last tick of the frame before runs here, after the pad's read)
             if (D && this.qf > 0 && tick === 0) D.changeState(this.qf);
             if (P && tick > 0) P.padTick();
-            w.moveTickCount++; w.tickCount++;
+            // STATE_PAUSE_MENU (and the guide, the card save, the reset): the tick runs without CUE_MOVE and
+            // CUE_CALC_ANIM (mMoveTickCount stays), only the console and the director's movement
+            const noMove = !!D && NO_MOVE_STATES.has(D.state);
+            if (!noMove) w.moveTickCount++;
+            w.tickCount++;
             this.qf++;
             if (!(w.moveTickCount & 3)) w.hitCheck.checkActorsHit();
             else w.hitCheck.clearHitNum();
+            if (noMove) {
+                if (w.talk) w.talk.tick(last, false);
+                if (D && !last) D.changeState(this.qf);
+                continue;
+            }
             // DEMO_FLAG_SHINE_GET_STOP_THE_WORLD (a Shine's appear demo, TShine::appearWithTimeCallback): the
             // director runs Shine PfLst Mov / Anm (PerformLists.bin: シャインマネージャー, camera 1) instead
             const stw = !!(w.talk && w.talk.checkDemoFlag(DEMO_FLAG.SHINE_GET_STOP_THE_WORLD));

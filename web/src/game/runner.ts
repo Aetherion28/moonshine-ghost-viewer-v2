@@ -444,6 +444,45 @@ export function traceDemoEnd(g: any, segment: number, q0: number): number | null
     return null;
 }
 
+/** a trace's first Mario record in the segment past the stage's load pose (0x133F): setMario's, as a stage tick; null without one */
+export function traceFirstSet(g: any, segment: number, q0: number): number | null {
+    const seg = g && g.segments && g.segments[segment];
+    if (!g || !g.trace || !seg) return null;
+    for (const t of g.trace.ticks as { qf: number; mario: MarioView | null }[]) {
+        if (t.qf < seg.startQf || t.qf > seg.endQf) continue;
+        if (t.mario && t.mario.status >>> 0 !== 0x133F) return t.qf - q0;
+    }
+    return null;
+}
+
+/**
+ * When a trace's pause menu closed (TPauseMenu2::getNextState: the changeState that leaves
+ * STATE_PAUSE_MENU), as stage ticks: tick t to the state the director went to. A frame record has the
+ * director's state before that frame's direct; the frames that began paused moved Mario on none of
+ * their ticks but the last few, the ones after the changeState that closed the menu (the frame's ticks
+ * W + 1 .. W + 4 for a record labelled W: its Mario records W .. W + 3, the first of them filled).
+ * null without a trace or a pause in the segment.
+ */
+export function tracePauseExits(g: any, segment: number, q0: number): Map<number, number> | null {
+    const D = g && g.trace && g.trace.director, seg = g && g.segments && g.segments[segment];
+    if (!D || !D.count || !seg) return null;
+    const ticks = traceTickSet(g), lo = segment === 0 ? -Infinity : seg.startQf - 240, hi = seg.endQf;
+    let out: Map<number, number> | null = null;
+    for (let i = 0; i + 1 < D.count; i++) {
+        if (D.state[i] !== 5 || D.qf[i] < lo || D.qf[i] > hi) continue;
+        // the first frame that began paused (labelled W = the entry's QF + 1), then the frame Mario moved in again
+        const end = D.qf[i + 1];
+        for (let W = D.qf[i] + 1; W <= end + 4; W += 4) {
+            let k = 0;
+            for (let j = 0; j < 4; j++) if (ticks.has(W + j)) k++;
+            if (!k) continue;
+            (out ??= new Map()).set(W + 4 - k - q0, D.state[i + 1]);
+            break;
+        }
+    }
+    return out;
+}
+
 /**
  * The RNG tape's SEED for a segment (MSL rand()'s next when that stage began): the first SEED in the
  * segment that comes before any of its rolls (ghost.js parseRngTape's tape.seeds); null without one.
@@ -610,7 +649,10 @@ export class SimRunner {
                 intro = introTiming(ss, I, q0, seg.endQf - g.header.startQf);
                 // a trace records TMarDirector's state every frame: the camera demo's end is there, not guessed from Mario's samples
                 const td = traceDemoEnd(g, segI, q0);
-                if (td !== null) intro.demoEndTick = introDemoEndInFrame(ss, td);
+                if (td !== null) intro.demoEndTick = introDemoEndInFrame(ss, td, traceFirstSet(g, segI, q0));
+                // and when the pause menu closed (the menu isn't simulated: its getNextState from the trace)
+                const pe = tracePauseExits(g, segI, q0);
+                if (pe) intro.pauseExits = pe;
                 // Delfino Plaza's own opening demo (DEMO_FLAG_CAMERA_DEMO_ON_START): Mario comes in late, the
                 // first sample 7 ticks after setMario (stagechange.ts LiveDirector), as a live run records it
                 if (seg.route.area === 1 && td !== null) intro.plazaDemo = true;   // (a trace: its director went through the demo, which ended at td)
@@ -673,6 +715,10 @@ export class SimRunner {
                 const P = st0.player;
                 this.pads = new Map();
                 for (let i = 0; i < I.count; i++) this.pads.set(I.qf[i] - q0, i);
+                // a trace's frames with no movement tick (the pause menu's): the pad the frame began with
+                this.framePads = null;
+                const FP = I.framePads;
+                if (FP && FP.count) { this.framePads = new Map(); for (let i = 0; i < FP.count; i++) { const q = FP.qf[i] - q0; if (!this.pads.has(q)) this.framePads.set(q, i); } }
                 let cam = P.cameraApprox ? 'approx' : 'sim';
                 // Steering by a v8 ghost's recorded camera is off by default: it is sampled once a frame and
                 // Mario reads the camera every tick, so the ticks in between are guessed. With the sim's own
@@ -825,9 +871,12 @@ export class SimRunner {
         };
     }
     /** the frame's PADStatus (its record's QF is the frame's last tick); none recorded: a neutral pad */
+    private framePads: Map<number, number> | null = null;
     private padAt(g: any, q: number): PadStatus {
         const i = this.pads ? this.pads.get(q) : undefined;
-        return i === undefined ? { ...NO_PAD } : ghostPad(g.inputs, i);
+        if (i !== undefined) return ghostPad(g.inputs, i);
+        const j = this.framePads ? this.framePads.get(q) : undefined;
+        return j === undefined ? { ...NO_PAD } : ghostPad(g.inputs.framePads, j);
     }
     /**
      * The sim camera's view (eye, look-at, up, vertical FOV), as the game renders it: the demo

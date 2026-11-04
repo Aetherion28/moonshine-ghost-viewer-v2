@@ -54,7 +54,7 @@ const MARIO_STATUS_WAIT = 0x0C400201;
 /** TMarioGamePad flags and meanings (player/pad.ts PAD_FLAG / MEANING) */
 const PAD_FLAG_TALK_NPC = 0x4, PAD_FLAG_TALK_SELECT = 0x8, PAD_FLAG_NO_INPUT = 0x10;
 /** MARIO_FLAG_GAME_OVER */
-const MF_GAME_OVER = 0x400;
+const MF_GAME_OVER = 0x400, MF_HELMET_FLW_CAMERA = 0x1000, MARIO_STATUS_FLAG_JUMPING = 0x800, MEANING_START = 0x1;
 /** MSF_GOT_SHINE_IN_PREV_STAGE (msflags.ts) */
 const MSF_GOT_SHINE_IN_PREV_STAGE = 0x30006;
 /** TMarDirector's DIRECTOR_FLAG_* (as far as updateGameMode reads them) */
@@ -680,6 +680,8 @@ export class TalkDirector {
     private unk60 = 0;
     /** the state updateGameMode last asked of the director (mState: STATE_UNK4 is 4; 7 the game over, 5 pause, 10 guide, 11 card save) */
     nextState = 4;
+    /** a trace's pause menu record is there (runner.ts tracePauseExits): updateGameMode's Start opens the pause menu */
+    pausesRecorded = false;
     /** TMarDirector::fireStartDemoCamera: queue a camera demo (the script's: timed, no offset) */
     fireStartDemoCamera(name: string | null, offset: V3 | null = null, frames = -1, angle = 0, timed = true, actor: NameRef | null = null, cb: ((phase: number) => void) | null = null) {
         if (((this.demoTail - this.demoHead) & 7) >= 7) return;
@@ -767,8 +769,12 @@ export class TalkDirector {
         switch (this.unk124) {
             case 0:
                 if (!(this.dflags & ~DF.SHINE_TAKEN)) {
-                    // (the pause menu / guide (STATE_PAUSE_MENU 5 / STATE_GUIDE 10) are not simulated)
                     if (m && m.checkFlag(MF_GAME_OVER)) this.dflags |= DF.GAME_OVER_PENDING;
+                    // Start: STATE_PAUSE_MENU when Mario isn't jumping (checkActionThing3). Only with a
+                    // trace's pause record (pausesRecorded: the menu itself isn't simulated, the trace
+                    // says when it closed); the guide (Z, STATE_GUIDE 10) is not simulated
+                    else if (this.pausesRecorded && w.map !== 15 && P && P.checkFrameMeaning(MEANING_START)
+                        && m && (m.checkFlag(MF_HELMET_FLW_CAMERA) || !m.checkStatusType(MARIO_STATUS_FLAG_JUMPING))) this.nextState = 5;
                 } else if (this.dflags & DF.GAME_OVER_PENDING) {
                     this.dflags &= ~DF.GAME_OVER_PENDING;
                     this.nextState = 7;

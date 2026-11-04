@@ -863,6 +863,18 @@ export class GameLayer {
             if (fc) { const now = performance.now(); fc.frame = fc.end > 0 ? (fc.frame + Math.min(4, (now - this.surfClock) / (1000 / 30)) * 0.5) % fc.end : 0; this.surfClock = now; }
             out.push({ a: p, type: '', place: [sg.pos.x, sg.pos.y, sg.pos.z] });
         }
+        // TMario's mTorocco (the Pinna coaster's cart, MarioDraw.cpp: performed with him) on the track's
+        // joint 0 (calcBaseMtxTorocco sets it every tick)
+        const P: any = st.player;
+        if (P && P.mTorocco) {
+            const m = P.mTorocco as MActor;
+            let p = this.simModelProxies.get(m);
+            if (!p) {
+                p = { mactor: m, get baseTR() { return P.toroccoTR; }, scale: { x: 1, y: 1, z: 1 }, drawn: () => true } as any as LiveActor;
+                this.simModelProxies.set(m, p);
+            }
+            out.push({ a: p, type: '', place: [P.pos.x, P.pos.y, P.pos.z] });
+        }
         for (const o of st.objects) {
             if (o instanceof ModelGate) { add(o, o.unk78, o.baseTR, () => !!(o.unk70 & 1)); const pp = o.unk78 && this.simModelProxies.get(o.unk78); if (pp) (pp as any).gateMovie = true; }
             else if (o instanceof ShiningStone) {

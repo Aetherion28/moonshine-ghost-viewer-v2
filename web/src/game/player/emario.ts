@@ -858,6 +858,8 @@ export class TEMario extends SpineEnemy {
     }
     kill() { }
     isGoal() { return this.mEnemyMario.checkEMFlag(EM_FLAG.GOAL_REACHED); }
+    isReachedToGate() { return this.mEnemyMario.isReachedToGate(); }
+    isDownWaitingToTalk() { return this.mEnemyMario.isDownWaitingToTalk(); }
     startRunAway() { this.mEnemyMario.startRunAway(); }
     startMonteReplay(i: number) { this.mEnemyMario.startMonteReplay(i); }
     startGateDrawing() { this.mEnemyMario.startGateDrawing(); }

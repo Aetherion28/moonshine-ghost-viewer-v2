@@ -103,6 +103,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     let identity: MstrIdentity | null = null;
     const ticks: TraceTick[] = [];
     const inp = { qf: [] as number[], buttons: [] as number[], stick: [] as number[], cstick: [] as number[], trig: [] as number[], analogAB: [] as number[] };
+    const fp = { qf: [] as number[], buttons: [] as number[], stick: [] as number[], cstick: [] as number[], trig: [] as number[], analogAB: [] as number[] };
     const cam = { qf: [] as number[], pos: [] as number[], quat: [] as number[], fov: [] as number[], tag: [] as number[], at: [] as number[], up: [] as number[] };
     const rq: number[] = [], rc: number[] = [], rs: number[] = [], rr: number[] = [];
     const fb = { qf: [] as number[], consumer: [] as number[], value: [] as number[] };
@@ -146,7 +147,13 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
         onProvenance: (f) => { runFlags |= f; provenance = true; },
         onTick: (s) => {
             // v3: each frame also records the pad as the frame starts (cue 0, word 1's high bit), not a movement update
-            if (s.input && s.input.length >= 8 && (s.input[4] & 0x80)) return;
+            // (kept apart: the pad of a frame Mario doesn't move in, a paused one's, labelled as its first tick would be)
+            if (s.input && s.input.length >= 8 && (s.input[4] & 0x80)) {
+                const p = padView(s.input);
+                fp.qf.push(worldTick); fp.buttons.push(p.button); fp.stick.push(p.stickX, p.stickY); fp.cstick.push(p.substickX, p.substickY);
+                fp.trig.push(p.triggerL, p.triggerR); fp.analogAB.push(p.analogA, p.analogB);
+                return;
+            }
             const qf = worldQf(s.tick);
             if (!segs.length || segs[segs.length - 1].scene !== s.scene) { segs.push({ scene: s.scene, first: ticks.length, startQf: qf, endQf: qf }); segNow = segs.length - 1; }
             segs[segNow].endQf = qf;
@@ -223,6 +230,11 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
         qf: Float64Array.from(inp.qf), buttons: Uint16Array.from(inp.buttons), stick: Int8Array.from(inp.stick), cstick: Int8Array.from(inp.cstick),
         trig: Uint8Array.from(inp.trig), analogAB: Uint8Array.from(inp.analogAB), inputFlags: new Uint8Array(m),
         fluddMode: new Uint8Array(m), fluddOffset: new Float32Array(m * 3), fluddYaw: new Float32Array(m), fluddPitch: new Float32Array(m), fluddPower: new Uint8Array(m),
+        // the pad as each frame began (TApplication's read before direct), at the frame's first tick's QF
+        framePads: {
+            count: fp.qf.length, qf: Float64Array.from(fp.qf), buttons: Uint16Array.from(fp.buttons), stick: Int8Array.from(fp.stick), cstick: Int8Array.from(fp.cstick),
+            trig: Uint8Array.from(fp.trig), analogAB: Uint8Array.from(fp.analogAB),
+        },
     };
     const camera = cam.qf.length ? {
         count: cam.qf.length, truncated: !summary.complete, qf: Float64Array.from(cam.qf), pos: Float32Array.from(cam.pos),
