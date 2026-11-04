@@ -10,7 +10,7 @@ import ArrayBufferSlice from '../../noclip/ArrayBufferSlice.js';
 import type { GameFS } from '../disc.js';
 import { Stage, StageFiles, GameCamera } from './scene.js';
 import { MarioSample, MarioTrack } from './mario.js';
-import { LiveActor, NameRef, World, calcKeyCode, LF } from './engine.js';
+import { LiveActor, NameRef, World, calcKeyCode, LF, shineIDofExStage } from './engine.js';
 import { rngCtx, srand } from './math.js';
 import { feedbackCtx, FeedbackReplay } from './feedback.js';
 import { npcSinkSetup, npcSinkCounterOf } from './npc/base.js';
@@ -462,10 +462,20 @@ export function stageSeed(g: any, segment: number): number | null {
  * (position, animation and phase equal): the recorder writes it as the run closes (the timer
  * stopped), so the game was not sampled there. undefined otherwise.
  */
+const TICK_SETS = new WeakMap<object, Set<number>>();
+/** a trace's recorded world QFs (its ticks') */
+export function traceTickSet(g: any): Set<number> {
+    let s = TICK_SETS.get(g);
+    if (!s) { s = new Set(g.trace.ticks.map((t: { qf: number }) => t.qf)); TICK_SETS.set(g, s); }
+    return s;
+}
+
 export function closingCopyQf(g: any, segment: number, q0: number): number | undefined {
     const seg = g && g.segments && g.segments[segment];
     if (!seg || seg.sampleCount < 2) return undefined;
     const k = seg.firstSample + seg.sampleCount - 1;
+    // a trace has a record every tick: none past its last (the ghost's sample there is the last one held)
+    if (g.trace) return g.qf[k] - q0 + 1;
     for (let c = 0; c < 3; c++) if (g.pos[k * 3 + c] !== g.pos[(k - 1) * 3 + c]) return undefined;
     if (g.anim[k] !== g.anim[k - 1] || g.phase[k] !== g.phase[k - 1]) return undefined;
     return g.qf[k] - q0;
@@ -549,6 +559,8 @@ export class SimRunner {
             closingCopyQf: closingCopyQf(g, segI, q0),
             at: (q: number): MarioSample | null => {
                 const t = q0 + q;
+                // a trace records every tick Mario moves: none while the world stops (a Shine's demo), nothing to hold there
+                if (g.trace && !traceTickSet(g).has(t)) return null;
                 const s = A.ghostSampleAt(g, t);
                 if (!s || s.gap) return null;
                 const a = A.ghostAnimAt(g, t), f = A.ghostFluddAt(g, t);
@@ -619,6 +631,9 @@ export class SimRunner {
                     // start doesn't. (The flags are not given to the stage itself: with them, Simulate went wrong
                     // sooner in as many ghosts as it held longer, so something else still reads them differently.)
                     const c = traceStageCarry(g, segI)!, area = seg.route.area, got = gotShineFromSamples(ss);
+                    // a secret course's Shine already got (its red coin switch is out, he keeps FLUDD): the recorded flags say so
+                    const exId = shineIDofExStage(area);
+                    if (exId !== 0xFF) intro.exShineGot = c.flags.getShineFlag(exId);
                     const first = g.trace.ticks.find((t: any) => t.mario && t.mario.status >>> 0 !== 0x133F) as { mario: MarioView } | undefined;   // (past the stage's load pose: setMario's first)
                     if (area === 1 && first) {
                         intro.marioPosIdx = decideMarioPosIdx(traceStageCarry(g, segI)!.flags, area, c.prevArea).posIdx;
