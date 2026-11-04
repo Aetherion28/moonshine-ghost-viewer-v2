@@ -242,6 +242,19 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             trig: Uint8Array.from(fp.trig), analogAB: Uint8Array.from(fp.analogAB),
         },
     };
+    // A trace without kind-15 feedback records (before stage schema 3) still has Mario's flag word on every
+    // tick, and its bit 0 (MARIO_FLAG_OCCLUDED, which TMario::drawSyncCallback sets from the Z buffer) is
+    // what the camera and the silhouette read: in the traces that have both, each feedback record's value
+    // equals that bit in the Mario record with the same label more often than any other label's (the
+    // camera's reads: 2628 of 2628, 2584 of 2585 and 12980 of 13164 in three JP traces; one read a tick).
+    // So those reads take the recorded bit.
+    if (!fb.qf.length) {
+        for (const t of ticks) {
+            if (!t.mario) continue;
+            const v = t.mario.flag & 1;
+            fb.qf.push(t.qf, t.qf); fb.consumer.push(Feedback.CAMERA, Feedback.SILHOUETTE); fb.value.push(v, v);
+        }
+    }
     const camera = cam.qf.length ? {
         count: cam.qf.length, truncated: !summary.complete, qf: Float64Array.from(cam.qf), pos: Float32Array.from(cam.pos),
         quat: Float32Array.from(cam.quat), fov: Float32Array.from(cam.fov), tag: Uint8Array.from(cam.tag),
