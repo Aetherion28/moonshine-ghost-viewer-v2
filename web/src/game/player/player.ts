@@ -15,6 +15,7 @@ import { V3, s16, JMASSin, JMASCos, matan, IConverge, Mtx, mtx, MsMtxSetRotRPH, 
 import { HitActor, TakeActor, LiveActor, MSG, HC, LF, Stream, CUE_MOVE, World, calcKeyCode, shineIDofExStage, FC_PINGPONG_LOOP, MActor, AnmData, ANM_BCK } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { POLLUTION_TYPE } from '../pollution.js';
+import { mapWarpStream } from '../mapwarp.js';
 import { TMarioSim, j3dTRMtx } from './tmario.js';
 import { S, A, MF, ControllerWork, bg, marioBckInfo, marioFile } from './base.js';
 import { ANIME_DATA } from './tables.js';
@@ -1781,6 +1782,10 @@ export class PlayerMario extends TMarioSim {
         const uw = this.isUnderWater(), last = L.length ? L[L.length - 1] : null;
         if (!last || last.health !== this.mHealth || Math.trunc(last.air) !== Math.trunc(this.mAir) || last.underWater !== uw)
             L.push({ t: this.world.tickCount, health: this.mHealth, air: this.mAir, underWater: uw });
+        // TMapWarp::watchToWarp (TMap::perform, first in the next tick's movement): a stream cube's push. It is
+        // run here, at the end of his perform, as the next tick would before his: a trace's record of a tick
+        // is Mario as the next tick's perform begins (mstrghost.ts worldQf), so with the push in
+        mapWarpStream(this.world);
         if (this.track) this.checkDrift();
     }
 

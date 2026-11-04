@@ -62,7 +62,15 @@ export abstract class MarioMove extends MarioBase {
         this.checkRideReCalc();
         return true;
     }
-    warpRequest(p: V3, angle: number) { this.moveRequest(p); this.mFaceAngle.y = s16(angle * (65536 / 360)); this.mModelFaceAngle = this.mFaceAngle.y; this.changePlayerStatus(S.WAIT, 0, true); }
+    /** TMario::warpRequest (MarioMove.cpp): the camera carried along by the move, and the stick eased in again (onNeutralMarioKey, but in Delfino Hotel) */
+    warpRequest(p: V3, angle: number) {
+        const ox = fr(p.x - this.pos.x), oy = fr(p.y - this.pos.y), oz = fr(p.z - this.pos.z);
+        this.moveRequest(p); this.mFaceAngle.y = s16(angle * (65536 / 360)); this.mModelFaceAngle = this.mFaceAngle.y;
+        const C: any = (this as any).simCamera;
+        if (C && typeof C.addMoveCameraAndMario === 'function') C.addMoveCameraAndMario({ x: ox, y: oy, z: oz });
+        if (this.world.map !== 7 && this.mGamePad) this.mGamePad.onNeutralMarioKey();
+        this.changePlayerStatus(S.WAIT, 0, true);
+    }
     flowMove(f: V3) { if (this.checkStatusType(0x2000)) this.pos.add(f); }
     windMove(f: V3) { this.pos.add(f); }
     getGroundJumpPower() { return this.mGroundPlane ? fr(fr(0.01) * bg.activeJumpPower(this.mGroundPlane)) : 0; }

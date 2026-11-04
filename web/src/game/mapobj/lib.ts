@@ -325,37 +325,9 @@ export function marioOnYoshi(w: World): boolean { const m = M(w); return typeof 
 /** SMS_SendMessageToMario */
 export function sendToMario(w: World, from: HitActor, msg: number) { return w.mario.receiveMessage(from, msg); }
 
-// ---------------------------------------------------------------- gpCubeStream
-export interface StreamCube { c: V3; r: V3; s: V3; unk34: number; unk38: number; unk3C: number; unk40: number; }
-const STREAMS = new WeakMap<World, StreamCube[]>();
-/** 流れキューブテーブル's TCubeStreamInfo cubes: unk18 their rotation, unk40 their strength */
-export function streamCubes(w: World): StreamCube[] {
-    let l = STREAMS.get(w);
-    if (l) return l;
-    l = [];
-    const b = w.files.scene('map/tables.bin');
-    if (b) {
-        let found: SceneNode | null = null;
-        const find = (n: SceneNode) => { if (found) return; if (n.name === '流れキューブテーブル' && n.children) { found = n; return; } for (const c of n.children || []) find(c); };
-        try { find(parseSceneBin(b)); } catch { }
-        if (found) for (const ch of (found as SceneNode).children || []) {
-            const s = new Stream(ch.data);
-            const c = new V3(s.f32(), s.f32(), s.f32()), r = new V3(s.f32(), s.f32(), s.f32());
-            const sc = new V3(fr(s.f32() * 100), fr(s.f32() * 100), fr(s.f32() * 100));
-            s.u32(); s.u32();
-            const unk34 = s.u32() | 0;
-            const unk40 = s.s32(), unk38 = s.s32();
-            l.push({ c, r, s: sc, unk34, unk38, unk3C: unk34, unk40 });
-        }
-    }
-    STREAMS.set(w, l);
-    return l;
-}
-/** gpCubeStream->getInCubeNo */
-export function inStreamCube(w: World, p: V3): StreamCube | null {
-    for (const c of streamCubes(w)) if (isPointInCube(p, c.c, c.r, c.s)) return c;
-    return null;
-}
+// gpCubeStream and TMapWarp's stream push: ../mapwarp.ts (no import of scene.ts there: Stage calls it)
+export { streamCubes, inStreamCube, mapWarpStream } from '../mapwarp.js';
+export type { StreamCube } from '../mapwarp.js';
 
 // ---------------------------------------------------------------- TMapObjWave (gpMapObjWave)
 const WAVES = new WeakMap<World, MapObjWave>();
