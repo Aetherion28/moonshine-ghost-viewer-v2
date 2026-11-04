@@ -123,9 +123,11 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             if (firstSeed === null) firstSeed = s.seed;
             // a frame is four world ticks however many of them moved Mario (none while the director
             // stops the world for a Shine's appear demo: the recorder's tick counts Mario's updates)
-            // (Moonshine's menu stops the game: the frames whose own record or the next one's has it shown
-            // (words[7] bit 0) run no world ticks, so the frame after starts where they did)
-            if (frameTick === null) worldTick = s.tick; else if (!lastMenu && !s.menuShown) worldTick += 4;
+            // (Moonshine's menu can stop the game: a frame whose own record or the next one's has it shown
+            // (words[7] bit 0) and that moved Mario on none of its ticks ran no world ticks, so the frame
+            // after starts where it did. Shown over a running game (Mario moving), it's an ordinary frame.)
+            if (frameTick === null) worldTick = s.tick;
+            else if (!(lastMenu || s.menuShown) || s.tick !== frameTick) worldTick += 4;
             lastMenu = s.menuShown;
             frameTick = s.tick;
             // TMarDirector's state as the frame began: a change is listed at the world QF of the tick before it (the changeState after that tick, or one earlier in the frame before, made it)
