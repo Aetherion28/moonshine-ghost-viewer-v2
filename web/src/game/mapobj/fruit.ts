@@ -13,6 +13,7 @@
 import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, MsRandF, matan, MsMtxSetXYZRPH, sqDist } from '../math.js';
 import { jgSqrt } from '../vecops.js';
+import { fmadd } from '../player/fmath.js';
 import { World, Stream, HitActor, TakeActor, LF, HF, MSG, ANM_BCK, ANM_BTP, MActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -116,7 +117,8 @@ export class MapObjBall extends MapObjGeneral {
     touchWater(a: HitActor) {
         if (this.isState(GS.HOLDING) || this.isState(GS.APPEARING)) return 1;
         const s = getWaterSpeed(this.world, a);
-        this.vel.set(fr(this.vel.x + fr(this.unk17C * s.x)), fr(this.vel.y + fr(this.unk17C * s.y)), fr(this.vel.z + fr(this.unk17C * s.z)));
+        // (TVec3::scaleAdd: fmadds, DOL 0x801dce3c in PAL)
+        this.vel.set(fmadd(s.x, this.unk17C, this.vel.x), fmadd(s.y, this.unk17C, this.vel.y), fmadd(s.z, this.unk17C, this.vel.z));
         this.offLiveFlag(LF.UNK10);
         return 1;
     }
