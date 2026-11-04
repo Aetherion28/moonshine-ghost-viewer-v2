@@ -23,9 +23,8 @@ The main measure of progress is how long each recorded run stays in sync before 
 5. No autonomous work on the decomp's middleware (MSL, MetroTRK, THPPlayer, dolphin SDK, JSystem); the decomp repos are read-only references for this project anyway.
 6. Do **not** push to or even inspect the `agent-mailbox` repository unless the user explicitly asks.
 7. Decline the user's account cookies; downloading needs the user's permission.
-8. If the user asks to forget part of the conversation, honour it. Currently forgotten: the puddle / graffiti / pollution-revival-stamp topic. The Sirena goop-landing work touches it, so **ask the user before working on Sirena's goop**.
-9. Commit and push every finished change (a stop hook refuses to end a turn with uncommitted changes). Keep experiments out of commits: save them as a patch file instead.
-10. Commit messages end with the attribution lines your session's system reminder gives (Co-Authored-By, Claude-Session). Use yours, not ones copied from old commits.
+8. Commit and push every finished change (a stop hook refuses to end a turn with uncommitted changes). Keep experiments out of commits: save them as a patch file instead.
+9. Commit messages end with the attribution lines your session's system reminder gives (Co-Authored-By, Claude-Session). Use yours, not ones copied from old commits.
 
 ## Build, deploy
 
@@ -170,7 +169,7 @@ First drift per run, 143 traces:
 - **Water drops land / hit a little earlier in the game than in the sim** (Noki Bay mare1 b/A7E1056F_80000028 at 4.9 s; Delfino dolpic10 c/…065 at 1.6 s and …067 at 3.1 s). The drops' emission matches the recorded requests and the move code matches the DOL, yet the game's drop hits the NPC (マーレＢ, cylinder r 80, h 110) or the ground 1–2 ticks before the sim's. The difference decides MARIO_FLAG 0x10 (RECENTLY_LEFT_WATER) and so dive-slide friction. Cause not found; don't tune it.
 - dolpic_ex2 c/…05E at 3.8 s: the game spinjumps at QF 457. Related to `checkStickRotate`'s uninitialised `q[4]`; the leftover stack values would need modelling from evidence.
 - Bianco b/41726535_80000023 (104 s): the camera's yaw step changes a tick early, which moves the intended yaw and the side-step position by 1 ulp. That trace has feedback records, so it isn't the occlusion fallback.
-- Long runs (>30 s): five Sirena runs (goop landing, ask the user first), Gelato 4 (TSpcInterp mLocked is garbage), Pianta 8 (GPU pollution counter), Delfino bell (water hits on the bell).
+- Long runs (>30 s): five Sirena runs (ask the user before working on these), Gelato 4 (TSpcInterp mLocked is garbage), Pianta 8 (GPU pollution counter), Delfino bell (water hits on the bell).
 - coro_ex1 a/2A1D8909_80000015: assisted / TAS with sparse ticks.
 
 ## Refuted (don't retry without new evidence)
