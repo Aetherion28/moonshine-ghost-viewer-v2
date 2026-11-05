@@ -168,7 +168,7 @@ First drift per run, 143 traces:
 
 ## Open threads (where to pick up)
 
-- 2026-11-05 dolpic8 c/A7E1056F_8000007F (worse with the egg fix, 13.8 -> 11.8 s): its RNG consumers line up to tick 1241, where the game's Shadow Mario (マリオモドキ_0) makes an emReplayJumpToNearestNode roll (JP 0x8016...: TEnemyMario, label 1240) but the sim's one is still in EM.DISAPPEAR at (10, 0, 3070): the Shadow Mario event (the image has shine 33, no MSF_YOSHI_UNLOCKED: SHADOW_MARIO_EVENT 1, the egg he carries) isn't running in the sim. The other worse run, dolpic10 006A, not looked at yet.
+- 2026-11-05 dolpic10 c/A7E1056F_8000006A (never -> 23 s with the egg fix): RNG consumers line up to tick 835, where 鳥 12 (record key 17306) picks its next graph node two ticks before the sim's. The bird is 1 ulp off from tick 259, its first walkOnGround step (posDelta comes out of the ground following, not doWalk's rotate: SMS_Eular2Quat / TQuat4::rotate made DOL-exact didn't change it; /tmp patch quat.patch).
 - 2026-11-05 Bianco b/41726535_80000023 (104 s now): RNG consumers line up to tick 2058, where the game makes a TNerveAmenboSearch roll (0x8033dfa8) a tick or two before the sim.
 
 - The two runs the feedback shift made worse:
@@ -189,6 +189,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-05 A trace's MSF_SHADOW_MARIO_EVENT from its recorded flags (runner.ts traceShadowMarioEvent: FlagManager.setupStage on the stage-start record's image -> IntroTiming.shadowMarioEvent), not the inferred flags': dolpic8 007F's Shadow Mario (event 1: shine 33 without MSF_YOSHI_UNLOCKED) was left in EM.DISAPPEAR, missing his rolls. Batch runs29 vs runs28: 1 better (007F 11.8 -> 19.5 s), 0 worse.
 
 - 2026-11-05 Yoshi eggs load as the trace's actor records show them (runner.ts traceActorsAlive -> IntroTiming.traceAlive -> World.traceAliveAt, used by EggYoshi.load): Moonshine's runs have eggs alive where the stage-start flag image says dead (no shine 0x21 / MSF_YOSHI_UNLOCKED), and the dead egg's missing decideRandomLoveFruit roll shifted every later RNG consumer by one. Batch runs28 vs runs27: 8 better, 2 worse (Bianco b/41726535_80000023 14.8 s -> 104 s; dolpic10 006A never -> 23 s and dolpic8 007F 13.8 -> 11.8 s worse, both now with their load-time rolls lined up with the trace: harness rk2.ts shows the record at index LOADCALLS is the first live call). Next RNG slip in Bianco: tick 2058, a TNerveAmenboSearch roll (0x8033dfa8) the game made a tick or two earlier.
 

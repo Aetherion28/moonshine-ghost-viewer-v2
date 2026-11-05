@@ -443,6 +443,19 @@ export function traceActorsAlive(g: any): Map<string, boolean> | null {
     return out;
 }
 
+/**
+ * A trace's MSF_SHADOW_MARIO_EVENT as the stage's setup makes it (FlagManager.setupStage: setupObjects'
+ * 1, Delfino Plaza's scenario 8 pick from shine 33, MSF_YOSHI_UNLOCKED, the nozzles and the Shine
+ * count) from the stage-start record's flags. undefined without them.
+ */
+export function traceShadowMarioEvent(g: any, segment: number, area: number, episode: number): number | undefined {
+    const c = traceStageCarry(g, segment);
+    if (!c) return undefined;
+    const f = c.flags.clone(), ex = shineIDofExStage(area);
+    f.setupStage(area, episode, ex !== 0xFF && f.getShineFlag(ex), ex, false);
+    return f.getFlag(MSF.SHADOW_MARIO_EVENT);
+}
+
 export function traceStageCarry(g: any, segment: number): { flags: FlagManager; prevArea: number } | null {
     const ss = segment === 0 && g && g.trace && g.trace.stageStart;
     if (!ss || !ss.flagImage) return null;
@@ -784,6 +797,7 @@ export class SimRunner {
             // stage (stage schema 2+), where the stage before left it for a later one built here, else 0
             const prevSink = segI > 0 && this.sinkCarry && this.sinkCarry.seg === segI - 1 ? this.sinkCarry.n : null;
             if (intro && segI === 0 && g.trace) { const ta = traceActorsAlive(g); if (ta) intro.traceAlive = ta; }
+            if (intro && segI === 0 && g.trace) { const ev = traceShadowMarioEvent(g, segI, seg.route.area, seg.route.episode); if (ev !== undefined) intro.shadowMarioEvent = ev; }
             npcSinkSetup.start = segI === 0 ? (g.trace && g.trace.stageStart && g.trace.stageStart.npcSinkPhase !== null ? g.trace.stageStart.npcSinkPhase : 0) : (prevSink ?? 0);
             try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, seed ?? 0, 0, intro); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
