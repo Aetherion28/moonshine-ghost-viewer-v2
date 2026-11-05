@@ -43,3 +43,11 @@ export function psSqDist(a: { x: number; y: number; z: number }, b: { x: number;
 /** the sine table at an angle in degrees, as the inlined fromPolar / MsSin do it: fmuls 182.04445, fctiwz */
 export const sinDeg = (d: number) => JMASSin(Math.trunc(fr(fr(182.04444885253906) * d)));
 export const cosDeg = (d: number) => JMASCos(Math.trunc(fr(fr(182.04444885253906) * d)));
+
+/** MsPerpendicFootToLineR (JP 0x801E77E8): the point of the segment a-b nearest p (dots as vDot, t clamped to 0..1, a + d * t as fmuls then fadds; no zero-length check) */
+export function msPerpendicFoot(a: V3, b: V3, p: V3) {
+    const d = new V3(fr(b.x - a.x), fr(b.y - a.y), fr(b.z - a.z));
+    let t = fr(fr(vDot(p, d) - vDot(a, d)) / vDot(d, d));
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    return new V3(fr(a.x + fr(d.x * t)), fr(a.y + fr(d.y * t)), fr(a.z + fr(d.z * t)));
+}

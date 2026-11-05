@@ -15,6 +15,7 @@ import { fr, V3, JMASSin, JMASCos, s16, MsMtxSetXYZRPH, mtx, type Mtx } from './
 import { World, NameRef, Stream, parseSceneBin, SceneNode, CUE_MOVE, TakeActor, HitActor, HF, HC, MSG, IDX } from './engine.js';
 import { AT } from './actortypes.js';
 import { lengthJ } from './player/fmath.js';
+import { msPerpendicFoot } from './vecops.js';
 import { MapCollision } from './collision.js';
 
 // ---------------------------------------------------------------- cubes
@@ -77,13 +78,6 @@ export class CubeManager {
 }
 
 // ---------------------------------------------------------------- TMapWire
-/** MsPerpendicFootToLineR: the foot of p on the segment a-b (clamped to it). */
-function perpendicFoot(a: V3, b: V3, p: V3) {
-    const d = V3.sub(b, a);
-    let t = fr((fr(p.dot(d)) - fr(a.dot(d))) / fr(d.squared()));
-    if (t < 0) t = 0; else if (t > 1) t = 1;
-    return new V3(fr(d.x * t + a.x), fr(d.y * t + a.y), fr(d.z * t + a.z));
-}
 
 export class MapWirePoint {
     pos = new V3(); defPos = new V3(); posOnWire = 0; defPosOnWire = 0; returnRate = 0;
@@ -238,8 +232,9 @@ export class MapWire {
     }
     getPosInWire(p: V3) {
         const a = new V3(this.start.x, 0, this.start.z), b = new V3(this.end.x, 0, this.end.z);
-        const foot = perpendicFoot(a, b, p);
-        return fr(fr(V3.sub(foot, a).length()) / fr(V3.sub(b, a).length()));
+        // (JP 0x801E91C4: TUtil<f32>::sqrt of (x² + y²) + z², fdivs)
+        const foot = msPerpendicFoot(a, b, p), l = (v: V3) => lengthJ(v.x, v.y, v.z);
+        return fr(l(V3.sub(foot, a)) / l(V3.sub(b, a)));
     }
     getPointPosOnWire(pos: number, out: V3) {
         if (pos < 0) pos = 0;
@@ -289,7 +284,7 @@ export class MapWireActor extends TakeActor {
         const a = new V3(), b = new V3();
         this.getTipPoints(a, b);
         a.y = 0; b.y = 0;
-        const foot = perpendicFoot(a, b, this.pos);
+        const foot = msPerpendicFoot(a, b, this.pos);
         const l = (v: V3) => lengthJ(v.x, v.y, v.z);
         return fr(l(V3.sub(foot, a)) / l(V3.sub(b, a)));
     }

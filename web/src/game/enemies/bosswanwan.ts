@@ -43,7 +43,7 @@ import { mat4 } from 'gl-matrix';
 import { fmadd as FMA } from '../player/fmath.js';
 import { msVecNormalize } from '../camera/lib.js';
 import { matan, s16 } from '../math.js';
-import { vNorm, vMag, vSq, vDot, vCross, msVecMag2 } from '../vecops.js';
+import { vNorm, vMag, vSq, vDot, vCross, msVecMag2, msPerpendicFoot } from '../vecops.js';
 
 /** TBWParams */
 const BW_PARAMS = {
@@ -63,16 +63,7 @@ const velocityMinY = -40;
 const fromPolar = (t: number, r: number) => { const a = Math.trunc(fr(fr(182.04444885253906) * t)); return new V3(fr(r * JMASSin(a)), 0, fr(r * JMASCos(a))); };
 const norm = vNorm, mag = vMag, sq3 = vSq, dot = vDot, cross = vCross;
 const isEnemyThrough = (d: BGCheckData) => d.bgType === 0x801 || d.bgType === 0x402;
-/** MsPerpendicFootToLineR (0x801e77e8): the point of the segment a-b nearest p (no zero-length check) */
-function perpendicFoot(a: V3, b: V3, p: V3) {
-    const d = V3.sub(b, a);
-    const ad = FMA(a.z, d.z, FMA(a.x, d.x, fr(a.y * d.y)));
-    const sq = FMA(d.z, d.z, FMA(d.x, d.x, fr(d.y * d.y)));
-    const pd = FMA(p.z, d.z, FMA(p.x, d.x, fr(p.y * d.y)));
-    let t = fr(fr(pd - ad) / sq);
-    if (t < 0) t = 0; else if (t > 1) t = 1;
-    return new V3(fr(fr(d.x * t) + a.x), fr(fr(d.y * t) + a.y), fr(fr(d.z * t) + a.z));
-}
+const perpendicFoot = msPerpendicFoot;
 
 // BCKs / BTPs / BRKs (/scene/bwanwan, in the folder's order: bwanwan_bastable)
 const BCK_BARK = 0, BCK_DOWN = 1, BCK_SHAKE = 2, BCK_SLEEP = 3, BCK_WAIT = 4, BCK_WAIT2 = 5, BCK_WAKEUP = 6;

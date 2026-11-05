@@ -168,8 +168,6 @@ First drift per run, 143 traces:
 
 ## Open threads (where to pick up)
 
-- 2026-11-05 Birds' anim-end rolls a tick late (dolpic10 c/…0068). TNerveAnimalBirdWaitOnGround rolls isWantToAction (0x80369c20) only once checkCurAnmEnd(BCK) is true. Bird 鳥 8's wait BCK (rate 2, end 64) reaches frame 62 in the sim's CalcAnim of tick 876, so its first roll is at 877; in the game it is one tick earlier (record label 875, before bird 12's rolls in the same pass). The same lag shows at 1019/1021. Every later consumer that tick then takes the next value (the gull reset at 1024 gets the wrong goal). The sim's per-tick order is birds, cap, fish where the game's is boids, birds, cap; the streams still line up, so look at when the bird's frame advances relative to its MOVE in the game (TEnemyManager::perform 0x80251B44, TLiveActor::perform 0x801115B0). The f32 MActor::curAnmEndsNext / isCurAnmAlreadyEnd (committed) didn't move this.
-
 - 2026-11-05 Bianco b/41726535_80000023 (104 s now): RNG consumers line up to tick 2058, where the game makes a TNerveAmenboSearch roll (0x8033dfa8) a tick or two before the sim.
 
 - The two runs the feedback shift made worse:
@@ -190,6 +188,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-05 Two DOL matches that put Delfino 0068's RNG consumers back in line. (1) The wire perch: MsPerpendicFootToLineR (JP 0x801E77E8: dots as fmuls y then fmadds x, z; a + d * t as fmuls then fadds; now vecops.ts msPerpendicFoot, shared with bosswanwan) and TMapWire::getPosInWire (0x801E91C4: TUtil<f32>::sqrt lengths, fdivs). 鳥 12 walking on its wire was off by ~0.001 from tick 132; all 20 birds now equal their actor records through tick 1944. (2) TBaseNPC::execWalk's inlined isCanWalk (0x8017BAA8) measures the goal's flat offset (x, 0, z) against CLBSquared(10); the sim used the 3D distance, so モンテＥ 12, whose goal is 200 above him, walked on 28 ticks past where the game stops him and left his wait 12 ticks late. Every bird, gull, fish and NPC roll in 0068 now has the game's caller through tick 4000. Batch runs36 vs runs35: 1 better (0068 25.6 -> 72.5 s), 0 worse.
 
 - 2026-11-05 MActor::curAnmEndsNext (JP 0x800D51AC) and isCurAnmAlreadyEnd (0x800D5318) in f32 as the DOL: fadds frame + rate, then fadds 0.1f, against the s16 end (engine.ts AnmSlot.endsNext, MActor.isCurAnmAlreadyEnd, bosshanachan's copy). Batch runs35 vs runs34: all 143 the same.
 

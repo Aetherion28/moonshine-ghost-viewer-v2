@@ -915,7 +915,11 @@ export class BaseNPC extends SpineEnemy {
     private emitHappyEffect() { this.world.effect('npcHappy', this.pos); }
 
     // ------------------------------------------------------------ walking (NpcWalkTurn.cpp)
-    isCanWalk() { return !(V3.sub(this.goal.point(), this.pos).squared() < 100); }
+    /** (inlined in TBaseNPC::execWalk, JP 0x8017BAA8: the goal's flat offset (x, 0, z) squared as fmuls, fadds, against CLBSquared(10)) */
+    isCanWalk() {
+        const g = this.goal.point(), dx = fr(g.x - this.pos.x), dz = fr(g.z - this.pos.z);
+        return !(fr(fr(dx * dx) + fr(dz * dz)) < 100);
+    }
     execWalk(wander: boolean) {
         if (this.walkForbid !== 0 || directorIsThing(this.world) || !this.isClean() || this.checkActionFlag(NA.HAPPY)) { this.marchSpeed = 0; this.turnSpeed = 0; return; }
         if (wander && (this.unk1DA & 1)) {
