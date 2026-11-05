@@ -168,7 +168,7 @@ First drift per run, 143 traces:
 
 ## Open threads (where to pick up)
 
-- 2026-11-05 Birds' anim-end rolls a tick late (dolpic10 c/…0068). TNerveAnimalBirdWaitOnGround rolls isWantToAction (0x80369c20) only once checkCurAnmEnd(BCK) is true. Bird 鳥 8's wait BCK (rate 2, end 64) reaches frame 62 in the sim's CalcAnim of tick 876, so its first roll is at 877; in the game it is one tick earlier (record label 875, before bird 12's rolls in the same pass). The same lag shows at 1019/1021. Every later consumer that tick then takes the next value (the gull reset at 1024 gets the wrong goal). The sim's per-tick order is birds, cap, fish where the game's is boids, birds, cap; the streams still line up, so look at when the bird's frame advances relative to its MOVE in the game (TEnemyManager::perform 0x80251B44, TLiveActor::perform 0x801115B0). An f32 fix of MActor::curAnmEndsNext / isCurAnmAlreadyEnd (0.1f, fadds: JP 0x800D51AC / 0x800D5318) is DOL-correct but didn't move this (patch `/tmp/claude-0/zdfa.patch`, untested in a batch).
+- 2026-11-05 Birds' anim-end rolls a tick late (dolpic10 c/…0068). TNerveAnimalBirdWaitOnGround rolls isWantToAction (0x80369c20) only once checkCurAnmEnd(BCK) is true. Bird 鳥 8's wait BCK (rate 2, end 64) reaches frame 62 in the sim's CalcAnim of tick 876, so its first roll is at 877; in the game it is one tick earlier (record label 875, before bird 12's rolls in the same pass). The same lag shows at 1019/1021. Every later consumer that tick then takes the next value (the gull reset at 1024 gets the wrong goal). The sim's per-tick order is birds, cap, fish where the game's is boids, birds, cap; the streams still line up, so look at when the bird's frame advances relative to its MOVE in the game (TEnemyManager::perform 0x80251B44, TLiveActor::perform 0x801115B0). The f32 MActor::curAnmEndsNext / isCurAnmAlreadyEnd (committed) didn't move this.
 
 - 2026-11-05 Bianco b/41726535_80000023 (104 s now): RNG consumers line up to tick 2058, where the game makes a TNerveAmenboSearch roll (0x8033dfa8) a tick or two before the sim.
 
@@ -190,6 +190,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-05 MActor::curAnmEndsNext (JP 0x800D51AC) and isCurAnmAlreadyEnd (0x800D5318) in f32 as the DOL: fadds frame + rate, then fadds 0.1f, against the s16 end (engine.ts AnmSlot.endsNext, MActor.isCurAnmAlreadyEnd, bosshanachan's copy). Batch runs35 vs runs34: all 143 the same.
 
 - 2026-11-05 Fruit wall bounce as the DOL (TMapObjBall::touchWall, JP 0x801BD19C): the bounce is vd * -(1 + wall bounce) (fadds 1.0, fneg). The decomp's `-(-1 + unk8)` is a misreading that pushed the fruit into the wall. The speed is TUtil<f32>::sqrt of (x² + y²) + z², fmadds onto vel.y, and the dot products and position steps are fused. Batch runs33 vs runs32: 1 better (dolpic10 0069 5.2 -> 10.7 s: the banana Mario dives for had stuck to a wall), 0 worse.
 

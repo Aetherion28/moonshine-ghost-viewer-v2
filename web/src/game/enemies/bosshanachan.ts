@@ -286,7 +286,7 @@ export abstract class BHPartsBase extends LiveActor {
     isCurBckAlreadyEnd_() {
         const c = this.mactor ? this.mactor.getFrameCtrl(ANM_BCK) : null;
         if (!c) return true;
-        return (c.state & 1) !== 0 || (c.state & 2) !== 0 || c.frame + 0.1 >= c.end;
+        return (c.state & 1) !== 0 || (c.state & 2) !== 0 || fr(fr(0.1) + c.frame) >= c.end;
     }
     copyFrameFromOldAnmToNewAnm_() {
         const c = this.mactor!.getFrameCtrl(ANM_BCK);

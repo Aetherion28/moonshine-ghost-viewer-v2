@@ -421,7 +421,8 @@ class AnmSlot {
         this.fc.rate = ANM_FRAME_RATE();
         return true;
     }
-    endsNext() { return this.fc.frame + this.fc.rate + 0.1 >= this.fc.end; }
+    // (MActor::curAnmEndsNext, JP 0x800D51AC: fadds frame + rate, fadds 0.1f, against the s16 end)
+    endsNext() { return fr(fr(0.1) + fr(this.fc.frame + this.fc.rate)) >= this.fc.end; }
 }
 
 /** MActor: a model and the animations it plays (one at a time per type). */
@@ -446,7 +447,7 @@ export class MActor {
     curAnmEndsNext(type: number) { const s = this.slots[type]; return !s ? true : s.endsNext(); }
     isCurAnmAlreadyEnd(type: number) {
         const c = this.getFrameCtrl(type);
-        return !c || (c.state & 1) !== 0 || (c.state & 2) !== 0 || c.frame + 0.1 >= c.end;
+        return !c || (c.state & 1) !== 0 || (c.state & 2) !== 0 || fr(fr(0.1) + c.frame) >= c.end;   // (JP 0x800D5318: fadds 0.1f)
     }
     checkBckPass(f: number) { const c = this.getFrameCtrl(ANM_BCK); return !!c && c.checkPass(f); }
     setFrameRate(r: number, type: number) { const c = this.getFrameCtrl(type); if (c) c.rate = r; }
