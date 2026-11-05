@@ -165,13 +165,11 @@ First drift per run, 143 traces:
 ## Open threads (where to pick up)
 
 - **Ricco Harbor "ricco2" cluster** (six runs drift at ~10.2 s): Mario hits a wall of the rotating crane `crane90 2` (TCraneRotY) in the sim and not in the game, because the sim's cranes are at the wrong angle.
-  Evidence from a/trace_2A1D8909_80000008 (actor records: the object's mRotation is at 0x30):
-  - The game's cranes turn 0.144, 0.186 and 0.168 degrees per 4-tick frame, from tick 4 on, steadily.
-  - TCraneRotY::load's speed is `MsRandF() * 0.1 + 0.05` in the JP DOL too (0x801A6224; sdata2 0.1 and 0.05), so one move is at least 0.05: the game's cranes move **2 times per frame**, at 0.072, 0.093 and 0.084 a move. The sim moves them every tick.
-  - Those three speeds are exactly the rolls 7205, 14091, 11141, which occur in the MSL rand stream from seed 1 at calls 9863345, +55, +84. The sim draws its crane speeds at calls 2965559..2965561 with no rolls between them. So the sim's load also lacks the rolls that come between the cranes' loads in the game.
-  - Not the cause: JDrama::TViewObj::testPerform's movement gates (CUE_MOVEMENT_GATE_A/B at 0x1000/0x2000; the director drops them on odd / bit-2 mMoveTickCount). No recorded actor has gate bits in its flags at 0xC, and no code in the JP DOL stores them there. TMapObjBase::perform, TLiveActor::perform / moveObject, TObjManager / TLiveManager / TConductor::perform, CraneRotY::control (DOL 0x801A62E0) and the PerformLists entries (all plain CUE_MOVE) skip nothing.
-  - Still unknown: what makes these map objects move on only 2 of 4 ticks. Find it in the game code; don't hardcode a rate.
-  The nodding cranes look slower too (recorded rot.x 0.088 a frame against mRotSpeed 0.1 a move), but that record may be the cargo block (craneCargoUpDown has the same actor type 0x400000B4), so check which object it is first.
+  - The stage (area 3, episode 2) has three TCraneRotY (`crane90 0..2`, sweep 90 each) and two TCraneUpDown.
+  - TCraneRotY::load's speed is `MsRandF() * 0.1 + 0.05` per move in the decomp and in the JP DOL (0x801A6224), so 0.05 to 0.15 a move, 0.2 to 0.6 a 4-tick frame.
+  - The traces' actor records (mRotation at 0x30) disagree: in all six runs, every crane turns a constant 0.144 to 0.240 degrees a frame (e.g. a/trace_2A1D8909_80000008 crane 2: +0.1679993 every frame), and all 12 values are multiples of 0.006 (0.0015 a move). The Shine in the same trace turns +8.0 a frame (2 a move), so the ticks are right.
+  - A random roll can't give those values, so something changed the speeds in the recorded games; a speed code is the likely cause (asked the user, 2026-11-04). Until it's known, the sim can't reproduce these runs; don't fit the speeds.
+  - An earlier idea here (the cranes move only 2 ticks of 4) was wrong; its "matching RNG rolls" were a chance match.
 - Other ~10 s drifts: bianco0, mamma2, mamma5, pinnaParco2, pinnaBeach3, dolpic_ex3, dolpic10 (QF 1188–1300); may share a cause.
 - **Water drops land / hit a little earlier in the game than in the sim** (Noki Bay mare1 b/A7E1056F_80000028 at 4.9 s; Delfino dolpic10 c/…065 at 1.6 s and …067 at 3.1 s). The drops' emission matches the recorded requests and the move code matches the DOL, yet the game's drop hits the NPC (マーレＢ, cylinder r 80, h 110) or the ground 1–2 ticks before the sim's. The difference decides MARIO_FLAG 0x10 (RECENTLY_LEFT_WATER) and so dive-slide friction. Cause not found; don't tune it.
 - dolpic_ex2 c/…05E at 3.8 s: the game spinjumps at QF 457. Related to `checkStickRotate`'s uninitialised `q[4]`; the leftover stack values would need modelling from evidence.
