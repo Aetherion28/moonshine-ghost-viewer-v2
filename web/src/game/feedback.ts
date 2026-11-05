@@ -71,3 +71,26 @@ export function traceStatusByTick(ticks: { qf: number; mario: { status: number }
     for (const t of ticks) if (t.mario) m.set(t.qf, t.mario.status >>> 0);
     return (d: number) => { const v = m.get(base + qfNow() + d); return v === undefined ? null : v; };
 }
+
+/**
+ * The trace's RNG records by state, for the game's uninitialised memory that a recorded roll gives away:
+ * next() is the DOL return address of the roll the game made next from the RNG's current state (each
+ * record carries the post-call seed), null without a trace or a matching record. Set by the runner
+ * around a stage's frames like feedbackCtx.
+ */
+export const traceRngCtx: { next: ((state: number) => number | null) | null } = { next: null };
+export function traceNextRollCaller(state: number): number | null { return traceRngCtx.next ? traceRngCtx.next(state) : null; }
+export function traceRngByState(tape: { count: number; seed: Uint32Array; caller: Uint32Array }) {
+    const at = new Map<number, number[]>();
+    for (let i = 0; i < tape.count; i++) { const k = tape.seed[i] >>> 0; (at.get(k) || at.set(k, []).get(k)!).push(i); }
+    let last = -1;
+    return (state: number) => {
+        const L = at.get(state >>> 0);
+        if (!L) return null;
+        // (the first record with this seed at or after the last one asked for: a seed can repeat over a long run)
+        let i = L.find((j) => j >= last);
+        if (i === undefined) i = L[L.length - 1];
+        last = i;
+        return i + 1 < tape.count ? tape.caller[i + 1] >>> 0 : null;
+    };
+}

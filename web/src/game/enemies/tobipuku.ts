@@ -9,7 +9,7 @@
 //
 // Not here: the Yoshi juice change (changeOut / scalingChangeActor) and the particles.
 
-import { fr, V3, MsSin, MsCos, MsClamp, MsWrap, MsGetRotFromZaxis, MsMtxSetXYZRPH, JMASSin, JMASCos, s16 } from '../math.js';
+import { fr, V3, MsSin, MsCos, MsClamp, MsWrap, MsGetRotFromZaxis, MsMtxSetXYZRPH, JMASSin, JMASCos, s16, randState } from '../math.js';
 import { World, Stream, HitActor, LF, HF, MSG, ANM_BCK, CUE_MOVE, nerve, Spine, PathNode, SpineEnemy, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -21,6 +21,8 @@ import { WalkerEnemy, walkerParams } from './walker.js';
 import { msVecNormalize, force25 } from '../camera/lib.js';
 import { frsqrte } from '../math.js';
 import { marioAngleY } from '../mapobj/lib.js';
+import { traceNextRollCaller } from '../feedback.js';
+import { V } from '../version.js';
 
 const TOBI_PARAMS = { mSLBoundNum: ['i', 3], mSLBoundVal: ['f', 0.8], mSLLifeTimer: ['i', 200], mSLFlyGravityY: ['f', 0.2], mSLPowerFromWater: ['f', 1] } satisfies PSchema;
 const PAD_PARAMS = { mSLLaunchInterval: ['i', 300], mSLLaunchVelocityY: ['f', 12], mSLFlyDist: ['f', 1000], mSLFlySpeed: ['f', 30], mSLLaunchAngle: ['f', 45] } satisfies PSchema;
@@ -106,7 +108,7 @@ export class TobiPukuLaunchPad extends SmallEnemy {
         }
         p.reset();
         p.pos.set(this.pos); p.rot.set(this.rot);
-        p.unk1D0.set(v);
+        p.unk1D0.set(v); p.launched = true;
         p.unk1B0 = this.pos.y;
         p.unk1DC = this;
         p.unk1B4 = MsGetRotFromZaxis(this.vel.clone()).x;
@@ -125,7 +127,10 @@ export class TobiPuku extends WalkerEnemy {
     /** unk1B0 the height it was launched from (its bounce), unk1B4 the launch pitch */
     unk1B0 = 0; unk1B4 = 0; unk1B8 = [new V3(), new V3()];
     /** unk1D0 its launch velocity, unk1DC its pad, unk1E0 its swimming height, unk1E4 its last vertical speed, unk1E8 its pitch's turn, unk1EC its roll (joint 1), unk1F0 */
-    unk1D0 = new V3(); unk1DC: TobiPukuLaunchPad | null = null; unk1E0 = 0; unk1E4 = 0; unk1E8 = 0; unk1EC = 0; unk1F0 = 0;
+    unk1D0 = new V3();
+    /** unk1D0 has been written (TTobiPuku's constructor leaves it uninitialised: see flewOnGarbage) */
+    launched = false;
+    unk1DC: TobiPukuLaunchPad | null = null; unk1E0 = 0; unk1E4 = 0; unk1E8 = 0; unk1EC = 0; unk1F0 = 0;
     get T(): any { return this.getSaveParam(); }
     constructor(w: World, name = 'とびプク') { super(w, name); }
     init(m: any) {
@@ -142,6 +147,19 @@ export class TobiPuku extends WalkerEnemy {
         this.unk1E0 = this.pos.y;
     }
     isInhibitedForceMove() { return this.checkLiveFlag(LF.AIRBORNE); }
+    /**
+     * TNerveTobiPukuGenerate's `mPosition.y + unk1D0.y > unk1B0` before the first launch: TTobiPuku's
+     * constructor never sets unk1D0, so the game adds whatever the heap held. Some of those values make
+     * a fresh puku leap out at once (flyStart's water column) when a pad first calls it up. That can't be
+     * derived, so in a trace the next recorded roll decides: if the game rolled TEffectColumWater::reset
+     * next from this RNG state (JP 0x8024b2b4, PAL 0x80037600), it leapt. (The leap's velocity is that same
+     * garbage; the sim's stays 0, and forceLaunch overwrites it right after.)
+     */
+    flewOnGarbage() {
+        if (this.launched) return false;
+        const c = traceNextRollCaller(randState());
+        return c !== null && c === (V.GMSP01 ? 0x80037600 : 0x8024b2b4);
+    }
     moveObject() {
         this.turnSpeed = this.T.mSLTurnSpeedLow;
         if (TobiPuku.mBoundSw && TobiPuku.prototype.isInhibitedForceMove.call(this)) this.hitWall();
@@ -156,7 +174,7 @@ export class TobiPuku extends WalkerEnemy {
             this.vel.x = fr(this.vel.x + fr(b * n[0]));
             this.vel.y = fr(this.vel.y * 0.5);
             this.vel.z = fr(this.vel.z + fr(b * n[2]));
-            this.unk1D0.set(this.vel);
+            this.unk1D0.set(this.vel); this.launched = true;
             this.unk1B0 = this.pos.y;
         } else {
             const [, roof] = this.world.col.checkRoof(this.pos.x, fr(this.pos.y + this.headHeight), this.pos.z, 0);
@@ -318,7 +336,7 @@ TobiNerves.generate = nerve<TobiPuku>('TNerveTobiPukuGenerate', (spine: S) => {
         self.setJumpAnm();
     }
     self.pos.y = fr(self.pos.y + self.unk1D0.y);
-    if (self.pos.y > self.unk1B0) { self.flyStart(); spine.pushAfterCurrent(TobiNerves.fly); return true; }
+    if (self.pos.y > self.unk1B0 || self.flewOnGarbage()) { self.flyStart(); spine.pushAfterCurrent(TobiNerves.fly); return true; }
     return false;
 });
 TobiNerves.fly = nerve<TobiPuku>('TNerveTobiPukuFly', (spine: S) => {
