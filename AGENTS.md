@@ -189,6 +189,8 @@ First drift per run, 143 traces:
 
 ## Fix log (newest first)
 
+- 2026-11-05 TQuat4::setEulerX/Y/Z use MSL sinf/cosf of fr(0.5 * a) (JP shotSeeds calls 0x80087104 / 0x80086F70 for them): animal.ts quatEuler*, jgeom.ts qEuler*, firewanwan, kumokun, koopajr. Batch runs31 vs runs30: all 143 the same.
+
 - 2026-11-05 SMS_Eular2Quat (JP 0x80366E88: half angles fmuls 0.5 * (0.017453294 * deg), MSL sinf/cosf, the products and fused steps of its real-zero multiplies) and TQuat4::rotate (f32 fmuls then fused steps, as compiled inline in TNerveAnimalBirdWalkOnGround) as the DOL, in enemies/animal.ts. Batch runs30 vs runs29: 3 better, 0 worse (dolpic10 006A back to never drifting, dolpic10 0068 25.6 -> 72.5 s, mamma3 1DD461CB_80000013 8.4 -> 9.8 s).
 
 - 2026-11-05 A trace's MSF_SHADOW_MARIO_EVENT from its recorded flags (runner.ts traceShadowMarioEvent: FlagManager.setupStage on the stage-start record's image -> IntroTiming.shadowMarioEvent), not the inferred flags': dolpic8 007F's Shadow Mario (event 1: shine 33 without MSF_YOSHI_UNLOCKED) was left in EM.DISAPPEAR, missing his rolls. Batch runs29 vs runs28: 1 better (007F 11.8 -> 19.5 s), 0 worse.

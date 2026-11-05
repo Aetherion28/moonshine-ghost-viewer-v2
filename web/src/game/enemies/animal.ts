@@ -39,9 +39,9 @@ export function setLength(v: V3, len: number) {
 /** TVec3::normalize */
 export const jnormalize = (v: V3) => setLength(v, 1);
 /** TQuat4::setEulerX/Y/Z (radians) */
-export const quatEulerX = (a: number) => new Quat(fr(Math.sin(fr(0.5 * a))), 0, 0, fr(Math.cos(fr(0.5 * a))));
-export const quatEulerY = (a: number) => new Quat(0, fr(Math.sin(fr(0.5 * a))), 0, fr(Math.cos(fr(0.5 * a))));
-export const quatEulerZ = (a: number) => new Quat(0, 0, fr(Math.sin(fr(0.5 * a))), fr(Math.cos(fr(0.5 * a))));
+export const quatEulerX = (a: number) => new Quat(mslSinf(fr(0.5 * fr(a))), 0, 0, mslCosf(fr(0.5 * fr(a))));
+export const quatEulerY = (a: number) => new Quat(0, mslSinf(fr(0.5 * fr(a))), 0, mslCosf(fr(0.5 * fr(a))));
+export const quatEulerZ = (a: number) => new Quat(0, 0, mslSinf(fr(0.5 * fr(a))), mslCosf(fr(0.5 * fr(a))));
 /** SMS_Eular2Quat: the rotation (degrees) as Ry * (Rx * Rz). */
 export function SMS_Eular2Quat(rot: V3) {
     // (JP 0x80366E88: each half angle fmuls 0.5 * (0.017453294 * deg), MSL sinf / cosf; the setEuler

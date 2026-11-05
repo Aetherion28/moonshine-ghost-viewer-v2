@@ -20,6 +20,7 @@
 // `canTakenByMario() && unk194->isTaken()`, doTurn's and the bounce's abs() are fabs().
 
 import { fr, V3, Quat, Mtx, mtx, MsRandF, MsSin, MsCos, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, jgInvSqrt } from '../math.js';
+import { mslSinf, mslCosf } from '../math.js';
 import { vSq } from '../vecops.js';
 import { World, HitActor, TakeActor, LiveActor, FrameCtrl, LF, HF, MSG, nerve, Spine, Stream, ANM_BCK, ANM_BTK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, FC_ONCE, PathNode, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -51,7 +52,7 @@ const isZero = (v: V3) => vSq(v) <= EPS;
 /** TVec3::setLength (0x801251d0): scale by len * inv_sqrt(squared()) (frsqrte + one Newton step) */
 function setLength(v: V3, len: number) { const l = vSq(v); if (l <= EPS) return v.zero(); return v.scale(fr(len * jgInvSqrt(l))); }
 const scaleAdd = (s: number, b: V3, c: V3) => new V3(fr(b.x + c.x * s), fr(b.y + c.y * s), fr(b.z + c.z * s));
-const qEulerY = (a: number) => new Quat(0, fr(Math.sin(0.5 * a)), 0, fr(Math.cos(0.5 * a)));
+const qEulerY = (a: number) => new Quat(0, mslSinf(fr(0.5 * fr(a))), 0, mslCosf(fr(0.5 * fr(a))));
 function qRotate(q: Quat, v: V3) {
     const p = new Quat().mul(new Quat().mul(q, new Quat(v.x, v.y, v.z, 0)), new Quat(-q.x, -q.y, -q.z, q.w));
     return new V3(fr(p.x), fr(p.y), fr(p.z));

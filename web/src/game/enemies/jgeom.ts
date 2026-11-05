@@ -2,6 +2,7 @@
 // TVec3::setLength, TRotation3::getQuat, SMS_Eular2Quat, CLBChaseGeneralConstantSpecifySpeed).
 
 import { fr, V3, Quat, Mtx, jgInvSqrt } from '../math.js';
+import { mslSinf, mslCosf } from '../math.js';
 import { vSq, jgSqrt } from '../vecops.js';
 
 /** TUtil<f32>::epsilon (2^-18), the threshold TVec3::setLength/normalize/isZero use */
@@ -30,9 +31,9 @@ export function qRotate(q: Quat, v: V3, out = new V3()) {
         fr(-x * -q.z + y * q.w + z * -q.x + w * -q.y),
         fr(x * -q.y - y * -q.x + z * q.w + w * -q.z));
 }
-export const qEulerX = (a: number) => new Quat(fr(Math.sin(0.5 * a)), 0, 0, fr(Math.cos(0.5 * a)));
-export const qEulerY = (a: number) => new Quat(0, fr(Math.sin(0.5 * a)), 0, fr(Math.cos(0.5 * a)));
-export const qEulerZ = (a: number) => new Quat(0, 0, fr(Math.sin(0.5 * a)), fr(Math.cos(0.5 * a)));
+export const qEulerX = (a: number) => new Quat(mslSinf(fr(0.5 * fr(a))), 0, 0, mslCosf(fr(0.5 * fr(a))));
+export const qEulerY = (a: number) => new Quat(0, mslSinf(fr(0.5 * fr(a))), 0, mslCosf(fr(0.5 * fr(a))));
+export const qEulerZ = (a: number) => new Quat(0, 0, mslSinf(fr(0.5 * fr(a))), mslCosf(fr(0.5 * fr(a))));
 /** TQuat4::getYDir */
 export const qYDir = (q: Quat, out = new V3()) => out.set(q.x * q.y * 2 - q.w * q.z * 2, 1 - q.x * q.x * 2 - q.z * q.z * 2, q.y * q.z * 2 + q.w * q.x * 2);
 

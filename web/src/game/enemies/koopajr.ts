@@ -23,6 +23,7 @@
 // light type, and the flag manager's life count (see appearShineKiller).
 
 import { V } from '../version.js';
+import { mslSinf, mslCosf } from '../math.js';
 import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, Quat, MsMtxSetRotRPH, MsMtxSetXYZRPH, MsRandF, matan, jgInvSqrt } from '../math.js';
 import { jgSqrt } from '../vecops.js';
@@ -369,7 +370,7 @@ function quatRotate(q: Quat, v: V3) {
     const z = fr(fr(fr(q.x * v.y) - fr(q.y * v.x)) + fr(q.w * v.z)), w = fr(fr(fr(-q.x * v.x) - fr(q.y * v.y)) - fr(q.z * v.z));
     return v.set(fr(x * q.w + y * -q.z - z * -q.y + w * -q.x), fr(-x * -q.z + y * q.w + z * -q.x + w * -q.y), fr(x * -q.y - y * -q.x + z * q.w + w * -q.z));
 }
-const quatEuler = (ax: 'x' | 'y' | 'z', a: number) => { const s = fr(Math.sin(fr(0.5 * a))), c = fr(Math.cos(fr(0.5 * a))); return new Quat(ax === 'x' ? s : 0, ax === 'y' ? s : 0, ax === 'z' ? s : 0, c); };
+const quatEuler = (ax: 'x' | 'y' | 'z', a: number) => { const s = mslSinf(fr(0.5 * fr(a))), c = mslCosf(fr(0.5 * fr(a))); return new Quat(ax === 'x' ? s : 0, ax === 'y' ? s : 0, ax === 'z' ? s : 0, c); };
 /** fabricated minOf: the counterpart of JGeometry::max with the bound first */
 const minOf = (a: number, b: number) => (a >= b ? b : a);
 const maxOf = (a: number, b: number) => (a > b ? a : b);

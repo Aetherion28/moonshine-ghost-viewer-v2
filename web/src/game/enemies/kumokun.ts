@@ -17,6 +17,7 @@
 // a floor spider sees Mario: on his ground plane).
 
 import { fr, V3, Quat, MsRandF, jgInvSqrt } from '../math.js';
+import { mslSinf, mslCosf } from '../math.js';
 import { vSq } from '../vecops.js';
 import { World, HitActor, LF, HF, HC, MSG, nerve, Spine, ANM_BCK, ANM_FRAME_RATE, GraphWeb, Stream, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -39,8 +40,8 @@ function setLength(v: V3, len: number) { const l = vSq(v); if (l <= EPS) return 
 /** TVec3::scaleAdd(s, b, c): b + c s */
 const scaleAdd = (s: number, b: V3, c: V3) => new V3(fr(b.x + c.x * s), fr(b.y + c.y * s), fr(b.z + c.z * s));
 const normalOf = (d: BGCheckData) => new V3(d.n[0], d.n[1], d.n[2]);
-const qEulerY = (a: number) => new Quat(0, fr(Math.sin(0.5 * a)), 0, fr(Math.cos(0.5 * a)));
-const qEulerZ = (a: number) => new Quat(0, 0, fr(Math.sin(0.5 * a)), fr(Math.cos(0.5 * a)));
+const qEulerY = (a: number) => new Quat(0, mslSinf(fr(0.5 * fr(a))), 0, mslCosf(fr(0.5 * fr(a))));
+const qEulerZ = (a: number) => new Quat(0, 0, mslSinf(fr(0.5 * fr(a))), mslCosf(fr(0.5 * fr(a))));
 /** TQuat4::rotate (q v q*) */
 function qRotate(q: Quat, v: V3) {
     const p = new Quat().mul(new Quat().mul(q, new Quat(v.x, v.y, v.z, 0)), new Quat(-q.x, -q.y, -q.z, q.w));
