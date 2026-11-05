@@ -6,7 +6,7 @@
 // (SMS_Eular2Quat, TQuat4 rotate, CLBChaseGeneralConstantSpecifySpeed, items by event ID).
 
 import { fr, V3, Quat, MsRandF, MsRandI, MsWrap, MsClamp, MsAngleDiff, MsGetRotFromZaxis, JMASSin, JMASCos, s16, Mtx, jgInvSqrt } from '../math.js';
-import { vSq, jgSqrt } from '../vecops.js';
+import { vSq, jgSqrt, vLen } from '../vecops.js';
 import { mslSinf, mslCosf } from '../math.js';
 import { fmadd as FMA, fmsub as FMS, fnmsub as FNMS } from '../player/fmath.js';
 import { World, SpineEnemy, EnemyManager, LiveManager, LiveActor, PathNode, LF, HF, nerve, Spine, Stream, ANM_BCK, ANM_BTP, ANM_FRAME_RATE, readParams, PSchema, CUE_MOVE, CUE_CALC_ANIM, HitActor } from '../engine.js';
@@ -20,11 +20,12 @@ export const RATE = ANM_FRAME_RATE;
 export const palFrame = (n: number) => { const v = n * (1 / RATE()); return Math.trunc(v + (v > 0 ? 0.5 : -0.5)); };
 /** CLBChaseGeneralConstantSpecifySpeed: value moved toward desired by at most speed (returned). */
 export function chase(value: number, desired: number, speed: number) {
-    let d = desired - value;
+    // (the f32 instance, JP 0x8016A698: every difference an fsubs / fadds)
+    let d = fr(desired - value);
     if (speed < 0) speed = -speed;
-    if (d > 0) { d -= speed; return d > 0 ? desired - d : desired; }
-    d += speed;
-    return d < 0 ? desired - d : desired;
+    if (d > 0) { d = fr(d - speed); return d > 0 ? fr(desired - d) : desired; }
+    d = fr(d + speed);
+    return d < 0 ? fr(desired - d) : desired;
 }
 /** JGeometry::TUtil<f32>::clamp */
 export const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
@@ -266,24 +267,24 @@ export class AnimalBase extends SpineEnemy {
         r.y = MsWrap(r.y, 0, 360);
         const d = clamp(MsAngleDiff(r.y, cur.y), -speedY, speedY);
         cur.y = MsWrap(fr(cur.y + d), 0, 360);
-        const roll = MsClamp(30 * -d, -45, 45);
-        cur.z = fr(chase(cur.z, roll, 0.1 * speedX));
+        const roll = MsClamp(fr(30 * -d), -45, 45);
+        cur.z = fr(chase(cur.z, roll, fr(fr(0.1) * speedX)));
         r.x = MsWrap(r.x, -180, 180);
         cur.x = MsWrap(cur.x, -180, 180);
-        cur.x = fr(chase(cur.x, r.x, 0.1 * speedX));
+        cur.x = fr(chase(cur.x, r.x, fr(fr(0.1) * speedX)));
     }
     /** execWalk: speed up (or slow down) and fly toward the goal. */
     execWalk(moving: boolean) {
         const sv = this.save;
-        if (moving) this.marchSpeed = fr(chase(this.marchSpeed, sv.mSLMaxMarchSpeed * RATE(), sv.mSLMarchAccel * RATE() * RATE()));
-        else this.marchSpeed = fr(chase(this.marchSpeed, 0, sv.mSLMarchDecrease * RATE() * RATE()));
+        if (moving) this.marchSpeed = fr(chase(this.marchSpeed, fr(sv.mSLMaxMarchSpeed * RATE()), fr(fr(sv.mSLMarchAccel * RATE()) * RATE())));
+        else this.marchSpeed = fr(chase(this.marchSpeed, 0, fr(fr(sv.mSLMarchDecrease * RATE()) * RATE())));
         this.turnSpeed = fr((this.marchSpeed < 0.001 ? sv.mSLWaitTurnSpeed : sv.mSLWalkTurnSpeed) * RATE());
         let turn = this.turnSpeed;
         const march = this.marchSpeed;
         const diff = V3.sub(this.goal.point(), this.pos);
-        const dist = diff.length();
+        const dist = vLen(diff);
         if (dist < 100) return;
-        if (dist <= 2 * this.calcMinimumTurnRadius(march, turn)) turn = this.calcTurnSpeedToReach(march, 0.5 * dist);
+        if (dist <= fr(2 * this.calcMinimumTurnRadius(march, turn))) turn = this.calcTurnSpeedToReach(march, fr(0.5 * dist));
         AnimalBase.getRotationFlyToDir(this.rot, diff, march, turn);
         const q = SMS_Eular2Quat(this.rot);
         this.posDelta.set(quatRotate(q, new V3(0, 0, march))).fround();

@@ -4,6 +4,7 @@
 // (from its event ID: a blue coin, a coin, a red coin or a Shine; the body's colour says which).
 
 import { fr, V3, MsRandF, MsWrap, MsAngleDiff } from '../math.js';
+import { vLen } from '../vecops.js';
 import { World, SpineEnemy, EnemyManager, LiveManager, PathNode, LF, HF, MSG, nerve, Spine, Stream, ANM_BCK, FC_ONCE_RESET, readParams, SPINE_PARAMS, PSchema, HitActor, TakeActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -178,11 +179,11 @@ export class AnimalBird extends SpineEnemy {
     }
     doFlyToCurPathNode() {
         const diff = V3.sub(this.goal.point(), this.pos);
-        const dist = diff.length();
+        const dist = vLen(diff);
         if (dist < 100) return;
         const march = fr(this.getMyMarchSpeed() * RATE());
         let turn = fr(this.P.mTurnSpeed * RATE());
-        if (dist <= 2 * this.calcMinimumTurnRadius(march, turn)) turn = this.calcTurnSpeedToReach(march, 0.5 * dist);
+        if (dist <= fr(2 * this.calcMinimumTurnRadius(march, turn))) turn = this.calcTurnSpeedToReach(march, fr(0.5 * dist));
         AnimalBase.getRotationFlyToDir(this.rot, diff, march, turn);
         const v = quatRotate(SMS_Eular2Quat(this.rot), new V3(0, 0, march));
         // getting sprayed slows it down and pushes it toward the ground

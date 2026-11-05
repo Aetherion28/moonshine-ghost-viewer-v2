@@ -5,6 +5,7 @@
 // returns to its graph. A stomp kills it.
 
 import { fr, V3, Quat, MsRandF, MsSin, MsCos, MsWrap, MsClamp, MsAngleDiff, MsGetRotFromZaxis } from '../math.js';
+import { vLen } from '../vecops.js';
 import { World, LF, HF, MSG, nerve, Spine, Stream, ANM_BCK, ANM_FRAME_RATE, HitActor, LiveActor, PSchema, CUE_MOVE, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, smallParams } from './smallEnemy.js';
@@ -175,11 +176,11 @@ export class Kukku extends SmallEnemy {
     }
     updateRotation() {
         const diff = V3.sub(this.goal.point(), this.pos);
-        const dist = diff.length();
+        const dist = vLen(diff);
         if (dist < 100) return;
         const march = this.PK.mMarchSpeed;
         let turn = this.PK.mTurnSpeed;
-        if (dist <= 2 * this.calcMinimumTurnRadius(march, turn)) turn = this.calcTurnSpeedToReach(march, 0.5 * dist);
+        if (dist <= fr(2 * this.calcMinimumTurnRadius(march, turn))) turn = this.calcTurnSpeedToReach(march, fr(0.5 * dist));
         getRotationFlyToDir(this.rot, diff, march, turn);
         // no banking or pitching while tumbling down
         this.rot.x *= this.isFalling() ? 0 : 1;

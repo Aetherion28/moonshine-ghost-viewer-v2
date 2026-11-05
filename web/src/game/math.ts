@@ -300,7 +300,9 @@ export function MsGetRotFromZaxisY(v: V3) {
 export function MsGetRotFromZaxis(v: V3) {
     const a = v.clone().normalize();
     const r = new V3();
-    if (a.y === 1) r.x = 90; else if (a.y === -1) r.x = -90; else r.x = -(matan(Math.sqrt(1 - a.y * a.y), a.y) * (360 / 65536));
+    // (JP 0x800C5F90: straight up is -90, straight down 90; else -(360/65536 * matan(sqrt(1 - y*y), y)),
+    // 1 - y*y one fnmsubs and the root frsqrte with a Newton step in double, rounded to f32)
+    if (a.y === 1) r.x = -90; else if (a.y === -1) r.x = 90; else r.x = -(matan(MsSqrtfHW(FNMS(a.y, a.y, 1)), a.y) * (360 / 65536));
     if (a.z === 0) r.y = a.x > 0 ? 90 : -90;
     else if (a.z > 0) r.y = (360 / 65536) * matan(a.z, a.x);
     else r.y = 180 - matan(-a.z, a.x) * (360 / 65536);
