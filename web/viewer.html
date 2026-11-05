@@ -94,6 +94,9 @@ header .seg button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--trim
 .hud { position: absolute; left: 12px; top: 12px; display: grid; gap: 2px; font-family: var(--mono); font-size: 12px;
   background: color-mix(in srgb, var(--panel) 82%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
   pointer-events: none; font-variant-numeric: tabular-nums; }
+/* a tool-assisted run (the trace's run flags, bit 32): shown top middle; it plays its recorded positions only */
+.tasTag { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 2; font: 700 13px var(--mono); letter-spacing: .08em;
+  padding: 4px 10px; border-radius: 6px; background: color-mix(in srgb, var(--panel) 82%, transparent); border: 1px solid var(--line); pointer-events: none; }
 .fpsBox { position: absolute; right: 56px; top: 12px; font-family: var(--mono); font-size: 12px; padding: 4px 8px; border-radius: 6px;
   background: color-mix(in srgb, var(--panel) 82%, transparent); border: 1px solid var(--line); pointer-events: none; font-variant-numeric: tabular-nums; }
 .hud b { font-weight: 500; color: var(--muted); display: inline-block; width: 5.5ch; }
@@ -406,6 +409,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
     </div>
     <div class="hud" id="hud" aria-live="off"></div>
     <div class="fpsBox" id="fpsBox" aria-live="off" hidden></div>
+    <div class="tasTag" id="tasTag" hidden>TAS</div>
     <div class="notice" id="notice" hidden></div>
     <div class="inputsStage" id="inputsStage" hidden></div>
     <div class="inputsStage" id="inputsStageB" hidden></div>
@@ -7843,6 +7847,7 @@ void main() {
   function setFollow(g) { followGhost = g; gameCam.at = null; renderGhostList(); updateMapNotice(); update(); }
   const GHOST_LATEST = 8;   // newest Moonshine ghost format
   function renderGhostList() {
+    updateTasTag();
     if (typeof splitUi === 'function') try { splitUi(); } catch (e) { /* before the split view is set up */ }
     const list = $('ghostList');
     list.textContent = '';
@@ -8532,6 +8537,7 @@ void main() {
     if (livePad.on && !playing && gameLive) { const r = []; liveInfoRows(r); drawInfoBox(r); }
     pollPadSelect();
     updateSleeper();
+    updateTasTag();
     if (splitOn()) renderSplit(dt, now);
     else viewStep(dt, now, true);
     if (gameLive && loopFrame % 30 === 0) warmFx();   // (after the frame: the stage is on screen first)
@@ -9942,9 +9948,15 @@ void main() {
   // the replay mode (Play recording / Simulate / Recorded positions) onto a layer's SimRunner
   function applyReplayMode(sim) {
     const v = $('optReplayMode').value;
-    sim.inputReplay = v !== 'positions';
-    sim.playRecording = v === 'record';
+    // a tool-assisted run plays its recording only (its recorded positions), whatever the mode
+    const tas = isTasRun(mainGhostData());
+    sim.inputReplay = !tas && v !== 'positions';
+    sim.playRecording = !tas && v === 'record';
   }
+  // the trace's run flags (kind 28, ghost_run_flags.h): 32 TAS
+  function updateTasTag() { const tag = $('tasTag'), tas = isTasRun(mainGhostData()); if (tag && tag.hidden === tas) tag.hidden = !tas; }
+  function isTasRun(d) { return !!(d && d.header && (d.header.runFlags & 32)); }
+  function mainGhostData() { const m = (splitOn() && followGhost) || ghosts.find((g) => g.data && g.marker && g.marker.parent) || ghosts.find((g) => g.data); return m ? m.data : null; }
   // the replay line: in sync, or where Mario first drifted from the ghost (and by how much)
   function replayStatus() {
     if (!$('optReplayMode').disabled) layerSlots.forEach((x) => { if (x.layer && x.layer.sim) applyReplayMode(x.layer.sim); });
@@ -9952,7 +9964,9 @@ void main() {
     const main = ghosts.find((g) => g.data && g.marker && g.marker.parent);
     let s = '';
     const trace = !!(main && main.data && main.data.header && main.data.header.format === 'mstr');
-    if (R && R.inputReplay && main && !trace) s = 'replays only: this ghost plays its recorded positions';
+    const tas = isTasRun(main && main.data);
+    if (tas) s = 'tool-assisted run: playing its recorded positions';
+    else if (R && R.inputReplay && main && !trace) s = 'replays only: this ghost plays its recorded positions';
     else if (R && R.inputReplay) {
       if (S && S.replay && R.playRecording && trace) {
         // Play recording: Mario is put on the trace every tick; say where the game code alone first differed

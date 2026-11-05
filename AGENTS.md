@@ -181,13 +181,15 @@ First drift per run, 143 traces:
 - dolpic_ex2 c/…05E (8.5 s now): the spin jump at QF 457 comes from checkStickRotate's leftover q[3] (fix log 2026-11-05).
 - Bianco b/41726535_80000023 (104 s): the camera's yaw step changes a tick early, which moves the intended yaw and the side-step position by 1 ulp. That trace has feedback records, so it isn't the occlusion fallback.
 - Long runs (>30 s): five Sirena runs (ask the user before working on these), Gelato 4 (TSpcInterp mLocked is garbage), Pianta 8 (GPU pollution counter), Delfino bell (water hits on the bell).
-- coro_ex1 a/2A1D8909_80000015: assisted / TAS with sparse ticks.
+- coro_ex1 a/2A1D8909_80000015: TAS (flags 33): the viewer plays it from its recording only, so its sim drift doesn't matter.
 
 ## Refuted (don't retry without new evidence)
 
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-05 Tool-assisted runs (the trace's run flags, kind 28, bit 32 TAS; the user asked): the viewer shows a "TAS" tag at the top middle of the stage and plays them from their recorded positions only (applyReplayMode forces inputReplay and playRecording off), whatever the replay mode. In the batch set that is coro_ex1 a/2A1D8909_80000015 and a/2A1D8909_8000001F (flags 33); their simulated drift no longer matters.
 
 - 2026-11-05 A fresh TTobiPuku's first leap from the recording (enemies/tobipuku.ts flewOnGarbage; feedback.ts traceRngCtx, the trace's rolls by RNG state). TTobiPuku's constructor never sets unk1D0, so TNerveTobiPukuGenerate's `mPosition.y + unk1D0.y > unk1B0` reads heap garbage the first time a pad calls a puku up (TConductor::makeOneEnemyAppear -> resetToPosition -> control). Some pukus leap at once, and flyStart's TEffectColumWater::reset rolls twice. When the game's next roll from the current RNG state is TEffectColumWater::reset (JP 0x8024b2b4, PAL 0x80037600), the puku leapt. mare1 b/A7E1056F_80000028: pukus 1, 3, 5 leap on tick 1 as in the game, and its RNG consumers now line up to tick 294, not from tick 1. Batch runs42 vs runs41: 1 better (ricco4 b/41726535_80000037 8.0 -> 24.6 s), 1 worse (ricco7 b/41726535_80000040 23.2 -> 14.9 s; its rolls now line up to tick 478 instead of none from tick 1; next slip there: a puku appear (TSmallEnemy::reset) the game makes at label 476 and the sim doesn't).
 - 2026-11-05 Harness: pm.ts now clips the actors against the recorded game camera, as runner.ts does (st.camera from ghostCameraAt; NOCLIP=1 turns it off). Until now the batch ran with nothing clipped, so CLIPPED_OUT-dependent behaviour (off-screen pukus' water columns, NPC animation LOD) differed from the viewer. Batch runs41 (clipping) vs runs39 (none), the same code: 5 better, 3 worse. runs41 is the new baseline; the viewer already behaved like runs41.
