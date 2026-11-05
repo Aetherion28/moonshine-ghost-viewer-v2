@@ -556,10 +556,13 @@ export class EggYoshi extends MapObjGeneral {
         // the save's flags (world.flags: what the stage being loaded implies, flags.ts)
         const F = this.world.flags;
         const shadowMarioEvent = F.getFlag(MSF.SHADOW_MARIO_EVENT) === 1, yoshiUnlocked = F.getBool(MSF.YOSHI_UNLOCKED), shine21 = F.getShineFlag(0x21);
+        // (a trace's first record of the egg settles the flag tests when it has one: Moonshine can change
+        // the flags after the stage-start record's image, runner.ts traceActorsAlive)
+        const rec = this.world.traceAliveAt(this.pos);
         if (this.individualName === 'eggYoshiEvent') {
-            if (shadowMarioEvent) this.state = 0xE; else { this.makeObjDead(); return; }
-        } else if (this.world.map === 1) { if (!yoshiUnlocked) { this.makeObjDead(); return; } }
-        else if (!shine21) { this.makeObjDead(); return; }
+            if (rec ?? shadowMarioEvent) this.state = 0xE; else { this.makeObjDead(); return; }
+        } else if (this.world.map === 1) { if (!(rec ?? yoshiUnlocked)) { this.makeObjDead(); return; } }
+        else if (!(rec ?? shine21)) { this.makeObjDead(); return; }
         if (this.manager) {
             this.bubble = new MActor((this.manager.folder() + '/eggyoshi_fukidashi.bmd').toLowerCase(), this.manager.getMActorAnmData());
             this.bubble.setBck('eggyoshi_fukidashi_wait');

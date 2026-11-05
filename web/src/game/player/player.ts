@@ -1992,6 +1992,11 @@ export interface IntroTiming {
     start?: (m: PlayerMario) => void;
     /** Delfino Plaza opens with its camera demo (DEMO_FLAG_CAMERA_DEMO_ON_START), ending at demoEndTick */
     plazaDemo?: boolean;
+    /**
+     * A trace's actors as their first records have them: alive (LIVE_FLAG_DEAD clear) by exact position,
+     * for loads whose outcome hangs on flags the trace's flag image doesn't show (runner.ts traceActorsAlive)
+     */
+    traceAlive?: Map<string, boolean>;
     /** decideMarioPosIdx's position index for the stage (set before the objects load: the camera's 開始後カメラN reads it); 0 by default */
     marioPosIdx?: number;
     /**

@@ -539,6 +539,10 @@ export class World {
     map = 0; stage = 0;
     /** TFlagManager's Shine flag of this secret stage's Shine (SMS_getShineIDofExStage): got before the run */
     exShineGot = false;
+    /** a trace's actors alive at their first record, by exact position (IntroTiming.traceAlive); null without a trace */
+    traceAlive: Map<string, boolean> | null = null;
+    /** what the trace's first record of the actor at p says: alive, dead, or undefined (no record there) */
+    traceAliveAt(p: { x: number; y: number; z: number }) { return this.traceAlive ? this.traceAlive.get(Math.fround(p.x) + ',' + Math.fround(p.y) + ',' + Math.fround(p.z)) : undefined; }
     /** TMarDirector::decideMarioPosIdx's position index (unkD0): which マリオセット位置 Mario starts at, and the camera's 開始後カメラN */
     marioPosIdx = 0;
     /** TFlagManager (flags.ts): set up for the stage by Stage's constructor (setupStage) */

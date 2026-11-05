@@ -425,6 +425,24 @@ export function plazaTraceStart(m: PlayerMario, c: { flags: FlagManager; prevAre
  * A trace's first stage as the game set it up: TFlagManager's values (the stage-start record's initial
  * flags, flagsFromTraceImage) and the area the run came from. null for a later segment or without them.
  */
+/**
+ * A trace's actors alive (LIVE_FLAG_DEAD, 1, clear) at their first record, by position (x,y,z as f32).
+ * Moonshine can change the save's flags after the stage-start record's flag image (a Yoshi egg recorded
+ * alive where the image's flags would have it dead), so a load that decides by those flags takes the
+ * recorded outcome instead (EggYoshi.load). null without actor records.
+ */
+export function traceActorsAlive(g: any): Map<string, boolean> | null {
+    const A = g && g.trace && g.trace.actors as TraceActors | undefined;
+    if (!A || !A.count) return null;
+    const seen = new Set<number>(), out = new Map<string, boolean>();
+    for (let i = 0; i < A.count; i++) {
+        if (seen.has(A.id[i])) continue;
+        seen.add(A.id[i]);
+        out.set(A.pos[i * 3] + ',' + A.pos[i * 3 + 1] + ',' + A.pos[i * 3 + 2], (A.liveFlag[i] & 1) === 0);
+    }
+    return out;
+}
+
 export function traceStageCarry(g: any, segment: number): { flags: FlagManager; prevArea: number } | null {
     const ss = segment === 0 && g && g.trace && g.trace.stageStart;
     if (!ss || !ss.flagImage) return null;
@@ -765,6 +783,7 @@ export class SimRunner {
             // TBaseNPC::initSinkNpc_'s counter as this stage's setup began: the trace's record for its first
             // stage (stage schema 2+), where the stage before left it for a later one built here, else 0
             const prevSink = segI > 0 && this.sinkCarry && this.sinkCarry.seg === segI - 1 ? this.sinkCarry.n : null;
+            if (intro && segI === 0 && g.trace) { const ta = traceActorsAlive(g); if (ta) intro.traceAlive = ta; }
             npcSinkSetup.start = segI === 0 ? (g.trace && g.trace.stageStart && g.trace.stageStart.npcSinkPhase !== null ? g.trace.stageStart.npcSinkPhase : 0) : (prevSink ?? 0);
             try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, seed ?? 0, 0, intro); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
