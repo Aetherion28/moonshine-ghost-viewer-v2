@@ -141,6 +141,8 @@ Common JP callers: 0x800c2458/24ac/2504 TTrembleModelEffect::tremble (Mario's ca
 
 ## Pitfalls
 
+- An RNG check that compares seeds can't see a shifted consumer: the values are just the LCG's sequence, so a sim that makes one load call too few stays "in sync" while every consumer gets the value meant for the one before. Check consumers by caller: the trace's RNG records name the caller (DOL address; JP symbols in sms-ai-decomp/config/GMSJ01/symbols.txt), and the harness's RNGK2=a-b / RNGWHO / RNGCAT probes print the sim's stack beside the record's caller. The sim's LOADCALLS should equal the number of the trace's load calls (the record at index LOADCALLS should be the first live call). Found 2026-11-05: a Yoshi egg the sim made dead at load (one decideRandomLoveFruit roll missing) shifted the whole Bianco run.
+- The stage-start record's flag image isn't always the flags the load reads: Yoshi eggs are recorded alive (LIVE_FLAG_DEAD clear in the actor record's live flag, word 60) in runs whose image has neither shine 0x21 nor MSF_YOSHI_UNLOCKED (Moonshine can change the flags after the image).
 - Scene files count episodes from 0: the `ricco5` scene is Ricco Harbor episode 6 (the user confirmed). Say episodes to the user, not scene numbers.
 - `pgrep -f` matches itself and hangs watch loops; use background jobs and their notifications instead.
 - The harness (pm.ts) re-implements setup; if you add a runner feature, mirror it there or the batch won't test it.
