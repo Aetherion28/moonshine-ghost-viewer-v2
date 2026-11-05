@@ -5,6 +5,7 @@
 // moved; TMap::perform empties that grid each tick).
 
 import { fr, V3, Mtx, mtx, MsMtxSetTRS } from '../math.js';
+import { fmadd as FMA } from '../player/fmath.js';
 import type { World, LiveActor } from '../engine.js';
 import { BGCheckData } from '../collision.js';
 
@@ -56,8 +57,16 @@ export class ObjCollision {
             this.flags |= COL_NEEDS_SETUP;
         }
     }
+    /**
+     * One vertex of PSMTXMultVecArray (dolphin mtxvec.c): x' and y' as ps_madds0 (m0 x + m3), ps_madds1 (+ m1 y),
+     * ps_madds0 (+ m2 z), each fused and rounded to f32; z' as ps_mul (m8 x, m9 y), ps_madd (m10 z + m8 x, m11 + m9 y)
+     * and ps_sum0 of the two lanes.
+     */
     private xf(m: Mtx, p: number[]) {
-        return [fr(m[0] * p[0] + m[1] * p[1] + m[2] * p[2] + m[3]), fr(m[4] * p[0] + m[5] * p[1] + m[6] * p[2] + m[7]), fr(m[8] * p[0] + m[9] * p[1] + m[10] * p[2] + m[11])];
+        const x = fr(p[0]), y = fr(p[1]), z = fr(p[2]);
+        const row = (i: number) => FMA(m[i + 2], z, FMA(m[i + 1], y, FMA(m[i], x, m[i + 3])));
+        const zz = fr(FMA(m[10], z, fr(m[8] * x)) + fr(m[11] + fr(m[9] * y)));
+        return [row(0), row(4), zz];
     }
     /** updateVertexPos: MTXMultVecArray(unk20, the vertices) */
     private vertexPos(): number[][] { return this.file ? this.file.verts.map((p) => this.xf(this.unk20, p)) : []; }

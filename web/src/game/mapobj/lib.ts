@@ -63,17 +63,20 @@ export function MTXConcat(a: Mtx, b: Mtx, out: Mtx) {
  * TPosition3f by axis and angle use it -- not the SDK's PSMTXRotAxisRad. Its axis goes through
  * TVec3::normalize (setLength: a vector with squared length <= epsilon() becomes zero, so a zero
  * axis gives the identity, where PSVECNormalize would give NaN); its sin / cos are game code's,
- * math.h's C++ inline ::sin((double)x); every entry f11 * a * b -/+ f30 * c, f11 = 1 - cos.
+ * MSL's sinf / cosf (JP 0x80087104 / 0x80086F70); f11 = 1 - cos.
  * The rotation only: the translation column is zero.
  */
 export function rotationSetRotate(m: Mtx, ax: V3, rad: number) {
     const n = jgNormalize(ax.clone());
-    const s = sinf(rad), c = cosf(rad), t = fr(1 - c);
+    const s = mslSinf(rad), c = mslCosf(rad), t = fr(1 - c);
     const x = n.x, y = n.y, z = n.z;
     const tx = fr(t * x), ty = fr(t * y);
-    m[0] = FMA(t, fr(x * x), c); m[1] = FMS(tx, y, fr(s * z)); m[2] = FMA(tx, z, fr(s * y)); m[3] = 0;
-    m[4] = FMA(tx, y, fr(s * z)); m[5] = FMA(t, fr(y * y), c); m[6] = FMS(ty, z, fr(s * x)); m[7] = 0;
-    m[8] = FMS(tx, z, fr(s * y)); m[9] = FMA(ty, z, fr(s * x)); m[10] = FMA(t, fr(z * z), c); m[11] = 0;
+    // (JP 0x8019193C / 0x80357848: the diagonal is fmadds; every off-diagonal entry is two fmuls and a
+    // separate fadds / fsubs, not fused)
+    const txy = fr(tx * y), txz = fr(tx * z), tyz = fr(ty * z), sx = fr(s * x), sy = fr(s * y), sz = fr(s * z);
+    m[0] = FMA(t, fr(x * x), c); m[1] = fr(txy - sz); m[2] = fr(txz + sy); m[3] = 0;
+    m[4] = fr(txy + sz); m[5] = FMA(t, fr(y * y), c); m[6] = fr(tyz - sx); m[7] = 0;
+    m[8] = fr(txz - sy); m[9] = fr(tyz + sx); m[10] = FMA(t, fr(z * z), c); m[11] = 0;
     return m;
 }
 /**

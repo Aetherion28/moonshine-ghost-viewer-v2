@@ -187,6 +187,8 @@ First drift per run, 143 traces:
 
 ## Fix log (newest first)
 
+- 2026-11-05 Two DOL matches: TRotation3::setRotate (JP 0x8019193C, 0x80357848) builds its off-diagonal entries from two fmuls and a separate fadds/fsubs (only the diagonal is fmadds) with MSL sinf/cosf; TMapCollisionBase::updateVertexPos's PSMTXMultVecArray (objcol.ts xf: x, y by three fused steps, z as the two ps_sum lanes). Batch runs27 vs runs26: all 143 the same. (The Bianco log's landing triangle is now exact.)
+
 - 2026-11-05 Frozen animations after a drift (the user saw the rollouts stuck): a trace's samples carry Mario's animation but not its frame (mstrghost's phase is always 0), so Mario following the ghost was drawn at frame 0. While following a trace, the animation now takes the sim's own frame when its Mario is in the same animation, else plays on from its start at 0.5 a tick (looping BCKs wrap, the rest hold at their end, the belly slide's held at 50 as MarioRun.cpp). Display only (correctDrift is off in the harness, so the batch can't change).
 
 - 2026-11-05 The trig calls as the DOL: math.ts `sinf`/`cosf` are MSL's trigf (mslSinf/mslCosf, JP 0x80087104/0x80086F70), and makeRootMtxRotX/Y/Z use them. Batch runs26 vs runs25: all 143 the same.
