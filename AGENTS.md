@@ -168,6 +168,9 @@ First drift per run, 143 traces:
 
 ## Open threads (where to pick up)
 
+- 2026-11-05 dolpic8 c/A7E1056F_8000007F (worse with the egg fix, 13.8 -> 11.8 s): its RNG consumers line up to tick 1241, where the game's Shadow Mario (マリオモドキ_0) makes an emReplayJumpToNearestNode roll (JP 0x8016...: TEnemyMario, label 1240) but the sim's one is still in EM.DISAPPEAR at (10, 0, 3070): the Shadow Mario event (the image has shine 33, no MSF_YOSHI_UNLOCKED: SHADOW_MARIO_EVENT 1, the egg he carries) isn't running in the sim. The other worse run, dolpic10 006A, not looked at yet.
+- 2026-11-05 Bianco b/41726535_80000023 (104 s now): RNG consumers line up to tick 2058, where the game makes a TNerveAmenboSearch roll (0x8033dfa8) a tick or two before the sim.
+
 - The two runs the feedback shift made worse:
   - b/41726535_80000023 (Bianco, now 14.8 s): with the shift the camera matches the recording exactly through the read switch at tick 998, so the shift is right there. The new first difference is at tick 1251, where Mario lands on the floating log `丸太 0` (TWoodLog, a TMapObjFloatOnSea / TLeanBlock): the sim's landing height is 1963.67236 against the game's 1963.67249. The log isn't in the actor records. TMapObjWave::getWaveHeight now matches the DOL and didn't change it; check the log's lean matrix (TLeanBlock::calcLeanMtx) and its collision next.
   - a/81BCC929_263FE90D (Pinna Park 1, PAL, now 5 s): its occlusion comes from Mario's flag word (no feedback records). Taking the flag one label later (read label L = flag label L+1) puts it back in sync, but in the JP traces with real records the read at label L equals the flag at label L (d0 in fbcmp), and no PAL trace has feedback records to check PAL against, so that offset would be a fit. Needs PAL evidence (a newer PAL trace with feedback records).
