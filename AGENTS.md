@@ -166,7 +166,7 @@ First drift per run, 143 traces:
 ## Open threads (where to pick up)
 
 - The two runs the feedback shift made worse:
-  - b/41726535_80000023 (Bianco, now 14.8 s): with the shift the camera matches the recording exactly through the read switch at tick 998, so the shift is right there. The new first difference is at tick 1251, where Mario lands on the floating log `丸太 0` (TWoodLog, a TMapObjFloatOnSea / TLeanBlock): the sim's landing height is 1963.67236 against the game's 1963.67249. The log isn't in the actor records. Check the log's lean matrix and TMapObjLibWave / the sea wave height against the DOL.
+  - b/41726535_80000023 (Bianco, now 14.8 s): with the shift the camera matches the recording exactly through the read switch at tick 998, so the shift is right there. The new first difference is at tick 1251, where Mario lands on the floating log `丸太 0` (TWoodLog, a TMapObjFloatOnSea / TLeanBlock): the sim's landing height is 1963.67236 against the game's 1963.67249. The log isn't in the actor records. TMapObjWave::getWaveHeight now matches the DOL and didn't change it; check the log's lean matrix (TLeanBlock::calcLeanMtx) and its collision next.
   - a/81BCC929_263FE90D (Pinna Park 1, PAL, now 5 s): its occlusion comes from Mario's flag word (no feedback records). Taking the flag one label later (read label L = flag label L+1) puts it back in sync, but in the JP traces with real records the read at label L equals the flag at label L (d0 in fbcmp), and no PAL trace has feedback records to check PAL against, so that offset would be a fit. Needs PAL evidence (a newer PAL trace with feedback records).
 
 - Other ~10 s drifts: bianco0, mamma2, mamma5, pinnaParco2, pinnaBeach3, dolpic_ex3, dolpic10 (QF 1188–1300); may share a cause.
@@ -183,6 +183,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-04 TMapObjWave::getWaveHeight as the DOL (0x801D556C PAL): the argument is one fmadds and the call is MSL sinf (mslSinf), not fr(Math.sin). Batch runs25 vs runs24: all 143 the same (it didn't fix the Bianco log landing below).
 
 - 2026-11-04 Feedback replay one label later: a read in the sim's tick n takes the record labelled q0 + n - 1 (as the RNG records' labels line up with the sim's ticks). Batch runs24 vs runs23: 13 better, 2 worse (b/41726535_80000023 Bianco 104 s -> 14.8 s; a/81BCC929_263FE90D Pinna Park 1, no drift -> 5 s); committed on the user's say, the two worse runs are open threads.
 

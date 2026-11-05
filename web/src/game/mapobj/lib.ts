@@ -384,8 +384,9 @@ export class MapObjWave extends NameRef {
     getWaveHeight(x: number, z: number) {
         if (!this.hasTex) return 0;
         this.catchUp();
-        const a = fr(this.unk3C * fr(Math.sin(fr(this.unk24 * fr(x * fr(1 / 6.28318))) + this.unk64)));
-        const b = fr(this.unk40 * fr(Math.sin(fr(this.unk28 * fr(z * fr(1 / 6.28318))) + this.unk68)));
+        // (the DOL: fmuls by the f32 1 / 6.28318, fmadds with unk24 / unk28 and unk64 / unk68, then MSL sinf)
+        const a = fr(this.unk3C * mslSinf(FMA(this.unk24, fr(x * fr(1 / 6.28318)), this.unk64)));
+        const b = fr(this.unk40 * mslSinf(FMA(this.unk28, fr(z * fr(1 / 6.28318)), this.unk68)));
         return fr(a + b);
     }
 }
