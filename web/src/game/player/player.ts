@@ -23,7 +23,7 @@ import { SE } from '../soundids.js';
 import { EmitInfo, emitInfo } from '../water.js';
 import { MarioGamePad, PadStatus, MEANING, PAD_FLAG } from './pad.js';
 import * as P from './params.js';
-import { Params } from '../engine.js';
+import { Params, FC_LOOP } from '../engine.js';
 import type { MarioTrack, MarioSample } from '../mario.js';
 import type { StickCamera, SimCamera } from '../camera/types.js';
 import { fr, fmul, fadd, fsub, fdiv, fmadd, fnmsub, MsSqrtf, sqrtf, s16f, s32f, u8f } from './fmath.js';
@@ -1818,7 +1818,7 @@ export class PlayerMario extends TMarioSim {
     static correctDrift = true;
     /** following the ghost (checkDrift's snap back), and the animation it shows meanwhile */
     following = false;
-    followAnim: { anim: number; phase: number } | null = null;
+    followAnim: { anim: number; phase: number; frame?: number; q?: number } | null = null;
     /** the ghost's sample at the end of each frame: how far the sim is from it */
     /** the last tick Mario's movement ran on (perform with CUE_MOVE: checkDrift's call) */
     driftCheckedQf = -1;
@@ -1873,7 +1873,20 @@ export class PlayerMario extends TMarioSim {
                 const p = this.track!.at(q - 4);
                 this.pos.set(s.x, s.y, s.z);
                 this.mFaceAngle.y = s.yaw; this.mModelFaceAngle = s.yaw;
-                this.followAnim = { anim: s.anim, phase: s.phase };
+                // (a trace records the animation but not its frame: shown played from where it started,
+                // a frame each two ticks, as setAnimation's rate 1 -- the viewer's display, not the game's frame)
+                // When the sim's own Mario is in the same animation its frame is used (the game's own frame
+                // rules, as the 50 cap of the belly slide's); otherwise it plays on from its start.
+                if (this.track!.noPhase && s.anim === this.mAnimationId && !s.yoshi) {
+                    this.followAnim = { anim: s.anim, phase: this.phase, frame: this.getMotionFrameCtrl().frame, q };
+                } else if (this.track!.noPhase) {
+                    const F = this.followAnim, prev = F && F.anim === s.anim ? F : null;
+                    let fr0 = prev ? (prev.frame ?? 0) + 0.5 * Math.max(0, q - (prev.q ?? q)) : 0;
+                    if (s.anim === A.SLDCT && fr0 > 50) fr0 = 50;   // (catching / oil-slip catching hold it at 50, MarioRun.cpp)
+                    const [end, attr] = marioBckInfo(ANIME_DATA[s.anim] ? ANIME_DATA[s.anim][0] : 0);
+                    const frame = attr === FC_LOOP && end > 0 ? fr0 % end : Math.min(fr0, Math.max(0, end - 0.001));
+                    this.followAnim = { anim: s.anim, phase: end > 0 ? Math.min(frame / end, 4095 / 4096) : 0, frame, q };
+                } else this.followAnim = { anim: s.anim, phase: s.phase };
                 const [gy] = this.world.checkGround(s.x, s.y + 50, s.z);
                 // (only from the ghost walking, running or standing: those are the statuses taken up here)
                 const moving = s.anim === A.WALK || s.anim === A.RUN2 || s.anim === A.RUN1, standing = s.anim === A.WAIT;

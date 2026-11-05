@@ -661,6 +661,7 @@ export class SimRunner {
             // (this segment's: a later stage starts before its first sample, where the sample at q0 is the stage before's)
             closingCopyQf: closingCopyQf(g, segI, q0),
             everyMove: !!g.trace,
+            noPhase: !!g.trace,
             lastMove: g.trace ? traceLastMove(g, segI, q0) : undefined,
             at: (q: number): MarioSample | null => {
                 const t = q0 + q;
