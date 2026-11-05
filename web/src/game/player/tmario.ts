@@ -218,9 +218,10 @@ export abstract class TMarioSim extends MarioSpecial {
      * - else in a 0x8000 status (squatting) off Yoshi, the nozzle aimed down (getGunAngle() > 0, the
      *   stick's pitch: calcGunAngle): RPH(0, 0, gunAngle). (Aimed up, < 0, it's the nozzle joint's
      *   own callback, NozzleCtrl.)
-     * - else in RUN1 / RUN2 (or RIDE_SHELL with no 0x4000-type status: the check reads mStatus with
-     *   MARIO_FLAG_FLUDD_EMITTING's value), the running lean: RPH((s16)mWaistRoll, 0, (s16)mWaistPitch)
-     *   (considerWaist sets them each calcAnimBody).
+     * - else (also when that nozzle isn't aimed down: the DOL falls through) in RUN1 / RUN2 / RIDE_SHELL
+     *   while FLUDD isn't emitting (mFlags' MARIO_FLAG_FLUDD_EMITTING, for all three: the decomp reads
+     *   mStatus and only for RIDE_SHELL), the running lean: RPH((s16)mWaistRoll, 0, (s16)mWaistPitch)
+     *   (considerWaist sets them each calcAnimBody). So the turbo dash runs upright.
      */
     waistCtrl(): Mtx | null {
         const K = 0.0054931640625;
@@ -230,13 +231,14 @@ export abstract class TMarioSim extends MarioSpecial {
         }
         const G: any = (this as any).mWaterGun;
         // (checkStatusType(MARIO_FLAG_HAS_FLUDD): the status read with the flag's value, 0x8000)
+        // (the DOL falls through to the lean when the nozzle isn't aimed down or he's on Yoshi)
         if ((this.mStatus & 0x8000) && !this.onYoshi()) {
             const a = G && G.getCurrentNozzle ? s16(G.getCurrentNozzle().getGunAngle()) : 0;
             if (a > 0) { const r = mtx(); MsMtxSetRotRPH(r, 0, 0, fr(a * K)); return r; }
-            return null;
         }
         const an = this.mAnimationId;
-        if (an === A.RUN1 || an === A.RUN2 || (an === A.RIDE_SHELL && !(this.mStatus & MF.FLUDD_EMITTING))) {
+        // (JP 0x80127d6c / PAL 0x802407b4: any of the three, and mFlags (+0x118) without MARIO_FLAG_FLUDD_EMITTING)
+        if ((an === A.RUN1 || an === A.RUN2 || an === A.RIDE_SHELL) && !this.checkFlag(MF.FLUDD_EMITTING)) {
             const r = mtx();
             MsMtxSetRotRPH(r, fr(Math.trunc(this.mWaistRoll) * K), 0, fr(Math.trunc(this.mWaistPitch) * K));
             return r;

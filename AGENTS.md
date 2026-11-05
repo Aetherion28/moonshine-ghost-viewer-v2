@@ -139,6 +139,8 @@ Common JP callers: 0x800c2458/24ac/2504 TTrembleModelEffect::tremble (Mario's ca
 - Actor records are the actor object's first 0xF4 or 0x150 bytes, sent as changed words. Offsets: position 0x10, THitActor type 0x4C, attack radius 0x50, attack height 0x54, damage radius 0x58, damage height 0x5C, entry radius 0x60, hit filter 0x64; velocity words 43–45, live flag word 60 (0x150 records). Only some actors are recorded.
 - A Mario / camera blob persists between records (only changed words are sent), so each tick's view is the real memory state.
 - Water requests (`wreq`) are the TWaterEmitInfo the game passed to emitRequest: pos, v, dir, pow, size, tremble values, type, flag.
+- The FLUDD record (kind 8) is the whole TWaterGun (0x1DBC bytes, decomp offsets: the nozzles inline from 0x0C, the turbo's at 0x18D8, mEmitPos 0x1C90, mPropellerAngle 0x1CD0), sampled once a frame (after the frame's last tick). The nozzles' MActors are pointers, so their animation frames aren't in it.
+- The Mario record covers TMario's first 0x574 bytes, so mWaistRoll / mWaistPitch (0x3D8 / 0x3DC) are there. replayMstr's onTick counts world ticks: subtract the first segment's startQf to get the trace's labels (wreq.ts does this).
 
 ## Pitfalls
 
@@ -189,6 +191,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-05 The running lean stops while FLUDD sprays (player/tmario.ts waistCtrl, from MarioWaistCtrl JP 0x80127be8 / PAL 0x80240630). The DOL leans the chest by mWaistRoll / mWaistPitch for RUN1, RUN2 and RIDE_SHELL only when mFlags (+0x118) lacks MARIO_FLAG_FLUDD_EMITTING (0x4000); the decomp (and the sim) read mStatus, and only for RIDE_SHELL. The DOL also falls through to the lean when the squatting nozzle isn't aimed down. In Delfino dolpic10 c/…06D the turbo dash (RUN2, flag 0x4000 from tick 664) kept leaning in the sim, so the nozzle sat 11 units lower and further back and every turbo drop's position and direction differed; without the lean all of them equal the recorded requests (found by reading the trace's TWaterGun record: emit points, propeller and nozzle state all matched, so the difference was Mario's chest). Batch runs43 vs runs42: 2 better (dolpic10 c/…06D 9.7 -> 16.8 s, dolpic_ex0 c/…055 one frame), 0 worse.
 
 - 2026-11-05 Tool-assisted runs (the trace's run flags, kind 28, bit 32 TAS; the user asked): the viewer shows a "TAS" tag at the top middle of the stage and plays them from their recorded positions only (applyReplayMode forces inputReplay and playRecording off), whatever the replay mode. In the batch set that is coro_ex1 a/2A1D8909_80000015 and a/2A1D8909_8000001F (flags 33); their simulated drift no longer matters.
 
