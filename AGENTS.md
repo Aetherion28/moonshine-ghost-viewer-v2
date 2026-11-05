@@ -168,7 +168,6 @@ First drift per run, 143 traces:
 
 ## Open threads (where to pick up)
 
-- 2026-11-05 dolpic10 c/A7E1056F_8000006A (never -> 23 s with the egg fix): RNG consumers line up to tick 835, where 鳥 12 (record key 17306) picks its next graph node two ticks before the sim's. The bird is 1 ulp off from tick 259, its first walkOnGround step (posDelta comes out of the ground following, not doWalk's rotate: SMS_Eular2Quat / TQuat4::rotate made DOL-exact didn't change it; /tmp patch quat.patch).
 - 2026-11-05 Bianco b/41726535_80000023 (104 s now): RNG consumers line up to tick 2058, where the game makes a TNerveAmenboSearch roll (0x8033dfa8) a tick or two before the sim.
 
 - The two runs the feedback shift made worse:
@@ -189,6 +188,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-05 SMS_Eular2Quat (JP 0x80366E88: half angles fmuls 0.5 * (0.017453294 * deg), MSL sinf/cosf, the products and fused steps of its real-zero multiplies) and TQuat4::rotate (f32 fmuls then fused steps, as compiled inline in TNerveAnimalBirdWalkOnGround) as the DOL, in enemies/animal.ts. Batch runs30 vs runs29: 3 better, 0 worse (dolpic10 006A back to never drifting, dolpic10 0068 25.6 -> 72.5 s, mamma3 1DD461CB_80000013 8.4 -> 9.8 s).
 
 - 2026-11-05 A trace's MSF_SHADOW_MARIO_EVENT from its recorded flags (runner.ts traceShadowMarioEvent: FlagManager.setupStage on the stage-start record's image -> IntroTiming.shadowMarioEvent), not the inferred flags': dolpic8 007F's Shadow Mario (event 1: shine 33 without MSF_YOSHI_UNLOCKED) was left in EM.DISAPPEAR, missing his rolls. Batch runs29 vs runs28: 1 better (007F 11.8 -> 19.5 s), 0 worse.
 

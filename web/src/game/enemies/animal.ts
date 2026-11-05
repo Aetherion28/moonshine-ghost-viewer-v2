@@ -7,6 +7,8 @@
 
 import { fr, V3, Quat, MsRandF, MsRandI, MsWrap, MsClamp, MsAngleDiff, MsGetRotFromZaxis, JMASSin, JMASCos, s16, Mtx, jgInvSqrt } from '../math.js';
 import { vSq, jgSqrt } from '../vecops.js';
+import { mslSinf, mslCosf } from '../math.js';
+import { fmadd as FMA, fmsub as FMS, fnmsub as FNMS } from '../player/fmath.js';
 import { World, SpineEnemy, EnemyManager, LiveManager, LiveActor, PathNode, LF, HF, nerve, Spine, Stream, ANM_BCK, ANM_BTP, ANM_FRAME_RATE, readParams, PSchema, CUE_MOVE, CUE_CALC_ANIM, HitActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -42,15 +44,29 @@ export const quatEulerY = (a: number) => new Quat(0, fr(Math.sin(fr(0.5 * a))), 
 export const quatEulerZ = (a: number) => new Quat(0, 0, fr(Math.sin(fr(0.5 * a))), fr(Math.cos(fr(0.5 * a))));
 /** SMS_Eular2Quat: the rotation (degrees) as Ry * (Rx * Rz). */
 export function SMS_Eular2Quat(rot: V3) {
-    const qz = quatEulerZ(0.017453294 * rot.z), qy = quatEulerY(0.017453294 * rot.y), qx = quatEulerX(0.017453294 * rot.x);
-    const r2 = new Quat().mul(qx, qz);
-    return new Quat().mul(qy, r2);
+    // (JP 0x80366E88: each half angle fmuls 0.5 * (0.017453294 * deg), MSL sinf / cosf; the setEuler
+    // quaternions' zero parts are real zeros in its multiplies, so qx*qz then qy*that reduce to these
+    // roundings and fused steps)
+    const h = (d: number) => fr(0.5 * fr(fr(0.017453294) * d));
+    const az = h(rot.z), ay = h(rot.y), ax = h(rot.x);
+    const sz = mslSinf(az), cz = mslCosf(az), sy = mslSinf(ay), cy = mslCosf(ay), sx = mslSinf(ax), cx = mslCosf(ax);
+    const rx = fr(sx * cz), ry = -fr(sx * sz), rz = fr(cx * sz), rw = fr(cx * cz);
+    return new Quat(FMA(sy, rz, fr(cy * rx)), FMA(sy, rw, fr(cy * ry)), FNMS(sy, rx, fr(cy * rz)), FNMS(sy, ry, fr(cy * rw)));
 }
-/** TQuat4::rotate(v, dst) */
-export function quatRotate(t: Quat, v: V3, out = new V3()) {
-    const qx = t.y * v.z - t.z * v.y + t.w * v.x, qy = -t.x * v.z + t.z * v.x + t.w * v.y;
-    const qz = t.x * v.y - t.y * v.x + t.w * v.z, qw = -t.x * v.x - t.y * v.y - t.z * v.z;
-    return out.set(qx * t.w + qy * -t.z - qz * -t.y + qw * -t.x, -qx * -t.z + qy * t.w + qz * -t.x + qw * -t.y, qx * -t.y - qy * -t.x + qz * t.w + qw * -t.z);
+/**
+ * TQuat4::rotate(v, dst) (JGQuat4.hpp, as MWCC compiles it inline: JP TNerveAnimalBirdWalkOnGround,
+ * 0x80369428): t = q v by fmuls then fused steps, then t q* the same way, each step rounded to f32.
+ */
+export function quatRotate(q: Quat, v: V3, out = new V3()) {
+    const x = q.x, y = q.y, z = q.z, w = q.w;
+    const tx = FMA(w, v.x, FMS(y, v.z, fr(z * v.y)));
+    const ty = FMA(w, v.y, FMA(-x, v.z, fr(z * v.x)));
+    const tz = FMA(w, v.z, FMS(x, v.y, fr(y * v.x)));
+    const tw = FNMS(z, v.z, FMS(-x, v.x, fr(y * v.y)));
+    return out.set(
+        FMA(tw, -x, FNMS(tz, -y, FMA(tx, w, fr(ty * -z)))),
+        FMA(tw, -y, FMA(tz, -x, FMA(tx, z, fr(ty * w)))),
+        FMA(tw, -z, FMA(tz, w, FMS(tx, -y, fr(ty * -x)))));
 }
 /** TRotation3::getQuat (m: 3x4 row-major) */
 export function mtxGetQuat(m: Mtx, q = new Quat()) {
