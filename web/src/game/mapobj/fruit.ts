@@ -12,8 +12,8 @@
 
 import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, MsRandF, matan, MsMtxSetXYZRPH, sqDist } from '../math.js';
-import { jgSqrt } from '../vecops.js';
-import { fmadd } from '../player/fmath.js';
+import { jgSqrt, vSq } from '../vecops.js';
+import { fmadd, fmadd as FMA } from '../player/fmath.js';
 import { World, Stream, HitActor, TakeActor, LF, HF, MSG, ANM_BCK, ANM_BTP, MActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -50,19 +50,21 @@ export class MapObjBall extends MapObjGeneral {
         if (this.unk13C) this.calcReflectingVelocity(this.unk13C, this.ph(4), this.vel);
     }
     touchWall(p: V3, r: WallCheck) {
+        // (JP 0x801BD19C. The bounce is vd * -(1 + wall bounce): fadds 1.0, fneg -- the decomp's
+        // -(-1 + unk8) is a misreading; the speed is TUtil<f32>::sqrt of (x² + y²) + z², fmadds onto vel.y)
         if (!this.isAirborne() && !this.isActorType(AT.WATERMELON)) {
-            const sp = fr(Math.sqrt(this.vel.squared()));
-            this.vel.y = fr(this.vel.y + fr(this.unk184 * sp));
+            const sp = jgSqrt(vSq(this.vel));
+            this.vel.y = FMA(this.unk184, sp, this.vel.y);
         }
         for (const d of r.results) {
-            const vd = fr(this.vel.x * d.n[0] + this.vel.y * d.n[1] + this.vel.z * d.n[2]);
+            const vd = FMA(this.vel.z, d.n[2], FMA(this.vel.x, d.n[0], fr(this.vel.y * d.n[1])));
             if (vd < 0) {
-                const dist = fr(p.x * d.n[0] + p.y * d.n[1] + p.z * d.n[2] + d.d);
-                p.x = fr(p.x + fr(this.bodyRadius - dist) * d.n[0]);
-                p.z = fr(p.z + fr(this.bodyRadius - dist) * d.n[2]);
-                const b = fr(vd * -(-1 + this.ph(8)));
-                this.vel.x = fr(this.vel.x + b * d.n[0]);
-                this.vel.z = fr(this.vel.z + b * d.n[2]);
+                const dist = fr(FMA(p.z, d.n[2], FMA(p.x, d.n[0], fr(p.y * d.n[1]))) + d.d);
+                p.x = FMA(fr(this.bodyRadius - dist), d.n[0], p.x);
+                p.z = FMA(fr(this.bodyRadius - dist), d.n[2], p.z);
+                const b = fr(vd * -fr(1 + this.ph(8)));
+                this.vel.x = FMA(b, d.n[0], this.vel.x);
+                this.vel.z = FMA(b, d.n[2], this.vel.z);
                 if (this.isActorType(AT.WATERMELON)) this.world.sound(this.scale.y >= 5 ? SE.OBJ_WATERMELON_BROLL : SE.OBJ_WATERMELON_SROLL, this.pos);
                 else { const s = this.soundTable(4); if (s >= 0) this.world.sound(s, this.pos); }
             }
