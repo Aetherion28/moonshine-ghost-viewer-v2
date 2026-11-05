@@ -15,4 +15,7 @@ def secs(l):
     return 0
 for l in sorted(rows, key=secs, reverse=True): print(l.rstrip('\n'))
 PY
-cat "/tmp/claude-0/up3/.order_$RUNS.txt" | RUNS=$RUNS PM=$PM xargs -P 2 -L 1 /home/claude/moonshine-ghost-viewer-v2/web/tools/harness/run.sh
+H=/home/claude/moonshine-ghost-viewer-v2/web/tools/harness
+$H/progress.sh start "${LABEL:-Full test $RUNS}" "$(wc -l < "/tmp/claude-0/up3/.order_$RUNS.txt")" "/tmp/claude-0/up3/$RUNS/.done"
+cat "/tmp/claude-0/up3/.order_$RUNS.txt" | RUNS=$RUNS PM=$PM xargs -P 2 -L 1 $H/run.sh
+$H/progress.sh finish
