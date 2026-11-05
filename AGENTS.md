@@ -24,7 +24,8 @@ The main measure of progress is how long each recorded run stays in sync before 
 6. Do **not** push to or even inspect the `agent-mailbox` repository unless the user explicitly asks.
 7. Decline the user's account cookies; downloading needs the user's permission.
 8. Commit and push every finished change (a stop hook refuses to end a turn with uncommitted changes). Keep experiments out of commits: save them as a patch file instead.
-9. Commit messages end with the attribution lines your session's system reminder gives (Co-Authored-By, Claude-Session). Use yours, not ones copied from old commits.
+9. Suggestions for the user (e.g. for Moonshine's recorder) go in `SUGGESTIONS.md`, not in chat; the user asks for them when needed.
+10. Commit messages end with the attribution lines your session's system reminder gives (Co-Authored-By, Claude-Session). Use yours, not ones copied from old commits.
 
 ## Build, deploy
 
