@@ -22,6 +22,7 @@ The main measure of progress is how long each recorded run stays in sync before 
 4. The user's own disc only. The site hosts **no game data**; the viewer reads the user's files in their browser.
 5. No autonomous work on the decomp's middleware (MSL, MetroTRK, THPPlayer, dolphin SDK, JSystem); the decomp repos are read-only references for this project anyway.
 6. Do **not** push to or even inspect the `agent-mailbox` repository unless the user explicitly asks.
+   Exception (the user asked, 2026-11-05): when the DOL shows the decomp's source is wrong, send the Decomp chat a message in `agent-mailbox/decomp/inbox/` (its README has the protocol: what the decomp has, what the DOL does with addresses, the trace evidence) and tell the user the filename.
 7. Decline the user's account cookies; downloading needs the user's permission.
 8. Commit and push every finished change (a stop hook refuses to end a turn with uncommitted changes). Keep experiments out of commits: save them as a patch file instead.
 9. Suggestions for the user (e.g. for Moonshine's recorder) go in `SUGGESTIONS.md`, not in chat; the user asks for them when needed.
