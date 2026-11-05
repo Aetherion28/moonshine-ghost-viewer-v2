@@ -11,7 +11,8 @@ import type { GameFS } from '../disc.js';
 import { Stage, StageFiles, GameCamera } from './scene.js';
 import { MarioSample, MarioTrack } from './mario.js';
 import { LiveActor, NameRef, World, calcKeyCode, LF, shineIDofExStage } from './engine.js';
-import { rngCtx, srand } from './math.js';
+import { rngCtx, srand, fr } from './math.js';
+import { CraneRotY } from './mapobj/ricco.js';
 import { feedbackCtx, FeedbackReplay } from './feedback.js';
 import { npcSinkSetup, npcSinkCounterOf } from './npc/base.js';
 import type { MarioView } from '../ghost/mstr.js';
@@ -449,6 +450,54 @@ export function traceDemoEnd(g: any, segment: number, q0: number): number | null
  * segment ends with a gap (the game frozen, or the recorder waiting) followed by no more than a few
  * ticks, the tick before that gap (as a stage tick); else the segment's last.
  */
+/**
+ * A trace's rotating cranes (TCraneRotY, Ricco Harbor) at the speeds the recorded game ran them at.
+ * TCraneRotY::load rolls each one's speed (MsRandF() * 0.1 + 0.05 a move), but Moonshine can set
+ * the cranes' speed itself, and its recordings then don't fit the roll (Ricco ep 2: every crane at a
+ * multiple of 0.0015 a move, below the roll's 0.05 minimum). The trace records each crane's
+ * mRotation once a frame, so each crane takes the f32 speed whose moves from its start yaw give
+ * every recorded angle of its first swing exactly; a crane with no record, or none that fits, keeps
+ * the game's roll. Returns the speeds it set (by name), for the log.
+ */
+export function traceCraneSpeeds(g: any, q0: number, objects: Iterable<any>): Record<string, number> {
+    const out: Record<string, number> = {};
+    const A = g && g.trace && g.trace.actors as TraceActors | undefined;
+    if (!A || !A.count) return out;
+    const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
+    for (const o of objects) {
+        if (!(o instanceof CraneRotY)) continue;
+        const c = o as any, start: number = c.unk138, end = fr(c.unk138 + c.unk140);
+        // its records: the actor at its place (cranes don't move), while it still turns to its max
+        const recs: [number, number][] = [];
+        let id = -1;
+        for (let i = 0; i < A.count; i++) {
+            if (id < 0) { if (Math.abs(A.pos[i * 3] - c.pos.x) > 1 || Math.abs(A.pos[i * 3 + 2] - c.pos.z) > 1 || Math.abs(A.pos[i * 3 + 1] - c.pos.y) > 1) continue; id = A.id[i]; }
+            if (A.id[i] !== id) continue;
+            const r = A.rot[i * 3 + 1];
+            if (r <= start || r > end || (recs.length && r <= recs[recs.length - 1][1])) break;
+            recs.push([A.qf[i] - q0 + 1, r]);
+        }
+        if (recs.length < 3) continue;
+        // the moves made by each record (its stage QF, give or take the label's tick) and the speed
+        const [n0, r0] = recs[0], [n1, r1] = recs[recs.length - 1];
+        const est = (r1 - r0) / (n1 - n0);
+        let found: number | null = null;
+        for (const lead of [0, -1, 1, -2, 2, -3, 3, -4, 4]) {
+            f32[0] = est; const base = u32[0];
+            for (let d = 0; d <= 1024 && found === null; d++) for (const sgn of d ? [1, -1] : [1]) {
+                u32[0] = base + sgn * d; const s = f32[0];
+                let ok = true, rot = start, n = 0;
+                for (const [m, r] of recs) { const want = m + lead; if (want < n) { ok = false; break; } for (; n < want; n++) rot = fr(rot + s); if (rot !== r) { ok = false; break; } }
+                if (ok) { found = s; break; }
+            }
+            if (found !== null) break;
+        }
+        if (found === null) continue;
+        c.unk144 = found; out[c.name] = found;
+    }
+    return out;
+}
+
 export function traceLastMove(g: any, segment: number, q0: number): number | undefined {
     const seg = g && g.segments && g.segments[segment];
     if (!g || !g.trace || !seg) return undefined;
@@ -723,6 +772,7 @@ export class SimRunner {
             // V9: rand()'s state at the first recorded pose (the stage's QF 0, after its lead frames)
             if (segI === 0 && !fromLoad && g.header && g.header.initialRng !== undefined) srand(g.header.initialRng);
             const st0 = this.stage;
+            if (g.trace) traceCraneSpeeds(g, q0, st0.objects);
             const C0: any = st0.player && st0.player.simCamera;
             if (C0 && demoName) C0.stageDemoName = demoName(st0.world.flags);
             this.pads = null; this.sync = null; this.history = null; this.camKeys = null; this.camCorrections = [];

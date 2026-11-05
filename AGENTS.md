@@ -157,20 +157,14 @@ First drift per run, 143 traces:
 |---|---|
 | under 1 s | 0 |
 | 1–5 s | 5 |
-| 5–15 s | 49 |
+| 5–15 s | 43 |
 | 15–30 s | 32 |
 | 30 s+ | 8 |
 
-48 runs stay exact to the end.
+55 runs never drift (runs23).
 
 ## Open threads (where to pick up)
 
-- **Ricco Harbor "ricco2" cluster** (six runs drift at ~10.2 s): Mario hits a wall of the rotating crane `crane90 2` (TCraneRotY) in the sim and not in the game, because the sim's cranes are at the wrong angle.
-  - The stage (area 3, episode 2) has three TCraneRotY (`crane90 0..2`, sweep 90 each) and two TCraneUpDown.
-  - TCraneRotY::load's speed is `MsRandF() * 0.1 + 0.05` per move in the decomp and in the JP DOL (0x801A6224), so 0.05 to 0.15 a move, 0.2 to 0.6 a 4-tick frame.
-  - The traces' actor records (mRotation at 0x30) disagree: in all six runs, every crane turns a constant 0.144 to 0.240 degrees a frame (e.g. a/trace_2A1D8909_80000008 crane 2: +0.1679993 every frame), and all 12 values are multiples of 0.006 (0.0015 a move). The Shine in the same trace turns +8.0 a frame (2 a move), so the ticks are right.
-  - A random roll can't give those values, so something changed the speeds in the recorded games; a speed code is the likely cause (asked the user, 2026-11-04). Until it's known, the sim can't reproduce these runs; don't fit the speeds.
-  - An earlier idea here (the cranes move only 2 ticks of 4) was wrong; its "matching RNG rolls" were a chance match.
 - Other ~10 s drifts: bianco0, mamma2, mamma5, pinnaParco2, pinnaBeach3, dolpic_ex3, dolpic10 (QF 1188–1300); may share a cause.
 - **Water drops land / hit a little earlier in the game than in the sim** (Noki Bay mare1 b/A7E1056F_80000028 at 4.9 s; Delfino dolpic10 c/…065 at 1.6 s and …067 at 3.1 s). The drops' emission matches the recorded requests and the move code matches the DOL, yet the game's drop hits the NPC (マーレＢ, cylinder r 80, h 110) or the ground 1–2 ticks before the sim's. The difference decides MARIO_FLAG 0x10 (RECENTLY_LEFT_WATER) and so dive-slide friction. Cause not found; don't tune it.
   - Clearest case: Pinna Beach b/A7E1056F_8000000B. The spray reveals the `水ヒットコイン 25` (WaterHitHideObj, cylinder r 60, h 20 at y 100) at tick 1176 in the game (actor record: live flag 0x21d0 -> 0x21d9) and at ~1204 in the sim, so the 無限フルーツ under it appears late and Mario bonks into it at 1228 (SHORT_BACK_DOWN). The sim's drops pass over the object at y 135–145 (needs ≤ 120).
@@ -185,6 +179,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-04 Ricco cranes from the trace: `traceCraneSpeeds` (runner.ts) gives each TCraneRotY the f32 speed whose moves reproduce all its recorded angles of the first swing (Moonshine can set the crane speed; the recordings' speeds are multiples of 0.0015 a move, which TCraneRotY::load's roll can't give). No record or no fit: the game's roll stays. pm.ts mirrors it. Batch runs23 vs runs20: 8 better, 0 worse; all six ricco2 runs never drift (were ~10.2 s).
 
 - 2026-11-04 `6deed34` Occlusion: traces without feedback records read MARIO_FLAG_OCCLUDED from Mario's recorded flag word. Pinna Park 1 a/81BCC929_263FE90D: drift at 2.97 s → none. The other 16 such traces unchanged.
 - 2026-11-04 `8c770e1` Moonshine's menu stops the game only in frames where Mario didn't move.
