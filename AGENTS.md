@@ -157,13 +157,15 @@ First drift per run, 143 traces:
 |---|---|
 | under 1 s | 0 |
 | 1–5 s | 5 |
-| 5–15 s | 43 |
-| 15–30 s | 32 |
-| 30 s+ | 8 |
+| 5–15 s | 39 |
+| 15–30 s | 27 |
+| 30 s+ | 11 |
 
-55 runs never drift (runs23).
+61 runs never drift (runs24).
 
 ## Open threads (where to pick up)
+
+- The two runs the feedback shift made worse: b/41726535_80000023 (Bianco, first difference at tick 998 where the recorded camera read switches to 1) and a/81BCC929_263FE90D (Pinna Park 1, occlusion from Mario's flag word).
 
 - Other ~10 s drifts: bianco0, mamma2, mamma5, pinnaParco2, pinnaBeach3, dolpic_ex3, dolpic10 (QF 1188–1300); may share a cause.
 - **Water drops land / hit a little earlier in the game than in the sim** (Noki Bay mare1 b/A7E1056F_80000028 at 4.9 s; Delfino dolpic10 c/…065 at 1.6 s and …067 at 3.1 s). The drops' emission matches the recorded requests and the move code matches the DOL, yet the game's drop hits the NPC (マーレＢ, cylinder r 80, h 110) or the ground 1–2 ticks before the sim's. The difference decides MARIO_FLAG 0x10 (RECENTLY_LEFT_WATER) and so dive-slide friction. Cause not found; don't tune it.
@@ -180,9 +182,11 @@ First drift per run, 143 traces:
 
 ## Fix log (newest first)
 
+- 2026-11-04 Feedback replay one label later: a read in the sim's tick n takes the record labelled q0 + n - 1 (as the RNG records' labels line up with the sim's ticks). Batch runs24 vs runs23: 13 better, 2 worse (b/41726535_80000023 Bianco 104 s -> 14.8 s; a/81BCC929_263FE90D Pinna Park 1, no drift -> 5 s); committed on the user's say, the two worse runs are open threads.
+
 - 2026-11-04 Ricco cranes from the trace: `traceCraneSpeeds` (runner.ts) gives each TCraneRotY the f32 speed whose moves reproduce all its recorded angles of the first swing (Moonshine can set the crane speed; the recordings' speeds are multiples of 0.0015 a move, which TCraneRotY::load's roll can't give). No record or no fit: the game's roll stays. pm.ts mirrors it. Batch runs23 vs runs20: 8 better, 0 worse; all six ricco2 runs never drift (were ~10.2 s).
 
-- 2026-11-04 `6deed34` Occlusion: traces without feedback records read MARIO_FLAG_OCCLUDED from Mario's recorded flag word. Pinna Park 1 a/81BCC929_263FE90D: drift at 2.97 s → none. The other 16 such traces unchanged.
+- 2026-11-04 `6deed34` Occlusion: traces without feedback records read MARIO_FLAG_OCCLUDED from Mario's recorded flag word. Pinna Park 1 a/81BCC929_263FE90D: drift at 2.97 s → none (back to a drift at 5 s after the feedback shift). The other 16 such traces unchanged.
 - 2026-11-04 `8c770e1` Moonshine's menu stops the game only in frames where Mario didn't move.
 - 2026-11-04 `a56ab60` Pause menu overlay (with the cursor moves) during a trace's pause; Info box off by default.
 - 2026-11-04 `656e43a` Moonshine's menu stops the game; the run's closing ticks aren't drift-checked.

@@ -38,7 +38,8 @@ export class FeedbackReplay {
     }
     get size() { return this.tape.count; }
     take = (consumer: FeedbackConsumer): number | null => {
-        const q = this.q0 + this.qfNow(), L = this.byQf.get(q);
+        // (a read in the sim's tick n is the one labelled q0 + n - 1: frame W's ticks W+1..W+4 are labelled W..W+3)
+        const q = this.q0 + this.qfNow() - 1, L = this.byQf.get(q);
         const key = q * 4 + consumer;
         let k = this.used.get(key) || 0;
         if (L) {
