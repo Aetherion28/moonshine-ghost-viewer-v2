@@ -1,12 +1,12 @@
 #!/bin/bash
-# batch.sh <runs dir> [bundle] [previous runs dir]: every ghost in list4.txt, two at a time, longest first
+# batch.sh <runs dir> [bundle] [previous runs dir]: every ghost in list5.txt (list4.txt without the two TAS runs), two at a time, longest first
 # (by the previous batch's times) so the last minutes aren't one long run alone.
 RUNS=$1; PM=${2:-pm.mjs}; PREV=${3:-}
 cd /tmp/claude-0/up3 && mkdir -p "$RUNS"
 python3 - "$PREV" > "/tmp/claude-0/up3/.order_$RUNS.txt" <<'PY'
 import sys, re, os
 prev = sys.argv[1]
-rows = [l for l in open('/tmp/claude-0/up3/list4.txt') if l.strip()]
+rows = [l for l in open('/tmp/claude-0/up3/list5.txt') if l.strip()]
 def secs(l):
     p = os.path.join('/tmp/claude-0/up3', prev, l.split()[0].replace('/', '_') + '.log') if prev else ''
     if p and os.path.exists(p):
