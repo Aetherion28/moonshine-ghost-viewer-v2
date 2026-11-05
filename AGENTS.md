@@ -165,7 +165,9 @@ First drift per run, 143 traces:
 
 ## Open threads (where to pick up)
 
-- The two runs the feedback shift made worse: b/41726535_80000023 (Bianco, first difference at tick 998 where the recorded camera read switches to 1) and a/81BCC929_263FE90D (Pinna Park 1, occlusion from Mario's flag word).
+- The two runs the feedback shift made worse:
+  - b/41726535_80000023 (Bianco, now 14.8 s): with the shift the camera matches the recording exactly through the read switch at tick 998, so the shift is right there. The new first difference is at tick 1251, where Mario lands on the floating log `丸太 0` (TWoodLog, a TMapObjFloatOnSea / TLeanBlock): the sim's landing height is 1963.67236 against the game's 1963.67249. The log isn't in the actor records. Check the log's lean matrix and TMapObjLibWave / the sea wave height against the DOL.
+  - a/81BCC929_263FE90D (Pinna Park 1, PAL, now 5 s): its occlusion comes from Mario's flag word (no feedback records). Taking the flag one label later (read label L = flag label L+1) puts it back in sync, but in the JP traces with real records the read at label L equals the flag at label L (d0 in fbcmp), and no PAL trace has feedback records to check PAL against, so that offset would be a fit. Needs PAL evidence (a newer PAL trace with feedback records).
 
 - Other ~10 s drifts: bianco0, mamma2, mamma5, pinnaParco2, pinnaBeach3, dolpic_ex3, dolpic10 (QF 1188–1300); may share a cause.
 - **Water drops land / hit a little earlier in the game than in the sim** (Noki Bay mare1 b/A7E1056F_80000028 at 4.9 s; Delfino dolpic10 c/…065 at 1.6 s and …067 at 3.1 s). The drops' emission matches the recorded requests and the move code matches the DOL, yet the game's drop hits the NPC (マーレＢ, cylinder r 80, h 110) or the ground 1–2 ticks before the sim's. The difference decides MARIO_FLAG 0x10 (RECENTLY_LEFT_WATER) and so dive-slide friction. Cause not found; don't tune it.
