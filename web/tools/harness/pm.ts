@@ -163,6 +163,8 @@ const CMPK = process.env.CMPK ? process.env.CMPK.split('-').map(Number) : null;
 const recYaw = (q: number) => { const c = ctx.ghostCameraAt(g, q0 + q, 0); if (!c) return null; const [x, y, z, w] = c.quat; const fx = -2 * (x * z - w * y), fz = -(1 - 2 * (x * x + y * y)); return Math.round(Math.atan2(-fx, -fz) * 32768 / Math.PI); };
 const s0 = (q: number) => { const x = smap.get(q); return x ? [x.x|0, x.y|0, x.z|0].join(',') + ' held ' + x.held : ''; };
 for (let fr = 0; fr < end; fr++) {
+  // STOPDRIFT=n: a batch only needs the first drift, so stop n ticks after it (run.sh sets 120)
+  if (process.env.STOPDRIFT && (P as any).drift && (P as any).drift.firstQf >= 0 && st.qf > (P as any).drift.firstQf + +process.env.STOPDRIFT) break;
   if (CMP && st.qf >= CMP[0] && st.qf <= CMP[1]) { const C: any = (P as any).simCamera; const ry = recYaw(st.qf); console.log('cmp', st.qf, 'sim', C.unk258, 'rec', ry, 'd', ry === null ? '' : s16(C.unk258 - ry), 'mode', C.mMode, 'cur', C.cur.yaw, 'sx', I ? '' : ''); }
   if (camKeys.has(st.qf) && st.qf > 0) { const C: any = (P as any).simCamera; const k = camKeys.get(st.qf)!; const e = C.unk124, a = C.unk148, c = g.camera;
     const dr = s16f(keyYawF(k) - Math.atan2(e.x - a.x, e.z - a.z) * 32768 / Math.PI), dp = Math.hypot(c.pos[k*3] - e.x, c.pos[k*3+1] - e.y, c.pos[k*3+2] - e.z);

@@ -108,8 +108,8 @@ Everything below runs in the cloud workspace; paths under `/tmp/claude-0` are th
   - `pm_debug.ts` is pm.ts plus more probes (`NPCHIT`, `CAMX` camera vs trace per tick, `CXL`, `WPROBE` walls, `GPROBE` ground, `WPOS`, `BOIDC`, `RNGSTK` RNG call sites with the sim's caller, `WTYP`).
   - Small readers of a trace: `gv.ts` (Mario per tick), `giy.ts` (intended yaw), `cyaw.ts` (camera yaw), `rk.ts` / `rcall.ts` (RNG calls with callers), `wreq.ts` (water requests), `fb.ts` / `fbcmp.ts` (feedback records), `ahit.ts` / `anear2.ts` (raw actor words: hit radii at 0x50–0x60).
   - `tdiff.sh <trace> a b` prints sim vs trace per tick (position error, status, forward speed, vy, face angle, flags).
-  - Batch: `RUNS=runsNN ./run.sh <path> <region> <end>` per trace, e.g. `cat list4.txt | xargs -P 2 -L 1 ./run.sh`, then `python3 cmp.py runs_old runs_new` prints the bucket table and each run better / worse. A batch takes about two hours with 2 processes; run it in the background.
-- The latest full batch is `/tmp/claude-0/up3/runs20` (plus the occlusion fix, re-run for its 17 traces in `runs22`).
+  - Batch: `web/tools/harness/batch.sh runsNN [bundle.mjs] [previous runs dir]` runs every trace in list4.txt two at a time, longest first by the previous batch's times, then `python3 cmp.py runs_old runs_new` (in `/tmp/claude-0/up3`) prints the bucket table and each run better / worse. `run.sh` stops each run 120 ticks after its first drift (`STOPDRIFT`; set it empty to run to the end), since cmp.py only compares first drifts; estimated to cut a batch from ~46 to ~28 minutes. Build the bundle from `pm.ts`, not a probe copy that lacks runner features (pm_npchit.ts once lacked the Ricco crane fit and made six ricco2 runs look worse). Don't run probes during a batch: the workspace has 2 cores and the batch uses both.
+- The latest full batch is in `/tmp/claude-0/up3/runsNN`: the highest NN there.
 
 ## How to investigate a drift (the workflow that has worked)
 
