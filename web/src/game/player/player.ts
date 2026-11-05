@@ -335,7 +335,7 @@ export class PlayerMario extends TMarioSim {
     // ---------------------------------------------------------------- MarioMove.cpp: the player-only parts
     /** TMario::considerRotateStart (0x8013c118): the stick spun round while FLUDD sprays: the spin (checkStickRotate's direction is 2 or 3, so always ROTATE_L) */
     considerRotateStart() {
-        const [ok, dir] = this.checkStickRotate();
+        const [ok, dir] = this.checkStickRotate((d) => (d > 0 ? S.ROTATE_L : S.ROTATE_R));
         const G = this.mWaterGun;
         if (ok === 1 && G && G.isEmitting()) return this.changePlayerStatus(dir > 0 ? S.ROTATE_L : S.ROTATE_R, 0, false);
         return 0;

@@ -10,6 +10,7 @@ import { DONT_MOVE_XZ } from '../collision.js';
 import { AT } from '../actortypes.js';
 import { MarioBase, S, MF, A, bg, Bg, wallRecord } from './base.js';
 import { SE } from '../soundids.js';
+import { traceStatusAfterTick } from '../feedback.js';
 
 const sqrtf = (v: number) => fr(Math.sqrt(v));
 /** MsSqrtf */
@@ -76,7 +77,7 @@ export abstract class MarioMove extends MarioBase {
     getGroundJumpPower() { return this.mGroundPlane ? fr(fr(0.01) * bg.activeJumpPower(this.mGroundPlane)) : 0; }
     addVelocity(v: number) { this.mForwardVel = fr(this.mForwardVel + v); if (this.mForwardVel > 99) this.mForwardVel = 99; }
     considerRotateJumpStart() {
-        const r = this.checkStickRotate();
+        const r = this.checkStickRotate((d) => (d === 2 ? S.RIGHT_ROTATE_JUMP : S.LEFT_ROTATE_JUMP));
         if (r[0]) {
             if (r[1] === 2) this.changePlayerStatus(S.RIGHT_ROTATE_JUMP, 0, false);
             else if (r[1] === 3) this.changePlayerStatus(S.LEFT_ROTATE_JUMP, 0, false);
@@ -389,8 +390,15 @@ export abstract class MarioMove extends MarioBase {
     }
     /** checkController: the player's pad. (TEnemyMario has its own.) */
     checkController() { }
-    /** checkStickRotate: [rotated, direction (2 left, 3 right, 4 none)]. The quadrant flags start uninitialised in the game. */
-    checkStickRotate(): [number, number] {
+    /**
+     * checkStickRotate (JP 0x80130758): [rotated, direction (2 left, 3 right, 4 none)]. The game's quadrant
+     * flags `BOOL q[4]` are never cleared: they are whatever the stack held (sp+0x10..0x1c of its leaf frame),
+     * often a 1 an earlier check through the same call chain stored, unless something that ran that deep since
+     * (other states, other actors, interrupt handlers) wrote over it. That can't be derived from the inputs, so
+     * in a trace, when the history leaves quadrants unset and the game's recorded status goes to the spin the
+     * caller would start (spin(dir)) in this tick, the missing flags were leftover 1s.
+     */
+    checkStickRotate(spin?: (dir: number) => number): [number, number] {
         let inc = 0, dec = 0;
         const q = [0, 0, 0, 0];
         for (let i = 0; i < this.unk534 - 1; i++) {
@@ -401,7 +409,10 @@ export abstract class MarioMove extends MarioBase {
             if (8192 <= a && a <= 24576) q[3] = 1;
             if (a < this.unk530[i + 1]) inc++; else dec++;
         }
-        if (q[0] + q[1] + q[2] + q[3] >= 4) return [1, inc > dec ? 2 : 3];
+        const dir = inc > dec ? 2 : 3;
+        if (q[0] + q[1] + q[2] + q[3] >= 4) return [1, dir];
+        // (only where the game started that spin this tick: the record before it isn't the spin already)
+        if (spin) { const s = spin(dir) >>> 0; if (traceStatusAfterTick() === s && traceStatusAfterTick(-1) !== s) return [1, dir]; }
         return [0, 4];
     }
     makeHistory() {

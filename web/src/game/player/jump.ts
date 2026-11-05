@@ -132,7 +132,7 @@ export abstract class MarioJump extends MarioRun {
         return r;
     }
     considerJumpRotate() {
-        const [ok, dir] = this.checkStickRotate();
+        const [ok, dir] = this.checkStickRotate((d) => (d === 2 ? S.RIGHT_ROTATE_JUMP : S.LEFT_ROTATE_JUMP));
         if (ok) { if (dir === 2) this.mStatus = S.RIGHT_ROTATE_JUMP; else if (dir === 3) this.mStatus = S.LEFT_ROTATE_JUMP; return 1; }
         return 0;
     }

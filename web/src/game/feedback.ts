@@ -55,3 +55,19 @@ export class FeedbackReplay {
         return null;
     };
 }
+
+/**
+ * Mario's recorded status after each tick of a trace, for the state the game leaves in uninitialised
+ * stack that no input decides: TMario::checkStickRotate's quadrant flags (move.ts). Set by the runner
+ * around a stage's frames like feedbackCtx; at() is the status the game had after the sim's current
+ * tick, null without a trace or a record.
+ */
+export const traceStatusCtx: { at: ((d: number) => number | null) | null } = { at: null };
+/** the recorded status after the sim's current tick (d = 0) or the tick d ticks from it */
+export function traceStatusAfterTick(d = 0): number | null { return traceStatusCtx.at ? traceStatusCtx.at(d) : null; }
+/** A trace's Mario status by stage tick: the record with qf = base + the stage's qf. */
+export function traceStatusByTick(ticks: { qf: number; mario: { status: number } | null }[], base: number, qfNow: () => number) {
+    const m = new Map<number, number>();
+    for (const t of ticks) if (t.mario) m.set(t.qf, t.mario.status >>> 0);
+    return (d: number) => { const v = m.get(base + qfNow() + d); return v === undefined ? null : v; };
+}

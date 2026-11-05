@@ -13,7 +13,7 @@ import { MarioSample, MarioTrack } from './mario.js';
 import { LiveActor, NameRef, World, calcKeyCode, LF, shineIDofExStage } from './engine.js';
 import { rngCtx, srand, fr } from './math.js';
 import { CraneRotY } from './mapobj/ricco.js';
-import { feedbackCtx, FeedbackReplay } from './feedback.js';
+import { feedbackCtx, FeedbackReplay, traceStatusCtx, traceStatusByTick } from './feedback.js';
 import { npcSinkSetup, npcSinkCounterOf } from './npc/base.js';
 import type { MarioView } from '../ghost/mstr.js';
 import type { TraceActors } from '../ghost/mstrghost.js';
@@ -667,6 +667,7 @@ export class SimRunner {
     playRecording = true;
     /** the current stage's recorded GPU feedback (null: the trace has none) */
     feedback: FeedbackReplay | null = null;
+    traceStatus: ((d: number) => number | null) | null = null;
     /** where the last stage built left initSinkNpc_'s counter */
     private sinkCarry: { seg: number; n: number } | null = null;
     /** Play recording: the first ghost QF where the game code's Mario differed from the trace before he was put back (-1: none yet) */
@@ -841,6 +842,8 @@ export class SimRunner {
             this.rng = g.rng ? new RngReplay(g.rng, segI, q0, () => q0 + st0.qf) : null;
             // a trace's GPU results (the camera's read of Mario's occlusion, Bowser's bath-water height): game/feedback.ts
             this.feedback = g.trace && g.trace.feedback && g.trace.feedback.count ? new FeedbackReplay(g.trace.feedback, q0, () => st0.qf) : null;
+            // Mario's recorded status after each tick (checkStickRotate's leftover stack flags: player/move.ts)
+            this.traceStatus = g.trace && g.trace.ticks.length ? traceStatusByTick(g.trace.ticks, q0 + g.header.startQf, () => st0.qf) : null;
         }
         const st = this.stage!;
         const track = this.track(inp, segI);
@@ -849,8 +852,9 @@ export class SimRunner {
             st.camera = this.camera(inp, q0 + st.qf + 4, segI);
             rngCtx.roll = this.rng ? this.rng.roll : null; rngCtx.node = this.rng ? this.rng.node : null;
             feedbackCtx.take = this.feedback ? this.feedback.take : null;
+            traceStatusCtx.at = this.traceStatus;
             try { st.runFrame(track, st.player ? this.padAt(inp.ghost, st.qf + (isInputTrace(inp.ghost) ? 0 : 4)) : null); } catch (e) { this.error = e; console.warn('[game] frame', e); this.stage = null; return false; }
-            finally { rngCtx.roll = null; rngCtx.node = null; feedbackCtx.take = null; }
+            finally { rngCtx.roll = null; rngCtx.node = null; feedbackCtx.take = null; traceStatusCtx.at = null; }
             if (st.player && this.camKeys) {
                 const k = this.camKeys.get(q0 + st.qf);
                 const turn = k ? (st.player.simCamera as any).correctYawToRecorded(k.fwd, k.pos) : 0;
