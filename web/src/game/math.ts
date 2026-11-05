@@ -85,9 +85,13 @@ const DEG_K = fr(65536 / 360);
 export const degToAngle = (deg: number) => s16(fr(DEG_K * fr(deg)));
 export const MsSin = (deg: number) => JMASSin(degToAngle(deg));
 export const MsCos = (deg: number) => JMASCos(degToAngle(deg));
-/** sinf / cosf of an f32 radian value, rounded to f32 -- the game's calls of the real C library, not JMASSin/JMASCos's table. */
-export const sinf = (a: number) => fr(Math.sin(fr(a)));
-export const cosf = (a: number) => fr(Math.cos(fr(a)));
+/**
+ * sinf / cosf of an f32 radian value: the game's calls of the C library's float functions, not JMASSin/JMASCos's
+ * table. The DOL's sinf / cosf are MSL's own (trigf.c: PAL 0x80334964 / 0x803347D0, JP 0x80087104 / 0x80086F70),
+ * which differ from the correctly rounded value by an ulp for about half the inputs, so they're mslSinf / mslCosf.
+ */
+export const sinf = (a: number) => mslSinf(a);
+export const cosf = (a: number) => mslCosf(a);
 /** f32 1.5707963f (a quarter turn), exactly as the game's literal expands -- not the 7-digit source spelling. */
 export const HALF_PI_F = 1.5707963705062866;
 

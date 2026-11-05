@@ -141,6 +141,7 @@ Common JP callers: 0x800c2458/24ac/2504 TTrembleModelEffect::tremble (Mario's ca
 
 ## Pitfalls
 
+- Scene files count episodes from 0: the `ricco5` scene is Ricco Harbor episode 6 (the user confirmed). Say episodes to the user, not scene numbers.
 - `pgrep -f` matches itself and hangs watch loops; use background jobs and their notifications instead.
 - The harness (pm.ts) re-implements setup; if you add a runner feature, mirror it there or the batch won't test it.
 - `RNGSTK` prints one call late, and its sim tick label is `tickCount - 1`.
@@ -183,6 +184,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-05 The trig calls as the DOL: math.ts `sinf`/`cosf` are MSL's trigf (mslSinf/mslCosf, JP 0x80087104/0x80086F70), and makeRootMtxRotX/Y/Z use them. Batch runs26 vs runs25: all 143 the same.
 
 - 2026-11-04 TMapObjWave::getWaveHeight as the DOL (0x801D556C PAL): the argument is one fmadds and the call is MSL sinf (mslSinf), not fr(Math.sin). Batch runs25 vs runs24: all 143 the same (it didn't fix the Bianco log landing below).
 
