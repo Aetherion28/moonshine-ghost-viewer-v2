@@ -373,6 +373,12 @@ export abstract class MarioJump extends MarioRun {
         return 0;
     }
     hipAttacking() {
+        // a manhole touched more than 70 away: Mario drops straight onto its middle
+        for (const c of this.collisions) {
+            if (!c.isActorType(AT.MANHOLE)) continue;
+            const dx = fr(c.pos.x - this.pos.x), dy = fr(c.pos.y - this.pos.y), dz = fr(c.pos.z - this.pos.z);
+            if (fr(Math.sqrt(fr(fr(fr(dx * dx) + fr(dy * dy)) + fr(dz * dz)))) > 70) { this.pos.x = c.pos.x; this.pos.z = c.pos.z; }
+        }
         switch (this.mStatusState) {
             case 0: this.startVoice(SE.MV15_EXERT_INST_01); this.mStatusState = 1;
             // fallthrough
