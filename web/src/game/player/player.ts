@@ -2029,6 +2029,8 @@ export interface IntroTiming {
      * the director from STATE_PAUSE_MENU to the state it maps to (the menu itself isn't simulated)
      */
     pauseExits?: Map<number, number>;
+    /** Moonshine's Fast text was on (the trace's session record); unset: the talk director's default */
+    fastText?: boolean;
 }
 
 /**
@@ -2123,6 +2125,7 @@ export class PlayerDirector {
             case DIR.GAME:
                 if (m.world.talk) {
                     m.world.talk.pausesRecorded = !!this.timing.pauseExits;
+                    if (this.timing.fastText !== undefined) m.world.talk.fastText = this.timing.fastText;
                     m.world.talk.updateGameMode();
                     // the states it asks for that are simulated: the stage change's fade (STATE_UNK9), the game over (STATE_UNK7)
                     const n = m.world.talk.nextState;

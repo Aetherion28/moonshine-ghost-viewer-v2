@@ -767,6 +767,8 @@ export class SimRunner {
                 // and when the pause menu closed (the menu isn't simulated: its getNextState from the trace)
                 const pe = tracePauseExits(g, segI, q0);
                 if (pe) intro.pauseExits = pe;
+                // Moonshine's Fast text, as the trace's session record has it (none recorded: on, as the sim's default)
+                if (typeof g.header.fastText === 'boolean') intro.fastText = g.header.fastText;
                 // Delfino Plaza's own opening demo (DEMO_FLAG_CAMERA_DEMO_ON_START): Mario comes in late, the
                 // first sample 7 ticks after setMario (stagechange.ts LiveDirector), as a live run records it
                 if (seg.route.area === 1 && td !== null) intro.plazaDemo = true;   // (a trace: its director went through the demo, which ended at td)

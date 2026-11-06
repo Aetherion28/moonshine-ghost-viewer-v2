@@ -8,11 +8,11 @@
 import { fr, V3, MsRandF, MsAngleDiff, MsGetRotFromZaxisY, MsMtxSetRotRPH, mtx, Mtx } from '../math.js';
 import { World, SpineEnemy, EnemyManager, LiveManager, LiveActor, PathNode, GraphTracer, GraphWeb, LF, HF, MSG, nerve, Stream, MActor, CUE_CALC_ANIM, CUE_MOVE, HitActor, TakeActor } from '../engine.js';
 import { newAndRegisterObjByEventID } from '../mapobj/item.js';
-import { mapObjGlobals } from '../mapobj/base.js';
+import { mapObjGlobals, newAndRegisterObj, MapObjBase } from '../mapobj/base.js';
 import { AT } from '../actortypes.js';
 import { V } from '../version.js';
 import { register } from '../scene.js';
-import { jnormalize, setLength, ItemRef, itemByEventID, itemByName, appearItem } from './animal.js';
+import { jnormalize, setLength } from './animal.js';
 
 /** TNerveWaitForever<TLiveActor> */
 const waitForever = nerve('TNerveWaitForever', () => false);
@@ -247,7 +247,8 @@ export class Butterfly extends RealoidActor {
 }
 
 export class Butterfloid extends Realoid {
-    item: ItemRef | null = null;
+    /** mItem: the registered item (a "coin" is the item manager's stand-in: a pool coin appears) */
+    item: MapObjBase | null = null;
     numEaten = 0;
     constructor(w: World, public type: number, name = '') { super(w, name); }
     init(m: LiveManager | null) {
@@ -261,7 +262,13 @@ export class Butterfloid extends Realoid {
     receiveMessageFromChild(c: Butterfly) {
         c.onFlag(RF_UNK4);
         c.onHitFilter(HF.NO_COLLISION);
-        if (++this.numEaten === this.leader.num && this.item) appearItem(this.world, this.item, c.pos, new V3(0, 15, 0));
+        if (++this.numEaten === this.leader.num) {
+            let o = this.item;
+            if (o) {
+                if (o.isActorType(AT.COIN)) { const im = mapObjGlobals(this.world).itemManager; o = im ? im.makeObjAppear(AT.COIN) : null; }
+                if (o) { o.appear(); o.pos.set(c.pos); o.vel.set(0, 15, 0); o.offLiveFlag(LF.UNK10); }   // setVelocityAndFlag10
+            }
+        }
     }
     load(s: Stream) {
         this.loadDefault(s, BUTTERFLY_MODELS[this.type], 0);
@@ -277,9 +284,9 @@ export class Butterfloid extends Realoid {
     loadItem(s: Stream) {
         const id = s.u32();
         switch (this.type) {
-            case 0: this.item = itemByName('coin'); break;
-            case 1: this.item = itemByEventID(this.world, id, ''); break;
-            case 2: this.item = itemByName('mushroom1upR'); break;
+            case 0: this.item = newAndRegisterObj(this.world, 'coin'); break;
+            case 1: this.item = newAndRegisterObjByEventID(this.world, id, ''); break;
+            case 2: this.item = newAndRegisterObj(this.world, 'mushroom1upR'); break;
         }
     }
     createRealoidActor(m: MActor | null) { return new Butterfly(this.world, m, this); }

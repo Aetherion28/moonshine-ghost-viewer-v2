@@ -47,6 +47,7 @@
 import { fr, V3 } from './math.js';
 import { World, NameRef, LF, CUE_MOVE, CUE_CALC_ANIM } from './engine.js';
 import { AT } from './actortypes.js';
+import { V } from './version.js';
 import { cameraBck } from './camera/bck.js';
 
 /** MARIO_STATUS_WAIT, MARIO_STATUS_READ_BILLBOARD */
@@ -207,7 +208,7 @@ export class Talk2D {
         this.unk270 = flags >>> 0;
         this.unk278 = 0; this.unk214 = -1; this.unk26A = 0; this.unk27C = -1; this.unk280 = 0; this.unk26C = 0; this.unk26D = 0;
         this.unk254 = null; this.unk29 = 0;
-        this.unk340 = this.lang() === 0x100 ? 0x20 : 0x40;
+        this.unk340 = textSpeed(this.lang(), false);
         let loader = (this.unk264 & 0xFFFF0000) === 0 ? this.unk25C : this.unk258;
         if (this.dir.fastText) {
             // Moonshine's Fast text: the message data read as null (the missing-file fallback, sys
@@ -271,7 +272,7 @@ export class Talk2D {
     private openNormalWindow() {
         let r = false;
         const P = this.pad;
-        if (this.unk2DE > 2 && P && P.checkMeaning(MEANING_SELECT_A)) { this.unk26C = 1; this.unk340 = this.lang() === 0x100 ? 0x5A : 0x80; }
+        if (this.unk2DE > 2 && P && P.checkMeaning(MEANING_SELECT_A)) { this.unk26C = 1; this.unk340 = textSpeed(this.lang(), true); }
         let finished = true;
         for (let i = 0; i <= this.unk274; i++) {
             if (this.unk234[i] > fr(-0.109)) { finished = false; this.unk234[i] = fr(this.unk234[i] - this.unk338); }
@@ -396,7 +397,7 @@ export class Talk2D {
             const e = this.unk260.getMessageEntry(this.unk264);
             if (e) this.setupTextBox(this.unk260, e);
             this.unk26C = 0;
-            this.unk340 = this.lang() === 0x100 ? 0x20 : 0x40;
+            this.unk340 = textSpeed(this.lang(), false);
             this.unk27C = -1; this.unk2DE = 0; this.unk2DC = 0;
             r = true;
         }
@@ -574,6 +575,15 @@ export class Talk2D {
         this.boardText = out;
         this.unk278 += pos;
     }
+}
+/**
+ * unk340, the characters' alpha step (setMessageID / perform's erase: the text's speed; openNormalWindow with A
+ * held: the faster one): GMSJ01 and 3D All-Stars compare MSF_LANGUAGE (with 0x100 / 5), the others are
+ * fixed (VERSION_SELECT(0x40, GMSJ01_01(0x20)), VERSION_SELECT(0x80, GMSJ01_01(0x5A)))
+ */
+function textSpeed(lang: number, fast: boolean) {
+    const slow = V.GMSJ01 || V.GMSP01_NX ? lang === (V.GMSJ01 ? 0x100 : 5) : V.GMSJ01_01;
+    return slow ? (fast ? 0x5A : 0x20) : (fast ? 0x80 : 0x40);
 }
 /** Moonshine's Fast text message, JP ("！！！"; US "!", PAL "!!!") */
 const FAST_TEXT_JP = new Uint8Array([0x81, 0x49, 0x81, 0x49, 0x81, 0x49, 0]);

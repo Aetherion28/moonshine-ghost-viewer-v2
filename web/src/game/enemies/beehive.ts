@@ -9,7 +9,9 @@ import { fr, V3, Quat, MsCos, MsMtxSetRotRPH, mtx } from '../math.js';
 import { World, LiveManager, EnemyManager, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, MActor, readParams, SPINE_PARAMS, PSchema, HitActor, TakeActor, SpineEnemy } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
-import { quatEulerX, quatEulerY, mtxGetQuat, mtxSetSQT, jnormalize, clamp, ItemRef, itemByEventID, itemByName, appearItem } from './animal.js';
+import { quatEulerX, quatEulerY, mtxGetQuat, mtxSetSQT, jnormalize, clamp } from './animal.js';
+import { mapObjGlobals, newAndRegisterObj, MapObjBase } from '../mapobj/base.js';
+import { newAndRegisterObjByEventID } from '../mapobj/item.js';
 import { Realoid, RealoidActor, RF_UNK2, RF_UNK4, RF_UNK2_OR_UNK4 } from './boid.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
@@ -63,9 +65,11 @@ export class BeeHive extends Realoid {
     swingDirGoal = new Quat(); swingDir = new Quat(); baseRot = new Quat();
     swingAngle = 0; swingSpeed = 0; swingLimit = 0;
     initPos = new V3(); soundPos = new V3();
-    item: ItemRef | null = null;
+    /** mNestItem: the registered item the nest drops */
+    item: MapObjBase | null = null;
     collisionBee = 0; activeBeeNum = 0;
-    coins: (ItemRef | null)[] = [];
+    /** mBeeCoins: the last bee's item (a "coin": the item manager's stand-in) */
+    coins: (MapObjBase | null)[] = [];
     eatenBeeNum = 0;
     nest: MActor | null = null; nestBreak: MActor | null = null;
     constructor(w: World, name = 'ハチの巣とハチ') { super(w, name); }
@@ -110,8 +114,8 @@ export class BeeHive extends Realoid {
         b.onFlag(RF_UNK4);
         b.onHitFilter(HF.NO_COLLISION);
         let c = this.coins[this.eatenBeeNum];
-        if (this.eatenBeeNum !== this.leader.num - 1) c = itemByName('coin');
-        if (c) appearItem(this.world, c, b.pos, new V3(0, 15, 0));
+        if (this.eatenBeeNum !== this.leader.num - 1) { const im = mapObjGlobals(this.world).itemManager; c = im ? im.makeObjAppear(AT.COIN) : null; }
+        if (c) { c.appear(); c.pos.set(b.pos); c.vel.set(0, 15, 0); c.offLiveFlag(LF.UNK10); }   // setVelocityAndFlag10
         ++this.eatenBeeNum;
     }
     load(s: Stream) {
@@ -124,11 +128,11 @@ export class BeeHive extends Realoid {
     }
     loadCoin(s: Stream) {
         const itemId = s.u32(), lastId = s.u32();
-        this.item = itemByEventID(this.world, itemId, '');
+        this.item = newAndRegisterObjByEventID(this.world, itemId, '');
         const n = this.leader.num;
         this.coins = [];
-        for (let i = 0; i < n - 1; i++) this.coins.push(itemByName('coin'));
-        this.coins.push(itemByEventID(this.world, lastId, '') || itemByName('coin'));
+        for (let i = 0; i < n - 1; i++) this.coins.push(newAndRegisterObj(this.world, 'coin'));
+        this.coins.push(newAndRegisterObjByEventID(this.world, lastId, '') || newAndRegisterObj(this.world, 'coin'));
     }
     createRealoidActor(m: MActor | null) { return new Bee(this.world, m, this); }
     receiveMessage(sender: HitActor, msg: number) {
@@ -242,9 +246,16 @@ export class BeeHive extends Realoid {
     decrimentBee() { if (this.activeBeeNum > 3) { --this.activeBeeNum; this.disappearBee(this.activeBeeNum); } }
     appearAllBees() { for (let i = 0; i < this.leader.num; i++) this.appearBee(i); this.activeBeeNum = this.leader.num; }
     dropCoin() {
-        if (!this.item) return;
-        appearItem(this.world, this.item, this.pos, new V3());
-        this.item = null;
+        let o = this.item;
+        if (!o) return;
+        if (o.isActorType(AT.COIN)) { const im = mapObjGlobals(this.world).itemManager; o = im ? im.makeObjAppear(AT.COIN) : null; }
+        if (o) {
+            o.appear();
+            o.pos.set(this.pos);
+            o.vel.set(0, 0, 0); o.offLiveFlag(LF.UNK10);   // setVelocityAndFlag10
+            o.onLiveFlag(LF.AIRBORNE);
+            this.item = null;
+        }
     }
     prepareBreak() {
         this.mactor = this.nestBreak;

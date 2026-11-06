@@ -8,7 +8,9 @@ import { vLen } from '../vecops.js';
 import { World, SpineEnemy, EnemyManager, LiveManager, PathNode, LF, HF, MSG, nerve, Spine, Stream, ANM_BCK, FC_ONCE_RESET, readParams, SPINE_PARAMS, PSchema, HitActor, TakeActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
-import { RATE, AnimalBase, SMS_Eular2Quat, quatRotate, clamp, ItemRef, itemByEventID, appearItem } from './animal.js';
+import { RATE, AnimalBase, SMS_Eular2Quat, quatRotate, clamp } from './animal.js';
+import { newAndRegisterObjByEventID } from '../mapobj/item.js';
+import type { MapObjBase } from '../mapobj/base.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 
@@ -60,9 +62,8 @@ export class WireBinder {
 }
 
 export class AnimalBird extends SpineEnemy {
-    item: ItemRef | null = null;
-    /** unk150 when it's a coin: the registered coin (or the item manager's stand-in for a pool coin) */
-    coinObj: any = null;
+    /** unk150: its item, registered (a gold coin: the item manager's stand-in, a pool coin appears) */
+    item: MapObjBase | null = null;
     wireBinder: WireBinder | null = null;
     homePos = new V3(); homeRot = new V3();
     walkDir = 1; birdScale = 1;
@@ -96,11 +97,9 @@ export class AnimalBird extends SpineEnemy {
     load(s: Stream) {
         super.load(s);
         const id = s.s32();
-        // newAndRegisterObjByEventID: TItemManager::newAndRegisterCoin first (blue, the pool's stand-in, red)
-        const eid = id >= 0 ? id : 100;
-        this.coinObj = this.world.newAndRegisterCoin(eid >>> 0);
-        this.item = itemByEventID(this.world, eid, id >= 0 ? '鳥用' : '');
-        const t = this.coinObj ? this.coinObj.actorType : this.item ? this.item.type : AT.COIN;
+        // unk150: TMapObjBaseManager::newAndRegisterObjByEventID (a coin, the Shine （鳥用）, a fruit, a 1-Up)
+        this.item = id >= 0 ? newAndRegisterObjByEventID(this.world, id >>> 0, '鳥用') : newAndRegisterObjByEventID(this.world, 100, '');
+        const t = this.item ? this.item.actorType : AT.COIN;
         if (t === AT.SHINE) this.colorIndex = 2;
         else if (t === AT.COIN_RED) this.colorIndex = 3;
         else if (t === AT.COIN_BLUE) { this.colorIndex = 0; this.checkNotAppear(id); }
@@ -170,11 +169,9 @@ export class AnimalBird extends SpineEnemy {
     isChanged() { return this.spine!.getLatestNerve() === BirdNerves.changeToCoin; }
     isFlying() { const n = this.spine!.getLatestNerve(); return n === BirdNerves.graphWander || n === BirdNerves.comeback; }
     doDropCoin() {
-        const it = this.item;
-        if (!it) return;
-        if (it.type === AT.SHINE) { appearItem(this.world, it, this.pos, new V3()); this.world.effect('demo:鳥シャインカメラ', this.pos); return; }
-        const o = this.coinObj;
-        if (!o) { appearItem(this.world, it, this.pos, new V3(0, -10, 0)); return; }
+        const o: any = this.item;
+        if (!o) return;
+        if (o.isActorType(AT.SHINE)) { o.pos.set(this.pos); o.appearWithDemo('鳥シャインカメラ'); return; }
         const c = o.isActorType(AT.COIN) ? this.world.makeCoinAppear(o) : o;
         if (c) {
             c.appear();

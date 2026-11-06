@@ -21,6 +21,7 @@
 // left at the game's fresh-save values (TFlagManager::firstStart: zero, correctFlag's minimums).
 // Not here: save/load to the card, options, blue coin / nozzle per-area flags (SMS_getShineStage only for VISITED).
 import { MSF } from './msflags.js';
+import { V } from './version.js';
 export { MSF };
 
 /** SMS_getShineStage's table (StageUtil.cpp) */
@@ -44,7 +45,13 @@ const BANKS: Record<number, [number, boolean]> = {
 export class FlagManager {
     /** each bank's values (bools as 0/1), by the id's low 16 bits */
     private banks: Record<number, Int32Array> = {};
-    constructor() { for (const b in BANKS) this.banks[b] = new Int32Array(BANKS[b][0] & 0xFFFF); this.correctFlag(); }
+    constructor() { for (const b in BANKS) this.banks[b] = new Int32Array(BANKS[b][0] & 0xFFFF); this.correctFlag(); this.correctOptFlag(); }
+    /**
+     * correctOptFlag's language (TFlagManager's constructor and loadOption; JP DOL 0x800E6D50: li r5, 0x100):
+     * every version but PAL sets MSF_LANGUAGE to 0x100. PAL (and 3D All-Stars) take the saved language
+     * or OSGetLanguage, which the sim can't know: left 0 (English).
+     */
+    correctOptFlag() { if (!V.GMSP01 && !V.GMSP01_NX) this.setFlag(MSF.LANGUAGE, 0x100); }
 
     private slot(flag: number, bools: boolean | null): Int32Array | null {
         const bank = flag >>> 16, d = BANKS[bank];
