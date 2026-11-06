@@ -26,6 +26,7 @@
 import { V } from '../version.js';
 import { fr, V3, MsMtxSetRotRPH, mtx, mtxMultVec, Mtx, MsSin, MsCos, MsClamp, MsGetRotFromZaxis, MsRandF, JMASSin, s16 } from '../math.js';
 import { frsqrte } from '../math.js';
+import { msVecMag2 } from '../vecops.js';
 import { World, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, HitActor, LiveActor, TakeActor, SpineEnemy, AnmData, LiveManager, CUE_MOVE, CUE_CALC_ANIM, ANM_BCK, ANM_FRAME_RATE, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
@@ -625,7 +626,8 @@ export class HaneHamuKuri extends HamuKuri {
         this.posDelta.set(V3.sub(n, this.pos));
         this.posDelta.y = fr(this.posDelta.y + fr(this.unk234 + this.unk210));
     }
-    isReachedToGoal() { const t = V3.sub(this.goal104.point(), this.pos); t.y = 0; return t.squared() < 100; }
+    // (MsVECMag2 (0x800c57d0) is the flat offset's length from the raw frsqrte, not its square: JP 0x80266C40)
+    isReachedToGoal() { const t = V3.sub(this.goal104.point(), this.pos); t.y = 0; return msVecMag2(t) < 100; }
     attackToMario() { this.world.sound(SE.EN_HANEKURI_ATTACK, this.pos); this.sendAttackMsgToMario(); }
     setMActorAndKeeper() { this.mactor = this.createMActorByName('hanekuri.bmd'); }
     setWaitAnm() { this.setBckAnm(HANE_BCK_WAIT); }
@@ -678,7 +680,8 @@ export class HaneHamuKuri2 extends HaneHamuKuri {
         this.marchSpeed = P.mSLMarchSpeedLow;
         if (!this.isBckAnm(4)) WalkerEnemy.prototype.walkBehavior.call(this, kind, k);
     }
-    isReachedToGoal() { const t = V3.sub(this.goal104.point(), this.pos); t.y = 0; return t.squared() < 20; }
+    // (MsVECMag2: a length, JP 0x80265CF0)
+    isReachedToGoal() { const t = V3.sub(this.goal104.point(), this.pos); t.y = 0; return msVecMag2(t) < 20; }
 }
 
 type HS = Spine<HaneHamuKuri>;

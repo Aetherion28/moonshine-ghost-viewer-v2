@@ -17,6 +17,7 @@
 // Not here: the sparks and shock particles, the spark / shock sounds, the shell's shadow; the
 // material table (dennoko_model1.bmt) is the viewer's (MActor.bmt).
 
+import { msVecMag2 } from '../vecops.js';
 import { V } from '../version.js';
 import { fr, V3, MsIsInSight, MsRandF } from '../math.js';
 import { World, Stream, HitActor, SpineEnemy, PathNode, LF, HF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE, nerve, Spine, PSchema } from '../engine.js';
@@ -204,7 +205,8 @@ CarapaceNerves.move = nerve<ElecCarapace>('TNerveElecCarapaceMove', (spine: CS) 
     }
     const diff = V3.sub(self.goal104.point(), self.pos);
     diff.y = 0;
-    if (self.unk176 === 0 && diff.squared() < 100) {
+    // (MsVECMag2 (0x800c57d0): the length from the raw frsqrte estimate, not the square)
+    if (self.unk176 === 0 && msVecMag2(diff) < 100) {
         if (self.unk184 !== 0) { spine.pushAfterCurrent(CarapaceNerves.ret); return true; }
         self.unk184 = 1;
         self.setGoalPath(new PathNode(null, self.host.pos.clone()));

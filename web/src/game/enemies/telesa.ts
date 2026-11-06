@@ -13,6 +13,7 @@
 // work in areas 7 and 14 (the hotel / casino): anywhere else it shows its disguise for 500 ticks
 // and then is gone (TNerveTelesaImitate).
 
+import { msVecMag2 } from '../vecops.js';
 import { fr, V3, MsSin, MsCos, MsClamp, MsMtxSetXYZRPH } from '../math.js';
 import { World, LiveActor, LF, HF, HC, nerve, Spine, Stream, PathNode, ANM_BCK, HitActor, PSchema, MActor, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -252,7 +253,7 @@ export class Telesa extends WalkerEnemy {
     isReachedToGoal() {
         const t = V3.sub(this.goal104.point(), this.pos); t.y = 0;
         if (t.x === 0 && t.z === 0) return true;
-        return t.squared() < 200;   // (MsVECMag2: the squared distance)
+        return msVecMag2(t) < 200;   // (MsVECMag2 (0x800c57d0): the length from the raw frsqrte estimate, not the square)
     }
     /** (box Boos: a TelesaBlock map object, which the viewer doesn't have: the game returns false without one) */
     changeByJuice() {

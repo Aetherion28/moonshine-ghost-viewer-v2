@@ -2,6 +2,7 @@
 // walk the stage's graph, chase or flee Mario, and go round the walls they meet (the binder
 // steers them along a wall it hasn't touched before, and jumps them out of pools).
 
+import { msVecMag2 } from '../vecops.js';
 import { fr, V3, MsSin, MsCos, frsqrte } from '../math.js';
 import { World, LiveActor, LF, nerve, Spine, PathNode, ANM_BCK, PSchema, Files } from '../engine.js';
 import { SmallEnemy, SmallEnemyNerves, smallParams, rangeRand as rangeRandF } from './smallEnemy.js';
@@ -161,7 +162,7 @@ export class WalkerEnemy extends SmallEnemy {
     isReachedToGoalXZ() {
         const t = V3.sub(this.goal104.point(), this.pos); t.y = 0;
         if (t.x === 0 && t.z === 0) return true;
-        return t.length() < 100;
+        return msVecMag2(t) < 100;   // (MsVECMag2 (0x800c57d0): the length from the raw frsqrte estimate, not the square)
     }
     initialGraphNode() { this.tracer.reset(); this.goToShortestNextGraphNode(); }
 }

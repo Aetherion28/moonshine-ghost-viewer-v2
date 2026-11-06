@@ -16,6 +16,7 @@
 // (gpMarioOriginal->isInvincible) isn't recorded, so taken as never; TNpcEvent::reviveOneSunflower
 // (the stage's sunflowers' revival) is only told to the viewer (an event).
 
+import { msVecMag2 } from '../vecops.js';
 import { fr, V3, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, JMASSin, JMASCos, mtx, mtxMultVec } from '../math.js';
 import { World, Stream, HitActor, LiveActor, SpineEnemy, PathNode, LF, HF, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, nerve, Spine, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -221,7 +222,7 @@ export class TamaNoko extends WalkerEnemy {
         const p = V3.sub(this.goal104.point(), this.pos);
         p.y = 0;
         if (p.x === 0 && p.z === 0) return true;
-        return p.squared() < 200;
+        return msVecMag2(p) < 200;   // (MsVECMag2 (0x800c57d0): the length from the raw frsqrte estimate, not the square)
     }
     isCollidMove(a: HitActor) {
         if (a.actorType === this.actorType) return true;

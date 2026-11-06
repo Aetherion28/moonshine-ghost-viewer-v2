@@ -31,6 +31,7 @@
 // slot frame model (TSharedParts srot_waku.bmd), the slot's TMapCollisionMove, the game-over laugh,
 // and the screen texture.
 
+import { msVecMag2 } from '../vecops.js';
 import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, MsRandF, MsMtxSetRotRPH, MsMtxSetXYZRPH, MsClamp, mtxMultVec } from '../math.js';
 import { World, Stream, HitActor, TakeActor, LiveActor, LiveManager, SpineEnemy, EnemyManager, PathNode, LF, HF, HC, MSG, ANM_BCK, ANM_BTP, ANM_BRK,
@@ -280,9 +281,9 @@ export class BossTelesaKillSmallEnemy extends HitActor {
             e.kill();
         }
         const m = this.unk68.world.mario.pos;
-        const dx = m.x - this.pos.x, dz = m.z - this.pos.z;
-        // (MsVECMag2: the squared distance, against 300)
-        if (fr(dx * dx + dz * dz) < 300) { this.unk68.forceHide(); this.unk6C = 1; }
+        const diff = new V3(fr(m.x - this.pos.x), 0, fr(m.z - this.pos.z));
+        // (MsVECMag2 (0x800c57d0): the length from the raw frsqrte estimate, not the square)
+        if (msVecMag2(diff) < 300) { this.unk68.forceHide(); this.unk6C = 1; }
     }
 }
 

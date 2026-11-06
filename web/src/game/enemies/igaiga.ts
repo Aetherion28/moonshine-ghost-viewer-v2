@@ -6,6 +6,7 @@
 // Not modelled: the body's roll (RollEnemyBodyCallback: a visual joint turn), the mirror copy,
 // the watermills a Gorogoro turns (BiaWatermill isn't simulated; its collision has no actor).
 
+import { msVecMag2 } from '../vecops.js';
 import { fr, V3, MsWrap, MsClamp, MsSin, MsRandF, MsGetRotFromZaxisY, MsIsInSight, MsMtxSetXYZRPH, MsMtxSetRotRPH, mtx, mtxMultVec, jgInvSqrt } from '../math.js';
 import { World, LF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, MActor, LiveActor, PathNode, CUE_CALC_ANIM, CUE_MOVE, SpineEnemy } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -143,7 +144,7 @@ export class RollEnemy extends WalkerEnemy {
     isReachedToGoalXZ() {
         const t = V3.sub(this.goal104.point(), this.pos);
         if (!this.unk1A8) t.y = 0;
-        return t.squared() < 200;
+        return msVecMag2(t) < 200;   // (MsVECMag2 (0x800c57d0): the length from the raw frsqrte estimate, not the square)
     }
     setBehavior() {
         if (this.pos.y > this.groundHeight + 50) return;
@@ -254,7 +255,7 @@ export class Igaiga extends RollEnemy {
     isReachedToGoalXZ() {
         const t = V3.sub(this.goal104.point(), this.pos);
         t.y = 0;
-        return t.squared() < Igaiga.mReachNodeDist;
+        return msVecMag2(t) < Igaiga.mReachNodeDist;   // (MsVECMag2 (0x800c57d0): the length from the raw frsqrte estimate, not the square)
     }
     setWalkAnm() { this.setBckAnm(3); }
     private jointPos() {
