@@ -12,6 +12,8 @@
 // its capture started, not at a level timer).
 
 import { replayMstr, readMstr, marioView, cameraView, padView, contactTriangle, MstrError, MstrSummary, MstrIdentity, MstrStageStart, MarioView, CameraView, CAMERA, K } from './mstr.js';
+/** GhostSimulation::Field: the settings snapshot's bytes (moonshine-source include/susamune/ghost_simulation.hxx) */
+const SIM = { STAGE_INTRO_SKIP: 20, GAMEPLAY_SPEED: 38, FAST_FORWARD_ACTIVE: 44 } as const;
 
 export interface TraceTick {
     qf: number; frame: number; scene: number;
@@ -113,6 +115,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     const fb = { qf: [] as number[], consumer: [] as number[], value: [] as number[] };
     const ds = { qf: [] as number[], state: [] as number[] };
     let stageStart: MstrStageStart | null = null, runFlags = 0, provenance = false;
+    const settingsSeen = new Set<string>();
     const segs: { scene: number; first: number; startQf: number; endQf: number }[] = [];
     let firstSeed: number | null = null, lastCamKey = -1e9, segNow = -1;
     /** the world tick at the current frame's start, and the recorder's (Mario-update) tick there */
@@ -155,6 +158,8 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
         },
         onStageStart: (s) => { if (!stageStart) stageStart = s; },
         onProvenance: (f) => { runFlags |= f; provenance = true; },
+        // MS_TRACE_SESSION: GhostSimulation::Snapshot, the Moonshine settings (sent again whenever they change)
+        onSession: (b) => { if (b.length >= 45) { if (b[SIM.STAGE_INTRO_SKIP]) settingsSeen.add('stage intro skip'); if (b[SIM.GAMEPLAY_SPEED]) settingsSeen.add('gameplay speed'); if (b[SIM.FAST_FORWARD_ACTIVE]) settingsSeen.add('fast-forward'); } },
         onTick: (s) => {
             // v3: each frame also records the pad as the frame starts (cue 0, word 1's high bit), not a movement update
             // (kept apart: the pad of a frame Mario doesn't move in, a paused one's, labelled as its first tick would be)
@@ -224,13 +229,23 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     // status, and D-pad Right reloads the position D-pad Left saved. Neither is the game's, so a run that shows either
     // effect is played from its recording, as a TAS (the user asked, 2026-11-06).
     const cheats = dpadFunctionsUsed(ticks);
-    if (cheats) runFlags |= 32;
+    // What makes Moonshine refuse a PB (moonshine-source 2026-11-03: ILing::liveGlobalAssistReasons, Records::invalidateAttempt,
+    // Ghost's run flags): a practice assist or savestate (run flags 1 / 2 / 32), fast-forward (4, or the session's
+    // FAST_FORWARD_ACTIVE), the stage intro skip, a gameplay speed; and the DPad Functions code. Any of them: a TAS here.
+    const tasReasons: string[] = [];
+    if (runFlags & 32) tasReasons.push('TAS');
+    if (runFlags & 2) tasReasons.push('savestate');
+    if (runFlags & 4) tasReasons.push('fast-forward');
+    if ((runFlags & 1) && !(runFlags & 32)) tasReasons.push('assisted');
+    for (const r of settingsSeen) if (!tasReasons.includes(r)) tasReasons.push(r);
+    if (cheats) tasReasons.push('DPad Functions code');
+    if (tasReasons.length) runFlags |= 32;
     const header = {
         version: 'MSTR' + summary.header.version, format: 'mstr', region: AREA_NAMES_REGION[gameId] || '?', gameId, discRevision,
         tvFormat: 'NTSC60', refreshHz: hz,
         route: route0, routeLabel: '',
         // kind 28 (ghost_run_flags.h): 1 assisted, 2 a savestate used, 4 fast-forward, 8 incomplete, 16 a custom route, 32 TAS
-        runFlags, runFlagsRecorded: provenance, cheatCodes: cheats ? ['DPad Functions'] : [], resultQf: lastQf, startQf: 0, endQf: lastQf, durationQf: lastQf, sampleCount: n,
+        runFlags, runFlagsRecorded: provenance, cheatCodes: cheats ? ['DPad Functions'] : [], tasReasons, resultQf: lastQf, startQf: 0, endQf: lastQf, durationQf: lastQf, sampleCount: n,
         created: 0, author: '', name, profileName: '',
         initialRng: firstSeed === null ? undefined : (firstSeed as number) >>> 0,
         // MSTR v3 starts recording before the stage loads: frames go by before Mario's first update, and

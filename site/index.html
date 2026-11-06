@@ -560,14 +560,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1793982451946"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1793982451946"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1793982451946"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1793982451946"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1793982451946"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1793982451946"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1793982451946"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1793982451946"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1793982470421"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1793982470421"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1793982470421"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1793982470421"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1793982470421"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1793982470421"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1793982470421"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1793982470421"><\/script>');
 </script>
 <script>
 (() => {
@@ -7879,7 +7879,7 @@ void main() {
       }
       // a trace's run attributes (Moonshine's kind-28 provenance, ghost_run_flags.h; TAS has its own tag below): savestates, fast-forward
       if (h.format === 'mstr' && h.runFlags) {
-        const f = h.runFlags, said = [f & 2 && 'savestate', f & 4 && 'fast-forward', f & 1 && !(f & 32) && 'assisted', f & 16 && 'custom route', f & 8 && 'incomplete', ...((h.cheatCodes || []).map((c) => c + ' code'))].filter(Boolean);
+        const f = h.runFlags, said = [f & 2 && 'savestate', f & 4 && 'fast-forward', f & 1 && !(f & 32) && 'assisted', f & 16 && 'custom route', f & 8 && 'incomplete', ...((h.cheatCodes || []).map((c) => c + ' code')), ...((h.tasReasons || []).filter((r) => !['TAS', 'savestate', 'fast-forward', 'assisted', 'DPad Functions code'].includes(r)))].filter(Boolean);
         if (said.length) {
           const tag = document.createElement('span');
           tag.className = 'build';
@@ -8429,7 +8429,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1793982451946';
+  const BUILD_STAMP = '1793982470421';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)

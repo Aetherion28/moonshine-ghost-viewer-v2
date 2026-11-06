@@ -7879,7 +7879,7 @@ void main() {
       }
       // a trace's run attributes (Moonshine's kind-28 provenance, ghost_run_flags.h; TAS has its own tag below): savestates, fast-forward
       if (h.format === 'mstr' && h.runFlags) {
-        const f = h.runFlags, said = [f & 2 && 'savestate', f & 4 && 'fast-forward', f & 1 && !(f & 32) && 'assisted', f & 16 && 'custom route', f & 8 && 'incomplete', ...((h.cheatCodes || []).map((c) => c + ' code'))].filter(Boolean);
+        const f = h.runFlags, said = [f & 2 && 'savestate', f & 4 && 'fast-forward', f & 1 && !(f & 32) && 'assisted', f & 16 && 'custom route', f & 8 && 'incomplete', ...((h.cheatCodes || []).map((c) => c + ' code')), ...((h.tasReasons || []).filter((r) => !['TAS', 'savestate', 'fast-forward', 'assisted', 'DPad Functions code'].includes(r)))].filter(Boolean);
         if (said.length) {
           const tag = document.createElement('span');
           tag.className = 'build';
