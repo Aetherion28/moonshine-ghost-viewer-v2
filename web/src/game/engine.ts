@@ -20,7 +20,7 @@ import { rngCtx, fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSi
 import type { MarioProxy } from './mario.js';
 import type { PlayerMario } from './player/player.js';
 import type { mat4 } from 'gl-matrix';
-import { Skeleton, parseBCK, jointMatrices } from './skeleton.js';
+import { Skeleton, parseBCK, jointMatrices, jointMatricesExact } from './skeleton.js';
 import type { Water, Fludd } from './water.js';
 import type { Pollution } from './pollution.js';
 import { MapCollision, BGCheckData, IGNORE_WATER_SURFACE, IGNORE_WATER_THROUGH, WallCheck } from './collision.js';
@@ -463,6 +463,8 @@ export class MActor {
         const s = this.slots[ANM_BCK];
         const a = s && s.idx >= 0 ? this.data.anms[ANM_BCK][s.idx] : null;
         const anm = a ? parseBCK(this.data.files.scene(this.data.folder + '/' + a.name + '.bck')) : null;
+        // (J3DModel::calc's rounding, as the game has it, unless a joint callback needs the mat4 path)
+        if (!post) return jointMatricesExact(sk, anm, s ? s.fc.frame : 0, base, [scale.x, scale.y, scale.z], []);
         return jointMatrices(sk, anm, s ? s.fc.frame : 0, base, [scale.x, scale.y, scale.z], [], post);
     }
     jointIndex(name: string) { const sk = Skeleton.of(this.data.files.scene(this.model)); return sk ? sk.index(name) : -1; }
