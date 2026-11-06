@@ -178,6 +178,9 @@ First drift per run, 143 traces:
 
 ## Open threads (where to pick up)
 
+- 2026-11-06 mamma1 (b/1DD461CB_…006, first drift 4685): Mario hovering hits mirror L's underside, which is tilted differently in the sim (recorded roof normal at 4221 (-0.167, -0.885, 0.435), sim (-0.354, -0.933, -0.070)). The Chuu Hanas walking on the mirror tilt it, and their recorded positions (actors 13-15) already disagree from about QF 435. The ROM fuses TLeanMirror's sums (touchPlayer / receiveMessage / touchEnemy's updateSpeedVec: fmadds at JP 0x801A9620 / 0x801A9634; controlShake's impact dot: fmadds at 0x801A8F08; isZero in f32), but with only those the run drifts earlier (4572), so something else is off too: patch /tmp/claude-0/fx/11_mirror.patch. Start from the Chuu Hanas at 435.
+- 2026-11-06 ricco7 (b/41726535_…03F, first drift 6408): Mario jumps on Yoshi with A+R at 6385 and the spit's lift is 0.26 in the game, 0.05 in the sim (TNozzleDeform's mBomb emit, upper state idle so pressure 0); the spit's direction is Yoshi's tongue joint, whose pose the trace doesn't record (SUGGESTIONS.md).
+
 - 2026-11-05 survey of the runs drifting before 15 s (first differing field, `/tmp/claude-0/up3/sv/`, sva.py): dolpic10 c/…066 / …065 (fixed: the map warp grounds and the area cubes, 2026-11-06); MARIO_FLAG 0x10 (recently left water) differs in ricco b/41726535_…024 and mare b/A7E1056F_…041. Candidates for one-fix-several.
 
 
