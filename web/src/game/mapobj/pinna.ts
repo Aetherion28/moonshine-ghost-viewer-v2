@@ -42,7 +42,7 @@ import { V } from '../version.js';
 import type { ItemManager, Coin } from './item.js';
 
 const itemManager = (w: World) => mapObjGlobals(w).itemManager as ItemManager | null;
-const demoCamera = (w: World, name: string, p: V3) => { w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name, p: p.clone() } }); if (w.talk) w.talk.fireStartDemoCamera(name, p.clone()); };
+const demoCamera = (w: World, name: string, p: V3, cb: ((phase: number) => void) | null = null) => { w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name, p: p.clone() } }); if (w.talk) w.talk.fireStartDemoCamera(name, p.clone(), -1, 0, true, null, cb); else if (cb) cb(0); };
 /** a J3D anm matrix (column-major 4x4) as the game's 3x4 */
 function m4ToMtx(w: mat4): Mtx {
     const m = mtx();
@@ -75,7 +75,7 @@ export class FerrisWheel extends MapObjBase {
     unk13C: MapObjBase[] = [];
     unk140 = 0;
     constructor(w: World, name = '観覧車') { super(w, name); }
-    /** becomeCalmlyCallback (the demo camera's: 0 when it's done) */
+    /** becomeCalmlyCallback (the demo camera's: 0 as it starts) */
     static becomeCalmlyCallback(wheel: FerrisWheel, p2: number) {
         if (p2 === 0) {
             wheel.state = FERRIS_STATE_UNK2;
@@ -507,9 +507,8 @@ export class AmiKing extends MapObjBase {
             if (im) im.makeShineAppearWithDemo('シャイン（観覧車シャイン用）', '観覧車シャインカメラ', this.pos.x, this.pos.y, this.pos.z);
             const wheel = w.search('FerrisWheel') as FerrisWheel | null;
             if (wheel instanceof FerrisWheel) {
-                demoCamera(w, '観覧車正常化カメラ', wheel.pos);
-                // TODO: the director calls this when the demo camera is done; at once here
-                FerrisWheel.becomeCalmlyCallback(wheel, 0);
+                // (the director calls the callback with 0 as this demo starts, after the ones queued before it, and 1 as it ends)
+                demoCamera(w, '観覧車正常化カメラ', wheel.pos, (phase) => FerrisWheel.becomeCalmlyCallback(wheel, phase));
             }
             this.kill();
         } else {

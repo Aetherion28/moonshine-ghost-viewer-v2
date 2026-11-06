@@ -210,6 +210,8 @@ First drift per run, 143 traces:
 
 ## Fix log (newest first)
 
+- 2026-11-06 TFerrisWheel::becomeCalmlyCallback runs as the director starts its demo (mapobj/pinna.ts): the 観覧車正常化カメラ demo is queued with the callback, which the director calls with 0 as that demo starts (after the boss's own demo ends: MarDirectorDirect.cpp) and 1 as it ends; the sim called it at once when the boss sank. In pinnaParco2 (b/A7E1056F_…009) the wheel slowed about 1200 ticks early, so a gondola sat under hovering Mario at 5631. Batch runs70 vs runs69: 1 better (…009 5632 -> 5684), 0 worse.
+
 - 2026-11-06 TMario::hipAttacking's manhole snap (player/jump.ts, MarioJump.cpp): for each collision that is a TManhole (ACTOR_TYPE_MANHOLE) more than 70 from Mario, his x and z become the manhole's. dolpic10 (c/A7E1056F_…067) drifted by 75 at 4844 where Mario ground-pounds next to one. Batch runs69 vs runs68: 1 better (…067 4844 -> never), 0 worse.
 
 - 2026-11-06 TMuddyBoat (mapobj/corona.ts) as the ROM has it: bind's and moveByWater's sums are fused (JP 0x801AFF2C / 0x801AFF40 fmadds for the push, the stream's and the wall centres' fmadds / fnmsubs, moveByWater's dots, cross and pushes 0x801B05A0..0x801B0694); calc writes getAnmMtx(0) only, which the model's calc replaces once animations are on; kill copies that matrix into the base matrix, and while broken the root is the BCK's joint 0 from it at base scale 1 (TMuddyBoat's empty calcRootMatrix never calls setBaseScale), so Mario's ride doesn't jump to the boat's current place. coro_ex6 (c/A7E1056F_…058) was a 1-ulp boat drift from 3124 and a 53-unit ride jump at 4177. Batch runs68 vs runs67: 1 better (…058 4180 -> 4960), 0 worse.
