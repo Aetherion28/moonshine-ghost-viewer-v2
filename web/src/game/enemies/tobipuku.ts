@@ -21,7 +21,8 @@ import { WalkerEnemy, walkerParams } from './walker.js';
 import { msVecNormalize, force25 } from '../camera/lib.js';
 import { frsqrte } from '../math.js';
 import { marioAngleY } from '../mapobj/lib.js';
-import { traceNextRollCaller } from '../feedback.js';
+import { traceNextRollCaller, traceActorPosAfter } from '../feedback.js';
+import { calcKeyCode } from '../engine.js';
 import { V } from '../version.js';
 
 const TOBI_PARAMS = { mSLBoundNum: ['i', 3], mSLBoundVal: ['f', 0.8], mSLLifeTimer: ['i', 200], mSLFlyGravityY: ['f', 0.2], mSLPowerFromWater: ['f', 1] } satisfies PSchema;
@@ -108,6 +109,8 @@ export class TobiPukuLaunchPad extends SmallEnemy {
         }
         p.reset();
         p.pos.set(this.pos); p.rot.set(this.rot);
+        // (a puku's first launch: its unk1E0, taken in reset, holds the garbage unk1D0's leap: TobiPuku.firstSwimHeightIsGarbage)
+        p.e0Garbage = !p.launched;
         p.unk1D0.set(v); p.launched = true;
         p.unk1B0 = this.pos.y;
         p.unk1DC = this;
@@ -130,6 +133,21 @@ export class TobiPuku extends WalkerEnemy {
     unk1D0 = new V3();
     /** unk1D0 has been written (TTobiPuku's constructor leaves it uninitialised: see flewOnGarbage) */
     launched = false;
+    /**
+     * unk1E0 (TNerveTobiPukuLand's depth check) is still the one reset took at the first launch: the pad's
+     * resetToPosition runs control() first, so the generate nerve has added the uninitialised unk1D0.y
+     * (flewOnGarbage) to the position reset then stores. So the first landing's `fabsf(dy) > 600` can't be
+     * derived; in a trace the puku's recorded height after the tick decides (it stops sinking once the
+     * check passed: ReturnLaunch keeps y). Cleared by ReturnLaunch, which stores the real height.
+     */
+    e0Garbage = false;
+    /** the recorded height after this tick says whether the game's first-landing depth check passed (null: no record) */
+    sankEnoughFromRecording(yAfter: number, v: number): boolean | null {
+        if (!this.e0Garbage || !(Math.abs(v) >= 1)) return null;
+        const r = traceActorPosAfter(this.keyCode || calcKeyCode(this.name), this.pos.x, this.pos.z, 1);
+        if (!r) return null;
+        return Math.abs(r[1] - yAfter) < Math.abs(v) / 2;
+    }
     unk1DC: TobiPukuLaunchPad | null = null; unk1E0 = 0; unk1E4 = 0; unk1E8 = 0; unk1EC = 0; unk1F0 = 0;
     get T(): any { return this.getSaveParam(); }
     constructor(w: World, name = 'とびプク') { super(w, name); }
@@ -451,7 +469,8 @@ TobiNerves.land = nerve<TobiPuku>('TNerveTobiPukuLand', (spine: S) => {
         v.y = self.unk1E4;
         self.pos.x = fr(self.pos.x + v.x); self.pos.y = fr(self.pos.y + v.y); self.pos.z = fr(self.pos.z + v.z);
         if (Math.abs(dy) > 120) self.unk1EC = MsClamp(fr(self.unk1EC + 3), 0, 180);
-        if (Math.abs(dy) > 600) { spine.pushAfterCurrent(TobiNerves.returnLaunch); return true; }
+        const rec = self.sankEnoughFromRecording(self.pos.y, v.y);
+        if (rec === null ? Math.abs(dy) > 600 : rec) { spine.pushAfterCurrent(TobiNerves.returnLaunch); return true; }
     } else {
         self.pos.y = fr(self.pos.y - 12);
         if (self.isJumpBck() && self.rot.x < TobiPuku.mLandAngle) self.rot.x = fr(self.rot.x + fr(1.2));
@@ -484,7 +503,7 @@ TobiNerves.returnLaunch = nerve<TobiPuku>('TNerveTobiPukuReturnLaunch', (spine: 
     if (spine.time === 0) {
         self.setGoalPath(new PathNode(null, pad.pos.clone()));
         self.setSwimAnm();
-        self.unk1E0 = self.pos.y;
+        self.unk1E0 = self.pos.y; self.e0Garbage = false;
     }
     self.swimEffect();
     if (self.isReachedToGoalXZ()) { spine.pushAfterCurrent(TobiNerves.prepareFly); return true; }

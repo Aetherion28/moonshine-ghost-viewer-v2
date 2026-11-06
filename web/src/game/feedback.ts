@@ -94,3 +94,34 @@ export function traceRngByState(tape: { count: number; seed: Uint32Array; caller
         return i + 1 < tape.count ? tape.caller[i + 1] >>> 0 : null;
     };
 }
+
+/**
+ * The trace's actor records by stage tick, for an actor whose uninitialised memory the game's recorded
+ * positions give away (TTobiPuku's first unk1E0: enemies/tobipuku.ts). at(key, x, z, d) is the recorded
+ * position of the actor with that key code nearest (x, z) (within 80) in the first record frame at or after
+ * the sim's current tick + d (up to 4 later), null without a trace or a record. Set by the runner around a
+ * stage's frames like feedbackCtx.
+ */
+export const traceActorCtx: { at: ((key: number, x: number, z: number, d: number) => [number, number, number] | null) | null } = { at: null };
+export function traceActorPosAfter(key: number, x: number, z: number, d: number): [number, number, number] | null {
+    return traceActorCtx.at ? traceActorCtx.at(key, x, z, d) : null;
+}
+export function traceActorsByTick(A: { count: number; qf: Int32Array; key: Uint16Array; pos: Float32Array }, base: number, qfNow: () => number) {
+    const byQf = new Map<number, number[]>();
+    for (let i = 0; i < A.count; i++) { const q = A.qf[i]; (byQf.get(q) || byQf.set(q, []).get(q)!).push(i); }
+    return (key: number, x: number, z: number, d: number): [number, number, number] | null => {
+        const q0 = base + qfNow() + d;
+        for (let q = q0; q <= q0 + 4; q++) {
+            const L = byQf.get(q);
+            if (!L) continue;
+            let best = -1, bd = 80;
+            for (const i of L) {
+                if (A.key[i] !== (key & 0xFFFF)) continue;
+                const e = Math.hypot(A.pos[i * 3] - x, A.pos[i * 3 + 2] - z);
+                if (e < bd) { bd = e; best = i; }
+            }
+            if (best >= 0) return [A.pos[best * 3], A.pos[best * 3 + 1], A.pos[best * 3 + 2]];
+        }
+        return null;
+    };
+}
