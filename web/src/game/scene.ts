@@ -78,6 +78,7 @@ export class Stage {
         w.flags.setupStage(map, stage, w.exShineGot, shineIDofExStage(map), !carried);
         w.marioPosIdx = intro && intro.marioPosIdx ? intro.marioPosIdx : 0;
         w.traceAlive = intro && intro.traceAlive ? intro.traceAlive : null;
+        w.traceHitFilter = intro && intro.traceHitFilter ? intro.traceHitFilter : null;
         if (intro && intro.shadowMarioEvent !== undefined) w.flags.setFlag(MSF.SHADOW_MARIO_EVENT, intro.shadowMarioEvent);
         w.groups = GROUP_NAMES.map(() => []);
         // the map's collision (TMap: the grid size from the scene's Map object, filled from map.col)

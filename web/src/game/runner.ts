@@ -431,6 +431,19 @@ export function plazaTraceStart(m: PlayerMario, c: { flags: FlagManager; prevAre
  * alive where the image's flags would have it dead), so a load that decides by those flags takes the
  * recorded outcome instead (EggYoshi.load). null without actor records.
  */
+/** a trace's actors' hit filters at their first record, by exact position (World.traceHitFilterAt) */
+export function traceActorsHitFilter(g: any): Map<string, number> | null {
+    const A = g && g.trace && g.trace.actors as TraceActors | undefined;
+    if (!A || !A.count || !A.hitFilter) return null;
+    const seen = new Set<number>(), out = new Map<string, number>();
+    for (let i = 0; i < A.count; i++) {
+        if (seen.has(A.id[i])) continue;
+        seen.add(A.id[i]);
+        out.set(A.pos[i * 3] + ',' + A.pos[i * 3 + 1] + ',' + A.pos[i * 3 + 2], A.hitFilter[i] >>> 0);
+    }
+    return out;
+}
+
 export function traceActorsAlive(g: any): Map<string, boolean> | null {
     const A = g && g.trace && g.trace.actors as TraceActors | undefined;
     if (!A || !A.count) return null;
@@ -800,6 +813,7 @@ export class SimRunner {
             // stage (stage schema 2+), where the stage before left it for a later one built here, else 0
             const prevSink = segI > 0 && this.sinkCarry && this.sinkCarry.seg === segI - 1 ? this.sinkCarry.n : null;
             if (intro && segI === 0 && g.trace) { const ta = traceActorsAlive(g); if (ta) intro.traceAlive = ta; }
+            if (intro && segI === 0 && g.trace) { const th = traceActorsHitFilter(g); if (th) intro.traceHitFilter = th; }
             if (intro && segI === 0 && g.trace) { const ev = traceShadowMarioEvent(g, segI, seg.route.area, seg.route.episode); if (ev !== undefined) intro.shadowMarioEvent = ev; }
             npcSinkSetup.start = segI === 0 ? (g.trace && g.trace.stageStart && g.trace.stageStart.npcSinkPhase !== null ? g.trace.stageStart.npcSinkPhase : 0) : (prevSink ?? 0);
             try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, seed ?? 0, 0, intro); }

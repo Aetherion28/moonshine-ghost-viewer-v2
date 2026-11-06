@@ -177,6 +177,8 @@ First drift per run, 143 traces:
 
 ## Open threads (where to pick up)
 
+- 2026-11-05 survey of the runs drifting before 15 s (first differing field, `/tmp/claude-0/up3/sv/`, sva.py): Mario's occlusion flag (bit 0 of his flag word) set in the game, not the sim, just before the drift in dolpic10 c/…066 and c/…065; MARIO_FLAG 0x10 (recently left water) differs in ricco b/41726535_…024 and mare b/A7E1056F_…041. Candidates for one-fix-several.
+
 
 
 - 2026-11-05 Bianco b/41726535_80000023 (104 s now): RNG consumers line up to tick 2058, where the game makes a TNerveAmenboSearch roll (0x8033dfa8) a tick or two before the sim.
@@ -201,6 +203,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-05 Rocket / turbo nozzle boxes valid from their first record (mapobj/item.ts NozzleBox.loadAfter; runner.ts traceActorsHitFilter, World.traceHitFilterAt; the actor records' hit filter, word 25, is now in TraceActors.hitFilter). TNozzleBox is valid with the area's MSF_NOZZLE_* right; in mamma3 b/1DD461CB_80000013 and mamma5 …012 the stage-start image has every nozzle right 0, yet the game's boxes take damage from tick 3 (hit filter 0x80000000, no NO_DAMAGE), so Moonshine set the flags after the image (as with the Yoshi eggs). Mario dove into them and bounced (keepDistance's clash: JUMP_SHORT_BACK_DOWN); the sim's invalid boxes let him through. Batch runs52 vs runs51: 2 better (both 9.8 / 10.6 s -> never), 0 worse.
 
 - 2026-11-05 The stream cubes' push (TMapWarp::watchToWarp) runs where TMap::perform has it, first in the tick's movement after the hit check (scene.ts runFrame -> PlayerMario.mapWarpStreamAndDrift), not at the end of Mario's perform. The drift check of a tick now waits for that push (a trace's record of a tick is Mario as the next tick's perform begins). Before, the L-button camera (and anything else after Mario in the tick) saw Mario already pushed: in mare_ex0 a/2A1D8909_80000033 the camera's in-between record holds Mario at x -3235.32 while the camera ran at tick 1005, the sim's camera saw -3223.83 (pushed back by the stream), kept its minimum distance from him and turned Mario's face angle (set from the camera yaw) at 1006. Batch runs51 vs runs50: 3 better, all now never drift (mare_ex0 a/…033 8.5 s, mare_ex0 b/A7E1056F_…029 9.3 s, dolpic_ex2 c/…05E 8.5 s, the one the user said to leave for last), 0 worse.
 

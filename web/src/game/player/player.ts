@@ -2008,6 +2008,8 @@ export interface IntroTiming {
      * for loads whose outcome hangs on flags the trace's flag image doesn't show (runner.ts traceActorsAlive)
      */
     traceAlive?: Map<string, boolean>;
+    /** a trace's actors' hit filters at their first record (runner.ts traceActorsHitFilter) */
+    traceHitFilter?: Map<string, number>;
     /**
      * A trace's MSF_SHADOW_MARIO_EVENT: what TMarDirector::setupObjects makes it from the stage-start
      * record's flags (runner.ts traceShadowMarioEvent), in place of the inferred flags' value

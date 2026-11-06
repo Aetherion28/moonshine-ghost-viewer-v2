@@ -57,6 +57,8 @@ export interface TraceGhost {
 export interface TraceActors {
     count: number; qf: Int32Array; id: Uint32Array; key: Uint16Array; created: Uint8Array; extent: Uint16Array;
     pos: Float32Array; scale: Float32Array; rot: Float32Array; vel: Float32Array; liveFlag: Uint32Array;
+    /** THitActor::mHitFilter (+0x64, word 25) */
+    hitFilter: Uint32Array;
     ends: { qf: Int32Array; id: Uint32Array; count: number };
 }
 
@@ -114,7 +116,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     /** the world tick at the current frame's start, and the recorder's (Mario-update) tick there */
     let worldTick = 0, frameTick: number | null = null, lastMenu = false;
     const u32v = new Uint32Array(1), f32v = new Float32Array(u32v.buffer);
-    const ac = { qf: [] as number[], id: [] as number[], key: [] as number[], created: [] as number[], extent: [] as number[], pos: [] as number[], scale: [] as number[], rot: [] as number[], vel: [] as number[], liveFlag: [] as number[] };
+    const ac = { qf: [] as number[], id: [] as number[], key: [] as number[], created: [] as number[], extent: [] as number[], pos: [] as number[], scale: [] as number[], rot: [] as number[], vel: [] as number[], liveFlag: [] as number[], hitFilter: [] as number[] };
     const ae = { qf: [] as number[], id: [] as number[] };
     const worldQf = (t: number) => (frameTick === null ? t : worldTick + (t - frameTick)) - 1;
     const summary = replayMstr(buf, {
@@ -139,6 +141,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             ac.qf.push(at); ac.id.push(aid); ac.key.push(words[2] >>> 16); ac.created.push(created ? 1 : 0); ac.extent.push(extent);
             ac.pos.push(fl(4), fl(5), fl(6)); ac.scale.push(fl(9), fl(10), fl(11)); ac.rot.push(fl(12), fl(13), fl(14));
             if (extent >= 0xF4) { ac.vel.push(fl(43), fl(44), fl(45)); ac.liveFlag.push(words[60]); } else { ac.vel.push(0, 0, 0); ac.liveFlag.push(0); }
+            ac.hitFilter.push(words[25] >>> 0);
         },
         onActorEnd: (aid, _frame, tick) => { ae.qf.push(worldQf(tick)); ae.id.push(aid); },
         onRng: (c) => {
@@ -273,7 +276,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             rng: { qf: Int32Array.from(rq), caller: Uint32Array.from(rc), seed: Uint32Array.from(rs), result: Uint16Array.from(rr), count: rq.length },
             actors: {
                 count: ac.qf.length, qf: Int32Array.from(ac.qf), id: Uint32Array.from(ac.id), key: Uint16Array.from(ac.key), created: Uint8Array.from(ac.created), extent: Uint16Array.from(ac.extent),
-                pos: Float32Array.from(ac.pos), scale: Float32Array.from(ac.scale), rot: Float32Array.from(ac.rot), vel: Float32Array.from(ac.vel), liveFlag: Uint32Array.from(ac.liveFlag),
+                pos: Float32Array.from(ac.pos), scale: Float32Array.from(ac.scale), rot: Float32Array.from(ac.rot), vel: Float32Array.from(ac.vel), liveFlag: Uint32Array.from(ac.liveFlag), hitFilter: Uint32Array.from(ac.hitFilter),
                 ends: { qf: Int32Array.from(ae.qf), id: Uint32Array.from(ae.id), count: ae.qf.length },
             },
         },

@@ -474,7 +474,14 @@ export class NozzleBox extends MapObjGeneral {
         this.item = newAndRegisterObj(this.world, this.nozzleName) as ItemNozzle | null;
         if (this.item) this.item.container = this;
         if (this.nozzleType === HOVER) this.makeModelValid();
-        else if (this.nozzleType === ROCKET || this.nozzleType === TURBO) { if (this.unk15C) this.makeModelValid(); else this.makeModelInvalid(); }
+        else if (this.nozzleType === ROCKET || this.nozzleType === TURBO) {
+            // (a rocket / turbo box is valid with this area's nozzle right, MSF_NOZZLE_*: a trace's first stage
+            // doesn't load the save's flags, and Moonshine can change them after the stage-start image, so the
+            // box's first record settles it, as for the Yoshi eggs: valid boxes take damage, NO_DAMAGE clear)
+            const hf = this.world.traceHitFilterAt(this.pos);
+            if (hf !== undefined) this.unk15C = (hf & HF.NO_DAMAGE) === 0;
+            if (this.unk15C) this.makeModelValid(); else this.makeModelInvalid();
+        }
     }
     load(s: Stream) {
         MapObjBase.prototype.load.call(this, s);
