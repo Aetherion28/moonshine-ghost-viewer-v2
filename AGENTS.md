@@ -177,7 +177,7 @@ First drift per run, 143 traces:
 
 ## Open threads (where to pick up)
 
-- 2026-11-05 survey of the runs drifting before 15 s (first differing field, `/tmp/claude-0/up3/sv/`, sva.py): dolpic10 c/…066 / …065 (fixed: the map warp grounds, 2026-11-06); MARIO_FLAG 0x10 (recently left water) differs in ricco b/41726535_…024 and mare b/A7E1056F_…041. Candidates for one-fix-several.
+- 2026-11-05 survey of the runs drifting before 15 s (first differing field, `/tmp/claude-0/up3/sv/`, sva.py): dolpic10 c/…066 / …065 (fixed: the map warp grounds and the area cubes, 2026-11-06); MARIO_FLAG 0x10 (recently left water) differs in ricco b/41726535_…024 and mare b/A7E1056F_…041. Candidates for one-fix-several.
 
 
 
@@ -203,6 +203,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-06 gpCubeArea (エリアキューブテーブル, mapwire.ts CubeManagerArea): TMario::thinkCube keeps the area cube Mario (+75 up) is in, and the live managers' setFlagOutOfCube sets LIVE_FLAG_UNK200 on every actor (+75 up) outside it, so their perform skips (an NPC's movement and its talk-forbid countdown too). World.inAreaCube was a stub that said every actor was in; setFlagOutOfCube now adds the 75 as TLiveManager does (the Boos' already did), and Hotel Delfino's floor rule (３階 / ２階 see the floors below) is in. In dolpic10 c/A7E1056F_80000065 the box room's 木箱モンテ (y 9701, the other model of the area) counted its 120-tick talk forbid down while Mario was still in the tunnel below (its own cube) and was talkable 60 ticks early, so the sim started a talk at 1625 instead of the box pickup. Batch runs54 vs runs53: 1 better (…065 14.0 s -> never), 0 worse.
 
 - 2026-11-06 TMapWarp's warp grounds (mapwarp.ts mapWarpStream; collision.ts mapWarpFromPayload reads the table from the scene's Map object after the collision counts, as TMapWarp::init). Standing on BG 0x200 / 0x201 whose pair shows another map model, Mario is warped by the pair's offset (warpRequest); BG 0x202 / 0x203 only switch the model. The sim had none: in dolpic10 c/A7E1056F_80000066 and …065 Mario runs through Delfino's tunnel at (-3020, 728, -5470) and the game moves him up 9000 (the other model of the area). The model switch itself isn't drawn. Batch runs53 vs runs52: 2 better (…066 9.7 -> 15.3 s, …065 13.0 -> 14.0 s), 0 worse.
 

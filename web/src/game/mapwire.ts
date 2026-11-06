@@ -407,3 +407,32 @@ export function installMapWires(w: World): MapWireManager {
     w.mapWires = m;
     return m;
 }
+
+// ---------------------------------------------------------------- gpCubeArea
+/** TCubeManagerArea (エリアキューブテーブル): unk1C the cube Mario is in (TMario::thinkCube), -1 none. */
+export class CubeManagerArea extends CubeManager {
+    unk1C = -1;
+    /** TCubeManagerArea::isInAreaCube: in Mario's cube; on map 7 (Hotel Delfino) a lower floor's cube counts too */
+    isInAreaCube(w: World, p: V3) {
+        const found = this.getInCubeNo(p);
+        if (this.unk1C === found) return true;
+        if (w.map === 7 && this.unk1C !== -1 && found !== -1) {
+            const cur = this.list[this.unk1C].name, nw = this.list[found].name;
+            if (cur === '３階') { if (nw === '２階' || nw === '１階') return true; }
+            else if (cur === '２階') { if (nw === '１階') return true; }
+        }
+        return false;
+    }
+}
+declare module './engine.js' { interface World { cubeArea: CubeManagerArea | null; } }
+World.prototype.cubeArea = null;
+/** gpCubeArea over the scene's map/tables.bin (once per stage) */
+export function cubeArea(w: World): CubeManagerArea {
+    if (w.cubeArea) return w.cubeArea;
+    const m = new CubeManagerArea(), t = CubeManager.fromTables(w.files.scene('map/tables.bin'), 'エリアキューブテーブル');
+    m.list = t.list;
+    return (w.cubeArea = m);
+}
+/** TMario::thinkCube's gpCubeArea part: the cube his position + 75 up is in */
+export function thinkCubeArea(w: World, p: V3) { const q = p.clone(); q.y = fr(q.y + 75); const A = cubeArea(w); A.unk1C = A.getInCubeNo(q); }
+World.prototype.inAreaCube = function (this: World, p: V3) { return cubeArea(this).isInAreaCube(this, p); };

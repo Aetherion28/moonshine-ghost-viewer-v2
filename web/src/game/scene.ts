@@ -19,7 +19,7 @@ import type { PadStatus } from './player/pad.js';
 import { Water, Fludd } from './water.js';
 import { Pollution } from './pollution.js';
 import { CHARAS } from './charas.js';
-import { installMapWires } from './mapwire.js';
+import { installMapWires, thinkCubeArea } from './mapwire.js';
 import { installEventWatchers } from './eventwatcher.js';
 import { installTalk } from './talk.js';
 import { cameraBck } from './camera/bck.js';
@@ -257,6 +257,7 @@ export class Stage {
                 const m = w.mario as MarioProxy;
                 m.update(this.qf);
                 m.perform(CUE_MOVE);
+                thinkCubeArea(w, m.pos);
                 this.emitWater(m);
             }
             if (w.water) w.water.move();

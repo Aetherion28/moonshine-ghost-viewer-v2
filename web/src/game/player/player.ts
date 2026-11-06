@@ -16,6 +16,7 @@ import { HitActor, TakeActor, LiveActor, MSG, HC, LF, Stream, CUE_MOVE, World, c
 import { AT } from '../actortypes.js';
 import { POLLUTION_TYPE } from '../pollution.js';
 import { mapWarpStream } from '../mapwarp.js';
+import { thinkCubeArea } from '../mapwire.js';
 import { TMarioSim, j3dTRMtx } from './tmario.js';
 import { S, A, MF, ControllerWork, bg, marioBckInfo, marioFile } from './base.js';
 import { ANIME_DATA } from './tables.js';
@@ -1779,6 +1780,8 @@ export class PlayerMario extends TMarioSim {
             if (this.mWaterGun) this.mWaterGun.perform(CUE_MOVE);
             if (this.mYoshi) this.mYoshi.movement();
         }
+        // thinkCube: the area cube he's in (the live managers' setFlagOutOfCube)
+        thinkCubeArea(this.world, this.pos);
         if (this.mFreezeTimer <= 0) {
             this.calcAnim();
             if (this.mYoshi) this.mYoshi.marioCalcAnim(this.unk414.z);

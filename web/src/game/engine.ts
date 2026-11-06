@@ -620,7 +620,7 @@ export class LiveManager extends ObjManager {
         }
     }
     clipActors() { this.clipActorsAux(4000, 200); }
-    setFlagOutOfCube() { for (const o of this.objs as LiveActor[]) { if (this.world.inAreaCube(o.pos)) o.offLiveFlag(LF.UNK200); else o.onLiveFlag(LF.UNK200); } }
+    setFlagOutOfCube() { for (const o of this.objs as LiveActor[]) { const p = o.pos.clone(); p.y = Math.fround(p.y + 75); if (this.world.inAreaCube(p)) o.offLiveFlag(LF.UNK200); else o.onLiveFlag(LF.UNK200); } }
     perform(cue: number) {
         if (cue & CUE_CALC_ANIM) { this.clipActors(); this.setFlagOutOfCube(); }
         super.perform(cue);
@@ -1495,6 +1495,7 @@ World.prototype.addToGroup = function (this: World, name: string, a: HitActor) {
     const idx = GROUP_NAMES.indexOf(name);
     if (idx >= 0) (this.groups[idx] = this.groups[idx] || []).push(a);
 };
+/** (gpCubeArea's test: mapwire.ts sets the real one) */
 World.prototype.inAreaCube = function () { return true; };
 /** Effects and sounds the game makes (particles, splashes): told to the viewer. */
 World.prototype.effect = function (this: World, kind: string, p: V3, s?: V3) { this.events.push({ t: this.tickCount, kind, data: { p: p.clone(), s: s ? s.clone() : null } }); };
