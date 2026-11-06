@@ -1376,12 +1376,17 @@ export const IDX = { MAP: 0, EMPTY: 1, MANAGER: 2, OBJECT: 3, GRAFFITI: 4, ITEM:
 export class ObjHitCheck {
     table: HitActor[][] = [];
     constructor(public w: World) { }
+    /**
+     * getTableIndex (inlined; JP 0x80115A64 in checkWater): f32 sums of the |coordinates| (fabs, fadds),
+     * fsubs / fadds the entry radius, fmuls by the f32 10/700, then __cvt_fp2unsigned (a negative is 0)
+     */
     private index(p: V3, r: number): [number, number] {
-        const s = Math.abs(p.x) + Math.abs(p.y) + Math.abs(p.z);
-        const i = (Math.trunc((s - r) * (10 / 700)) >>> 0) & 0xFF;
-        let e = Math.trunc((s + r) * (10 / 700)) >>> 0;
-        if (((Math.trunc((s - r) * (10 / 700))) >>> 0) === e) e += 1;
-        return [i, e & 0xFF];
+        const s = fr(fr(Math.abs(p.z)) + fr(fr(Math.abs(p.x)) + fr(Math.abs(p.y))));
+        const k = fr(10 / 700);
+        const u = (v: number) => (v < 0 ? 0 : v >= 4294967296 ? 0xFFFFFFFF : Math.trunc(v) >>> 0);
+        const i = u(fr(k * fr(s - r))), e0 = u(fr(k * fr(s + r)));
+        const e = i === e0 ? e0 + 1 : e0;
+        return [i & 0xFF, e & 0xFF];
     }
     private suffer(att: HitActor, suf: HitActor) {
         if (att.collisions.length >= att.colCapacity) return;

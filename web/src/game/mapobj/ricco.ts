@@ -229,7 +229,9 @@ export class FruitSwitch extends MapObjBase {
         if (fc) fc.frame = 0;
         this.offHitFilter(HF.NO_COLLISION);
         const a = this.colMgr && this.colMgr.getActiveCollision();
-        if (a) { this.calcRootMatrix(); a.setUpMtx(this.rootMtx()); }
+        // getModel()->calc(), then setUpMtx(getAnmMtx(0))
+        this.calcRootMatrix(); this.modelCalcRoot();
+        if (a) a.setUpMtx(this.rootMtx());
     }
     pushDown() {
         this.startBck('riccoswitch');

@@ -154,6 +154,7 @@ export class MapObjTreeScale extends MapObjTree {
                     this.onMapObjFlag(MOF.NO_ANIMATIONS);
                     // getModel()->calc(): its matrices at the full size
                     this.calcRootMatrix();
+                    this.modelCalcRoot();
                     this.offHitFilter(HF.NO_ATTACK);
                     this.setUpCurrentMapCollision();
                     this.state = STATE_NORMAL;

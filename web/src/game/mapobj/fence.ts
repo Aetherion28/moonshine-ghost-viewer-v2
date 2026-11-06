@@ -139,6 +139,7 @@ export class RevolvingFenceInner extends Fence {
             this.state = next;
             a.setFrameRate(0, ANM_BCK);
             const fc = a.getFrameCtrl(ANM_BCK); if (fc) fc.frame = 0;
+            this.modelCalcRoot();   // mMActor->calc()
             this.onMapObjFlag(MOF.NO_ANIMATIONS);
         };
         switch (this.state) {
@@ -191,6 +192,7 @@ export class RailFence extends Fence {
             if (this.tracer.graph) this.tracer.setTo(this.tracer.graph.findNearestNodeIndex(this.pos, -1));
             this.makeObjAppeared();
             this.calcRootMatrix();
+            this.modelCalcRoot();   // getModel()->calc()
             this.onMapObjFlag(MOF.NO_ANIMATIONS);
         }
     }

@@ -285,6 +285,7 @@ export class ShellCup extends MapObjBase {
     }
     /** (mMActor->calc(): the shells' joints afresh, then each shell) */
     control() {
+        this.modelCalcRoot();
         const J = anmMtxs(this);
         for (let i = 0; i < this.unk138.length; ++i) {
             const s = this.unk138[i];
@@ -574,6 +575,7 @@ export class PinnaCoaster extends MapObjBase {
             if (m) { this.baseTR.set(m4ToMtx(m)); this.anmMtx0 = null; }   // setBaseTRMtx
         }
         if (this.mactor) this.mactor.frameUpdate();
+        this.modelCalcRoot();   // getMActor()->calc()
         const m = this.rootMtx();
         const j = this.mactor ? this.mactor.anmMtx(0, this.baseTR, this.scale) : null;
         if (j) this.pos.set(j[12], j[13], j[14]); else this.pos.set(m[3], m[7], m[11]);

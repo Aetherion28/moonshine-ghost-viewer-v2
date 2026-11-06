@@ -85,6 +85,8 @@ export class MapObjBase extends LiveActor {
     mactors: MActor[] = [];
     /** the root joint matrix, when something sets it (setModelMtx) */
     anmMtx0: Mtx | null = null;
+    /** getAnmMtx(0) as the last CalcAnim's model calc made it (its root joint animated by a playing BCK): MOF.UNK8's collision follows it */
+    anmRoot: Mtx | null = null;
 
     constructor(w: World, name = '地形オブジェ基底') { super(w, name); }
 
@@ -103,6 +105,7 @@ export class MapObjBase extends LiveActor {
      */
     rootMtx(): Mtx {
         if (this.anmMtx0) return this.anmMtx0;
+        if (this.anmRoot) return this.anmRoot;
         const B = this.baseTR, s = this.scale, m = mtx();
         const sx = fr(s.x), sy = fr(s.y), sz = fr(s.z);
         m[0] = fr(B[0] * sx); m[1] = fr(B[1] * sy); m[2] = fr(B[2] * sz); m[3] = fr(B[3]);
@@ -305,7 +308,7 @@ export class MapObjBase extends LiveActor {
         this.pos.set(m[3], fr(m[7] + this.yOffset), m[11]);
         if (this.mactor) {
             if (this.checkMapObjFlag(MOF.NO_ANIMATIONS)) this.anmMtx0 = Float64Array.from(m);
-            else this.calcRootMatrix();
+            else { this.calcRootMatrix(); this.modelCalcRoot(); }
         }
         this.removeMapCollision();
         this.setUpCurrentMapCollision();
@@ -375,7 +378,7 @@ export class MapObjBase extends LiveActor {
         this.rot.set(this.initialRot); this.scale.set(this.initialScale);
         this.vel.zero();
         this.onLiveFlag(LF.UNK10);
-        if (this.mactor) this.calcRootMatrix();
+        if (this.mactor) { this.calcRootMatrix(); this.modelCalcRoot(); }   // getModel()->calc()
         const [h, d] = this.world.checkGround(this.pos.x, this.pos.y, this.pos.z);
         this.groundHeight = h; this.groundPlane = d;
     }
@@ -470,6 +473,27 @@ export class MapObjBase extends LiveActor {
             }
         }
         if (cue) super.perform(cue);
+        // (the model's calc: getAnmMtx(0) as of this CalcAnim, the base matrix and scale it had then; with
+        // a BCK playing, the root joint where its animation has it, not at rest)
+        if (cue & CUE_CALC_ANIM) this.modelCalcRoot();
+    }
+    /** getModel()->calc()'s getAnmMtx(0) (kept only where MOF.UNK8's collision reads it) */
+    modelCalcRoot() {
+        if (!this.checkMapObjFlag(MOF.UNK8)) return;
+        this.anmRoot = null;
+        this.anmRoot = this.animatedRoot() || Float64Array.from(this.rootMtx());
+    }
+    /** joint 0's matrix from the playing BCK (J3DModel::calc), or null with none playing */
+    private animatedRoot(): Mtx | null {
+        const a = this.mactor;
+        if (!a || !a.bckName()) return null;
+        const all = a.anmMtxAll(this.baseTR, this.scale);
+        if (!all || !all.length) return null;
+        const w = all[0], m = mtx();
+        m[0] = w[0]; m[1] = w[4]; m[2] = w[8]; m[3] = w[12];
+        m[4] = w[1]; m[5] = w[5]; m[6] = w[9]; m[7] = w[13];
+        m[8] = w[2]; m[9] = w[6]; m[10] = w[10]; m[11] = w[14];
+        return m;
     }
     drawn() { return super.drawn() && !this.checkLiveFlag(LF.UNK4000); }
 

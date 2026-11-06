@@ -40,7 +40,7 @@ export class MapObjBall extends MapObjGeneral {
     private soundTable(i: number) { return (this.data as any).sound ? (this.data as any).sound[i] : -1; }
     getDepthAtFloating() { return this.unk18C; }
     /** getModel()->calc(): the root matrix from the base matrix again */
-    protected modelCalc() { MapObjBase.prototype.calcRootMatrix.call(this); setRootMtx(this, this.rootMtx()); }
+    protected modelCalc() { MapObjBase.prototype.calcRootMatrix.call(this); this.modelCalcRoot(); setRootMtx(this, this.rootMtx()); }
     /** (its root matrix is its own: kept as it was until it's set again) */
     calcRootMatrix() {
         if (this.isState(GS.HOLDING) || !this.anmMtx0) { super.calcRootMatrix(); return; }
@@ -683,6 +683,7 @@ export class BigWatermelon extends MapObjBall {
         // calcRootMatrix(), getModel()->calc(), then the root's Y raised by the (scaled) radius
         this.calcRootMatrix();
         this.anmMtx0 = null;
+        this.modelCalcRoot();
         const m = Float64Array.from(this.rootMtx());
         m[7] = fr(fr(this.bodyRadius * fr(this.scale.y / this.initialScale.y)) + this.pos.y);
         setRootMtx(this, m);

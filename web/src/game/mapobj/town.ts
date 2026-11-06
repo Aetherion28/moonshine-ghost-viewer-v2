@@ -247,12 +247,14 @@ export class Manhole extends MapObjGeneral {
         if (fc.frame < 79 && next >= 79) {
             fc.frame = 79; fc.rate = 0;
             this.calcRootMatrix();
+            this.modelCalcRoot();   // getModel()->calc()
             this.onMapObjFlag(MOF.NO_ANIMATIONS);
             return true;
         }
         if (fc.frame < fc.end && next >= fc.end) {
             fc.frame = 0; fc.rate = 0;
             this.calcRootMatrix();
+            this.modelCalcRoot();   // getModel()->calc()
             this.onMapObjFlag(MOF.NO_ANIMATIONS);
             return true;
         }
