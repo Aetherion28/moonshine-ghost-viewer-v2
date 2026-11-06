@@ -484,10 +484,10 @@ export class MapObjBase extends LiveActor {
         this.anmRoot = this.animatedRoot() || Float64Array.from(this.rootMtx());
     }
     /** joint 0's matrix from the playing BCK (J3DModel::calc), or null with none playing */
-    private animatedRoot(): Mtx | null {
+    protected animatedRoot(scale: V3 = this.scale): Mtx | null {
         const a = this.mactor;
         if (!a || !a.bckName()) return null;
-        const all = a.anmMtxAll(this.baseTR, this.scale);
+        const all = a.anmMtxAll(this.baseTR, scale);
         if (!all || !all.length) return null;
         const w = all[0], m = mtx();
         m[0] = w[0]; m[1] = w[4]; m[2] = w[8]; m[3] = w[12];

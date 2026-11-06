@@ -15,7 +15,8 @@
 // where the game emits one once), the boat's float sound's speed info.
 
 import { fr, V3, mtx, MsWrap, MsMtxSetXYZRPH } from '../math.js';
-import { World, HitActor, LF, HF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE } from '../engine.js';
+import { fmadd, fmsub, fnmsub } from '../player/fmath.js';
+import { World, HitActor, LF, HF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { DONT_MOVE_XZ, WallCheck } from '../collision.js';
@@ -179,25 +180,36 @@ export class MuddyBoat extends MapObjBase {
         if (!g.emitting) return;
         const dir = normalize(new V3(fr(-g.mtx[0]), 0, fr(-g.mtx[8])));
         const m = this.rootMtx();
-        const fwd = new V3(m[2], 0, m[10]);
-        const dot = fr(dir.dot(fwd));
+        const fx = m[2], fz = m[10];
+        // (the ROM's fused ops, JP 0x801B05A0..0x801B0694: the dots and the cross by fmadds / fmsubs)
+        const dot = fmadd(dir.z, fz, fmadd(dir.x, fx, fr(dir.y * 0)));
         const mp = this.world.mario.pos;
         const normal = normalize(new V3(fr(mp.x - this.pos.x), 0, fr(mp.z - this.pos.z)));
         if (normal.x !== 0 || normal.z !== 0) normalize(normal);
-        const delta = V3.sub(dir, fwd);
-        const tv = new V3().cross(fwd, delta);
-        const turn = fr(fr(tv.y) * fr(fwd.dot(normal)));
-        const k = fr(this.unk148 * fr(1 - Math.abs(dot)));
-        this.unk14C = turn > 0 ? fr(this.unk14C + k) : fr(this.unk14C - k);
-        this.unk140 = fr(this.unk140 + fr(dot * (dot > 0 ? this.unk138 : this.unk13C)));
+        const dx = fr(dir.x - fx), dz = fr(dir.z - fz);
+        const tvy = fmsub(fz, dx, fr(fx * dz));
+        const turn = fr(tvy * fmadd(fz, normal.z, fmadd(fx, normal.x, fr(0 * normal.y))));
+        const k = fr(1 - Math.abs(dot));
+        this.unk14C = turn > 0 ? fmadd(this.unk148, k, this.unk14C) : fnmsub(this.unk148, k, this.unk14C);
+        this.unk140 = fmadd(dot, dot > 0 ? this.unk138 : this.unk13C, this.unk140);
         this.offLiveFlag(LF.UNK10);
     }
     calcRootMatrix() { }
+    perform(cue: number) {
+        super.perform(cue);
+        // the model's calc (broken: the BCK playing): getAnmMtx(0), which Mario's ride follows
+        if ((cue & CUE_CALC_ANIM) && !this.checkMapObjFlag(MOF.NO_ANIMATIONS) && !this.checkLiveFlag(LF.UNK4000) && !this.checkLiveFlag(LF.DEAD)) {
+            // (the model's base scale: TMuddyBoat's empty calcRootMatrix never sets it, so it stays 1)
+            const r = this.animatedRoot(new V3(1, 1, 1));
+            if (r) { this.anmRoot = r; this.anmMtx0 = null; }
+        }
+    }
     kill() {
         this.unk140 = 0; this.unk14C = 0;
         this.emit('amiAttack', this.unk170);
         this.world.sound(SE.OBJ_DORO_BROKEN, this.pos);
-        // MTXCopy(getAnmMtx(0), getBaseTRMtx()): setRootMtx keeps them together here
+        // MTXCopy(getAnmMtx(0), getBaseTRMtx()): the BCK's root starts from the matrix the last calc made
+        this.baseTR.set(this.rootMtx());
         this.offMapObjFlag(MOF.NO_ANIMATIONS);
         this.onLiveFlag(LF.UNK10);
         this.startAnim(1);
@@ -206,7 +218,7 @@ export class MuddyBoat extends MapObjBase {
     }
     touchWall(p: V3, r: WallCheck) {
         const wall = r.results[0], k = fr(50 + r.radius);
-        this.unk170.set(fr(r.center[0] - fr(wall.n[0] * k)), fr(100 + fr(this.pos.y - this.yOffset)), fr(r.center[2] - fr(wall.n[2] * k)));
+        this.unk170.set(fnmsub(wall.n[0], k, r.center[0]), fr(100 + fr(this.pos.y - this.yOffset)), fnmsub(wall.n[2], k, r.center[2]));
         p.set(this.pos);
         this.kill();
         this.posDelta.zero();
@@ -219,21 +231,22 @@ export class MuddyBoat extends MapObjBase {
     bind() {
         if (this.checkLiveFlag(LF.UNK10)) return;
         const pos = this.pos.clone(), m = this.rootMtx();
-        pos.x = fr(pos.x + fr(m[2] * this.unk140));
-        pos.z = fr(pos.z + fr(m[10] * this.unk140));
+        // (fmadds: JP 0x801AFF2C)
+        pos.x = fmadd(m[2], this.unk140, pos.x);
+        pos.z = fmadd(m[10], this.unk140, pos.z);
         // (the cube Mario is in)
         const cube = inStreamCube(this.world, this.world.mario.pos);
         if (cube) {
             const sm = mtx(); MsMtxSetXYZRPH(sm, 0, 0, 0, cube.r.x, cube.r.y, cube.r.z);
-            const d = fr(fr(m[2] * sm[2]) + fr(m[10] * sm[10]));
-            this.unk140 = fr(this.unk140 + fr(0.0001 * fr(d * cube.unk40)));
+            const d = fmadd(m[10], sm[10], fr(m[2] * sm[2]));
+            this.unk140 = fmadd(fr(0.0001), fr(d * cube.unk40), this.unk140);
         }
         const [height, ground] = this.world.checkGroundIgnoreWaterSurface(pos.x, pos.y, pos.z);
         const bottom = fr(this.pos.y - this.yOffset);
         if (height > fr(bottom - 100) || ground.isIllegal()) { pos.set(this.pos); this.kill(); this.posDelta.zero(); return; }
-        const c = new V3(fr(pos.x + fr(m[2] * this.unk160)), bottom, fr(pos.z + fr(m[10] * this.unk160)));
+        const c = new V3(fmadd(m[2], this.unk160, pos.x), bottom, fmadd(m[10], this.unk160, pos.z));
         if (this.bindToWall(c, this.unk158, pos)) return;
-        c.set(fr(pos.x - fr(m[2] * this.unk164)), fr(this.pos.y - this.yOffset), fr(pos.z - fr(m[10] * this.unk164)));
+        c.set(fnmsub(m[2], this.unk164, pos.x), fr(this.pos.y - this.yOffset), fnmsub(m[10], this.unk164, pos.z));
         if (this.bindToWall(c, this.unk15C, pos)) return;
         c.set(pos.x, fr(this.pos.y - this.yOffset), pos.z);
         if (this.bindToWall(c, this.unk154, pos)) return;
@@ -283,7 +296,8 @@ export class MuddyBoat extends MapObjBase {
         const m = mtx(); MsMtxSetXYZRPH(m, this.pos.x, waveY, this.pos.z, 0, this.rot.y, 0);
         const S = mtx(), is = this.initialScale; S[0] = is.x; S[5] = is.y; S[10] = is.z;
         MTXConcat(m, S, m);
-        setRootMtx(this, m);
+        // (getAnmMtx(0): with animations on, the model's calc after this one makes it from the base matrix and the BCK)
+        if (this.checkMapObjFlag(MOF.NO_ANIMATIONS)) setRootMtx(this, m);
         if (this.unk140 !== 0) {
             this.unk170.set(this.pos.x, fr(this.pos.y - this.yOffset), this.pos.z);
             const s = new V3(fr(3 * this.scale.x), fr(2 * this.scale.y), fr(3 * this.scale.z));
