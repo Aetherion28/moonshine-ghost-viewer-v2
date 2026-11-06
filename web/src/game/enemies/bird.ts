@@ -61,6 +61,8 @@ export class WireBinder {
 
 export class AnimalBird extends SpineEnemy {
     item: ItemRef | null = null;
+    /** unk150 when it's a coin: the registered coin (or the item manager's stand-in for a pool coin) */
+    coinObj: any = null;
     wireBinder: WireBinder | null = null;
     homePos = new V3(); homeRot = new V3();
     walkDir = 1; birdScale = 1;
@@ -94,8 +96,11 @@ export class AnimalBird extends SpineEnemy {
     load(s: Stream) {
         super.load(s);
         const id = s.s32();
-        this.item = itemByEventID(this.world, id >= 0 ? id : 100, id >= 0 ? '鳥用' : '');
-        const t = this.item ? this.item.type : AT.COIN;
+        // newAndRegisterObjByEventID: TItemManager::newAndRegisterCoin first (blue, the pool's stand-in, red)
+        const eid = id >= 0 ? id : 100;
+        this.coinObj = this.world.newAndRegisterCoin(eid >>> 0);
+        this.item = itemByEventID(this.world, eid, id >= 0 ? '鳥用' : '');
+        const t = this.coinObj ? this.coinObj.actorType : this.item ? this.item.type : AT.COIN;
         if (t === AT.SHINE) this.colorIndex = 2;
         else if (t === AT.COIN_RED) this.colorIndex = 3;
         else if (t === AT.COIN_BLUE) { this.colorIndex = 0; this.checkNotAppear(id); }
@@ -168,7 +173,16 @@ export class AnimalBird extends SpineEnemy {
         const it = this.item;
         if (!it) return;
         if (it.type === AT.SHINE) { appearItem(this.world, it, this.pos, new V3()); this.world.effect('demo:鳥シャインカメラ', this.pos); return; }
-        appearItem(this.world, it, this.pos, new V3(0, -10, 0));
+        const o = this.coinObj;
+        if (!o) { appearItem(this.world, it, this.pos, new V3(0, -10, 0)); return; }
+        const c = o.isActorType(AT.COIN) ? this.world.makeCoinAppear(o) : o;
+        if (c) {
+            c.appear();
+            c.pos.set(this.pos);
+            c.vel.set(0, -10, 0);
+            c.offLiveFlag(LF.UNK10);
+            c.onLiveFlag(LF.AIRBORNE);
+        }
     }
     getMyMarchSpeed() { return fr(this.birdScale * this.P.mMarchSpeed); }
     getWaterDamageRate() { return fr(this.waterproofTimer / this.P.mWaterproofTimerMax); }
