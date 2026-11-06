@@ -13,6 +13,11 @@ This repository is a web viewer for those recordings, plus **Simulate**: a TypeS
 The port is written function by function from the matching decompilation and, where the decomp is unsure, from the DOL's disassembly.
 The main measure of progress is how long each recorded run stays in sync before its first drift.
 
+## Working alongside another agent (2026-11-05, the user's split)
+
+Two agents work in this repo at once. The Claude session takes the runs that drift **earliest** and works later; the user's local model takes the runs that drift **latest** and works earlier.
+Before each commit: `git pull --rebase`, commit only your own files, and don't revert changes you didn't make. Batches write to `/tmp/claude-0/up3/runsNN` on the Claude side only.
+
 ## Rules (from the user; never break them)
 
 1. **No guessing in game code.** Every change must match the decomp, and the DOL where the decomp is NonMatching or unsure. Read the function; don't tune behaviour.
