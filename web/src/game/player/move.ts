@@ -99,7 +99,9 @@ export abstract class MarioMove extends MarioBase {
         const r = wallRecord(p.x, fr(p.y + yOff), p.z, radius, 4, 0);
         if (this.isTouchedWallsAndMoveXZ(r)) {
             for (const w of r.results) {
-                if (w.actor && w.actor === this.unk2C0) { result = w; break; }
+                // (JP 0x80134A88: `wall->mActor == unk2C0` with no null test, so while unk2C0 is null the first wall
+                // without an actor (any map wall) is taken at once, however far its plane)
+                if ((w.actor ?? null) === (this.unk2C0 ?? null)) { result = w; break; }
                 let d = fr(FMA(w.n[2], p.z, FMA(w.n[0], p.x, fr(w.n[1] * p.y))) + w.d);
                 if (d < 0) d = -d;
                 if (d < best) { result = w; best = d; }
