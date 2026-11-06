@@ -494,7 +494,8 @@ export class PolarSubCamera implements SimCamera {
         }
         if (c.lastStatus !== s) { c.lastStatus = s; c.sinceStatus = 0; } else c.sinceStatus++;
         const nz = this.nozzle();
-        const min = nz ? s16(nz.mLAngleMin ?? nz.params?.mLAngleMin ?? 0) : 0;
+        // (the nozzle's TParamRT mLAngleMin: its params are its .P)
+        const min = nz && nz.P ? s16(nz.P.mLAngleMin) : 0;
         const ang = nz && nz.getGunAngle ? s16(nz.getGunAngle()) : 0;
         c.unk1C = clamp(ratioI(0, min, ang), 0, 1);
     }
