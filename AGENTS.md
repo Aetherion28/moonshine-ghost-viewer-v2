@@ -199,6 +199,8 @@ First drift per run, 143 traces:
 
 ## Refuted (don't retry without new evidence)
 
+- 2026-11-06 A different hit-check phase (pm.ts MT0, the director's mMoveTickCount at the stage start: which ticks run checkActorsHit). MT0=2 takes a/2A1D8909_80000036 from 12.5 to 53 s, but the recording rules it out: Mario's recorded THitActor::mColCount (Mario blob +0x48, u16) is nonzero only at labels ≡ 3 mod 4 in every trace checked (a/…036, b/A7E1056F_…00B, b/41726535_…024), which is the sim's check tick ≡ 0 with MT0=0 (Mario's collisions at perform there). 0 stays.
+
 - Loading a trace's whole stage-start flag image as the first stage's world.flags (the save as the game had it): c/…080 never drifts, but 7 runs got worse, 1 better (runs45 vs runs44; mostly Delfino plaza runs, whose flag-driven setup the sim still infers in flags.ts setupStage). Worth retrying once those regressions are understood; the harness switch was pm.ts `flags: TC.flags.clone()` in Stage.fresh's intro.
 
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
