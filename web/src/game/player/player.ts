@@ -1811,8 +1811,12 @@ export class PlayerMario extends TMarioSim {
      * and the hit check of the tick before saw him before the push, as in the game. push is false for a
      * tick that runs no movement (the pause menu, a Shine's stop-the-world demo).
      */
-    mapWarpStreamAndDrift(push: boolean) {
+    mapWarpStreamAndDrift(push: boolean, check = true) {
         if (push) mapWarpStream(this.world);
+        if (check) this.driftCheckPending();
+    }
+    /** the drift check of the tick before, as this tick's TMario::perform begins (after the map group's and the conductor's movement) */
+    driftCheckPending() {
         const q = this.driftPendingQf;
         this.driftPendingQf = -1;
         if (q >= 0 && this.track) this.checkDrift(q);

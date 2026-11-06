@@ -246,12 +246,14 @@ export class Stage {
             // PerformList Movement: map group, wave, graffiti group, conductor, manager group, player group, camera, water manager...
             // TMap::perform: the moving collision's grid starts the tick empty
             w.col.clearMove();
-            // (then TMapWarp::watchToWarp: the stream cubes' push, and the drift check of the tick before)
-            if (P) P.mapWarpStreamAndDrift(true);
+            // (then TMapWarp::watchToWarp: the stream cubes' push)
+            if (P) P.mapWarpStreamAndDrift(true, false);
             if (w.pollution) w.pollution.move(w.mario.pos);
             w.conductor.perform(CUE_MOVE);
             // the manager group: the wires
             if (w.mapWires) w.mapWires.perform(CUE_MOVE);
+            // (the drift check of the tick before: a trace's record is Mario as his perform begins, so with the gates' pushes in)
+            if (P) P.driftCheckPending();
             if (P) { P.testPerform(CUE_MOVE); if (this.pinMario) this.pinMario(this.qf); P.cameraTick((tick === 0 ? 1 : 0) | (last ? 2 : 0)); }
             else {
                 const m = w.mario as MarioProxy;
