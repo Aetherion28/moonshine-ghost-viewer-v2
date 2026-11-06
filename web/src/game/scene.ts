@@ -12,7 +12,7 @@ import {
     World, Files, NameRef, Stream, parseSceneBin, SceneNode, ObjChara, HitActor, IDX, GROUP_NAMES, parseRails, GraphWeb, CUE_MOVE, CUE_CALC_ANIM,
     LiveActor, shineIDofExStage,
 } from './engine.js';
-import { MapCollision, mapGridFromPayload } from './collision.js';
+import { MapCollision, mapGridFromPayload, mapWarpFromPayload } from './collision.js';
 import { MarioProxy, MarioTrack } from './mario.js';
 import { PlayerMario, PlayerDirector, IntroTiming, NO_MOVE_STATES } from './player/player.js';
 import type { PadStatus } from './player/pad.js';
@@ -86,7 +86,7 @@ export class Stage {
         if (!sb) throw new Error('no scene.bin');
         const root = parseSceneBin(sb);
         let grid: [number, number] | null = null;
-        const findMap = (n: SceneNode) => { if (n.type === 'Map' && !grid) grid = mapGridFromPayload(new DataView(n.data.buffer, n.data.byteOffset, n.data.byteLength)); for (const c of n.children || []) findMap(c); };
+        const findMap = (n: SceneNode) => { if (n.type === 'Map' && !grid) { const dv = new DataView(n.data.buffer, n.data.byteOffset, n.data.byteLength); grid = mapGridFromPayload(dv); (w as any).mapWarp = mapWarpFromPayload(dv); } for (const c of n.children || []) findMap(c); };
         findMap(root);
         const g = grid || [16, 16];
         w.col = new MapCollision(g[0], g[1]);

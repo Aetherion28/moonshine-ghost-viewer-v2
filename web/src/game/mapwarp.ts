@@ -3,6 +3,7 @@
 import { fr, V3, mtx, MsMtxSetXYZRPH } from './math.js';
 import { World, Stream, parseSceneBin, SceneNode } from './engine.js';
 import { isPointInCube } from './mapwire.js';
+import type { MapWarpTable } from './collision.js';
 
 export interface StreamCube { c: V3; r: V3; s: V3; unk34: number; unk38: number; unk3C: number; unk40: number; }
 const STREAMS = new WeakMap<World, StreamCube[]>();
@@ -44,6 +45,22 @@ export function inStreamCube(w: World, p: V3): StreamCube | null {
 export function mapWarpStream(w: World) {
     const m: any = w.mario;
     if (!m || typeof m.windMove !== 'function') return;
+    // the warp grounds (BG 0x200 / 0x201: Mario moves by the pair's offset, the map shows the other model)
+    // and the map-change grounds (0x202 / 0x203: the model only), under him (checkGroundExactY: y + 30 + 78)
+    const T: MapWarpTable | null = (w as any).mapWarp || null;
+    if (T) {
+        const [, g] = w.col.checkGround(m.pos.x, fr(fr(m.pos.y + 30) - -78), m.pos.z, 0);
+        const t = g ? g.bgType : -1;
+        if ((t === 0x200 || t === 0x201) && T.infos[g.data]) {
+            const info = T.infos[g.data];
+            if (info.unk0 !== T.unk8) {
+                T.unk8 = info.unk0;
+                const p = new V3(fr(m.pos.x + info.unk8[0]), fr(m.pos.y + info.unk8[1]), fr(m.pos.z + info.unk8[2]));
+                m.warpRequest(p, fr(fr(m.mFaceAngle.y * 180) / 32768));
+            }
+        }
+        if ((t === 0x202 || t === 0x203) && g.data !== T.unk8) T.unk8 = g.data;
+    }
     const c = inStreamCube(w, m.pos);
     if (!c) return;
     const r = mtx(); MsMtxSetXYZRPH(r, 0, 0, 0, c.r.x, c.r.y, c.r.z);

@@ -410,6 +410,41 @@ function polygonIsInGrid(minX: number, minZ: number, maxX: number, maxZ: number,
  * TMap::load's part of the scene's Map object payload: after the transparency groups (TMapXlu::init),
  * the collision grid's five counts (cells X, cells Z, check data, list nodes, warp nodes).
  */
+/** TMapWarp's table (TMapWarp::init, after TMapCollisionData::init's five counts): unk8 the map model
+ * shown at the start, infos[n] (two a pair) the model each warp ground shows (unk0) and Mario's move (unk8) */
+export interface MapWarpTable { unk8: number; infos: { unk0: number; unk4: number; unk8: [number, number, number] }[] }
+const WARP_POINT_NAMES = ['warpA1', 'warpA0', 'warpB1', 'warpB0', 'warpC1', 'warpC0', 'warpD1', 'warpD0', 'warpE1', 'warpE0', 'warpF1', 'warpF0', 'warpG1', 'warpG0', 'warpH1', 'warpH0', 'warpI1', 'warpI0'];
+export function mapWarpFromPayload(p: DataView): MapWarpTable | null {
+    try {
+        let o = 0;
+        const groups = p.getInt32(o); o += 4;
+        for (let i = 0; i < groups; i++) { const n = p.getInt32(o); o += 4 + n * 8; }
+        o += 5 * 4;
+        const n = p.getUint32(o); o += 4;
+        if (!n) return null;
+        const unk8 = p.getUint32(o); o += 4;
+        const a: number[] = [], b: number[] = [];
+        for (let i = 0; i < n; i++) { a.push(p.getUint32(o)); b.push(p.getUint32(o + 4)); o += 8; }
+        const pts: [number, number, number][] = [];
+        for (let i = 0; i < 2 * n; i++) {
+            const len = p.getUint16(o); o += 2;
+            let name = ''; for (let k = 0; k < len; k++) name += String.fromCharCode(p.getUint8(o + k)); o += len;
+            const idx = WARP_POINT_NAMES.indexOf(name);
+            const v: [number, number, number] = [p.getFloat32(o), p.getFloat32(o + 4), p.getFloat32(o + 8)]; o += 12 + 24;
+            if (idx >= 0) pts[idx] = v;
+        }
+        const infos: MapWarpTable['infos'] = [];
+        const fr = Math.fround;
+        for (let i = 0; i < n; i++) {
+            const p0 = pts[2 * i] || [0, 0, 0], p1 = pts[2 * i + 1] || [0, 0, 0];
+            const d: [number, number, number] = [fr(p0[0] - p1[0]), fr(p0[1] - p1[1]), fr(p0[2] - p1[2])];
+            infos[2 * i] = { unk0: b[i], unk4: a[i], unk8: d };
+            infos[2 * i + 1] = { unk0: a[i], unk4: b[i], unk8: [-d[0], -d[1], -d[2]] };
+        }
+        return { unk8, infos };
+    } catch { return null; }
+}
+
 export function mapGridFromPayload(p: DataView): [number, number] | null {
     try {
         let o = 0;

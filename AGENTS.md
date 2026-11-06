@@ -177,7 +177,7 @@ First drift per run, 143 traces:
 
 ## Open threads (where to pick up)
 
-- 2026-11-05 survey of the runs drifting before 15 s (first differing field, `/tmp/claude-0/up3/sv/`, sva.py): Mario's occlusion flag (bit 0 of his flag word) set in the game, not the sim, just before the drift in dolpic10 c/…066 and c/…065; MARIO_FLAG 0x10 (recently left water) differs in ricco b/41726535_…024 and mare b/A7E1056F_…041. Candidates for one-fix-several.
+- 2026-11-05 survey of the runs drifting before 15 s (first differing field, `/tmp/claude-0/up3/sv/`, sva.py): dolpic10 c/…066 / …065 (fixed: the map warp grounds, 2026-11-06); MARIO_FLAG 0x10 (recently left water) differs in ricco b/41726535_…024 and mare b/A7E1056F_…041. Candidates for one-fix-several.
 
 
 
@@ -203,6 +203,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-06 TMapWarp's warp grounds (mapwarp.ts mapWarpStream; collision.ts mapWarpFromPayload reads the table from the scene's Map object after the collision counts, as TMapWarp::init). Standing on BG 0x200 / 0x201 whose pair shows another map model, Mario is warped by the pair's offset (warpRequest); BG 0x202 / 0x203 only switch the model. The sim had none: in dolpic10 c/A7E1056F_80000066 and …065 Mario runs through Delfino's tunnel at (-3020, 728, -5470) and the game moves him up 9000 (the other model of the area). The model switch itself isn't drawn. Batch runs53 vs runs52: 2 better (…066 9.7 -> 15.3 s, …065 13.0 -> 14.0 s), 0 worse.
 
 - 2026-11-05 Rocket / turbo nozzle boxes valid from their first record (mapobj/item.ts NozzleBox.loadAfter; runner.ts traceActorsHitFilter, World.traceHitFilterAt; the actor records' hit filter, word 25, is now in TraceActors.hitFilter). TNozzleBox is valid with the area's MSF_NOZZLE_* right; in mamma3 b/1DD461CB_80000013 and mamma5 …012 the stage-start image has every nozzle right 0, yet the game's boxes take damage from tick 3 (hit filter 0x80000000, no NO_DAMAGE), so Moonshine set the flags after the image (as with the Yoshi eggs). Mario dove into them and bounced (keepDistance's clash: JUMP_SHORT_BACK_DOWN); the sim's invalid boxes let him through. Batch runs52 vs runs51: 2 better (both 9.8 / 10.6 s -> never), 0 worse.
 
