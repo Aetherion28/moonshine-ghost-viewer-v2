@@ -18,6 +18,8 @@ export interface TraceTick {
     mario: MarioView | null; camera: CameraView | null;
     /** the TMarioGamePad / controller observation was available (validity bits 1 / 2) */
     inputValid: number;
+    /** the pad's buttons this tick (-1: no pad record) */
+    buttons?: number;
     contacts: (ReturnType<typeof contactTriangle> | null)[];
     cameraMode: number;
 }
@@ -170,6 +172,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             ticks.push({
                 qf, frame: s.frame, scene: s.scene, mario: m, camera: c,
                 inputValid: s.input ? padView(s.input).valid : 0,
+                buttons: s.input ? padView(s.input).button : -1,
                 contacts: s.contacts.map((x) => (x && x.valid ? contactTriangle(x) : null)),
                 cameraMode: s.cameraMeta ? s.cameraMeta.mode : (c ? c.mode : -1),
             });
@@ -217,12 +220,17 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
         }
     }
     const lastQf = ticks[n - 1].qf;
+    // The "DPad Functions" Gecko code (Psychonauter et al.): a pad of exactly X + D-pad Up writes TAKE (0x383) into Mario's
+    // status, and D-pad Right reloads the position D-pad Left saved. Neither is the game's, so a run that shows either
+    // effect is played from its recording, as a TAS (the user asked, 2026-11-06).
+    const cheats = dpadFunctionsUsed(ticks);
+    if (cheats) runFlags |= 32;
     const header = {
         version: 'MSTR' + summary.header.version, format: 'mstr', region: AREA_NAMES_REGION[gameId] || '?', gameId, discRevision,
         tvFormat: 'NTSC60', refreshHz: hz,
         route: route0, routeLabel: '',
         // kind 28 (ghost_run_flags.h): 1 assisted, 2 a savestate used, 4 fast-forward, 8 incomplete, 16 a custom route, 32 TAS
-        runFlags, runFlagsRecorded: provenance, resultQf: lastQf, startQf: 0, endQf: lastQf, durationQf: lastQf, sampleCount: n,
+        runFlags, runFlagsRecorded: provenance, cheatCodes: cheats ? ['DPad Functions'] : [], resultQf: lastQf, startQf: 0, endQf: lastQf, durationQf: lastQf, sampleCount: n,
         created: 0, author: '', name, profileName: '',
         initialRng: firstSeed === null ? undefined : (firstSeed as number) >>> 0,
         // MSTR v3 starts recording before the stage loads: frames go by before Mario's first update, and
@@ -289,3 +297,20 @@ export function isMstr(buf: ArrayBuffer) {
 }
 
 export { readMstr, K };
+
+/** Whether the trace shows the DPad Functions code's effects: X + D-pad Up (a pad of exactly 0x0408) followed within
+ * 12 ticks by Mario's status turning TAKE (0x383), or D-pad Right alone (0x0002) followed by Mario moving over 300
+ * units in one tick. */
+function dpadFunctionsUsed(ticks: { buttons?: number; mario: { status: number; pos: ArrayLike<number> } | null }[]): boolean {
+    for (let i = 1; i < ticks.length; i++) {
+        const b = ticks[i].buttons, pb = ticks[i - 1].buttons;
+        if ((b !== 0x408 && b !== 0x2) || b === pb) continue;
+        for (let k = i; k < Math.min(ticks.length, i + 12); k++) {
+            const m = ticks[k].mario, pm = ticks[k - 1].mario;
+            if (!m || !pm) continue;
+            if (b === 0x408 && m.status === 0x383 && pm.status !== 0x383) return true;
+            if (b === 0x2 && Math.hypot(m.pos[0] - pm.pos[0], m.pos[1] - pm.pos[1], m.pos[2] - pm.pos[2]) > 300) return true;
+        }
+    }
+    return false;
+}
