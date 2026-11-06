@@ -4,6 +4,7 @@
 // water stuns them. They die after 600 ticks out of water.
 
 import { fr, V3, Quat, MsRandF } from '../math.js';
+import { fmadd, fmsub, fnmsub } from '../player/fmath.js';
 import { World, LF, HF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, WarpCollision, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, smallParams } from './smallEnemy.js';
@@ -106,17 +107,25 @@ export class Amenbo extends SmallEnemy {
     attackToMario() { if (this.isAttacking()) this.sendAttackMsgToMario(); }
     setDeadAnm() { const fc = this.mactor!.getFrameCtrl(ANM_BCK); if (fc) { fc.init(1); fc.frame = 0; } }
     changeBck(name: string, k: number) { this.mactor!.setBck(name); this.mactor!.setFrameRate(2 * k, ANM_BCK); }
-    prepareWalk() { const d = this.quat.getZDir(); d.scale(this.chasing ? this.PA.mAttackSpeed : this.PA.mSpeed); this.vel.set(d); }
+    prepareWalk() {
+        // TNerveAmenboWalk (JP 0x8033D534): getZDir's products round before the fused steps.
+        const { x, y, z, w } = this.quat;
+        const d = new V3(fmadd(2, fr(x * z), fr(2 * fr(w * y))), fmsub(2, fr(y * z), fr(2 * fr(w * x))),
+            fnmsub(2, fr(y * y), fnmsub(2, fr(x * x), 1)));
+        d.scale(this.chasing ? this.PA.mAttackSpeed : this.PA.mSpeed);
+        this.vel.set(d);
+    }
     doWalk() {
         const v = this.vel.clone().scale(this.PA.mWaterFric), e = this.PA.mEpsilon;
         let r = false;
-        if (v.x * v.x + v.z * v.z < e * e) { r = true; v.zero(); }
+        // JP 0x8033D67C: two fmuls and fadds, compared with the fmuls epsilon square.
+        if (fr(fr(v.x * v.x) + fr(v.z * v.z)) < fr(e * e)) { r = true; v.zero(); }
         this.vel.set(v);
         return r;
     }
     doAdjustTarget() {
         this.vel.scale(0.9);
-        this.t1E0 = this.mactor!.getFrameCtrl(ANM_BCK)!.frame * (1 / 63);
+        this.t1E0 = fr(this.mactor!.getFrameCtrl(ANM_BCK)!.frame * fr(1 / 63));
         if (1 <= this.t1E0) this.t1E0 = 1;
         this.quat.slerp(this.q1C0, this.q1D0, this.t1E0).normalize();
     }

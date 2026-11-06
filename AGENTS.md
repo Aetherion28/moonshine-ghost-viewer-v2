@@ -17,7 +17,8 @@ The main measure of progress is how long each recorded run stays in sync before 
 
 Two agents work in this repo at once. The Claude session takes the runs that drift **earliest** and works later; the user's local model takes the runs that drift **latest** and works earlier.
 Before each commit: `git pull --rebase`, commit only your own files, and don't revert changes you didn't make.
-When the two agents' changes conflict, the Claude session's version stands unless the other one tests better in a full batch (the user's rule). Batches write to `/tmp/claude-0/up3/runsNN` on the Claude side only.
+When the two agents' changes conflict, the Claude session's version stands: leave it in place and work around it (the user's latest instruction to the local agent, 2026-11-05).
+Batches write to `/tmp/claude-0/up3/runsNN` on the Claude side only.
 
 ## Rules (from the user; never break them)
 
@@ -179,6 +180,7 @@ First drift per run, 143 traces:
 ## Open threads (where to pick up)
 
 - 2026-11-05 Bianco b/41726535_80000023 (104 s now): RNG consumers line up to tick 2058, where the game makes a TNerveAmenboSearch roll (0x8033dfa8) a tick or two before the sim.
+  - Local Windows validation against cf03f66 reproduces QF 12488 (104.07 s), the latest first drift in the 141 non-TAS traces. The narrow Amenbo arithmetic correction below leaves this drift unchanged; it does not resolve the RNG timing slip.
 
 - The two runs the feedback shift made worse:
   - b/41726535_80000023 (Bianco, now 14.8 s): with the shift the camera matches the recording exactly through the read switch at tick 998, so the shift is right there. The new first difference is at tick 1251, where Mario lands on the floating log `丸太 0` (TWoodLog, a TMapObjFloatOnSea / TLeanBlock): the sim's landing height is 1963.67236 against the game's 1963.67249. The log isn't in the actor records. TMapObjWave::getWaveHeight now matches the DOL and didn't change it; check the log's lean matrix (TLeanBlock::calcLeanMtx) and its collision next.
@@ -198,6 +200,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-05 Amenbo walk arithmetic in single precision (enemies/amenbo.ts), checked against the user's JP and PAL DOLs: prepareWalk's getZDir products round before the fused operations (JP 0x8033D534, PAL 0x8012515C); doWalk compares separately rounded x/z squares and their sum with the rounded epsilon square (JP 0x8033D67C, PAL 0x801252A4); doAdjustTarget multiplies the animation frame by the f32 1/63 constant and rounds the phase (JP 0x8033DB60, PAL 0x80125788). Local Windows full batch against cf03f66, list5.txt's 141 non-TAS traces: 0 better, 0 worse, 141 unchanged, no errors. Production build passes. This corrects arithmetic mismatches but does not improve first-drift timing, including Bianco's QF 12488. The local test/extraction tools and game data remain outside the repository; these results do not replace Claude's cloud runsNN baseline.
 
 - 2026-11-05 A puku's first landing depth from the recording (enemies/tobipuku.ts e0Garbage / sankEnoughFromRecording; feedback.ts traceActorCtx, the trace's actor records by tick). TNerveTobiPukuLand (return-launch stages) sinks the puku until `fabsf(unk1E0 - y) > 600`, then ReturnLaunch swims home at that height. unk1E0 comes from the reset in the pad's first forceLaunch, after resetToPosition's control() ran the generate nerve, which adds the never-initialised unk1D0.y (the same garbage as flewOnGarbage). So the first landing's check can't be derived. While that holds, the puku's recorded height a tick later decides: once the check passed, the game stops sinking it (ReturnLaunch keeps y). Ricco ricco7 b/41726535_8000003F: the game's 0x5bc1 puku 32 landed and swam at -44.6, while the sim sank it to -940 and relaunched it ~30 ticks late. Batch runs44 vs runs43: 4 better (ricco7 …03F 7.8 -> 38.1 s, ricco7 …040 14.9 -> 23.2 s, coro_ex6 c/…058 7.5 -> 34.8 s, ricco4 …037 24.6 -> 25.4 s), 0 worse.
 
