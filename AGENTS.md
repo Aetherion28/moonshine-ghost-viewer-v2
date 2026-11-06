@@ -13,12 +13,10 @@ This repository is a web viewer for those recordings, plus **Simulate**: a TypeS
 The port is written function by function from the matching decompilation and, where the decomp is unsure, from the DOL's disassembly.
 The main measure of progress is how long each recorded run stays in sync before its first drift.
 
-## Working alongside another agent (2026-11-05, the user's split)
+## Working alongside another agent (2026-11-05)
 
-Two agents work in this repo at once. The Claude session takes the runs that drift **earliest** and works later; the user's local model takes the runs that drift **latest** and works earlier.
-Before each commit: `git fetch` and look at the incoming commits (`git log HEAD..origin/main`, the user's rule), then `git pull --rebase`; commit only your own files, and don't revert changes you didn't make.
-When the two agents' changes conflict, the Claude session's version stands: leave it in place and work around it (the user's latest instruction to the local agent, 2026-11-05).
-Batches write to `/tmp/claude-0/up3/runsNN` on the Claude side only.
+The user's local model worked in this repo for a while (it took the runs that drift latest); it has stopped (the user, 2026-11-05).
+Still fetch and read incoming commits before each commit (`git log HEAD..origin/main`), and if two versions conflict, the Claude session's stands unless the other tests better in a full batch (the user's rules).
 
 ## Rules (from the user; never break them)
 
@@ -178,6 +176,8 @@ First drift per run, 143 traces:
 61 runs never drift (runs24).
 
 ## Open threads (where to pick up)
+
+- **Leave for the last batch (the user, 2026-11-05):** dolpic_ex2 c/A7E1056F_8000005E (8.5 s), the spin jump from checkStickRotate's uninitialised quadrant flags. Work through the other early drifts first.
 
 - 2026-11-05 Bianco b/41726535_80000023 (104 s now): RNG consumers line up to tick 2058, where the game makes a TNerveAmenboSearch roll (0x8033dfa8) a tick or two before the sim.
   - Local Windows validation against cf03f66 reproduces QF 12488 (104.07 s), the latest first drift in the 141 non-TAS traces. The narrow Amenbo arithmetic correction below leaves this drift unchanged; it does not resolve the RNG timing slip.
