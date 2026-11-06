@@ -16,7 +16,8 @@ The main measure of progress is how long each recorded run stays in sync before 
 ## Working alongside another agent (2026-11-05, the user's split)
 
 Two agents work in this repo at once. The Claude session takes the runs that drift **earliest** and works later; the user's local model takes the runs that drift **latest** and works earlier.
-Before each commit: `git pull --rebase`, commit only your own files, and don't revert changes you didn't make. Batches write to `/tmp/claude-0/up3/runsNN` on the Claude side only.
+Before each commit: `git pull --rebase`, commit only your own files, and don't revert changes you didn't make.
+When the two agents' changes conflict, the Claude session's version stands unless the other one tests better in a full batch (the user's rule). Batches write to `/tmp/claude-0/up3/runsNN` on the Claude side only.
 
 ## Rules (from the user; never break them)
 
