@@ -136,8 +136,18 @@ export abstract class TMarioSim extends MarioSpecial {
     /** getTakenMtx: the body model's base TR matrix (calcAnim's calcBaseMtx) */
     getTakenMtx(): Mtx { return this.mModel.baseTR; }
     calcBaseMtxSwim(m: Mtx) {
-        // + gpMapObjWave->getHeight(x, water, z) - water: the waves aren't simulated (no offset)
-        j3dTRMtx(m, 0, this.mModelFaceAngle, 0, this.pos.x, this.pos.y, this.pos.z);
+        // the translation's y + gpMapObjWave->getHeight(x, water, z) - water: on the sea, the wave's height there
+        const wz = this.mFloorPosition.z;
+        const y = fr(this.pos.y + fr(this.waveGetHeight(this.pos.x, wz, this.pos.z) - wz));
+        j3dTRMtx(m, 0, this.mModelFaceAngle, 0, this.pos.x, y, this.pos.z);
+    }
+    /** TMapObjWave::getHeight: the ground under (x, y + 50) (checkGroundExactY); a water surface: the sea's wave height, else that surface's; else y */
+    waveGetHeight(x: number, y: number, z: number) {
+        const W: any = (this.world as any).mapObjWave;
+        if (!W) return y;   // (no gpMapObjWave on the stage)
+        const [h, g] = this.world.col.checkGround(x, fr(fr(y + 50) - -78), z, 0);
+        if (g && g.isWaterSurface()) return g.isSea() ? W.getWaveHeight(x, z) : h;
+        return y;
     }
     /** calcBaseMtxTorocco: the player's (the coaster's cart and track) */
     calcBaseMtxTorocco(m: Mtx) { j3dTRMtx(m, 0, this.mModelFaceAngle, 0, this.pos.x, this.pos.y, this.pos.z); }

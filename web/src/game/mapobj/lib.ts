@@ -351,6 +351,7 @@ export class MapObjWave extends NameRef {
         super(name);
         this.unk64 = fr(MsRandF() * 360); this.unk68 = fr(MsRandF() * 360); this.unk6C = MsRandF(); this.unk70 = MsRandF();
         WAVES.set(world, this);
+        (world as any).mapObjWave = this;   // (gpMapObjWave: Mario's swim base reads it, player/tmario.ts)
     }
     load(s: Stream) {
         super.load(s);

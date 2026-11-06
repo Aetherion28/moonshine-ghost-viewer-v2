@@ -82,6 +82,7 @@ export class BGCheckData {
     isPool() { const t = this.bgType; return t === BG.POOL || t === BG.INDOOR_POOL || t === BG.SHADED_POOL; }
     isDeathPlane() { return this.bgType === BG.DEATH_PLANE; }
     isEverythingButMapObjectsThrough() { return this.bgType === BG.EVERYTHING_BUT_MAP_OBJECTS_PHASE_THROUGH; }
+    isSea() { const t = this.bgType; return t === BG.SEA_WATER || t === BG.DAMAGING_SEA_WATER; }
     isWaterSurface() {
         const t = this.bgType;
         return t === BG.WATER || t === BG.DAMAGING_WATER || t === BG.SEA_WATER || t === BG.DAMAGING_SEA_WATER || t === BG.POOL || t === BG.INDOOR_POOL || t === BG.SHADED_POOL;
