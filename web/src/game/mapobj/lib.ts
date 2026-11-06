@@ -12,7 +12,7 @@ import { fmadd as FMA, fmsub as FMS, fnmsub as FNMS } from '../player/fmath.js';
 import { vNormMs, vNorm } from '../vecops.js';
 import { World, NameRef, Stream, HitActor, LiveActor, parseSceneBin, SceneNode, CUE_MOVE, readParams } from '../engine.js';
 import { isPointInCube } from '../mapwire.js';
-import { Skeleton, jointMatrices } from '../skeleton.js';
+import { Skeleton, jointMatrices, jointMatricesExact } from '../skeleton.js';
 import type { BGCheckData } from '../collision.js';
 import { register } from '../scene.js';
 import type { MapObjBase } from './base.js';
@@ -133,7 +133,7 @@ export function restJointMtx(o: LiveActor, j: number): Mtx | null {
     if (!a) return null;
     const sk = Skeleton.of(a.data.files.scene(a.model));
     if (!sk || j < 0 || j >= sk.names.length) return null;
-    const W = jointMatrices(sk, null, 0, o.baseTR, [o.scale.x, o.scale.y, o.scale.z]);
+    const W = jointMatricesExact(sk, null, 0, o.baseTR, [o.scale.x, o.scale.y, o.scale.z]);   // (J3DMtxCalc's rest pose, the game's rounding)
     const w = W[j], m = mtx();
     m[0] = w[0]; m[1] = w[4]; m[2] = w[8]; m[3] = w[12];
     m[4] = w[1]; m[5] = w[5]; m[6] = w[9]; m[7] = w[13];

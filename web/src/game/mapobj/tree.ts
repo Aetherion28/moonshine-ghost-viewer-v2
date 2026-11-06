@@ -6,6 +6,7 @@
 // when sprayed or once the goop under it is gone, shaking the camera as it does.
 
 import { fr, V3, Mtx, mtx, MsRandF } from '../math.js';
+import { fnmsub } from '../player/fmath.js';
 import { World, HitActor, HF, CUE_MOVE, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -51,7 +52,7 @@ export class MapObjTree extends MapObjGeneral {
             return 1;
         }
         l.angle = fr(l.angle + l.angVel);
-        l.angVel = fr(l.angVel - fr(l.angle * this.leafStiffness));
+        l.angVel = fnmsub(l.angle, this.leafStiffness, l.angVel);   // (fnmsubs: one rounding, JP 0x801CE4FC)
         l.angVel = fr(l.angVel * this.leafDamping);
         const r = mtx();
         MTXRotAxisRad(r, new V3(1, 0, 0), l.angle);
