@@ -224,6 +224,7 @@ export class Stage {
             if (!(w.moveTickCount & 3)) w.hitCheck.checkActorsHit();
             else w.hitCheck.clearHitNum();
             if (noMove) {
+                if (P) P.mapWarpStreamAndDrift(false);
                 if (w.talk) w.talk.tick(last, false);
                 if (D && !last) D.changeState(this.qf);
                 continue;
@@ -232,6 +233,7 @@ export class Stage {
             // director runs Shine PfLst Mov / Anm (PerformLists.bin: シャインマネージャー, camera 1) instead
             const stw = !!(w.talk && w.talk.checkDemoFlag(DEMO_FLAG.SHINE_GET_STOP_THE_WORLD));
             if (stw) {
+                if (P) P.mapWarpStreamAndDrift(false);
                 const sm = w.conductor.getManagerByName('シャインマネージャー');
                 if (sm) sm.testPerform(CUE_MOVE);
                 if (P) P.cameraTick((tick === 0 ? 1 : 0) | (last ? 2 : 0));
@@ -243,6 +245,8 @@ export class Stage {
             // PerformList Movement: map group, wave, graffiti group, conductor, manager group, player group, camera, water manager...
             // TMap::perform: the moving collision's grid starts the tick empty
             w.col.clearMove();
+            // (then TMapWarp::watchToWarp: the stream cubes' push, and the drift check of the tick before)
+            if (P) P.mapWarpStreamAndDrift(true);
             if (w.pollution) w.pollution.move(w.mario.pos);
             w.conductor.perform(CUE_MOVE);
             // the manager group: the wires

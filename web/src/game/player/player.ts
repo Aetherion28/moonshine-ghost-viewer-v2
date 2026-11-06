@@ -1795,11 +1795,24 @@ export class PlayerMario extends TMarioSim {
         const uw = this.isUnderWater(), last = L.length ? L[L.length - 1] : null;
         if (!last || last.health !== this.mHealth || Math.trunc(last.air) !== Math.trunc(this.mAir) || last.underWater !== uw)
             L.push({ t: this.world.tickCount, health: this.mHealth, air: this.mAir, underWater: uw });
-        // TMapWarp::watchToWarp (TMap::perform, first in the next tick's movement): a stream cube's push. It is
-        // run here, at the end of his perform, as the next tick would before his: a trace's record of a tick
-        // is Mario as the next tick's perform begins (mstrghost.ts worldQf), so with the push in
-        mapWarpStream(this.world);
-        if (this.track) this.checkDrift();
+        // (the drift check waits for the next tick's TMap::perform: Stage.runFrame calls mapWarpStreamAndDrift)
+        this.driftCheckedQf = this.world.tickCount;
+        if (this.track) this.driftPendingQf = this.world.tickCount;
+    }
+    /** the tick whose drift check waits for the next tick's map perform (-1: none) */
+    driftPendingQf = -1;
+    /**
+     * TMap::perform's TMapWarp::watchToWarp (first in the tick's movement, after the hit check: a stream
+     * cube's push, mapwarp.ts), then the drift check of the tick before: a trace's record of a tick is
+     * Mario as the next tick's perform begins (mstrghost.ts worldQf), so with this push in. The camera
+     * and the hit check of the tick before saw him before the push, as in the game. push is false for a
+     * tick that runs no movement (the pause menu, a Shine's stop-the-world demo).
+     */
+    mapWarpStreamAndDrift(push: boolean) {
+        if (push) mapWarpStream(this.world);
+        const q = this.driftPendingQf;
+        this.driftPendingQf = -1;
+        if (q >= 0 && this.track) this.checkDrift(q);
     }
 
     // ---------------------------------------------------------------- the pad (TMarDirector::direct, TApplication::gameLoop)
@@ -1841,9 +1854,7 @@ export class PlayerMario extends TMarioSim {
         d.firstQf = q; d.firstErr = 0;
         if (!d.warned) { d.warned = true; console.warn(`[player] input replay drifted from the ghost at stage QF ${q} (${(q / 120).toFixed(2)} s): Mario ${game ? 'frozen here, moving in the game' : 'moving here, frozen in the game'}`); }
     }
-    checkDrift() {
-        const q = this.world.tickCount;
-        this.driftCheckedQf = q;
+    checkDrift(q: number) {
         if (q & 3) return;
         // (before setMario the ghost has no samples of its own: its first one is copied back to the segment's start)
         if (q <= this.driftFrom) return;
