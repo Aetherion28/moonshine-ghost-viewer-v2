@@ -16,7 +16,7 @@ The main measure of progress is how long each recorded run stays in sync before 
 ## Working alongside another agent (2026-11-05, the user's split)
 
 Two agents work in this repo at once. The Claude session takes the runs that drift **earliest** and works later; the user's local model takes the runs that drift **latest** and works earlier.
-Before each commit: `git pull --rebase`, commit only your own files, and don't revert changes you didn't make.
+Before each commit: `git fetch` and look at the incoming commits (`git log HEAD..origin/main`, the user's rule), then `git pull --rebase`; commit only your own files, and don't revert changes you didn't make.
 When the two agents' changes conflict, the Claude session's version stands: leave it in place and work around it (the user's latest instruction to the local agent, 2026-11-05).
 Batches write to `/tmp/claude-0/up3/runsNN` on the Claude side only.
 
@@ -197,9 +197,13 @@ First drift per run, 143 traces:
 
 ## Refuted (don't retry without new evidence)
 
+- Loading a trace's whole stage-start flag image as the first stage's world.flags (the save as the game had it): c/…080 never drifts, but 7 runs got worse, 1 better (runs45 vs runs44; mostly Delfino plaza runs, whose flag-driven setup the sim still infers in flags.ts setupStage). Worth retrying once those regressions are understood; the harness switch was pm.ts `flags: TC.flags.clone()` in Stage.fresh's intro.
+
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-05 The pineapple lid on Delfino's Sirena pipe (TCoverFruit, パイン（フタ）) is gone when the save has MSF_SIRENA_PIPE_PINEAPPLE_EATEN (mapobj/fruit.ts loadAfter). The sim read a world field nothing set, and a trace's first stage doesn't load the save's flags into world.flags, so a trace's first record of the lid settles it (as for the Yoshi eggs, traceActorsAlive). In dolpic10 c/…080 the game's lid is dead (live flag 0x21d9, hit filter 3) and Mario's collision count stays 0, while the sim's live lid pushed him away (keepDistance) at tick 688. Batch runs46 vs runs44: 1 better (c/…080 5.7 s -> never), 0 worse. (Built before the local model's Amenbo commit 70a7c15; the two touch different files.)
 
 - 2026-11-05 Amenbo walk arithmetic in single precision (enemies/amenbo.ts), checked against the user's JP and PAL DOLs: prepareWalk's getZDir products round before the fused operations (JP 0x8033D534, PAL 0x8012515C); doWalk compares separately rounded x/z squares and their sum with the rounded epsilon square (JP 0x8033D67C, PAL 0x801252A4); doAdjustTarget multiplies the animation frame by the f32 1/63 constant and rounds the phase (JP 0x8033DB60, PAL 0x80125788). Local Windows full batch against cf03f66, list5.txt's 141 non-TAS traces: 0 better, 0 worse, 141 unchanged, no errors. Production build passes. This corrects arithmetic mismatches but does not improve first-drift timing, including Bianco's QF 12488. The local test/extraction tools and game data remain outside the repository; these results do not replace Claude's cloud runsNN baseline.
 

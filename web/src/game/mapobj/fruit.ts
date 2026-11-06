@@ -615,7 +615,14 @@ export class CoverFruit extends MapObjBase {
         }
         return false;
     }
-    loadAfter() { super.loadAfter(); if ((this.world as any).sirenaPipePineappleEaten) this.makeObjDead(); }
+    // (TFlagManager::getBool(MSF_SIRENA_PIPE_PINEAPPLE_EATEN): eaten in an earlier visit, the lid is gone. The sim's
+    // world.flags don't hold the save's flags for a trace's first stage, so a trace's first record of the lid
+    // settles it, as for the Yoshi eggs (runner.ts traceActorsAlive).)
+    loadAfter() {
+        super.loadAfter();
+        const rec = this.world.traceAliveAt(this.pos);
+        if (rec !== undefined ? !rec : this.world.flags.getBool(MSF.SIRENA_PIPE_PINEAPPLE_EATEN)) this.makeObjDead();
+    }
 }
 
 // ---------------------------------------------------------------- TBigWatermelon
