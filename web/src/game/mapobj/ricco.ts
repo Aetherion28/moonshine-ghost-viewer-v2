@@ -15,6 +15,7 @@ import { Item } from './item.js';
 import { MsMtxSetRotX, MsMtxSetRotY, MTXConcat, makeRootMtxRot, setRootMtx } from './lib.js';
 import { LeanBlock, MapObjFloatOnSea } from './bianco.js';
 import type { ResetFruit } from './fruit.js';
+import { sessionSetting, SessionField } from '../feedback.js';
 
 const ST_ROTATE_TO_MAX = 1, ST_WAIT_AT_MAX = 2, ST_ROTATE_TO_MIN = 3, ST_WAIT_AT_MIN = 4;
 
@@ -253,6 +254,9 @@ export class FruitLauncher extends MapObjBase {
         const im = mapObjGlobals(this.world).itemManager;
         if (!im) return null;
         const rnd = fr(100 * MsRandF());
+        // Moonshine's "Fruit machine: Durians only" (RICCO_FRUIT_MACHINE 1): gRiccoFruitRandShim, at each of
+        // fireObj's three selection calls, still calls rand once and gives a roll in the durian band
+        if (sessionSetting(SessionField.RICCO_FRUIT_MACHINE) === 1) return im.makeObjAppearAt(this.pos.x, this.pos.y, this.pos.z, AT.FRUIT_DURIAN, false);
         const t = rnd < 20 ? AT.FRUIT_COCONUT : rnd < 40 ? AT.FRUIT_PAPAYA : rnd < 60 ? AT.FRUIT_PINE : rnd < 80 ? AT.FRUIT_DURIAN : AT.FRUIT_BANANA;
         return im.makeObjAppearAt(this.pos.x, this.pos.y, this.pos.z, t, false);
     }

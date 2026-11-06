@@ -125,3 +125,29 @@ export function traceActorsByTick(A: { count: number; qf: Int32Array; key: Uint1
         return null;
     };
 }
+
+// Moonshine's settings over a trace: the session record (GhostSimulation::Snapshot) comes again whenever
+// the runner changes one in Moonshine's menu. Some change what the game does (RICCO_FRUIT_MACHINE:
+// mapobj/ricco.ts); sessionCtx.at(field) gives the field's value in the snapshot in effect at this tick.
+
+/** GhostSimulation::Field (ghost_simulation.hxx): the snapshot's byte for a setting */
+export const enum SessionField { RICCO_FRUIT_MACHINE = 35 }
+
+/** The current stage's recorded settings, set by the runner around a stage's frames; null: none. */
+export const sessionCtx: { at: ((field: SessionField) => number | null) | null } = { at: null };
+
+/** A setting's recorded value at this tick (null without a trace). */
+export function sessionSetting(field: SessionField): number | null {
+    return sessionCtx.at ? sessionCtx.at(field) : null;
+}
+
+/** at(field): the field in the last session record that came at or before this tick (the label q0 + the stage's qf - 1) */
+export function traceSessionByTick(S: { qf: number[]; bytes: Uint8Array[] } | undefined, q0: number, qfNow: () => number) {
+    if (!S || !S.qf.length) return null;
+    return (field: SessionField) => {
+        const q = q0 + qfNow() - 1;
+        let b: Uint8Array | null = null;
+        for (let i = 0; i < S.qf.length && S.qf[i] <= q; i++) b = S.bytes[i];
+        return b && field < b.length ? b[field] : null;
+    };
+}

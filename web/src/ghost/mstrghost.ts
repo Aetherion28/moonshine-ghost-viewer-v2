@@ -45,6 +45,8 @@ export interface TraceGhost {
         stageStart: MstrStageStart | null;
         /** the GPU results the game used (Feedback consumers), in the order it read them */
         feedback: TraceFeedback;
+        /** every session record (GhostSimulation::Snapshot, the Moonshine settings in effect): the world QF of the frame it came in, its bytes */
+        session: { qf: number[]; bytes: Uint8Array[] };
     };
 }
 
@@ -118,6 +120,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     const settingsSeen = new Set<string>();
     /** GhostSimulation::Snapshot EFFECTIVE_FAST_TEXT (Moonshine's Fast text in effect), from the first session record */
     let fastText: boolean | undefined;
+    const sess = { qf: [] as number[], bytes: [] as Uint8Array[] };
     const segs: { scene: number; first: number; startQf: number; endQf: number }[] = [];
     let firstSeed: number | null = null, lastCamKey = -1e9, segNow = -1;
     /** the world tick at the current frame's start, and the recorder's (Mario-update) tick there */
@@ -161,7 +164,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
         onStageStart: (s) => { if (!stageStart) stageStart = s; },
         onProvenance: (f) => { runFlags |= f; provenance = true; },
         // MS_TRACE_SESSION: GhostSimulation::Snapshot, the Moonshine settings (sent again whenever they change)
-        onSession: (b) => { if (b.length >= 45) { if (fastText === undefined) fastText = b[SIM.EFFECTIVE_FAST_TEXT] !== 0; if (b[SIM.STAGE_INTRO_SKIP]) settingsSeen.add('stage intro skip'); if (b[SIM.GAMEPLAY_SPEED]) settingsSeen.add('gameplay speed'); if (b[SIM.FAST_FORWARD_ACTIVE]) settingsSeen.add('fast-forward'); } },
+        onSession: (b) => { sess.qf.push(frameTick === null ? -1 : worldQf(frameTick)); sess.bytes.push(Uint8Array.from(b)); if (b.length >= 45) { if (fastText === undefined) fastText = b[SIM.EFFECTIVE_FAST_TEXT] !== 0; if (b[SIM.STAGE_INTRO_SKIP]) settingsSeen.add('stage intro skip'); if (b[SIM.GAMEPLAY_SPEED]) settingsSeen.add('gameplay speed'); if (b[SIM.FAST_FORWARD_ACTIVE]) settingsSeen.add('fast-forward'); } },
         onTick: (s) => {
             // v3: each frame also records the pad as the frame starts (cue 0, word 1's high bit), not a movement update
             // (kept apart: the pad of a frame Mario doesn't move in, a paused one's, labelled as its first tick would be)
@@ -297,6 +300,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             summary, identity: id, hz, ticks,
             stageStart: stageStart as MstrStageStart | null,
             director: { qf: Int32Array.from(ds.qf), state: Int32Array.from(ds.state), count: ds.qf.length },
+            session: sess,
             feedback: { count: fb.qf.length, qf: Int32Array.from(fb.qf), consumer: Uint8Array.from(fb.consumer), value: Uint32Array.from(fb.value) } as TraceFeedback,
             rng: { qf: Int32Array.from(rq), caller: Uint32Array.from(rc), seed: Uint32Array.from(rs), result: Uint16Array.from(rr), count: rq.length },
             actors: {

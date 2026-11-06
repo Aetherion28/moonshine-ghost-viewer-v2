@@ -17,7 +17,7 @@ import { mapObjWave } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/
 import { SE } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/soundids.ts';
 import { NO_PAD } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/player/pad.ts';
 import { entranceStart, decideMarioPosIdx, gotShineFromSamples } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/stagechange.ts';
-import { feedbackCtx, FeedbackReplay, traceStatusCtx, traceStatusByTick, traceRngCtx, traceRngByState, traceActorCtx, traceActorsByTick } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/feedback.ts';
+import { feedbackCtx, FeedbackReplay, traceStatusCtx, traceStatusByTick, traceRngCtx, traceRngByState, traceActorCtx, traceActorsByTick, sessionCtx, traceSessionByTick } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/feedback.ts';
 import { npcSinkSetup } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/npc/base.ts';
 const ctx: any = { console, TextDecoder, DataView, Uint8Array, ArrayBuffer, Math, Float32Array, Float64Array, Int8Array, Int16Array, Uint16Array, Uint32Array, Int32Array, Map, Set, Object, Array, Number, String, JSON, Error, BigInt };
 vm.createContext(ctx); vm.runInContext(fs.readFileSync('/home/claude/moonshine-ghost-viewer-v2/web/legacy/ghost.js', 'utf8'), ctx);
@@ -58,6 +58,7 @@ if (process.env.TOOLS) { const C: any = (st.player as any).simCamera; for (const
 const TR = g.trace && g.trace.rng && g.trace.rng.count && !process.env.NOTR ? traceRngByState(g.trace.rng) : null;
 const TS = g.trace && g.trace.ticks.length && !process.env.NOTS ? traceStatusByTick(g.trace.ticks, q0 + g.header.startQf, () => st.qf) : null;
 const TA = g.trace && g.trace.actors && g.trace.actors.count && !process.env.NOTA ? traceActorsByTick(g.trace.actors, q0 + g.header.startQf, () => st.qf) : null;
+const TSES = g.trace && !process.env.NOSES ? traceSessionByTick(g.trace.session, q0, () => st.qf) : null;
 const FB = !process.env.NOFB && g.trace && g.trace.feedback && g.trace.feedback.count ? new FeedbackReplay(g.trace.feedback, q0, () => st.qf) : null; if (FB && process.env.FBLOG) { const o = FB.take; const cnt = new Map<string, number>(); (FB as any).take = (c: number) => { const k = c + '@' + st.qf; cnt.set(k, (cnt.get(k) || 0) + 1); if ((cnt.get(k) || 0) > 1 && st.qf < 40) console.log('REREAD', k, (new Error().stack || '').split('\n').slice(2, 6).map((x) => x.trim().split(' ')[1]).join(' < ')); return o(c); }; }
 process.on('exit', () => { if (FB) console.log('FEEDBACK hits', FB.hits, 'misses', FB.misses, 'of', FB.size); });
 if (process.env.PREROLL) { const n = +process.env.PREROLL; const ms = (st.world.conductor as any).liveManagers.filter((m: any) => (m.objs || []).some((o: any) => /NPC|Animal/.test(o.constructor.name))); console.log('PREROLL', n, ms.map((m: any) => m.name).join(',')); for (let i = 0; i < n; i++) for (const m of ms) m.testPerform(1); }
@@ -179,12 +180,12 @@ for (let fr = 0; fr < end; fr++) {
     if (process.env.CMPKV) { const ex = c.pos[k*3] - C.unk124.x, ey = c.pos[k*3+1] - C.unk124.y, ez = c.pos[k*3+2] - C.unk124.z; const fx = a.x - e.x, fz = a.z - e.z, fl = Math.hypot(fx, fz); console.log('  dEye along', ((ex*fx+ez*fz)/fl).toFixed(2), 'side', ((ex*fz-ez*fx)/fl).toFixed(2), 'up', ey.toFixed(2), 'dist', Math.hypot(a.x-e.x,a.y-e.y,a.z-e.z).toFixed(2), 'pitch', C.cur.pitch, 'ratio', C.cur.ratio.toFixed(4), 'hp', C.mHeightPanOffset, 'sv', C.unk294.toFixed(2), C.unk298.toFixed(2), 'pitchD', (() => { const q = c.quat; const x = q[k*4], y = q[k*4+1], z = q[k*4+2], w = q[k*4+3]; const fy = -2 * (y * z + w * x), fx = -2 * (x * z - w * y), fz = -(1 - 2 * (x * x + y * y)); const rp = Math.atan2(-fy, Math.hypot(fx, fz)); const sp = Math.atan2(a.y - e.y, Math.hypot(a.x - e.x, a.z - e.z)); return ((rp - sp) * 32768 / Math.PI).toFixed(2) + ' rp ' + (rp*32768/Math.PI).toFixed(1) + ' sp ' + (sp*32768/Math.PI).toFixed(1); })(), 'tgt', [a.x,a.y,a.z].map((v: number)=>v.toFixed(1)).join(',')); }
     console.log('cmpk', st.qf, 'u258', C.unk258, 'rend', rend.toFixed(2), 'rec', ry.toFixed(2), 'dr', s16f(ry - rend).toFixed(2), 'du', s16f(ry - C.unk258).toFixed(2), 'dpos', dp.toFixed(2), 'mode', C.mMode, C.isNowInbetween() ? 'inb' : '', C.isDemoCamera() ? 'demo' : ''); }
   feedbackCtx.take = FB ? FB.take : null;
-  traceStatusCtx.at = TS; traceRngCtx.next = TR; traceActorCtx.at = TA;
+  traceStatusCtx.at = TS; traceRngCtx.next = TR; traceActorCtx.at = TA; sessionCtx.at = TSES;
   // the actors clip against the recorded game camera, as runner.ts SimRunner.camera (NOCLIP=1: no clipping)
   if (!process.env.NOCLIP) { const c = ctx.ghostCameraAt(g, q0 + st.qf + 4, 0); (st as any).camera = c ? { pos: c.pos, quat: c.quat, fovy: c.fov, aspect: (640 * 0.9134614) / 448, near: 10 } : null; }
   st.runFrame(track as any, pad(st.qf + (process.env.PADOFF ? +process.env.PADOFF : g.trace ? 0 : 4)));
   feedbackCtx.take = null;
-  traceStatusCtx.at = null; traceRngCtx.next = null; traceActorCtx.at = null;
+  traceStatusCtx.at = null; traceRngCtx.next = null; traceActorCtx.at = null; sessionCtx.at = null;
   if (process.env.BWLOG && st.frame % 15 === 0) { const bw: any = (st.objects as any[]).find((o) => o.constructor.name === 'BossWanwan'); if (bw) { const M: any = st.world.mario; const f = (v: any) => [v.x|0, v.y|0, v.z|0].join(','); console.log('bw', st.qf, 'hp', bw.hitPoints, 'staked', bw.unk17C, 'n', bw.spine.getLatestNerve().name.slice(8), 'pos', f(bw.pos), 'pk', f(bw.picket.pos), bw.picket.isTaken() ? 'TAKEN' : '', '| mario', f(M.pos), 'st', (M.mStatus|0).toString(16), 'spray', M.mWaterGun ? M.mWaterGun.isEmitting() : '', 'gh', s0(st.qf)); } }
   if (hybKeys) { const k = hybKeys.get(q0 + st.qf); const turn = k ? (P as any).simCamera.correctYawToRecorded(k.fwd, process.env.HYBNOPOS ? null : k.pos) : 0;
     if (turn) { hybN++; if (process.env.HYBV) console.log('  hyb', st.qf, 'turn', turn, 'mode', (P as any).simCamera.mMode); } }
