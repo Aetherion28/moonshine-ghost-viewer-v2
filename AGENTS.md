@@ -177,6 +177,8 @@ First drift per run, 143 traces:
 
 ## Open threads (where to pick up)
 
+- dolpic7 a/2A1D8909_80000033 (8.5 s): from tick 1005 the L-button camera's eye differs (rec eye -2947.40, -5213.97, -10.64; sim -2946.58, …, -11.37; its target, getNozzleTopPos_, only 0.02 off), so Mario's face angle (set from the camera yaw in playerControl) differs at 1006. The input word changes 0x224 -> 0x24 at 1005 and R's analog 150 -> 126. Check what the L camera or FLUDD's nozzle do on that change (calcPosAndAt_, the pump frame), with the CAMX / RYS / YAWW probes (pm_npchit.ts).
+
 - **Leave for the last batch (the user, 2026-11-05):** dolpic_ex2 c/A7E1056F_8000005E (8.5 s), the spin jump from checkStickRotate's uninitialised quadrant flags. Work through the other early drifts first.
 
 - 2026-11-05 Bianco b/41726535_80000023 (104 s now): RNG consumers line up to tick 2058, where the game makes a TNerveAmenboSearch roll (0x8033dfa8) a tick or two before the sim.
@@ -202,6 +204,8 @@ First drift per run, 143 traces:
 - Carrying `checkStickRotate`'s q[4] over between calls (a persistent buffer): 57 runs worse, 3 better (runs21 vs runs20). Patch kept at `/tmp/claude-0/qpersist.patch`.
 
 ## Fix log (newest first)
+
+- 2026-11-05 TWaterGun::setBaseTRMtx's MTXConcat now goes through j3dcalc.ts concat (PSMTXConcat's paired-single rounding, JP 0x801490B8); the sim summed in doubles. dolpic7 a/2A1D8909_80000033's underwater-nozzle emit directions were 1 ulp off from the first spray (tick 972), which made Mario's vy 1 ulp off from 985; now every emit equals the recorded request to tick 1006 (the next difference there: the L-button camera's eye at tick 1005, see Open threads). Batch runs50 vs runs49: all the same.
 
 - 2026-11-05 MsVECMag2 (0x800c57d0) is a length (the sum of squares times its raw frsqrte, vecops.ts msVecMag2), not a squared length. The sim compared squares at seven sites, as its comments claimed: THaneHamuKuri / THaneHamuKuri2::isReachedToGoal (< 100 / < 20, JP 0x80266C40 / 0x80265CF0), TTelesa::isReachedToGoal (200), TRollEnemy and TIgaiga::isReachedToGoalXZ (200 / mReachNodeDist), TTamaNoko::isReachedToGoal (200), the elec carapace's goal (100), TBossTelesa's Mario check (300); TWalkerEnemy::isReachedToGoalXZ used the exact length. coro_ex5 b/A7E1056F_8000001C: a はねハムクリ２ switched graph nodes a frame late (reach radius sqrt(20) instead of 20), so it was 30 units off when Mario trampled it at tick 956. Batch runs48 vs runs47 (the Hane pair): 1 better (…01C 8.0 s -> never), 0 worse; runs49 vs runs48 (the other six): 1 better (mamma1 b/1DD461CB_…006 35.2 -> 39.1 s), 0 worse.
 

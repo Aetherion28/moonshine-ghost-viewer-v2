@@ -683,12 +683,8 @@ export class TWaterGun {
         if (up < 0) up = -up;
         const a = s16(Math.trunc(fma(up, this.unk1D04 - this.unk1D06, this.unk1D06)));
         const r = mtx(); MsMtxSetRotRPH(r, 0, 0, fr(a * S2D));
-        const out = this.mFluddModel.baseTR;
-        for (let i = 0; i < 3; i++) for (let j = 0; j < 4; j++) {
-            let v = m[i * 4] * r[j] + m[i * 4 + 1] * r[4 + j] + m[i * 4 + 2] * r[8 + j];
-            if (j === 3) v += m[i * 4 + 3];
-            out[i * 4 + j] = fr(v);
-        }
+        // (MTXConcat: PSMTXConcat's paired-single products and sums, JP 0x801490B8)
+        concat(m, r, this.mFluddModel.baseTR);
     }
     /** TMario::getPumpFrame: the upper body's frame */
     private pumpFrame() { const f = this.mMario.mModel.fc[1]; return f ? f.frame : 0; }
