@@ -229,6 +229,9 @@ The big port of 2026-11-06 (one commit, see the fix log) added most of the decom
 
 - Pinna Park Beach 2 b/1DD461CB_…026 (first drift 1436): Mario lands on a TCannon's dome (dome 2, cannondom.col moved by moveMtx(getConnectedMtx()) with the dome's sway unk28 concatenated in place) at y 751.6 in the sim, 746.2 in the game, then falls in the game. The RNG is in step and the dome code matches the decomp; the cannon isn't in the actor records, so its angle can't be checked. Needs the cannon recorded, or a decomp difference found in its BCK / joint path.
 
+- Gelato Beach 3 b/1DD461CB_…007 (first drift 1572): falling Mario is pushed about 42 units by ボスハナチャンの足 (the Wiggler's leg, keepDistance) in both, 0.63 apart. The RNG is in step; the Wiggler isn't in the actor records, so look for a decomp difference in TBossHanachan's body / leg path. Two harmless one-tick status lags before it (366 the intro warp, 1278 THROWN_DOWN) line up again a tick later.
+- Delfino Plaza 1 c/A7E1056F_…071 (first drift 1845): Mario stands in WAIT at (3045, 300, 1912) for half a minute and at 1842 the game sets MARIO_FLAG_NPC_TALKING with no button pressed, no director change and no NPC within 700 in the sim, so the sim lets him run. Find what starts a talk on its own there (an NPC that walks up and speaks, or an event).
+
 ## 13. Refuted (don't retry without new evidence)
 
 - 2026-11-06 The TBathtubData port (bathwater.ts getPos / getGravityDir with fused ops, MSL atanf / atan2f and the 2^-18 epsilon): coronaBoss a/2A1D8909_80000028 1712 -> 1044 (Mario thrown down at QF 1041 by BathWater.tryHitMario), everything else the same (runs72). Probably one piece of it is wrong; port the pieces one at a time against the DOL.
