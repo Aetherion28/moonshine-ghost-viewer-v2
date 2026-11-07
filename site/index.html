@@ -560,14 +560,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1794017514949"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1794017514949"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1794017514949"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1794017514949"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1794017514949"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1794017514949"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1794017514949"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1794017514949"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1794018591358"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1794018591358"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1794018591358"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1794018591358"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1794018591358"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1794018591358"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1794018591358"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1794018591358"><\/script>');
 </script>
 <script>
 (() => {
@@ -8429,7 +8429,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1794017514949';
+  const BUILD_STAMP = '1794018591358';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
@@ -8515,6 +8515,7 @@ void main() {
     adaptResolution();
     fpsTick(now);
     const _lt = performance.now(), _ps = window.__benchFrames ? perfSnap() : null;
+    const _pa0 = perfAcc.game, _pa1 = perfAcc.three;
     updateTexAnims(now);
     last = now;
     if (playing) {
@@ -8542,7 +8543,7 @@ void main() {
     else viewStep(dt, now, true);
     if (gameLive && loopFrame % 30 === 0) warmFx();   // (after the frame: the stage is on screen first)
     clipFrame();
-    { const d = performance.now() - _lt; perfAcc.loop += d; if (window.__benchFrames) { window.__benchFrames.push(d, now - (window.__benchLast || now)); if (_ps) { const e = perfSnap(), o = { work: d }; for (const k in e) o[k] = e[k] - _ps[k]; window.__benchSlow.push(o); } } window.__benchLast = now; }
+    { const d = performance.now() - _lt; perfAcc.loop += d; if (d > 400) console.info(`[slow frame] ${Math.round(d)} ms: game draw ${Math.round(perfAcc.game - _pa0)} ms, overlay ${Math.round(perfAcc.three - _pa1)} ms`); if (window.__benchFrames) { window.__benchFrames.push(d, now - (window.__benchLast || now)); if (_ps) { const e = perfSnap(), o = { work: d }; for (const k in e) o[k] = e[k] - _ps[k]; window.__benchSlow.push(o); } } window.__benchLast = now; }
     requestAnimationFrame(loop);
     if (deferSim && !simQueued) { simQueued = true; simChannel.port2.postMessage(0); }
   }
