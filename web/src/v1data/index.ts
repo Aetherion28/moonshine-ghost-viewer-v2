@@ -13,8 +13,9 @@ import { setParamsArchive } from './objparts.js';
 import { buildMario, buildYoshi, buildWaterTex, buildShineGet } from './models.js';
 import { exportJpa, EFFECTS, BW_EFFECTS, BG_EFFECTS } from './jpa.js';
 import STAGES from './tables/stages.json';
+import { storeKey, storeGet, storePut } from './store.js';
 
-interface GameFS { has(path: string): boolean; read(path: string): Promise<ArrayBuffer> }
+interface GameFS { id?: string; revision?: number; has(path: string): boolean; read(path: string): Promise<ArrayBuffer> }
 type Arc = Map<string, Bytes>;
 
 setImageEncoder(async (img, alpha, max) => ({ bytes: await encodePng(img, alpha, max), mime: 'image/png' }));
@@ -53,8 +54,18 @@ export class V1Data {
     /** A v1 site file: an ArrayBuffer for binary ones (the .b64.txt are served decoded), else parsed JSON. */
     get(path: string): Promise<any> {
         path = path.replace(/^\.?\//, '');
-        if (!this.files.has(path)) this.files.set(path, this.make(path));
+        if (!this.files.has(path)) this.files.set(path, this.stored(path));
         return this.files.get(path)!;
+    }
+    /** make(path), or its result from an earlier visit (store.ts); bgeso.json depends on what was loaded before, so it isn't kept */
+    private async stored(path: string): Promise<any> {
+        if (!this.fs.id || path === 'objects/bgeso.json') return this.make(path);
+        const key = storeKey(`${this.fs.id}.${this.fs.revision || 0}`, path);
+        const hit = await storeGet(key);
+        if (hit !== undefined) return hit;
+        const v = await this.make(path);
+        storePut(key, v);
+        return v;
     }
     has(path: string) {
         path = path.replace(/^\.?\//, '');

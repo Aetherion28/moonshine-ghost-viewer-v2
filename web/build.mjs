@@ -3,6 +3,7 @@
 // node build.mjs [--watch] [--dev]
 import * as esbuild from 'esbuild';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 // noclip modules this viewer doesn't use, replaced by small stubs.
@@ -17,10 +18,17 @@ const stubs = {
     });
   },
 };
+// a hash of the converters' source (src/v1data): the key of their output kept in the browser (v1data/store.ts)
+function v1dataVersion() {
+  const h = crypto.createHash('sha1'), dir = path.join(here, 'src/v1data');
+  const walk = (d) => { for (const f of fs.readdirSync(d).sort()) { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else { h.update(f); h.update(fs.readFileSync(p)); } } };
+  walk(dir); h.update(fs.readFileSync(path.join(here, 'src/game/engine.ts')));   // (v1data/objparts.ts uses its calcKeyCode)
+  return h.digest('hex').slice(0, 12);
+}
 const opts = {
   entryPoints: [path.join(here, 'src/layer.ts')], bundle: true, format: 'iife', target: 'es2022',
   outfile: path.join(here, '../site/game.js'), sourcemap: true, minify: !process.argv.includes('--dev'),
-  plugins: [stubs], keepNames: true, logLevel: 'warning', metafile: true, define: { 'process.env.NODE_ENV': '"production"' },
+  plugins: [stubs], keepNames: true, logLevel: 'warning', metafile: true, define: { 'process.env.NODE_ENV': '"production"', V1DATA_VERSION: JSON.stringify(v1dataVersion()) },
 };
 import fs from 'node:fs';
 // (each build stamps its scripts' URLs, so a reload gets this build's scripts past the page cache; build.txt names it)
