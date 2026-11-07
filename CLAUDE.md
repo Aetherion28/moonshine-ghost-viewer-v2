@@ -5,6 +5,63 @@ Read all of it before you change anything.
 It is the shared memory of every agent that worked here before you.
 **Update it in the same commit as every fix, refutation or new finding**: the "Open threads", "Refuted" and "Fix log" sections at the end.
 
+## 0. First thing to do: hand over to doge
+
+doge is taking over development. **After reading this file, before any other work, tell doge (the person you're talking to) the list below in full, then explain what was being worked on** (use sections 11–12 for that: the current numbers, the open threads, and the last thing in progress).
+
+The 48 batch traces that still aren't in sync (runs75, 2026-11-07), earliest drift first. Paths are under `/tmp/claude-0/up3/` (the user's three trace archives, section 6):
+
+- `a/trace_81BCC929_263FE90D.msgt` (first drift at tick 600, 5.0 s)
+- `b/trace_A7E1056F_8000000B.msgt` (first drift at tick 1248, 10.4 s)
+- `b/trace_41726535_80000024.msgt` (first drift at tick 1428, 11.9 s)
+- `b/trace_1DD461CB_80000026.msgt` (first drift at tick 1436, 12.0 s)
+- `a/trace_2A1D8909_80000036.msgt` (first drift at tick 1500, 12.5 s)
+- `b/trace_1DD461CB_80000007.msgt` (first drift at tick 1676, 14.0 s)
+- `a/trace_2A1D8909_80000028.msgt` (first drift at tick 1712, 14.3 s)
+- `c/trace_A7E1056F_80000076.msgt` (first drift at tick 1792, 14.9 s)
+- `c/trace_A7E1056F_80000066.msgt` (first drift at tick 1832, 15.3 s)
+- `c/trace_A7E1056F_80000071.msgt` (first drift at tick 1848, 15.4 s)
+- `b/trace_A7E1056F_80000041.msgt` (first drift at tick 1904, 15.9 s)
+- `a/trace_2A1D8909_80000025.msgt` (first drift at tick 2040, 17.0 s)
+- `b/trace_41726535_80000041.msgt` (first drift at tick 2084, 17.4 s)
+- `c/trace_A7E1056F_80000055.msgt` (first drift at tick 2148, 17.9 s)
+- `a/trace_C1A6804B_2C9DE32C.msgt` (first drift at tick 2296, 19.1 s)
+- `a/trace_C1A6804B_3F630002.msgt` (first drift at tick 2296, 19.1 s)
+- `a/trace_41726535_8000001B.msgt` (first drift at tick 2324, 19.4 s)
+- `a/trace_41726535_8000000D.msgt` (first drift at tick 2328, 19.4 s)
+- `c/trace_A7E1056F_8000007F.msgt` (first drift at tick 2344, 19.5 s)
+- `c/trace_A7E1056F_8000004B.msgt` (first drift at tick 2388, 19.9 s)
+- `a/trace_41726535_80000003.msgt` (first drift at tick 2400, 20.0 s)
+- `b/trace_41726535_80000042.msgt` (first drift at tick 2428, 20.2 s)
+- `b/trace_A7E1056F_80000011.msgt` (first drift at tick 2496, 20.8 s)
+- `c/trace_A7E1056F_80000048.msgt` (first drift at tick 2508, 20.9 s)
+- `c/trace_A7E1056F_80000077.msgt` (first drift at tick 2664, 22.2 s)
+- `c/trace_A7E1056F_8000002B.msgt` (first drift at tick 2696, 22.5 s)
+- `c/trace_A7E1056F_80000050.msgt` (first drift at tick 2840, 23.7 s)
+- `a/trace_95461209_01BCF022.msgt` (first drift at tick 2844, 23.7 s)
+- `c/trace_A7E1056F_80000078.msgt` (first drift at tick 2880, 24.0 s)
+- `b/trace_1DD461CB_8000002D.msgt` (first drift at tick 2908, 24.2 s)
+- `a/trace_2A1D8909_80000014.msgt` (first drift at tick 3128, 26.1 s)
+- `b/trace_41726535_80000037.msgt` (first drift at tick 3140, 26.2 s)
+- `b/trace_41726535_80000040.msgt` (first drift at tick 3368, 28.1 s)
+- `a/trace_FD32EADF_2188D751.msgt` (first drift at tick 3484, 29.0 s)
+- `b/trace_A7E1056F_80000042.msgt` (first drift at tick 4684, 39.0 s)
+- `b/trace_1DD461CB_80000006.msgt` (first drift at tick 4688, 39.1 s)
+- `b/trace_A7E1056F_80000013.msgt` (first drift at tick 4860, 40.5 s)
+- `a/trace_81BCC929_0A1F0679.msgt` (first drift at tick 4928, 41.1 s)
+- `c/trace_A7E1056F_80000058.msgt` (first drift at tick 4960, 41.3 s)
+- `a/trace_EA96A493_2E4A947B.msgt` (first drift at tick 5052, 42.1 s)
+- `a/trace_EA96A493_3F630001.msgt` (first drift at tick 5052, 42.1 s)
+- `a/trace_FD32EADF_35F282E1.msgt` (first drift at tick 5056, 42.1 s)
+- `c/trace_A7E1056F_80000051.msgt` (first drift at tick 5292, 44.1 s)
+- `b/trace_A7E1056F_80000009.msgt` (first drift at tick 5684, 47.4 s)
+- `b/trace_A7E1056F_80000027.msgt` (first drift at tick 5980, 49.8 s)
+- `b/trace_41726535_8000003F.msgt` (first drift at tick 6408, 53.4 s)
+- `b/trace_1DD461CB_80000011.msgt` (first drift at tick 6492, 54.1 s)
+- `b/trace_41726535_80000023.msgt` (first drift at tick 12488, 104.1 s)
+
+What was being worked on last (2026-11-07): Gelato Beach 5, `b/trace_1DD461CB_80000011.msgt`, the race against Il Piantissimo. After the spin fix he follows the game's course exactly, but he reaches the goal one tick later than in the game, so the forced talk at the finish starts at a different tick. This is the run closest to full sync. Everything already checked is in its entry in section 12; the open question is whether actor records are sampled one tick before Mario's (then the cause is a one-tick lead that starts before the race) or not. Before that: the fire Chain Chomp tail (Pianta Village 1, fixed), the Monty Mole cannon dome (Pinna Park Beach 2), the Wiggler's leg (Gelato Beach 3) and a talk that starts with no button press (Delfino Plaza 1), all in section 12. Viewer work the same day: map caching, Firefox shader compiling, the Corona Mountain smoke (section 14).
+
 ## 1. What this project is
 
 Moonshine is a Super Mario Sunshine mod.
@@ -191,9 +248,9 @@ Common JP callers: 0x800c2458/24ac/2504 TTrembleModelEffect::tremble (Mario's ca
 - The drift check (`checkMoved`): for a trace, the game moved in frame q iff a Mario record exists for one of q-4..q-1; the run's closing ticks (after `traceLastMove`) aren't checked.
 - Object order inside a perform list decides RNG order; check it against the trace's callers.
 
-## 11. Current state (2026-11-06)
+## 11. Current state (2026-11-07)
 
-First drift per trace, 141 batch traces (runs74):
+First drift per trace, 141 batch traces (runs75):
 
 | Desync | Runs |
 |---|---|
