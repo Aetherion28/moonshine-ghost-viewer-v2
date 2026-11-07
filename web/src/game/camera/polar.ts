@@ -36,11 +36,17 @@ import { World, LF } from '../engine.js';
 import { BGCheckData, WallCheck } from '../collision.js';
 import { AT } from '../actortypes.js';
 import type { SimCamera } from './types.js';
+import { CameraShake } from './shake.js';
 import {
     Vec, vec, vcopy, vset, vadd, veq, CLBConstUpVec, MsSqrtf, CLBRoundfS16, CLBDegToShortAngle, lerpF, lerpS, ratioF, ratioI, easeInF, easeInS,
     clamp, chaseFrameF, chaseSpeedS, chaseSpeedF, chaseAngleDecrease, chaseDecrease, chaseSpecialDecrease, crossToPolar, crossToPolar2,
-    polarToCross, revisionLookatByAngleX, msVecNormalize, vnormalize,
+    polarToCross, revisionLookatByAngleX, msVecNormalize, vnormalize, rotatePosAndUp, rotateAboutAxis, msGetRotFromYaxisZ,
 } from './lib.js';
+import { CameraJetCoaster } from './jetcoaster.js';
+import { cameraBck } from './bck.js';
+import { jgNormalize } from '../math.js';
+import { SE } from '../soundids.js';
+import { MSF } from '../msflags.js';
 import { KindParam, KindSave, ExSave, NoticeSave, loadKind, loadEx, loadNotice, KIND_FILES } from './params.js';
 import { CameraTables, CameraMapTool } from './maptool.js';
 
@@ -128,6 +134,12 @@ export interface CameraMario {
     isOnWire?(): boolean;
     /** TWaterGun: getCurrentNozzle() -> { mLAngleMin / getGunAngle() }, mCurrentNozzle, getNozzleMtx() */
     mWaterGun?: any;
+    /** TMario::mToroccoAngle */
+    mToroccoAngle?: number;
+    /** mTorocco->getModel()->getAnmMtx(2) (row-major 3x4), when he rides one */
+    toroccoMtx?(): ArrayLike<number> | null;
+    /** TMario::loserExec */
+    loserExec?(): void;
 }
 /** TMarioGamePad as the camera reads it (player/pad.ts MarioGamePad) */
 export interface CameraPad {
@@ -145,7 +157,16 @@ export interface DemoView { pos: Vec; at: Vec; up: Vec; fovy: number; }
  * A demo's .bck (TCameraBck): its length in camera ticks (getTotalDemoFrames) and the view on the
  * n-th updateDemo since its start (camera/bck.ts cameraBck: the frame's last tick's perform).
  */
-export interface DemoBck { totalFrames: number; view(tick: number): DemoView | null; }
+export interface DemoBck {
+    totalFrames: number; view(tick: number): DemoView | null;
+    /** TCameraBck::setFrame: the frame control at f (view's tick counted from there) */
+    setFrame?(f: number): void;
+}
+/** cameragc.cpp's coaster bcks */
+/** drawJetCoasterBalloonMessage_'s sFixCameraPos */
+const sFixCameraPos: Vec = { x: 3005, y: 4020, z: -9560 };
+const IDENT34 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+const cJetCoasterCam0BckName = 'pinna2_camera', cJetCoasterCam1BckName = 'tinkoopa_camera', cJetCoasterDemoBckName = 'tinkoopa_killer_camera';
 
 /**
  * correctYawToRecorded's tolerance (s16 units) between the sim's rendered yaw and a recorded one: the
@@ -252,11 +273,22 @@ export class PolarSubCamera implements SimCamera {
     demo = { offset: null as Vec | null, angle: 0, tool: null as CameraMapTool | null, unkC: 0, total: 0, remaining: 0 };
     /** unk2B0 (TCameraBck): the running bck demo and its updateDemo calls so far */
     private bck: DemoBck | null = null; private bckTick = 0;
+    /** unk2B8 (TCameraJetCoaster): the Pinna coaster's (map 58, stages 0 and 1) */
+    unk2B8: CameraJetCoaster | null = null;
+    /**
+     * unk2B0 as the coaster runs it (startDemo in the constructor / startJetCoasterCam1, updateDemo
+     * into unk2B8 on the frame's last tick): its bck and the updateDemo calls since its start frame
+     */
+    private jetBck: DemoBck | null = null; private jetBckTick = 0;
+    /** loadAfter's fireStartDemoCamera(cJetCoasterDemoBckName) for stage 1, sent once the director is up (fireDeferredDemo) */
+    private jetDemoPending = false;
     unk2C0 = 3; unk2C4 = 2; unk2C8 = -1; unk2CA = -1; unk2CC = 0;
     /** TCameraMarioData (gpCameraMario) */
     cmd = { unk0: vec(), H: 0, V: 0, lastStatus: 0, sinceStatus: 0, unk1C: 0 };
-    /** TCameraShake's roll (gpCameraShake->mRollAccum): no shakes are simulated */
-    shakeRoll = 0;
+    /** gpCameraShake (cameragc.cpp: made in CPolarSubCamera's constructor) */
+    shake: CameraShake;
+    /** TCameraShake's roll (gpCameraShake->mRollAccum) */
+    get shakeRoll() { return this.shake.mRollAccum; }
     /**
      * (not the game's: for the viewer) how many cuts the view has had: a mode change in 1 frame
      * (changeCamModeSub_: a demo's start and end, a fix camera's) or a warp (warpPosAndAt). The live
@@ -274,7 +306,11 @@ export class PolarSubCamera implements SimCamera {
     /** TMarDirector's unkD0 (decideMarioPosIdx), read by loadAfter's 開始後カメラN: the world's */
     get marioPosIdx() { return this.world.marioPosIdx; }
     /** The demo cameras' .bck files by name (TCameraBck::isFileExist / startDemo), e.g. 'startcamera'. */
-    bckSource: ((name: string) => DemoBck | null) | null = null;
+    get bckSource() { return this.bckSrc; }
+    set bckSource(f: ((name: string) => DemoBck | null) | null) {
+        this.bckSrc = f;
+    }
+    private bckSrc: ((name: string) => DemoBck | null) | null = null;
     /** The projection / view the game last set (unk16C perspective, unk1EC look-at), for the notice clip test */
     private proj = new Float64Array(16); private view = new Float64Array(12);
     private mario: CameraMario | null = null;
@@ -284,6 +320,13 @@ export class PolarSubCamera implements SimCamera {
         this.save = KIND_FILES.map((_, i) => loadKind(files, i));
         this.ex = loadEx(files); this.notice = loadNotice(files);
         this.tables = CameraTables.load(files.scene('map/tables.bin'));
+        this.shake = new CameraShake(files); world.cameraShake = this.shake;
+        // (the constructor's coaster part: map 58, stages 0 and 1)
+        if (world.map === 58 && (world.stage === 0 || world.stage === 1)) {
+            this.unk64 |= CF.JET_COASTER_SCENE;
+            this.unk2B8 = new CameraJetCoaster(files);
+            if (world.stage === 0) this.startJetBck(cJetCoasterCam0BckName);
+        }
     }
 
     // ------------------------------------------------------------ Mario access (MarioAccess.cpp)
@@ -387,6 +430,7 @@ export class PolarSubCamera implements SimCamera {
         if (w.map === 7) this.mInitialMode = CM.DELFINO;
         else if (w.map > 0x14 && w.map < 0x35) this.mInitialMode = CM.EX_MAP_0;
         else if (w.map === 12 && w.stage === 0) this.mInitialMode = CM.MULTI_PLAYER;
+        else if (this.unk64 & CF.JET_COASTER_SCENE) this.mInitialMode = CM.JET_COASTER;
         const tool = this.tables.tool('開始カメラ');
         if (tool) this.changeCamModeSpecifyCamMapToolAndFrame_(tool, 1);
         else this.changeCamModeSpecifyFrame_(this.mInitialMode, 1);
@@ -400,6 +444,7 @@ export class PolarSubCamera implements SimCamera {
             this.cur.ratio = clamp(this.ex.mXRotStart, this.unk268, this.unk26C);
             this.cur.yaw = s16(this.marioAngleY() - 0x8000);
         }
+        if ((this.unk64 & CF.JET_COASTER_SCENE) && this.unk2B8 && this.unk2B8.isLButtonMode()) this.setUpToLButtonCamera_(CM.JET_COASTER);
         this.unk270 = this.cur.ratio;
         this.cur.pitch = lerpS(this.P.mXAngleMin, this.P.mXAngleMax, this.cur.ratio);
         this.setMarioLookat_();
@@ -418,12 +463,37 @@ export class PolarSubCamera implements SimCamera {
         this.prev.copy(this.cur); this.beforeFixed.copy(this.prev);
         vset(this.unk124, this.mPosition); vset(this.unk130, this.mPosition); vset(this.unk13C, this.mPosition);
         vset(this.unk148, this.mTarget); vset(this.unk154, this.mTarget); vset(this.unk160, this.mTarget);
+        if ((this.unk64 & CF.JET_COASTER_SCENE) && this.unk2B8) { vset(this.unk2B8.unk10, this.mPosition); vset(this.unk2B8.unk1C, this.mTarget); }
         this.inb.init(this.mPosition, this.mTarget, mario.pos);
         this.calcMatrices();
         this.calcExternalData_();
         // (unk2B0->isFileExist("startcamera"): the stage's /scene/map/camera/startcamera.bck)
-        if (!this.bckExists('startcamera') && !this.world.files.scene('map/camera/startcamera.bck')) this.calcInHouseNo_(true);
+        if ((this.unk64 & CF.JET_COASTER_SCENE) && w.stage === 1) {
+            // SMSGetMarDirector()->fireStartDemoCamera(cJetCoasterDemoBckName, 0, -1, 0, true, JetCoasterDemoCallBack)
+            this.jetDemoPending = true;
+            if (w.talk) this.fireDeferredDemo();
+        } else if (!this.bckExists('startcamera') && !this.world.files.scene('map/camera/startcamera.bck')) this.calcInHouseNo_(true);
     }
+    /** (the sim's: loadAfter runs before the director is set up) send loadAfter's coaster demo now */
+    fireDeferredDemo() {
+        if (!this.jetDemoPending || !this.world.talk) return;
+        this.jetDemoPending = false;
+        // JetCoasterDemoCallBack: at the demo's end, startJetCoasterCam1
+        this.world.startDemoCamera(cJetCoasterDemoBckName, null, -1, (phase) => { if (phase === 1) this.startJetCoasterCam1(); });
+    }
+    /** TCameraBck::startDemo(name, null) for the coaster's unk2B0 */
+    private startJetBck(name: string) {
+        // (the constructor runs before the stage hands the camera its bckSource)
+        const b = this.bckSource ? this.bckSource(name) : cameraBck(this.world, name);
+        if (b) { this.jetBck = b; this.jetBckTick = 0; }
+    }
+    /** startJetCoasterCam1: tinkoopa_camera, at frame moveTickCount * 0.5 */
+    startJetCoasterCam1() {
+        this.startJetBck(cJetCoasterCam1BckName);
+        if (this.jetBck && this.jetBck.setFrame) this.jetBck.setFrame(fr(this.world.moveTickCount * 0.5));
+    }
+    /** isJetCoaster1stCamera (CameraMode.cpp) */
+    isJetCoaster1stCamera() { return this.mMode === CM.JET_COASTER && this.unk2B8 !== null && this.unk2B8.isLButtonMode(); }
 
     // ------------------------------------------------------------ perform (CUE_MOVE)
     /**
@@ -444,7 +514,14 @@ export class PolarSubCamera implements SimCamera {
         }
         const last = (tick & 2) !== 0;
         if (last) {
-            if (this.mMode !== CM.REPRODUCE_DEMO && !(this.unk64 & CF.DEAD_DEMO) && (this.unk64 & CF.GATE_DEMO)) this.updateGateDemoCamera_();
+            if (this.mMode !== CM.REPRODUCE_DEMO && !(this.unk64 & CF.DEAD_DEMO)) {
+                if (this.unk64 & CF.GATE_DEMO) this.updateGateDemoCamera_();
+                else if ((this.unk64 & CF.JET_COASTER_SCENE) && this.unk2B8) {
+                    // unk2B0->updateDemo(&unk2B8->unk10, &unk2B8->unk1C, &unk2B8->unk28, &unk2B8->unk34)
+                    const J = this.unk2B8, v = this.jetBck ? this.jetBck.view(++this.jetBckTick) : null;
+                    if (v) { vset(J.unk10, v.pos); vset(J.unk1C, v.at); vset(J.unk28, v.up); J.unk34 = v.fovy; }
+                }
+            }
             if (this.mMode !== CM.JET_COASTER && this.mMode !== CM.REPRODUCE_DEMO) this.calcInHouseNo_(false);
         }
         this.updateDemoCamera_(last);
@@ -459,7 +536,7 @@ export class PolarSubCamera implements SimCamera {
 
     private calcFinalPosAndAt_() {
         if (this.mMode !== CM.REPRODUCE_DEMO) {
-            // gpCameraShake->execShake: no shakes are simulated
+            this.shake.execShake(this.unk124, this.unk148, this.mUp);
             if (this.mMode !== CM.JET_COASTER && (!isFixMode(this.mMode) || this.isNowInbetween())) {
                 if (this.isHellDeadDemo()) {
                     if (this.unk256 > this.ex.mSLLimitMaxAngleX) { this.mTargetFreezeFrames = 1; this.unk64 |= CF.UNK40; }
@@ -525,7 +602,8 @@ export class PolarSubCamera implements SimCamera {
         if (!this.isNormalDeadDemo() && !(this.unk64 & (CF.JET_COASTER_SCENE | CF.GATE_DEMO))) this.mFovy = this.P.mFovy;
         this.mNear = this.P.mNearClip; this.mFar = 300000;
         if (this.isNormalDeadDemo()) this.ctrlNormalDeadDemo_();
-        else if (this.mMode === CM.MULTI_PLAYER || this.mMode === CM.JET_COASTER) this.calcPosAndAt_();   // (not simulated: their own controls)
+        else if (this.mMode === CM.MULTI_PLAYER) this.calcPosAndAt_();   // (not simulated: its own controls)
+        else if (this.mMode === CM.JET_COASTER) this.ctrlJetCoasterCamera_();
         else if (isFixOrDefinite(this.mMode)) this.calcPosAndAt_();
         else if (isLButtonMode(this.mMode)) this.ctrlLButtonCamera_();
         else if (isTalkMode(this.mMode)) this.ctrlTalkCamera_();
@@ -1066,6 +1144,127 @@ export class PolarSubCamera implements SimCamera {
             this.rotateX_ByStickY_(sy);
         }
         this.calcPosAndAt_();
+    }
+    // ------------------------------------------------------------ CameraJetCoaster.cpp
+    /** getToroccoMtx_: the cart's joint 2 (gpMarioOriginal->mTorocco's anm matrix) */
+    private getToroccoMtx_(): ArrayLike<number> { const m = (this.M as any).toroccoAnmMtx; return m || IDENT34; }
+    /** calcAngleXFromXRotRatio_ / calcDistFromXRotRatio_ */
+    private calcAngleXFromXRotRatio_() { return lerpS(this.P.mXAngleMin, this.P.mXAngleMax, this.cur.ratio); }
+    private calcDistFromXRotRatio_() { return lerpF(this.P.mDistMin, this.P.mDistMax, this.cur.ratio); }
+    /**
+     * drawJetCoasterBalloonMessage_ (stage 0x3A scenario 0): the balloons' messages by the move tick
+     * (the console's balloon: world 'balloon' / 'jetBalloon' events), all popped: 300 ticks, then
+     * setNextStage(0xE05); at 0x57E4 the time is up: loserExec and the camera fixed.
+     */
+    private drawJetCoasterBalloonMessage_() {
+        const w = this.world, J = this.unk2B8!;
+        const flagCount = w.flags.getFlag(MSF.BALLOON_COUNT) >>> 0;
+        const im = w.search('アイテムマネージャー') as any;   // (gpItemManager)
+        const objCount = (im ? im.getObjNumWithActorType(AT.BALLOON_KOOPA_JR) : 0) >>> 0;
+        if (J.unk38 > 2) {
+            J.unk38 = (J.unk38 - 1) & 0xFFFF;
+            if (J.unk38 === 2) { J.unk38 = 1; w.setNextStage(0xE05, null); }
+            return;
+        }
+        if (J.unk38 === 1) return;
+        let balloonCode = -1;
+        if (flagCount === objCount) {
+            w.flags.setBool(true, MSF.POPPED_ALL_BALLOONS_IN_PREV_STAGE);
+            J.unk38 = 300;
+            balloonCode = 0xE002D;
+        } else {
+            switch (w.moveTickCount) {
+                case 0x3C: w.events.push({ t: w.tickCount, kind: 'jetBalloon', data: { kind: 0, num: objCount } }); break;
+                case 0x1DB: balloonCode = 0xE0029; break;
+                case 0x1D4C: balloonCode = 0xE002A; break;
+                case 0x3A98: balloonCode = ((objCount - flagCount) >>> 0) >= 7 ? 0xE002B : 0xE002C; break;
+                case 0x57E4: {
+                    const m: any = this.M;
+                    if (typeof m.loserExec === 'function') m.loserExec();
+                    this.mPosFreezeFrames = 3600;
+                    this.mTargetFreezeFrames = 0;
+                    this.warpPosAndAt(sFixCameraPos, this.mTarget);
+                    J.unk38 = 1;
+                    break;
+                }
+            }
+        }
+        // (startAppearBalloon(code, true))
+        if (balloonCode !== -1) w.events.push({ t: w.tickCount, kind: 'balloon', data: { id: balloonCode } });
+    }
+    /** ctrlJetCoasterCamera_ (JP 0x803606EC): Y toggles the cart's first-person view and the coaster bck's */
+    private ctrlJetCoasterCamera_() {
+        const w = this.world, J = this.unk2B8!;
+        if (w.map === 0x3A && w.stage === 0) this.drawJetCoasterBalloonMessage_();
+        let startedLButton = false;
+        if (this.pad.checkFrameMeaning(MEANING.Y)) {
+            startedLButton = true;
+            let soundID: number = SE.SY_CAMERA_OUT;
+            J.toggleLButtonMode();
+            if (J.isLButtonMode()) soundID = SE.SY_CAMERA_UP;
+            w.sound(soundID);
+        }
+        let newTarget: Vec;
+        const C = this.pad.mCompSPos;
+        if (J.isLButtonMode()) {
+            if (startedLButton) this.setUpToLButtonCamera_(CM.JET_COASTER);
+            const stickY = -C[1];
+            if (this.mTargetFreezeFrames === 0) this.getNozzleTopPos_(this.cur.target);
+            if (this.mPosFreezeFrames === 0) {
+                this.rotateX_ByStickY_(stickY);
+                this.cur.pitch = this.calcAngleXFromXRotRatio_();
+                this.cur.yaw = s16((this.M as any).mToroccoAngle | 0);
+            }
+            newTarget = vcopy(this.cur.target);
+            const angleX = s16(this.cur.pitch + this.getOffsetAngleX());
+            const angleY = s16(this.cur.yaw + this.getOffsetAngleY());
+            const t = this.getToroccoMtx_();
+            const ax = vec(t[0], t[4], t[8]), ay = vec(t[1], t[5], t[9]), az = vec(t[2], t[6], t[10]);
+            vset(this.mUp, ay);
+            const d = -this.calcDistFromXRotRatio_();
+            const u = this.cur.unk18;
+            u.x = FMA(az.x, d, newTarget.x); u.y = FMA(az.y, d, newTarget.y); u.z = FMA(az.z, d, newTarget.z);
+            rotatePosAndUp(angleX, angleY, ax, ay, newTarget, u, this.mUp);
+            const toTarget = jgNormalize(vec(fr(newTarget.x - u.x), fr(newTarget.y - u.y), fr(newTarget.z - u.z)));
+            const lookUp = msVecNormalize(vcopy(this.mUp), vec());
+            const k = FMA(this.cur.ratio, this.P.mXRotRatioAtOffsetY, this.P.mAtOffsetY);
+            lookUp.x = fr(lookUp.x * k); lookUp.y = fr(lookUp.y * k); lookUp.z = fr(lookUp.z * k);
+            vadd(u, lookUp); vadd(newTarget, lookUp);
+            vset(lookUp, this.mUp);
+            rotateAboutAxis(toTarget, fr(-1.570796), lookUp);
+            const o = this.P.mOffsetLookatXZ;
+            lookUp.x = fr(lookUp.x * o); lookUp.y = fr(lookUp.y * o); lookUp.z = fr(lookUp.z * o);
+            vadd(u, lookUp); vadd(newTarget, lookUp);
+            this.unk254 = CLBDegToShortAngle(msGetRotFromYaxisZ(ay));
+            this.mFovy = this.P.mFovy;
+        } else {
+            if (startedLButton) this.setUpFromLButtonCamera_();
+            J.calcNowOffsetAngle(C[7], C[6]);
+            vset(this.cur.unk18, J.unk10); vset(this.cur.target, J.unk1C); vset(this.mUp, J.unk28); this.mFovy = J.unk34;
+            newTarget = vcopy(this.cur.target);
+            const mp = this.M.pos, u = this.cur.unk18, up = this.mUp;
+            const bc = jgNormalize(vec(fr(mp.x - u.x), fr(mp.y - u.y), fr(mp.z - u.z)));
+            const b0 = vec(FMS(up.y, bc.z, fr(up.z * bc.y)), FMS(up.z, bc.x, fr(up.x * bc.z)), FMS(up.x, bc.y, fr(up.y * bc.x)));
+            msVecNormalize(b0, b0);
+            rotatePosAndUp(J.getOffsetAngleX(), J.getOffsetAngleY(), b0, up, mp, u, up);
+        }
+        vset(this.cur.pos, this.cur.unk18);
+        if (startedLButton) {
+            if (this.mPosFreezeFrames === 0) vset(this.mPosition, this.cur.pos);
+            if (this.mTargetFreezeFrames === 0) vset(this.mTarget, newTarget);
+        } else {
+            const P = this.P;
+            if (this.mPosFreezeFrames === 0) {
+                this.mPosition.x = chaseDecrease(this.mPosition.x, this.cur.pos.x, P.mPosChaseRateXZ, 0)[0];
+                this.mPosition.y = chaseDecrease(this.mPosition.y, this.cur.pos.y, P.mPosChaseRateY, 0)[0];
+                this.mPosition.z = chaseDecrease(this.mPosition.z, this.cur.pos.z, P.mPosChaseRateXZ, 0)[0];
+            }
+            if (this.mTargetFreezeFrames === 0) {
+                this.mTarget.x = chaseDecrease(this.mTarget.x, newTarget.x, P.mAtChaseRateXZ, 0)[0];
+                this.mTarget.y = chaseDecrease(this.mTarget.y, newTarget.y, P.mAtChaseRateY, 0)[0];
+                this.mTarget.z = chaseDecrease(this.mTarget.z, newTarget.z, P.mAtChaseRateXZ, 0)[0];
+            }
+        }
     }
     private ctrlTalkCamera_() {
         if (this.mTargetFreezeFrames === 0) vset(this.cur.target, this.cmd.unk0);

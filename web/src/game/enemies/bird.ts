@@ -3,6 +3,7 @@
 // back and lands. Spraying it in flight takes its hit points; at none it turns into its item
 // (from its event ID: a blue coin, a coin, a red coin or a Shine; the body's colour says which).
 
+import { registerTrans, createRandPlayVec, startSeRandPlay } from '../sound.js';
 import { fr, V3, MsRandF, MsWrap, MsAngleDiff } from '../math.js';
 import { vLen } from '../vecops.js';
 import { World, SpineEnemy, EnemyManager, LiveManager, PathNode, LF, HF, MSG, nerve, Spine, Stream, ANM_BCK, FC_ONCE_RESET, readParams, SPINE_PARAMS, PSchema, HitActor, TakeActor } from '../engine.js';
@@ -37,6 +38,11 @@ export class AnimalBirdManager extends EnemyManager {
         super.load(s);
     }
     createModelData() { this.createModelDataArray(['bird_man.bmd']); }
+    /** loadAfter: a rand-play slot per bird for its flying and chirping sounds */
+    loadAfter() {
+        createRandPlayVec(this.world, SE.OBJ_BIRD_DOL_FLYING1, this.objs.length);
+        createRandPlayVec(this.world, SE.OBJ_BIRD_DOL_CHUN, this.objs.length);
+    }
 }
 
 /**
@@ -133,7 +139,18 @@ export class AnimalBird extends SpineEnemy {
         if (this.isWaterproof()) this.waterproofTimer--;
         this.checkFalling();
         this.checkChangeToItem();
+        this.updateSound();
         super.moveObject();
+    }
+    /** loadAfter: its position for the rand-played flying and chirping sounds */
+    loadAfter() {
+        registerTrans(this.world, SE.OBJ_BIRD_DOL_FLYING1, this.pos);
+        registerTrans(this.world, SE.OBJ_BIRD_DOL_CHUN, this.pos);
+    }
+    /** updateSound: flying, the flying sound's rand play; on the ground, the chirping's */
+    updateSound() {
+        if (this.isFlying()) startSeRandPlay(this.world, SE.OBJ_BIRD_DOL_FLYING1, this.instanceIndex);
+        if (this.isOnGroundNerve()) startSeRandPlay(this.world, SE.OBJ_BIRD_DOL_CHUN, this.instanceIndex);
     }
     bind() { if (this.isCheckWithWireBinder()) this.wireBinder!.bind(this); else super.bind(); }
     isWaterproof() { return this.waterproofTimer > 0; }

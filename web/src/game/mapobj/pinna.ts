@@ -18,8 +18,7 @@
 // - TBasketReverse: the upside-down basket (MapObjTown.cpp): killed, it breaks.
 //
 // Not here: particles (told as effects), the BGM's volume and
-// pitch (becomeCalmlyCallback's MSound unk80), the demo cameras (told as 'demoCamera' events; the
-// demo's callback is called at once: TODO, the director calls it when the demo is done), the
+// pitch (becomeCalmlyCallback's MSound unk80), the
 // shells' joints rolling on top of the playing BCK (the viewer's joint locals replace the
 // animated ones) and TMerrygoround::draw (it draws nothing itself: its model is still drawn here).
 
@@ -32,7 +31,7 @@ import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { Skeleton } from '../skeleton.js';
-import { MapObjBase, STATE_NORMAL, MOF, mapObjGlobals, newAndRegisterObj, UNIQUE_MAKERS } from './base.js';
+import { MapObjBase, STATE_NORMAL, MOF, mapObjGlobals, itemManager, newAndRegisterObj, UNIQUE_MAKERS } from './base.js';
 import { MapObjGeneral } from './general.js';
 import { MapObjChangeStage } from './town.js';
 import { ObjCollision, KIND_MOVE, KIND_STATIC } from './objcol.js';
@@ -41,8 +40,6 @@ import { itemCounts } from './item.js';
 import { V } from '../version.js';
 import type { ItemManager, Coin } from './item.js';
 
-const itemManager = (w: World) => mapObjGlobals(w).itemManager as ItemManager | null;
-const demoCamera = (w: World, name: string, p: V3, cb: ((phase: number) => void) | null = null) => { w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name, p: p.clone() } }); if (w.talk) w.talk.fireStartDemoCamera(name, p.clone(), -1, 0, true, null, cb); else if (cb) cb(0); };
 /** a J3D anm matrix (column-major 4x4) as the game's 3x4 */
 function m4ToMtx(w: mat4): Mtx {
     const m = mtx();
@@ -65,7 +62,7 @@ function concatOnlyRotFromRight(a: Mtx, b: Mtx, out: Mtx) {
     out[3] = x; out[7] = y; out[11] = z;
     return out;
 }
-/** SMS_GetYoshi()->mType (no Yoshi in the sim: what the stage's Mario says, else 0) */
+/** SMS_GetYoshi()->mType */
 const yoshiType = (w: World): number => { const y = (w.mario as any).mYoshi ?? (w.mario as any).yoshi; return y && typeof y.mType === 'number' ? y.mType : 0; };
 
 // ---------------------------------------------------------------- TFerrisWheel
@@ -508,7 +505,7 @@ export class AmiKing extends MapObjBase {
             const wheel = w.search('FerrisWheel') as FerrisWheel | null;
             if (wheel instanceof FerrisWheel) {
                 // (the director calls the callback with 0 as this demo starts, after the ones queued before it, and 1 as it ends)
-                demoCamera(w, '観覧車正常化カメラ', wheel.pos, (phase) => FerrisWheel.becomeCalmlyCallback(wheel, phase));
+                w.startDemoCamera('観覧車正常化カメラ', wheel.pos, -1, (phase) => FerrisWheel.becomeCalmlyCallback(wheel, phase));
             }
             this.kill();
         } else {
@@ -518,7 +515,7 @@ export class AmiKing extends MapObjBase {
                 this.vel.set(5, 10, -10); this.offLiveFlag(LF.UNK10);   // setVelocityAndFlag10
                 if (a) a.setBck('amiking_flying1_start');
                 this.setAnmSound(null);
-                demoCamera(w, '観覧車ボス撃沈カメラ', this.pos);
+                w.startDemoCamera('観覧車ボス撃沈カメラ', this.pos);
             }
         }
     }

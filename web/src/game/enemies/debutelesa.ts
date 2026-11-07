@@ -47,6 +47,7 @@ export class DebuTelesaManager extends SmallEnemyManager {
 export class DebuTelesa extends SmallEnemy {
     unk194 = 0;
     constructor(w: World, name = 'デブテルサ') { super(w, name); this.onLiveFlag(LF.UNK10); }
+    changeByJuice() { return false; }
     init(m: any) {
         this.manager = m;
         m.manageActor(this);

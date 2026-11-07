@@ -378,8 +378,11 @@ export class MapWireManager extends NameRef {
     /** getWireNo: gpCubeWire->getInCubeNo */
     getWireNo(p: V3) { return this.cubes.getInCubeNo(p); }
     getWire(i: number) { return this.wires[i] || null; }
-    /** getPointPosInNthWire */
-    getPointOnWire(no: number, p: V3) { const w = this.wires[no]; if (!w) return p.clone(); return w.getPointPosOnWire(w.getPosInWire(p), new V3()); }
+    /** getPointPosInNthWire: the point on wire no at p's place along it (getPosInWire, getPointPosOnWire) */
+    getPointPosInNthWire(no: number, p: V3, out = new V3()) { const w = this.wires[no]; return w.getPointPosOnWire(w.getPosInWire(p), out); }
+    getPointOnWire(no: number, p: V3) { if (!this.wires[no]) return p.clone(); return this.getPointPosInNthWire(no, p); }
+    /** getPointPosInWire (empty in the game) */
+    getPointPosInWire(_p: V3, _out: V3) { }
     /** Mario on a wire (SMS_IsMarioOnWire) */
     isMarioOnWire() { return this.actors.some((a) => a.held); }
     perform(cue: number) {
@@ -433,6 +436,29 @@ export function cubeArea(w: World): CubeManagerArea {
     m.list = t.list;
     return (w.cubeArea = m);
 }
-/** TMario::thinkCube's gpCubeArea part: the cube his position + 75 up is in */
-export function thinkCubeArea(w: World, p: V3) { const q = p.clone(); q.y = fr(q.y + 75); const A = cubeArea(w); A.unk1C = A.getInCubeNo(q); }
+// ---------------------------------------------------------------- gpCubeFastA / B / C
+/** TCubeManagerFast (高速Ａ / Ｂ / Ｃキューブテーブル): unk1C the cube Mario is in */
+export class CubeManagerFast extends CubeManager {
+    unk1C = -1;
+    /** isInOtherCube: p is in a cube and Mario in another one */
+    isInOtherCube(p: V3) { const i = this.getInCubeNo(p); return this.unk1C !== -1 && i !== -1 && this.unk1C !== i; }
+}
+declare module './engine.js' { interface World { cubeFast: CubeManagerFast[] | null; } }
+World.prototype.cubeFast = null;
+/** gpCubeFastA, B and C over the scene's map/tables.bin (once per stage) */
+export function cubeFast(w: World): CubeManagerFast[] {
+    if (w.cubeFast) return w.cubeFast;
+    const b = w.files.scene('map/tables.bin');
+    return (w.cubeFast = ['高速Ａキューブテーブル', '高速Ｂキューブテーブル', '高速Ｃキューブテーブル'].map((n) => { const m = new CubeManagerFast(); m.list = CubeManager.fromTables(b, n).list; return m; }));
+}
+/** SMS_IsInOtherFastCube (CubeManagerBase.cpp): outside a demo, p is in a fast cube other than Mario's */
+export function isInOtherFastCube(w: World, p: V3) { return !w.demoMode && cubeFast(w).some((c) => c.isInOtherCube(p)); }
+declare module './engine.js' { interface World { isInOtherFastCube(p: V3): boolean; } }
+World.prototype.isInOtherFastCube = function (this: World, p: V3) { return isInOtherFastCube(this, p); };
+/** TMario::thinkCube: the area and fast cubes his position + 75 up is in */
+export function thinkCubeArea(w: World, p: V3) {
+    const q = p.clone(); q.y = fr(q.y + 75);
+    const A = cubeArea(w); A.unk1C = A.getInCubeNo(q);
+    for (const c of cubeFast(w)) c.unk1C = c.getInCubeNo(q);
+}
 World.prototype.inAreaCube = function (this: World, p: V3) { return cubeArea(this).isInAreaCube(this, p); };

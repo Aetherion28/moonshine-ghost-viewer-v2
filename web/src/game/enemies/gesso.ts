@@ -462,8 +462,10 @@ export class EnemyAttachment extends SpineEnemy {
         }
     }
     calcRootMatrix() { MsMtxSetXYZRPH(this.baseTR, this.pos.x, this.pos.y, this.pos.z, this.rot.x, this.rot.y, this.rot.z); }
+    /** TEnemyAttachment::behaveToHost: nothing (the seeds' override shows their host) */
+    behaveToHost() { }
     perform(cue: number) {
-        if (this.unk150 === 0) return;   // (CUE_CALC_ANIM: behaveToHost, which does nothing)
+        if (this.unk150 === 0) { if (cue & CUE_CALC_ANIM) this.behaveToHost(); return; }
         const w = this.world;
         if (!w.demoMode && w.talkMode) { this.performOnlyDraw(cue); return; }
         if (cue & CUE_MOVE) this.moveObject();

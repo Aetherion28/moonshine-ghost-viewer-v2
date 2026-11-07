@@ -9,12 +9,17 @@
 
 import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH, MsMtxSetRotRPH } from '../math.js';
 import {
-    World, Stream, Actor, HitActor, TakeActor, LiveActor, LiveManager, MActor, LF, HF, HC, MSG, ANM_BCK, CUE_MOVE, CUE_CALC_ANIM,
-    CUE_CALC_VIEW, CUE_ENTRY, calcKeyCode,
+    World, Stream, Actor, HitActor, TakeActor, LiveActor, LiveManager, MActor, LF, HF, HC, MSG, ANM_BCK, ANM_BRK, ANM_BPK, ANM_BTP, ANM_BTK, CUE_MOVE, CUE_CALC_ANIM,
+    CUE_CALC_VIEW, CUE_ENTRY, calcKeyCode, SHADOW_TYPE,
 } from '../engine.js';
 import { AT } from '../actortypes.js';
+import { MsSqrtf, fmadd } from '../player/fmath.js';
+/** SHADOW_TYPE_* (ShadowUtil.hpp) */
+export const SHADOW_TYPE_CIRCLE = 0, SHADOW_TYPE_SQUARE = 1, SHADOW_TYPE_TREE = 2, SHADOW_TYPE_SHIP = 3;
 import { register } from '../scene.js';
 import { OBJ_DATA } from './objdata.js';
+import type { ItemManager } from './item.js';
+import { marioGroundPlane, marioGroundLevel, marioSpeedY, marioTouchGround4cm, marioHipDropping } from './lib.js';
 import type { MapObjData } from './types.js';
 import '../sound.js';
 /** TMapObjGeneral::mDefaultSound (index 1 MSD_SE_IT_COMMON_APPEAR, 8 MSD_SE_IT_APPEAR) */
@@ -49,6 +54,8 @@ export function findObjData(name: string): MapObjData {
 // ---------------------------------------------------------------- the stage's managers (gpMapObjManager, gpItemManager)
 interface MapObjGlobals { mapObjManager: MapObjManager | null; itemManager: any | null; }
 const GLOBALS = new WeakMap<World, MapObjGlobals>();
+/** gpItemManager */
+export const itemManager = (w: World) => mapObjGlobals(w).itemManager as ItemManager | null;
 export function mapObjGlobals(w: World): MapObjGlobals {
     let g = GLOBALS.get(w);
     if (!g) { g = { mapObjManager: null, itemManager: null }; GLOBALS.set(w, g); }
@@ -347,6 +354,7 @@ export class MapObjBase extends LiveActor {
         const d = anim.entries[index];
         if (d.type === 0) {
             this.stopActive();
+            this.stopAnmSound();
             if (this.activeAnimIndex !== index) {
                 this.activeAnimIndex = index;
                 if (d.bmd) this.mactor = this.getMActor(d.bmd);
@@ -365,6 +373,13 @@ export class MapObjBase extends LiveActor {
         if (a && i < a.num && this.mactor) { const fc = this.mactor.getFrameCtrl(a.entries[i].type); if (fc) fc.rate = 0; }
     }
     startBck(name: string) { this.offMapObjFlag(MOF.NO_ANIMATIONS); if (this.mactor) this.mactor.setBck(name); }
+    /** TMapObjBase::startAllAnim: every animation kind the actor has under the name (makeLowerStr'd: ASCII only) */
+    static startAllAnim(a: MActor, name: string) {
+        const low = name.replace(/[A-Z]/g, (c) => c.toLowerCase());
+        for (const t of [ANM_BCK, ANM_BRK, ANM_BPK, ANM_BTP, ANM_BTK]) if (a.data.find(t, low) >= 0) a.setAnimation(low, t);
+    }
+    /** TMapObjBase::joinToGroup: push the actor onto the named group (TNameRefGen::search) */
+    static joinToGroup(w: World, group: string, a: HitActor) { w.addToGroup(group, a); }
     /** TMapObjBase::startSound: the object's sound table's (TMapObjGeneral::mDefaultSound without one) ID at i, at its position */
     startSound(i: number) {
         if (this.activeSoundIndex !== i) this.activeSoundIndex = i;
@@ -542,11 +557,41 @@ export class MapObjBase extends LiveActor {
     /** getWaterID: the drop the water hit actor stands for */
     static getWaterID(a: HitActor) { return (a as any).unk68 ?? -1; }
     getWaterSpeed(a: HitActor): V3 { const w = this.world.water, i = MapObjBase.getWaterID(a); return w && i >= 0 ? w.vel[i] : new V3(); }
-    marioIsOn() { const m = this.world.mario; return m.groundPlane.actor === this && !m.isJumping(); }
+    /** TMapObjBase::marioIsOn (MapObjLib.cpp): Mario's ground is a's and he's within 4 of it */
+    static marioIsOnActor(a: HitActor) { return marioGroundPlane(a.world).actor === a && marioTouchGround4cm(a.world); }
+    marioIsOn() { return MapObjBase.marioIsOnActor(this); }
+    /** SMS_GetYoshi()->isHatched() and his translation inside this object's body square (the manhole's and the hanging bridge board's setGroundCollision) */
+    yoshiHatchedOver() {
+        const y = (this.world.mario as any).yoshi;
+        if (!y || !y.isHatched()) return false;
+        const t = y.mTranslation, r = this.bodyRadius;
+        return fr(this.pos.x - r) < t.x && fr(this.pos.x + r) > t.x && fr(this.pos.z - r) < t.z && fr(this.pos.z + r) > t.z;
+    }
     marioHeadAttack() { const m = this.world.mario; return m.pos.y < this.pos.y - this.yOffset && m.isJumping() && m.vel.y > 0; }
-    marioHipAttack() { const m = this.world.mario; return m.groundPlane.actor === this && m.hipDrop && m.pos.y + m.vel.y < m.groundHeight; }
+    marioHipAttack() { return marioGroundPlane(this.world).actor === this && marioHipDropping(this.world) && this.world.mario.pos.y + marioSpeedY(this.world) < marioGroundLevel(this.world); }
     /** particles and other effects the game shows: told to the viewer */
     emit(kind: string, p: V3 = this.pos) { this.world.effect(kind, p); }
+    /** emitAndScale(id, n, pos[, scale]): the emitter at pos, its global scale mScaling (or the one given) */
+    emitAndScale(kind: string, p: V3 = this.pos, s: V3 = this.scale) { this.world.effect(kind, p, s); }
+    /** emitAndBindScale: bound to pos (the viewer follows the event's position), with the scale given */
+    emitAndBindScale(kind: string, p: V3, s: V3) { this.world.effect(kind, p, s); }
+    /** emitAndSRT: at pos, its rotation (the viewer's: not kept) and global scale */
+    emitAndSRT(kind: string, p: V3, _r: V3, s: V3) { this.world.effect(kind, p, s); }
+    /** getDistance: to p, from the position less the Y offset */
+    getDistance(p: V3) {
+        const dx = fr(p.x - this.pos.x), dy = fr(p.y - fr(this.pos.y - this.yOffset)), dz = fr(p.z - this.pos.z);
+        return MsSqrtf(fmadd(dz, dz, fmadd(dx, dx, fr(dy * dy))));   // (JP 0x80191150: fmuls dy, fmadds dx, dz)
+    }
+    /** getObjCollisionHeightOffset: mYOffset */
+    getObjCollisionHeightOffset() { return this.yOffset; }
+    /** getShadowType: the trees' tree shadow, SQUARE_SHADOW's square, else a circle (SHADOW_TYPE_*; no shadows are drawn) */
+    getShadowType() {
+        if (this.isActorType(AT.PALM_NORMAL) || this.isActorType(AT.PALM_OUGI) || this.isActorType(AT.PALM_SAGO) || this.isActorType(AT.PALM_NATUME) || this.isActorType(AT.BANANA_TREE)) return SHADOW_TYPE_TREE;
+        return this.checkMapObjFlag(MOF.SQUARE_SHADOW) ? SHADOW_TYPE_SQUARE : SHADOW_TYPE_CIRCLE;
+    }
+    /** initPacketMatColor(model, reg, color): SMS_InitPacket_OneTevColor on every material (the viewer reads packetTevColor) */
+    packetTevColor: ({ r: number; g: number; b: number; a: number } | null)[] = [null, null];
+    initPacketMatColor(reg: number, c: { r: number; g: number; b: number; a: number }) { this.packetTevColor[reg] = c; }
     /** checkOnManhole (MapObjLib.cpp): on a manhole, that manhole is sealed while this is there */
     checkOnManhole() {
         const [h, d] = this.world.checkGround(this.pos.x, fr(this.pos.y + 20), this.pos.z);

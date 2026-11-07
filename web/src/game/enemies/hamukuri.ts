@@ -319,7 +319,7 @@ export class HamuKuri extends WalkerEnemy {
     setWallDeadEffect() { this.world.effect('enemyWallHit', this.pos, this.scale); }
     walkBehavior(kind: number, k: number) { if (!this.isBckAnm(BCK_KYORO)) super.walkBehavior(kind, k); }
     /** TWalkerEnemy::initAttacker (Boss Boo's), then it chases Mario */
-    initAttacker(a: HitActor) { this.rot.set(a.rot); this.unk184 = 1; this.spine!.pushNerve(WalkerNerves.traceMario); }
+    initAttacker(a: HitActor) { super.initAttacker(a); this.spine!.pushNerve(WalkerNerves.traceMario); }
     getTakingMtx(): Mtx {
         const [h, d] = this.world.checkGround(this.pos.x, this.pos.y + this.headHeight, this.pos.z);
         this.groundPlane = d;
@@ -426,6 +426,7 @@ HamuNerves.wallDie = nerve<HamuKuri>('TNerveHamuKuriWallDie', (spine: S) => {
         if (self.checkCurAnmEnd(ANM_BCK) && spine.time > wait + self.mactor!.getFrameCtrl(ANM_BCK)!.end) {
             self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.onLiveFlag(LF.UNK20000); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
             self.holder = null;
+            self.stopAnmSound();
             spine.reset(); spine.setNext(SmallEnemyNerves.die); spine.pushAfterCurrent(spine.default);
             self.genRandomItem();
             return true;
@@ -552,7 +553,7 @@ export class HaneHamuKuri extends HamuKuri {
             }
         } else {
             if (!this.unk21C) {
-                // TODO: abs() of a float (whether it's the int abs is unchecked)
+                // (fabs: JP 0x80266FC0)
                 if (this.unk214 === 0 && Math.abs(fr(this.unk230 - this.groundHeight)) > 5) {
                     this.unk214 = fr(fr(this.groundHeight - this.unk230) / 120);
                     if (this.unk214 > 10) this.unk214 = 10;

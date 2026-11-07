@@ -10,7 +10,7 @@ leading T (as the sim's classes are named).
 import json, re, sys, glob
 
 root = sys.argv[1] if len(sys.argv) > 1 else '../SMS-Decomp-PAL'
-tables, owners = {}, {}
+tables, alltables, owners = {}, {}, {}
 for path in sorted(glob.glob(root + '/src/**/*.cpp', recursive=True)):
     src = open(path, encoding='utf-8', errors='replace').read()
     src = re.sub(r'//[^\n]*', '', src)
@@ -27,17 +27,19 @@ for path in sorted(glob.glob(root + '/src/**/*.cpp', recursive=True)):
             else:
                 vals = None
                 break
-        if vals is not None and any(v and v.lower().endswith('.bas') for v in vals):
-            tables[name] = vals
+        if vals is not None:
+            alltables[name] = vals
+            if any(v and v.lower().endswith('.bas') for v in vals):
+                tables[name] = vals
     for m in re.finditer(r'const\s+char\s*\*\*\s*T?(\w+)::getBasNameTable\(\)\s*const\s*\{(.*?)\n?\}', src, re.S):
         cls, body = m.group(1), m.group(2)
-        r = re.search(r'return\s+(\w+)\s*;', body)
+        r = re.search(r'return\s+&?(\w+)(?:\s*\[\s*0\s*\])?\s*;', body)
         if r and r.group(1) != 'nullptr':
             owners[cls] = r.group(1)
 out = {}
 for cls, t in owners.items():
-    if t in tables:
-        out[cls] = tables[t]
+    if t in alltables:
+        out[cls] = alltables[t]
     else:
         print(f'// (no table {t} for {cls})')
 print('// Every live actor\'s animation-sound table (TLiveActor::getBasNameTable), by class name without its T.')

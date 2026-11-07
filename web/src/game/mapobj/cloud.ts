@@ -6,7 +6,7 @@
 
 import { fr, V3, JMAHermiteInterpolation, MsClamp } from '../math.js';
 import { vNorm, vMag } from '../vecops.js';
-import { World, Stream, Actor, HitActor, GraphTracer, GraphWeb, HF, CUE_ENTRY, CUE_CALC_VIEW } from '../engine.js';
+import { World, Stream, Actor, HitActor, GraphTracer, GraphWeb, HF, SHADOW_TYPE, CUE_ENTRY, CUE_CALC_VIEW } from '../engine.js';
 import { register } from '../scene.js';
 import { MapObjBase, MOF } from './base.js';
 import { MsMtxSetTRS } from './objcol.js';
@@ -26,6 +26,8 @@ export class RailMapObj extends MapObjBase {
     onRailFlag(f: number) { this.unk140 |= f; }
     offRailFlag(f: number) { this.unk140 &= ~f; }
     checkRailFlag(f: number) { return (this.unk140 & f) !== 0; }
+    /** TRailMapObj::getShadowType: SHADOW_TYPE_SQUARE */
+    getShadowType(): number { return SHADOW_TYPE.SQUARE; }
     private node(i = this.tracer!.cur) { return this.tracer!.graph!.nodes[i]; }
     load(s: Stream) {
         Actor.prototype.load.call(this, s);
@@ -157,6 +159,8 @@ export class RideCloud extends RailMapObj {
     unk15C = RideCloud.mMoveSpeedDefault;
     /** its X / Y / Z swell */
     unk160 = 1; unk164 = 1; unk168 = 1;
+    /** TRideCloud::getShadowType: SHADOW_TYPE_CIRCLE */
+    getShadowType(): number { return SHADOW_TYPE.CIRCLE; }
     /** its wait at a node (ticks) */
     unk16C = 0;
     /** the TEV colours (reg 0 and 1) it's drawn with */

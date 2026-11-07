@@ -16,7 +16,6 @@ import { MOF, STATE_NORMAL } from './base.js';
 import { MapObjGeneral } from './general.js';
 import { ObjCollision, KIND_MOVE } from './objcol.js';
 import { MTXConcat, MTXRotAxisRad, restJointMtx, setJointWorlds, marioGroundPlane, marioSpeedY } from './lib.js';
-import { marioIsOn, marioHipAttack } from './bianco.js';
 
 /** TMapObjLeaf */
 class MapObjLeaf {
@@ -42,8 +41,8 @@ export class MapObjTree extends MapObjGeneral {
         const g = marioGroundPlane(this.world), data = g.data;
         if (!(g.actor === this && data >= 0 && data < this.leafNum)) return;
         const l = this.leaves[data];
-        if (marioHipAttack(this)) l.angVel = fr(l.angVel + this.leafHipDropImpulse);
-        else if (marioIsOn(this)) l.angVel = fr(l.angVel + this.leafTouchImpulse);
+        if (this.marioHipAttack()) l.angVel = fr(l.angVel + this.leafHipDropImpulse);
+        else if (this.marioIsOn()) l.angVel = fr(l.angVel + this.leafTouchImpulse);
     }
     controlLeaf(i: number) {
         const l = this.leaves[i];
@@ -60,7 +59,7 @@ export class MapObjTree extends MapObjGeneral {
         l.now = m;
         this.leavesMoved = true;
         if (marioSpeedY(this.world) <= 0) l.col.moveMtx(m);
-        // TODO: the decomp's abs() (int or float?): read as the float one here
+        // (fabs: JP 0x801CE5D8; the angle twice, as the game has it)
         if (Math.abs(l.angle) < this.leafTouchImpulse && Math.abs(l.angle) < this.leafTouchImpulse) return 1;
         return 0;
     }
@@ -167,8 +166,8 @@ export class MapObjTreeScale extends MapObjTree {
         if (this.isState(TS.SCALING_UP_Y_ONLY) || this.isState(TS.SCALING_UP)) {
             this.setObjHitData(0);
             if (w.map !== 2 || (!w.demoMode && (!this.sinkEvent || this.sinkEvent.isBuried(1)))) {
-                // SMSRumbleMgr->start(0x13) / gpCameraShake->keepShake(CAM_SHAKE_MODE_UNK5, 1)
-                w.events.push({ t: w.tickCount, kind: 'cameraShake', data: { mode: 5, power: 1, p: this.pos.clone() } });
+                // (SMSRumbleMgr->start(0x13))
+                w.cameraShake?.keepShake(5, 1);
             }
             if (this.particleTimer > sWaitTime) {
                 const x = fr(fr(this.pos.x + fr(400 * MsRandF())) - 200);

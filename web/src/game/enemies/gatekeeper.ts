@@ -22,7 +22,9 @@ const GK_PARAMS = { ...SPINE_PARAMS, mSLDiveTimer: ['i', 480], mSLLoop2Dive: ['i
 
 export class GateKeeperManager extends EnemyManager {
     constructor(w: World, name = 'ゲートキーパーマネージャー') { super(w, name); }
-    load(s: Stream) { this.saveParams = readParams('/enemy/gatekeeper.prm', this.world.files, GK_PARAMS); super.load(s); }
+    load(s: Stream) { this.saveParams = readParams('/enemy/gatekeeper.prm', this.world.files, GK_PARAMS); super.load(s); this.initJParticle(); }
+    /** SMS_LoadParticle: the particle ids' .jpa files */
+    initJParticle() { for (const [id, f] of GK_JPA) this.world.particleFiles.set(id, f); }
     createModelData() { this.createModelDataArray(['gene_pakkun_model1.bmd', 'stamp_keeper_model1.bmd']); }
 }
 
@@ -125,6 +127,20 @@ export class GateKeeper extends SpineEnemy {
             }
         });
     }
+    /** gpMarioParticleManager->emitAndBindToMtxPtr(id, getAnmMtx(j), ...): an effect at joint j */
+    emitAtJoint(id: number, j: number) {
+        const m = this.joints && this.joints[j];
+        this.world.effect('gkpa:' + id.toString(16), m ? new V3(m[12], m[13], m[14]) : this.pos);
+    }
+    /** TBiancoGateKeeper::emitParticles (the drool / drip, bound by id: started once and kept) */
+    emitParticles() {
+        const n = this.spine.getLatestNerve();
+        if (n === GKNerves.sleep || n === GKNerves.launchGoro) return;
+        if (this.particlesOn) return;
+        this.particlesOn = true;
+        this.emitAtJoint(GKPA.BOTA, 6); this.emitAtJoint(GKPA.YODARE_L, 9); this.emitAtJoint(GKPA.YODARE_L, 5); this.emitAtJoint(GKPA.YODARE_S, 8);
+    }
+    particlesOn = false;
     kill() {
         this.onLiveFlag(LF.DEAD);
         this.onHitFilter(HF.NO_COLLISION);
@@ -208,6 +224,7 @@ export class GateKeeper extends SpineEnemy {
         // TGateKeeperBase::perform
         super.perform(cue);
         if ((cue & CUE_CALC_ANIM) && !this.checkLiveFlag(LF.HIDDEN | LF.CLIPPED_OUT)) this.calcJoints();
+        if ((cue & CUE_CALC_ANIM) && !this.checkLiveFlag(LF.CLIPPED_OUT)) this.emitParticles(); else if (cue & CUE_CALC_ANIM) this.particlesOn = false;
         if (this.stampEnabled && this.stampModel && (cue & CUE_CALC_ANIM)) {
             // the stamp model at its root matrix, its BCK on (calcAnm); CUE_ENTRY: gpPollution->stampModel
             this.stampModel.frameUpdate();
@@ -216,6 +233,15 @@ export class GateKeeper extends SpineEnemy {
         if (cue & CUE_MOVE) this.unk154 = 0;
     }
 }
+
+/** TBiancoGateKeeperManager::initJParticle's files, by id */
+export const GKPA = { DEAD: 0xA7, DEADSMOKE: 0xA8, BOTA: 0x140, YODARE_S: 0x141, YODARE_L: 0x142, KEMURI: 0x1DF, KEMURI_W: 0x1E0 };
+const GK_JPA: [number, string][] = [
+    [GKPA.DEAD, '/scene/gatekeeper/jpa/ms_gkpa_dead.jpa'], [GKPA.DEADSMOKE, '/scene/gatekeeper/jpa/ms_gkpa_deadsmoke.jpa'],
+    [GKPA.BOTA, '/scene/gatekeeper/jpa/ms_gkpa_bota.jpa'], [GKPA.YODARE_S, '/scene/gatekeeper/jpa/ms_gkpa_yodare_s.jpa'],
+    [GKPA.YODARE_L, '/scene/gatekeeper/jpa/ms_gkpa_yodare_l.jpa'], [GKPA.KEMURI, '/scene/gatekeeper/jpa/ms_gkpa_kemuri.jpa'],
+    [GKPA.KEMURI_W, '/scene/gatekeeper/jpa/ms_gkpa_kemuri_w.jpa'],
+];
 
 type S = Spine<GateKeeper>;
 export const GKNerves: Record<string, any> = {};
@@ -236,6 +262,7 @@ GKNerves.sleep = nerve<GateKeeper>('TNerveBGKSleep', (spine: S) => {
             return true;
         }
     }
+    if (self.mactor!.checkBckPass(18)) self.emitAtJoint(GKPA.KEMURI_W, 0);
     if (self.unk17C >= 0xFF) { spine.pushAfterCurrent(GKNerves.appear); return true; }
     if (self.unk154 > 0) { spine.pushAfterCurrent(GKNerves.sleepDamage); return true; }
     return false;
@@ -246,7 +273,9 @@ GKNerves.appear = nerve<GateKeeper>('TNerveBGKAppear', (spine: S) => {
         self.changeBck(0);
         // (unk28A === 0: the appear demo camera and BGM)
         if (self.unk28A < 0xFF) self.unk28A++;
+        if (self.unk28A === 2) self.world.balloon(0xE0047, true);
     }
+    if (spine.time === 8) self.emitAtJoint(GKPA.KEMURI, 12);   // (and rumblePad)
     if (self.mactor!.curAnmEndsNext(ANM_BCK)) {
         spine.pushAfterCurrent(self.world.map === 0 ? GKNerves.wait2 : GKNerves.wait);
         return true;
@@ -327,9 +356,11 @@ GKNerves.die = nerve<GateKeeper>('TNerveBGKDie', (spine: S) => {
             const fc = self.mactor!.getFrameCtrl(ANM_BPK);
             if (fc) { fc.frame = 0; fc.rate = 2; }
             self.world.effect('gkpaDead', self.pos);
+            self.emitAtJoint(GKPA.DEAD, 6);
+            self.emitAtJoint(GKPA.DEADSMOKE, 0);
         }
     }
-    if (spine.time === 0x154) self.world.sound(SE.DM_OSEN_DISAPPEAR, self.pos);   // (with GATEKEEPER_JPA_MS_GKPA_KEMURI and the rumble)
+    if (spine.time === 0x154) { self.emitAtJoint(GKPA.KEMURI, 0); self.world.sound(SE.DM_OSEN_DISAPPEAR, self.pos); }   // (and the rumble)
     if (self.mactor!.curAnmEndsNext(ANM_BCK)) {
         if (twice && self.unk296 === 0) {
             self.unk296 += 1;
@@ -346,6 +377,7 @@ GKNerves.die = nerve<GateKeeper>('TNerveBGKDie', (spine: S) => {
 GKNerves.dive = nerve<GateKeeper>('TNerveBGKDive', (spine: S) => {
     const self = spine.body;
     if (spine.time === 0) self.changeBck(6);
+    if (spine.time === 0xF0) self.emitAtJoint(GKPA.KEMURI, 0);   // (and rumblePad)
     if (self.mactor!.curAnmEndsNext(ANM_BCK)) {
         if (self.variant === VARIANT_GENERIC) { self.unk298 = self.launchTimer(true); self.launchGorogoro(); }
         spine.pushAfterCurrent(GKNerves.sleep);

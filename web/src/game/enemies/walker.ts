@@ -4,7 +4,7 @@
 
 import { msVecMag2 } from '../vecops.js';
 import { fr, V3, MsSin, MsCos, frsqrte } from '../math.js';
-import { World, LiveActor, LF, nerve, Spine, PathNode, ANM_BCK, PSchema, Files } from '../engine.js';
+import { World, LiveActor, HitActor, LF, nerve, Spine, PathNode, ANM_BCK, PSchema, Files } from '../engine.js';
 import { SmallEnemy, SmallEnemyNerves, smallParams, rangeRand as rangeRandF } from './smallEnemy.js';
 import type { BGCheckData, WallCheck } from '../collision.js';
 import { IGNORE_WATER_SURFACE } from '../collision.js';
@@ -115,6 +115,8 @@ export class WalkerEnemy extends SmallEnemy {
         this.marchSpeed = rangeRandF(P.marchLow, P.marchHigh);
         this.spine!.initWith(WalkerNerves.generate);
     }
+    /** TWalkerEnemy::initAttacker: the attacker's rotation, flagged an attacker */
+    initAttacker(a: HitActor) { this.rot.set(a.rot); this.unk184 = 1; }
     moveObject() {
         if (!this.groundPlane.isIllegal() && (this.instanceIndex & 0xF) === (this.world.moveTickCount & 0xF)) this.doShortCut();
         super.moveObject();

@@ -1,18 +1,21 @@
 // TSmallEnemy / TSmallEnemyManager (Enemy/smallEnemy.cpp): the common enemy — water freezes or
 // hurts it, Mario's stomps kill it, it dies through TNerveSmallEnemyDie (its death animation,
 // then its coins / items, then dead until the manager brings it back), juice turns it into a
-// block (Yoshi's juice, not modelled: the viewer has no juice).
+// block (TNerveSmallEnemyChange: it rides the block, then comes out of it).
 
-import { fr, V3, MsRandF, MsSin, MsCos, matan } from '../math.js';
+import { fr, V3, MsRandF, MsSin, MsCos, matan, MsClamp, mtx, MsMtxSetRotRPH, psMtxMultVec } from '../math.js';
+import { fmadd } from '../player/fmath.js';
 import { vNormMs } from '../vecops.js';
 import {
-    World, SpineEnemy, EnemyManager, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, Params, PSchema, SPINE_PARAMS, HitActor, ANM_BCK, Files, TakeActor,
+    ANM_FRAME_RATE, World, SpineEnemy, EnemyManager, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, Params, PSchema, SPINE_PARAMS, HitActor, ANM_BCK, Files, TakeActor,
 } from '../engine.js';
 import { AT } from '../actortypes.js';
 import type { WaterHitActor } from '../water.js';
 import type { WallCheck } from '../collision.js';
 import { parseBTI } from '../pollution.js';
 import { SE } from '../soundids.js';
+import { mapObjGlobals } from '../mapobj/base.js';
+import type { JuiceBlock } from '../mapobj/block.js';
 import '../sound.js';
 
 /** TSmallEnemyParams */
@@ -36,6 +39,13 @@ export function smallParams<S extends PSchema>(path: string, files: Files, more?
 export const rangeRand = (lo: number, hi: number) => fr(lo + fr(fr(hi - lo) * MsRandF()));
 
 export class SmallEnemyManager extends EnemyManager {
+    static mBlockWaitTime = 400;
+    static mBlockMoveSpeed = 2;
+    static mBlockWaitMoveY = 200;
+    static mChangeBlockTime = 2500;
+    static mBlockXZScale = 1.5;
+    static mBlockYScale = fr(0.6);
+    static mTestJuiceType = 0;
     unk58 = 0;
     /** the frames a dead enemy lies before it goes (TNerveSmallEnemyDie) */
     unk5C = 0x3C;
@@ -236,8 +246,94 @@ export class SmallEnemy extends SpineEnemy {
         }
         return false;
     }
-    /** (Yoshi's juice turns enemies into blocks: no juice here.) */
-    changeByJuice() { return false; }
+    /** changeByJuice: Yoshi's juice (unk5D5F 1-3) turns it into a JuiceBlock */
+    changeByJuice() {
+        const W = this.world.water as any, juice = W ? W.juice : 0;
+        if (juice === 1 || juice === 2 || juice === 3 || SmallEnemyManager.mTestJuiceType !== 0) {
+            if (this.juiceBlock) return true;
+            const mom = mapObjGlobals(this.world).mapObjManager;
+            const block = (mom ? mom.makeObjAppearAt(this.pos.x, this.pos.y, this.pos.z, AT.JUICE_BLOCK, true) : null) as JuiceBlock | null;
+            this.juiceBlock = block;
+            if (!this.juiceBlock) return false;
+            block!.scale.set(0.1, 0.1, 0.1);
+            block!.unk140.set(0, 0, 0);
+            block!.rot.set(0, this.rot.y, 0);
+            block!.unk14C = this;
+            block!.offLiveFlag(LF.HIDDEN);
+            this.onHitFilter(HF.NO_COLLISION);
+            this.onLiveFlag(LF.HIDDEN);
+            this.onLiveFlag(LF.UNK10);
+            this.spine!.pushNerve(SmallEnemyNerves.change);
+            this.unk185 = juice;
+            if (SmallEnemyManager.mTestJuiceType !== 0) this.unk185 = SmallEnemyManager.mTestJuiceType;
+            const c = block!.unk138;
+            switch (this.unk185) {
+                case 1: c[0] = 0x1C2; c[1] = 0xDC; c[2] = 0x50; break;
+                case 2: c[0] = 0x118; c[1] = 0x6E; c[2] = 0x154; break;
+                case 3: c[0] = 0x1E0; c[1] = 0xFA; c[2] = 0x154; break;
+            }
+            this.offLiveFlag(LF.UNK800);
+            return true;
+        }
+        return false;
+    }
+    getChangeBlockTime() { return SmallEnemyManager.mChangeBlockTime; }
+    /** changeMove: the block bobs up and spins, then (juice 2) slides ahead or (juice 3) rises; true when it's stopped */
+    changeMove() {
+        const C = SmallEnemyManager, b = this.juiceBlock as JuiceBlock, t = this.spine!.time;
+        const time = fr(0.2 * C.mBlockWaitTime);
+        if (t <= time) {
+            b.pos.y = fmadd(this.unk188, fr(fr(C.mBlockWaitMoveY * 2) * MsSin(fr(fr(t * 130) / time))), this.pos.y);
+            b.rot.y = fr(this.rot.y + fr(fr(t * 1080) / time));
+        } else if (t > C.mBlockWaitTime) {
+            if (t > this.getChangeBlockTime() - 200) {
+                if (t % 20 < 10) b.onLiveFlag(LF.HIDDEN); else b.offLiveFlag(LF.HIDDEN);
+            }
+            switch (this.unk185) {
+                case 1: return false;
+                case 2: {
+                    const m = mtx(); MsMtxSetRotRPH(m, 0, this.rot.y, 0);
+                    const v = psMtxMultVec(m, new V3(0, 0, 1));
+                    b.pos.x = fmadd(v.x, C.mBlockMoveSpeed, b.pos.x);
+                    b.pos.z = fmadd(v.z, C.mBlockMoveSpeed, b.pos.z);
+                    if (this.world.isTouchedOneWallAndMoveXZ(b.pos, b.pos.y, fr(20 * this.bodyRadius))) return true;
+                    const x = fmadd(300, v.x, b.pos.x), z = fmadd(300, v.z, b.pos.z);
+                    const [d] = this.world.checkGround(x, fr(b.pos.y + this.headHeight), z);
+                    if (d > b.pos.y) return true;
+                    break;
+                }
+                case 3: {
+                    b.pos.y = fr(b.pos.y + C.mBlockMoveSpeed);
+                    const [d, pl] = this.world.checkRoof(b.pos.x, fr(b.pos.y + this.headHeight), b.pos.z);
+                    if (pl && fr(b.pos.y + this.headHeight) > d && pl.actor !== b) return true;
+                    break;
+                }
+                default: return false;
+            }
+            const m = mtx(); MsMtxSetRotRPH(m, 0, this.rot.y, 0);
+            const v = psMtxMultVec(m, new V3(fr(0.2), 0, 0));
+            if (t % 30 > 15) { b.pos.y = fr(b.pos.y + 0.5); b.pos.x = fr(b.pos.x + v.x); b.pos.z = fr(b.pos.z + v.z); }
+            else { b.pos.y = fr(b.pos.y - 0.5); b.pos.x = fr(b.pos.x - v.x); b.pos.z = fr(b.pos.z - v.z); }
+        }
+        return false;
+    }
+    /** scalingChangeActor: the block grows to mBlockXZScale x mBlockYScale */
+    scalingChangeActor() {
+        const C = SmallEnemyManager, b = this.juiceBlock as JuiceBlock;
+        const xz = MsClamp(fr(b.unk140.x + fr(0.02)), 0, C.mBlockXZScale);
+        b.unk140.x = b.unk140.z = xz; b.scale.x = b.scale.z = xz;
+        const y = MsClamp(fr(b.unk140.y + fr(0.01)), 0, C.mBlockYScale);
+        b.unk140.y = y; b.scale.y = y;
+    }
+    /** changeOut: out of the block, dead (kill), where the block was */
+    changeOut() {
+        this.world.sound(SE.EN_TELSA_RECOVER, this.pos);
+        this.kill();
+        this.pos.set(this.juiceBlock.pos);
+        this.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK);
+        this.juiceBlock.kill();
+        this.juiceBlock = null;
+    }
     decHpByWater(a: HitActor) {
         let n = this.world.water ? this.world.water.getParticleAttack(a as WaterHitActor) : 1;
         if (n < 1) n = 1;
@@ -381,6 +477,14 @@ export const SmallEnemyNerves = {
         }
         self.rot.y = fr(self.rot.y + rangeRand(4, 10));
         if (!self.isAirborne() || spine.time > 360) { self.endHitWaterJump(); return true; }
+        return false;
+    }),
+    change: nerve<SmallEnemy>('TNerveSmallEnemyChange', (spine: S) => {
+        const self = spine.body;
+        const changeTime = self.getChangeBlockTime();
+        if (spine.time === 0) self.mactor!.setFrameRate(0, ANM_BCK);
+        self.scalingChangeActor();
+        if (self.changeMove() || spine.time > changeTime) { self.changeOut(); return true; }
         return false;
     }),
     wait: nerve<SmallEnemy>('TNerveSmallEnemyWait', (spine: S) => {

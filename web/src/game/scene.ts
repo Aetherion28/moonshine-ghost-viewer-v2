@@ -21,15 +21,16 @@ import { Pollution } from './pollution.js';
 import { CHARAS } from './charas.js';
 import { installMapWires, thinkCubeArea } from './mapwire.js';
 import { installEventWatchers } from './eventwatcher.js';
-import { installTalk } from './talk.js';
+import { installTalk, TalkCursor } from './talk.js';
 import { cameraBck } from './camera/bck.js';
+import { TimeRec, SnapTimeObj, makeMeasurementGroup } from './timerec.js';
 
 /** A class the game makes from scene.bin (TMarNameRefGen::getNameRef_*), by its name there. */
 export type Maker = (w: World, name: string) => NameRef;
 export const CLASSES = new Map<string, Maker>();
 export function register(type: string, make: Maker) { CLASSES.set(type, make); }
 /** Classes whose scene.bin children are their own entries (TNameRefPtrAryT), not a group's members. */
-const PTR_ARY = new Set(['StageEnemyInfoHeader']);
+const PTR_ARY = new Set(['StageEnemyInfoHeader', 'EventTable']);
 
 export interface StageFiles extends Files {
     /** common.szs (/common/...) */
@@ -62,6 +63,8 @@ export class Stage {
     pinWorld: ((qf: number) => void) | null = null;
     frame = 0;
     seed = 0;
+    /** 計測グループ: the TSnapTimeObjs (inert: unk14 0) */
+    measurementGroup: SnapTimeObj[] = [];
 
     /** the input-driven player and the director's opening, when the stage runs from a ghost's inputs */
     player: PlayerMario | null = null;
@@ -98,6 +101,10 @@ export class Stage {
         // characters (scenecmn.bin's ObjChara: a manager's folder)
         if (files.scenecmn) this.walk(parseSceneBin(files.scenecmn), true);
         else for (const [n, folder] of Object.entries(CHARAS)) { const c = new ObjChara(n); c.folder = folder; w.register(c); }
+        // (TApplication: TTimeRec::start(0xDFC0), its flag 1) the game objects' 計測グループ, after scenecmn.bin (MarDirectorSetupObjects.cpp)
+        TimeRec.start(0xDFC0).mFlags |= 1;
+        this.measurementGroup = makeMeasurementGroup();
+        for (const o of this.measurementGroup) w.register(o);
         // goop, water, Mario
         w.pollution = new Pollution(files, map, stage, files.common);
         w.water = new Water(w, files);
@@ -118,8 +125,13 @@ export class Stage {
         // the event group: a TEventWatcher per .sb of /common/sp and map/sp (eventwatcher.ts)
         installEventWatchers(w, files);
         for (const o of this.objects) o.loadAfter();
+        // TMarDirector::setup2: the event table's map objects get their event ids
+        const evt = w.search('イベントテーブル') as any;
+        if (evt && evt.list) evt.list.forEach((it: any, i: number) => { const obj = w.search(it.unk14) as any; if (obj) { obj.eventId = i & 0xFFFF; it.unk28 = obj; } });
         // TMarDirector's talk mode and the message window (talk.ts): the NPCs entryNPC'd at their loadAfter
         if (this.player) installTalk(w, this.objects, files.scene('map/message.bmg'), files.common('2d/sys_message.bmg'));
+        // (the camera's loadAfter fireStartDemoCamera, held until the director is up: the coaster's stage 1 demo)
+        if (this.player && this.player.simCamera && (this.player.simCamera as any).fireDeferredDemo) (this.player.simCamera as any).fireDeferredDemo();
         // the camera's demos (TCameraBck: the stage intro's and the director's demo queue's, with their views)
         if (this.player && this.player.simCamera) (this.player.simCamera as any).bckSource = (name: string) => cameraBck(w, name);
         for (const gw of w.graphs.values()) { gw.initGoalIndex(new V3()); gw.attachToGround(w); }
@@ -127,7 +139,7 @@ export class Stage {
         if (this.player && intro && !intro.fromLoad) this.leadFrame();
         if (this.player && intro) {
             const make = (intro as any).makeDirector as ((p: PlayerMario, map: number, start: boolean, t: IntroTiming) => PlayerDirector) | undefined;   // (live play's: stagechange.ts LiveDirector)
-            this.director = make ? make(this.player, map, !!files.scene('map/camera/startcamera.bck'), intro) : new PlayerDirector(this.player, map, !!files.scene('map/camera/startcamera.bck'), intro); this.player.driftFrom = Math.max(intro.demoEndTick, (intro.firstSample ?? 0) - 1); }
+            this.director = make ? make(this.player, map, !!files.scene('map/camera/startcamera.bck'), intro) : new PlayerDirector(this.player, map, !!files.scene('map/camera/startcamera.bck'), intro); this.player.driftFrom = Math.max(intro.demoEndTick, (intro.firstSample ?? 0) - 1); w.director = this.director; }
     }
 
     private walk(n: SceneNode, common: boolean, group = -1) {
@@ -249,6 +261,8 @@ export class Stage {
             // (then TMapWarp::watchToWarp: the stream cubes' push)
             if (P) P.mapWarpStreamAndDrift(true, false);
             if (w.pollution) w.pollution.move(w.mario.pos);
+            // the wave (TMapObjWave::perform)
+            { const wv: any = (w as any).mapObjWave; if (wv) wv.perform(CUE_MOVE); }
             w.conductor.perform(CUE_MOVE);
             // the manager group: the wires
             if (w.mapWires) w.mapWires.perform(CUE_MOVE);
@@ -272,6 +286,8 @@ export class Stage {
                 // PerformList CalcAnim
                 this.clip();
                 w.conductor.perform(CUE_CALC_ANIM);
+                // (TSplashManager's CUE_CALC_ANIM: move)
+                if (w.splashManager) w.splashManager.testPerform(CUE_CALC_ANIM);
             }
             if (D && !last) D.changeState(this.qf);
         }
@@ -323,3 +339,4 @@ function simClipCamera(C: any): GameCamera | null {
 declare module './engine.js' { interface World { clipCamera: GameCamera | null; } }
 World.prototype.clipCamera = null;
 export { IDX };
+register('TalkCursor', (_w, n) => new TalkCursor(n));

@@ -7,7 +7,7 @@
 
 import { V } from '../version.js';
 import { fr, V3, MsSin, MsCos, MsClamp, MsMtxSetRotRPH, mtx } from '../math.js';
-import { World, PathNode, LF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, LiveManager, LiveActor, SpineEnemy } from '../engine.js';
+import { World, PathNode, LF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, LiveManager, LiveActor, SpineEnemy, MActor, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, WalkerNerves, Walker, walkerParams } from './walker.js';
@@ -112,9 +112,14 @@ export class NameKuriManager extends SmallEnemyManager {
     createModelData() { this.createModelDataArray(['name.bmd']); }
     createEnemyInstance(): SmallEnemy { return new NameKuri(this.world); }
     initSetEnemies() {
-        // (the brain model each carries (TSharedParts, brain.bmd) and its TEV colours: only drawn)
+        // (its TEV colours on _mat_body: only drawn; the brain's goop mark texture: the viewer's)
         let ci = 0;
-        for (const o of this.objs as NameKuri[]) { o.unk1C4 = TEV_COLORS[ci].slice(); if (++ci >= 7) ci = 0; }
+        for (const o of this.objs as NameKuri[]) {
+            o.unk1C4 = TEV_COLORS[ci].slice();
+            // unk1CC: the brain (/scene/namekuri2/brain.bmd) as a TSharedParts on its joint 2
+            o.unk1CC = new SharedParts(o, 2, new MActor('namekuri2/brain.bmd', this.getMActorAnmData()));
+            if (++ci >= 7) ci = 0;
+        }
     }
     getNextColorIdx() { this.unk60 += 1; if (this.unk60 >= 7) this.unk60 = 0; return this.unk60; }
 }
@@ -123,6 +128,31 @@ export class DiffusionNameKuriManager extends NameKuriManager {
     createEnemyInstance(): SmallEnemy { return new NameKuri(this.world, '拡散ナメクリ'); }
 }
 
+/** TSharedParts (Strategic/SharedParts.cpp): a model on its owner's joint (-1: its base TR matrix), drawn by the viewer (world.extras) */
+class SharedParts extends LiveActor {
+    constructor(public owner: LiveActor, public mConnectedAnmMtxIndex: number, m: MActor) {
+        super(owner.world, '<TSharedParts>');
+        this.mactor = m;
+        this.offLiveFlag(LF.ENABLE_CLIPPING);
+        owner.world.extras.push(this);
+    }
+    drawn() { return !this.owner.checkLiveFlag(LF.DEAD | LF.HIDDEN | LF.CLIPPED_OUT); }
+    /** getConnectedMtx */
+    getConnectedMtx() {
+        const o = this.owner;
+        if (this.mConnectedAnmMtxIndex === -1) return o.baseTR;
+        const m = o.mactor ? o.mactor.anmMtx(this.mConnectedAnmMtxIndex, o.baseTR, o.scale) : null;
+        if (!m) return null;
+        const r = mtx(); for (let i = 0; i < 3; i++) for (let c = 0; c < 4; c++) r[i * 4 + c] = m[c * 4 + i];
+        return r;
+    }
+    perform(cue: number) {
+        if (this.owner.checkLiveFlag(LF.DEAD | LF.HIDDEN | LF.CLIPPED_OUT)) return;
+        if (cue & CUE_CALC_ANIM) { const m = this.getConnectedMtx(); if (m) this.baseTR.set(m); }
+        // (CUE_ENTRY: setLightData from the owner's ground plane; MActor::perform)
+        if (cue & CUE_CALC_ANIM) this.mactor!.frameUpdate();
+    }
+}
 export class NameKuri extends WalkerEnemy {
     /** ticks alive */
     unk194 = 0;
@@ -133,7 +163,14 @@ export class NameKuri extends WalkerEnemy {
     unk1A8 = false;
     unk1AC = 0; unk1B0 = 1; unk1B4 = 0; unk1B8 = 0;
     unk1BC = [0, 0, 0, 168]; unk1C4 = [0, 0, 0, 0];
+    /** unk1CC: the brain (TSharedParts) */
+    unk1CC: SharedParts | null = null;
     constructor(w: World, name = 'ナメクリ') { super(w, name); }
+    /** perform: TWalkerEnemy's, then the brain's (the body's texture matrix 2 effect matrix, SMS_GetLightPerspectiveForEffectMtx: the viewer's ViewProjmap) */
+    perform(cue: number) {
+        super.perform(cue);
+        if (this.unk1CC) this.unk1CC.perform(cue);
+    }
     get NP(): any { return this.unk1A4; }
     get spiderWalker() { return this.binder as SpiderWalker; }
     init(m: LiveManager | null) {

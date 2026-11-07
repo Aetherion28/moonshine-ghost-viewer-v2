@@ -12,6 +12,7 @@ import { fmadd as FMA, fmsub as FMS, fnmsub as FNMS } from '../player/fmath.js';
 import { vNormMs, vNorm } from '../vecops.js';
 import { World, NameRef, Stream, HitActor, LiveActor, parseSceneBin, SceneNode, CUE_MOVE, readParams } from '../engine.js';
 import { isPointInCube } from '../mapwire.js';
+import { inStreamCube as inStreamCubeL } from '../mapwarp.js';
 import { Skeleton, jointMatrices, jointMatricesExact } from '../skeleton.js';
 import type { BGCheckData } from '../collision.js';
 import { register } from '../scene.js';
@@ -168,6 +169,31 @@ export function vtxPosCount(b: Uint8Array | null): number {
     }
     return 0;
 }
+/**
+ * The BMD's VTX1 position array as TTrembleModelEffect::init reads it: only when the format list's
+ * first entry is GX_VA_POS (the game's loop breaks after the first entry), GX_S16 (3: with its frac)
+ * or GX_F32 (4); else null.
+ */
+export function vtxPosArray(b: Uint8Array | null): { f32: boolean; frac: number; data: Int16Array | Float32Array } | null {
+    if (!b) return null;
+    const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    const n = vtxPosCount(b);
+    let o = 0x20;
+    while (o + 8 <= b.length) {
+        const tag = String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]), size = v.getUint32(o + 4);
+        if (tag === 'VTX1') {
+            const f = o + v.getUint32(o + 8), pos = o + v.getUint32(o + 0xC);
+            if (v.getUint32(f) !== 9) return null;
+            const type = v.getUint32(f + 8), frac = v.getUint8(f + 12);
+            if (type === 3) { const d = new Int16Array(n * 3); for (let i = 0; i < d.length; i++) d[i] = v.getInt16(pos + i * 2); return { f32: false, frac, data: d }; }
+            if (type === 4) { const d = new Float32Array(n * 3); for (let i = 0; i < d.length; i++) d[i] = v.getFloat32(pos + i * 4); return { f32: true, frac: 0, data: d }; }
+            return null;
+        }
+        if (!size) break;
+        o += size;
+    }
+    return null;
+}
 export function jointCount(o: LiveActor) {
     const a = o.mactor;
     const sk = a ? Skeleton.of(a.data.files.scene(a.model)) : null;
@@ -262,6 +288,8 @@ export class MapObjMessenger extends HitActor {
 /** The stage's Mario as a TMario (the port in player/) or the ghost's proxy */
 const M = (w: World) => w.mario as any;
 const isTMario = (m: any) => m && typeof m.mStatus === 'number';
+/** SMS_CheckMarioFlag (the proxy: none of his flags are known) */
+export function marioCheckFlag(w: World, flag: number): boolean { const m = M(w); return isTMario(m) ? m.checkFlag(flag) : false; }
 /** SMS_GetMarioGrPlane */
 export function marioGroundPlane(w: World): BGCheckData { const m = M(w); return isTMario(m) ? m.mGroundPlane : m.groundPlane; }
 /** SMS_GetMarioGrLevel */
@@ -335,29 +363,33 @@ export type { StreamCube } from '../mapwarp.js';
 // ---------------------------------------------------------------- TMapObjWave (gpMapObjWave)
 const WAVES = new WeakMap<World, MapObjWave>();
 /**
- * TMapObjWave: the sea's waves (two sines over X and Z, moving with time) and their drawing.
- * Only the heights are here; it is updated every movement tick as the game's movement list does
- * (lazily: to the stage's tick when asked). Outside Ricco and Gelato (map 4 and 6) the wave
- * heights don't change with where Mario is.
+ * TMapObjWave (MoveBG/MapObjWave.cpp): the sea's waves (two sines over X and Z, moving with time)
+ * and their drawing. The stage performs it in the movement list after the map group (scene.ts);
+ * its drawing data (getAlpha, the texture positions, the strip grid around Mario) is kept for the viewer.
  */
 export class MapObjWave extends NameRef {
     unk10 = 0; unk14 = 0; unk18 = 0; unk1C = 0; unk20 = 0; unk24 = 0; unk28 = 0;
     unk2C = 0; unk30 = 0; unk34 = 0; unk38 = 0; unk3C = 0; unk40 = 0; unk44 = 0; unk48 = fr(0.1);
     unk4C = 0; unk50 = 0; unk54 = 255; unk58 = 255; unk5C = 0; unk60 = 0;
     unk64: number; unk68: number; unk6C: number; unk70: number;
+    unk74 = 0; unk78 = 0;
+    /** unk94: /scene/map/map/wave.bti's presence */
     hasTex = false;
-    private tick = -1;
+    /** sColor (0xC8, 0xC8, 0xFF), unk7C / unk84 / unk8C: the TEV colours */
+    static sColor = [0xC8, 0xC8, 0xFF, 0];
+    unk7C = [0xC2, 0xF2, 0xBE, 0]; unk84 = [0, 0, 0, 0x48]; unk8C = [0, 0, 0, 0x90];
     constructor(public world: World, name = '波の表現') {
         super(name);
         this.unk64 = fr(MsRandF() * 360); this.unk68 = fr(MsRandF() * 360); this.unk6C = MsRandF(); this.unk70 = MsRandF();
         WAVES.set(world, this);
-        (world as any).mapObjWave = this;   // (gpMapObjWave: Mario's swim base reads it, player/tmario.ts)
+        (world as any).mapObjWave = this;   // (gpMapObjWave)
     }
     load(s: Stream) {
         super.load(s);
-        this.unk10 = 5200; this.unk1C = 200; this.unk14 = fr(this.unk10 / 2); this.unk18 = fr(1 / this.unk14); this.unk20 = Math.trunc(this.unk10 / this.unk1C);
+        this.unk10 = 5200; this.unk1C = 200; this.unk14 = fr(this.unk10 / 2); this.unk18 = fr(1 / this.unk14); this.unk20 = Math.trunc(fr(this.unk10 / this.unk1C));
         this.hasTex = !!this.world.files.scene('map/map/wave.bti');
-        this.unk60 = fr(0.0015); this.unk4C = 400; this.unk50 = 150; this.unk24 = fr(0.02); this.unk28 = fr(0.03);
+        this.unk60 = fr(0.0015); this.unk74 = fr(0.0012); this.unk78 = fr(0.0015);
+        this.unk4C = 400; this.unk50 = 150; this.unk24 = fr(0.02); this.unk28 = fr(0.03);
         switch (this.world.map) {
             case 3: case 30: this.unk2C = 25; this.unk30 = 20; this.unk34 = 0; this.unk38 = 0; break;
             case 4: this.unk2C = 40; this.unk30 = 30; this.unk34 = 5; this.unk38 = 0; break;
@@ -366,33 +398,90 @@ export class MapObjWave extends NameRef {
             default: this.unk2C = 30; this.unk30 = 25; this.unk34 = 0; this.unk38 = 0; break;
         }
         this.unk3C = this.unk2C; this.unk40 = this.unk30;
-        this.tick = this.world.tickCount;
+    }
+    /** getMoveTexPos1 */
+    getMoveTexPos1(v: number) { return fr(this.unk70 + fr(v * this.unk78)); }
+    /** getMoveTexPos0 */
+    getMoveTexPos0(v: number) { return fr(fr(v * this.unk78) * fr(0.8)); }
+    getStaticTexPos1(v: number) { return fr(v * this.unk74); }
+    getStaticTexPos0(v: number) { return fr(v * this.unk74); }
+    /** getWaveHeight */
+    getWaveHeight(x: number, z: number) {
+        if (!this.hasTex) return 0;
+        // (the DOL: fmuls by the f32 1 / 6.28318, fmadds with unk24 / unk28 and unk64 / unk68, then MSL sinf)
+        const a = fr(this.unk3C * mslSinf(FMA(this.unk24, fr(x * fr(1 / 6.28318)), this.unk64)));
+        const b = fr(this.unk40 * mslSinf(FMA(this.unk28, fr(z * fr(1 / 6.28318)), this.unk68)));
+        return fr(a + b);
+    }
+    /** getHeight: the ground under (x, y + 50) (checkGroundExactY); a water surface: the sea's wave height, else that surface's; else y */
+    getHeight(x: number, y: number, z: number) {
+        const [h, g] = this.world.col.checkGround(x, fr(fr(y + 50) - -78), z, 0);
+        if (g.isWaterSurface()) return g.isSea() ? this.getWaveHeight(x, z) : h;
+        return y;
+    }
+    /** noWave */
+    noWave() { this.unk34 = 0; this.unk38 = 0; this.unk2C = 0; this.unk30 = 0; this.unk3C = 0; this.unk40 = 0; }
+    /** getAlpha (s32: the f32 result truncated) */
+    getAlpha(zo: number, xo: number) {
+        const az = Math.abs(zo), ax = Math.abs(xo);
+        if (ax > az) return Math.trunc(fr(this.unk54 * fr(1 - fr(this.unk18 * ax))));
+        return Math.trunc(fr(this.unk54 * fr(1 - fr(this.unk18 * az))));
+    }
+    /**
+     * draw's geometry: the strips around Mario, as vertices [x, y, z, alpha, s0, t0, s1, t1]
+     * (two per column: z0 then z1), one Float32Array per strip. For the viewer.
+     */
+    drawStrips(): Float32Array[] {
+        const out: Float32Array[] = [], mp = this.world.mario.pos;
+        for (let zo = -this.unk14; zo <= fr(this.unk14 - this.unk1C); zo = fr(zo + this.unk1C)) {
+            const z0 = fr(zo + mp.z), z1 = fr(z0 + this.unk1C), v: number[] = [];
+            for (let xo = -this.unk14; xo <= fr(this.unk14 - this.unk1C); xo = fr(xo + this.unk1C)) {
+                const x = fr(xo + mp.x), a0 = this.getAlpha(zo, xo), a1 = this.getAlpha(fr(zo + this.unk1C), xo);
+                v.push(x, this.getWaveHeight(x, z0), z0, a0, fr(this.getStaticTexPos0(x) + this.unk6C), this.getStaticTexPos1(z0), this.getMoveTexPos0(x), this.getMoveTexPos1(z0));
+                v.push(x, this.getWaveHeight(x, z1), z1, a1, fr(this.getStaticTexPos0(x) + this.unk6C), this.getStaticTexPos1(z1), this.getMoveTexPos0(x), this.getMoveTexPos1(z1));
+            }
+            out.push(new Float32Array(v));
+        }
+        return out;
+    }
+    /** updateHeightAndAlpha (Ricco and Gelato): the waves calm and fade as the sea under Mario gets shallow */
+    updateHeightAndAlpha() {
+        const w = this.world, mp = w.mario.pos;
+        const [, g] = w.checkGround(mp.x, mp.y, mp.z);
+        let [, g2] = w.col.checkGround(mp.x, fr(10 - -78), mp.z, 0);   // (checkGroundExactY(x, 10, z))
+        if (marioCheckFlag(w, 0x10000) || g2.isWaterSurface() || g.isWaterSurface()) {
+            const r = w.checkGroundIgnoreWaterSurface(mp.x, 0, mp.z); const height = r[0]; g2 = r[1];
+            const h2 = fr(this.unk4C + height);
+            if (h2 < 0 || g2.isUnk700()) { this.unk3C = this.unk2C; this.unk40 = this.unk30; }
+            else {
+                const ratio = fr(1 - fr(h2 / this.unk4C));
+                this.unk3C = FMA(ratio, fr(this.unk2C - this.unk34), this.unk34);
+                this.unk40 = FMA(ratio, fr(this.unk30 - this.unk38), this.unk38);
+            }
+            const h3 = fr(this.unk50 + height);
+            if (h3 < 0 || g2.isUnk700()) this.unk54 = this.unk58;
+            else this.unk54 = FMA(fr(1 - fr(h3 / this.unk50)), fr(this.unk58 - this.unk5C), this.unk5C);
+        } else { this.unk3C = this.unk34; this.unk40 = this.unk38; this.unk54 = this.unk5C; }
+        if (w.map === 4 && -4950 < mp.x && -4340 > mp.x && 7660 < mp.z && 8040 > mp.z) {
+            this.unk3C = this.unk34; this.unk40 = this.unk38; this.unk54 = this.unk5C;
+        }
+        const cube = inStreamCubeL(w, mp);
+        if (cube) { if (this.unk44 < cube.unk3C) this.unk44 = fr(this.unk44 + this.unk48); }
+        else if (this.unk44 > 0) this.unk44 = fr(this.unk44 - this.unk48);
+        else this.unk44 = 0;
+        if (this.unk44 > 0) { this.unk3C = fr(this.unk2C + this.unk44); this.unk40 = fr(this.unk30 + this.unk44); }
     }
     /** updateTime */
-    private updateTime() {
+    updateTime() {
         const T = fr(6.28318);
         this.unk64 = fr(this.unk64 + this.unk24); if (this.unk64 > T) this.unk64 = fr(this.unk64 - T);
         this.unk68 = fr(this.unk68 + this.unk28); if (this.unk68 > T) this.unk68 = fr(this.unk68 - T);
         this.unk6C = fr(this.unk6C + this.unk60); if (this.unk6C > 1) this.unk6C = fr(this.unk6C - 1);
         this.unk70 = fr(this.unk70 + this.unk60); if (this.unk70 > 1) this.unk70 = fr(this.unk70 - 1);
     }
-    /** perform(CUE_MOVE) for each movement tick since the last ask. TODO: updateHeightAndAlpha (maps 4 and 6). */
-    catchUp() {
-        if (!this.hasTex) return;
-        const t = this.world.tickCount;
-        if (this.tick < 0) this.tick = t;
-        while (this.tick < t) { this.updateTime(); this.tick++; }
-    }
-    perform(cue: number) { if (cue & CUE_MOVE) this.catchUp(); }
-    /** getWaveHeight */
-    getWaveHeight(x: number, z: number) {
-        if (!this.hasTex) return 0;
-        this.catchUp();
-        // (the DOL: fmuls by the f32 1 / 6.28318, fmadds with unk24 / unk28 and unk64 / unk68, then MSL sinf)
-        const a = fr(this.unk3C * mslSinf(FMA(this.unk24, fr(x * fr(1 / 6.28318)), this.unk64)));
-        const b = fr(this.unk40 * mslSinf(FMA(this.unk28, fr(z * fr(1 / 6.28318)), this.unk68)));
-        return fr(a + b);
-    }
+    /** movement */
+    movement() { this.updateTime(); if (this.world.map === 4 || this.world.map === 6) this.updateHeightAndAlpha(); }
+    perform(cue: number) { if (this.hasTex && (cue & CUE_MOVE)) this.movement(); }
 }
 export function mapObjWave(w: World): MapObjWave | null { return WAVES.get(w) || null; }
 register('MapObjWave', (w, n) => new MapObjWave(w, n));

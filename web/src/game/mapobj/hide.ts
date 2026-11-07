@@ -156,6 +156,7 @@ export class WaterHitPictureHideObj extends HideObjBase {
             this.yOffset = fr(this.scale.y * -10); this.damageHeight = 30; this.calcEntryRadius();
             this.pos.y = fr(this.initialPos.y + this.yOffset); this.sprayProgressSpeed = fr(2.5);
         } else this.sprayProgressSpeed = fr(1.8);
+        this.initPacketMatColor(0, this.color);   // GX_TEVREG0
     }
     /** for the viewer: how see-through the sign is now (its TEV colour's alpha, 0..255) */
     alpha() { return this.color.a; }
@@ -183,8 +184,7 @@ export class HideObjPictureTwin extends WaterHitPictureHideObj {
             o.offLiveFlag(LF.UNK10);
             if (MapObjBase.isCoin(o)) { (o as Coin).container = this; (o as Coin).unk14C = this.unk148; }
             this.world.sound(SE.SY_TIMECOIN_APPEAR);
-            this.world.events.push({ t: this.world.tickCount, kind: 'demoCamera', data: { name: this.camera, p: o.pos.clone() } });
-            if (this.world.talk) this.world.talk.fireStartDemoCamera(this.camera, o.pos.clone());
+            this.world.startDemoCamera(this.camera, o.pos);
         }
         this.state = 3;
     }

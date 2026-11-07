@@ -120,6 +120,9 @@ export class YoshiTongue extends TakeActor {
     /** initInLoadAfter: into 敵グループ (the enemy group's hit checks), at its end */
     initInLoadAfter(w: World) { (w as any).addToGroup('敵グループ', this); }
     getTakingMtx(): Mtx | null { return this.tipMtx; }
+    /** checkTaking, checkTaken (TTakeActor's virtuals: empty for the tongue) */
+    checkTaking() { }
+    checkTaken() { }
     private tipMtx: Mtx | null = null;
     emit(src: V3, dir: V3, vel: V3) {
         if (this.mState !== TS.IDLE) return;

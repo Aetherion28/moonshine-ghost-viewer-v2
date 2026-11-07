@@ -21,8 +21,8 @@
 //   touching it shrinks and Shine (お化けスイカ用) appears. TSandEgg / MammaSurfboard: plain objects.
 //
 // Not here: particles (told as world effects), rumble, BGM changes, the help balloons, the demo
-// cameras' callbacks (they are told as 'demoCamera' events), gpTargetArrow, the beam cone the
-// mirrors draw, TMirrorModelObj / TMirrorActor (mirror drawing), TMammaMirrorMapOperator's work (it
+// cameras' callbacks (they are told as 'demoCamera' events), gpTargetArrow,
+// TMirrorModelObj / TMirrorActor (mirror drawing), TMammaMirrorMapOperator's work (it
 // only shows / hides the in-mirror map's joint 2 for drawing, by the camera's distance to the
 // mirror in use: registered as a plain object, MammaMirrorMapOperator below), the Shine stone's own models are
 // kept (their BCKs set) but not drawn by the viewer.
@@ -34,9 +34,11 @@ import { fmadd as FMA, fmsub as FMS } from '../player/fmath.js';
 import { World, HitActor, LiveActor, Actor, Stream, MActor, AnmData, LF, HF, MSG, CUE_CALC_ANIM, ANM_FRAME_RATE, ANM_BPK, ANM_BTK, ANM_BRK } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
+import { BeamManager } from '../enemies/beam.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { Skeleton } from '../skeleton.js';
+import { mapJoints as mapJointObjs, moveJoint, type JointObj } from '../mapevent.js';
 import { MapObjBase, MOF, STATE_NORMAL, UNIQUE_MAKERS, newAndRegisterObj, mapObjGlobals } from './base.js';
 import { ObjCollision, KIND_MOVE } from './objcol.js';
 import { JointCoin } from './ex.js';
@@ -44,7 +46,6 @@ import { MapObjFlag } from './view.js';
 import { MTXConcat, rotationSetRotate, setRootMtx, mapObjWave, marioGroundLevel, marioGroundPlane, marioTouchGround4cm, sendToMario } from './lib.js';
 import './item.js';
 
-const demoCamera = (w: World, name: string, p: V3 | null, frames = -1) => { w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name, p: p ? p.clone() : null, frames } }); if (w.talk) w.talk.fireStartDemoCamera(name, p ? p.clone() : null, frames); };
 /** (fabricated) addAnmFrame: frame ctrl `type` of the actor's model moved on by speed */
 function addAnmFrame(o: LiveActor, type: number, speed: number) {
     const fc = o.mactor && o.mactor.getFrameCtrl(type);
@@ -235,7 +236,7 @@ export class SandBombBase extends SandBase {
         this.colMgr!.getActiveCollision()!.setUp();
         this.colMgr!.moveActiveCollisionSRT(this.pos, this.rot, this.scale);
         w.effect('SandBomb', this.pos, new V3(this.unk14C, this.unk14C, this.unk14C));
-        if (!w.demoMode) w.events.push({ t: w.tickCount, kind: 'cameraShake', data: { mode: 0xD, power: 1, p: this.pos.clone() } });
+        if (!w.demoMode) w.cameraShake?.startShake(0xD, 1);
         w.sound(SE.OBJ_SANDBOMB_BANG, this.pos);
         this.state = SBB.EXPLODING;
     }
@@ -328,7 +329,7 @@ export class SandCastle extends SandBombBase {
     waitBeforeExplode() {
         super.waitBeforeExplode();
         // (SandCastleCallBack: the target arrow at the castle, the camera warped)
-        demoCamera(this.world, 'mamma1_sandcastle', null);
+        this.world.startDemoCamera('mamma1_sandcastle', null);
         this.unk15C = 1;
     }
     calcRootMatrix() { if (!this.isState(SAND.WITHERING)) super.calcRootMatrix(); }
@@ -394,6 +395,9 @@ export class ShiningStone extends HitActor {
 
 // ---------------------------------------------------------------- TLeanMirror
 export const LMS = { GO_TARGET: 0x2, LIGHT_DEMO: 0x3, DONE: 0x4 };
+const LEAN_MIRRORS = new WeakMap<World, LeanMirror[]>();
+/** the scene's lean mirrors, for the viewer's draw */
+export function leanMirrors(w: World) { return LEAN_MIRRORS.get(w) || []; }
 export class LeanMirror extends MapObjBase {
     static mGoTargetTime = 600;
     static mDemoWaitTime = -1;
@@ -413,7 +417,15 @@ export class LeanMirror extends MapObjBase {
     unk1AC = 0; unk1AE = 0;
     /** getModel()->getBaseTRMtx(): the last root matrix set (its model's calc is off: the root matrix is its own) */
     private baseMtx: Mtx | null = null;
-    constructor(w: World, name = 'ぐらぐら鏡') { super(w, name); }
+    constructor(w: World, name = 'ぐらぐら鏡') { super(w, name); let l = LEAN_MIRRORS.get(w); if (!l) LEAN_MIRRORS.set(w, l = []); l.push(this); }
+    /** draw (TMapObjBase::perform's CUE_DRAW unless dead): its light, a cone from 10000 along its up (joint 0's Y axis) back to 0.35 x its body radius over it, 1.7 x its body radius across */
+    draw() {
+        if (this.checkLiveFlag(LF.DEAD)) return;
+        const m = this.anm(), dir = new V3(m[1], m[5], m[9]);
+        const start = dir.clone().scale(fr(0.001 * fr(350 * this.bodyRadius))).add(this.pos);
+        const end = dir.clone().scale(10000).add(this.pos);
+        BeamManager.get(this.world).requestCone(end, start, fr(1.7 * this.bodyRadius), true, true, false);
+    }
     /** getModel()->getAnmMtx(0) */
     private anm(): Mtx {
         if (!this.anmMtx0) { this.anmMtx0 = Float64Array.from(this.rootMtx()); this.baseMtx = Float64Array.from(this.anmMtx0); }
@@ -469,7 +481,7 @@ export class LeanMirror extends MapObjBase {
         const mm = w.mario as any;
         if (typeof mm.moveRequest === 'function') mm.moveRequest(this.unk1A0.clone());   // SMS_MarioMoveRequest
         const cam = ({ mirrorS: 'ぐらぐら鏡Ｓカメラ', mirrorM: 'ぐらぐら鏡Ｍカメラ', mirrorL: 'ぐらぐら鏡Ｌカメラ' } as Record<string, string>)[this.individualName];
-        if (cam && this.unk17C) demoCamera(w, cam, this.unk17C.pos, LeanMirror.mGoTargetTime + LeanMirror.mDemoWaitTime);
+        if (cam && this.unk17C) w.startDemoCamera(cam, this.unk17C.pos, LeanMirror.mGoTargetTime + LeanMirror.mDemoWaitTime);
         // (MSBgm::stopTrackBGM)
     }
     controlGoTarget() {
@@ -484,9 +496,9 @@ export class LeanMirror extends MapObjBase {
         if (st.unk73) {
             const h = w.search('居眠りボスハナチャン') as any;
             if (h && typeof h.startFall === 'function') h.startFall(st.pos.x, fr(st.pos.y + 1100), st.pos.z);
-            demoCamera(w, 'demohanatyan_cam01', null);
+            w.startDemoCamera('demohanatyan_cam01', null);
             w.sound(SE.OBJ_QUAKE, this.pos);   // (startCameraShakeSE, the demo camera's callback, at the mirror)
-        } else demoCamera(w, '太陽石点灯カメラ', st.pos, LeanMirror.mDemoLightTime);
+        } else w.startDemoCamera('太陽石点灯カメラ', st.pos, LeanMirror.mDemoLightTime);
         this.stateTimer = LeanMirror.mDemoLightTime;
         this.state = LMS.LIGHT_DEMO;
     }
@@ -575,6 +587,7 @@ export class MammaBlockRotate extends MapObjBase {
     static mWaitTime = 600;
     /** unk13C / unk140 the map's lower and upper block joints (their Y translation and box height here) */
     unk13C = { transY: 0, h: 0 }; unk140 = { transY: 0, h: 0 };
+    joint13C: JointObj | null = null; joint140: JointObj | null = null;
     unk144: ObjCollision | null = null; unk148: ObjCollision | null = null;
     constructor(w: World, name = '太陽の塔ブロック') { super(w, name); }
     touchWater(_a: HitActor) {
@@ -594,6 +607,8 @@ export class MammaBlockRotate extends MapObjBase {
             case MBR.MAP_GO: {
                 const s = MammaBlockRotate.mMapGoSpeed;
                 this.unk140.transY = fr(this.unk140.transY - s); this.unk13C.transY = fr(this.unk13C.transY - s);   // moveJoint
+                if (this.joint140) moveJoint(this.joint140, 0, -s, 0);
+                if (this.joint13C) moveJoint(this.joint13C, 0, -s, 0);
                 const t = new V3(0, this.unk140.transY, 0);
                 if (this.unk144) this.unk144.moveTrans(t);
                 if (this.unk148) this.unk148.moveTrans(t.clone());
@@ -604,6 +619,8 @@ export class MammaBlockRotate extends MapObjBase {
             case MBR.MAP_BACK: {
                 const s = MammaBlockRotate.mMapBackSpeed;
                 this.unk140.transY = fr(this.unk140.transY + s); this.unk13C.transY = fr(this.unk13C.transY + s);
+                if (this.joint140) moveJoint(this.joint140, 0, s, 0);
+                if (this.joint13C) moveJoint(this.joint13C, 0, s, 0);
                 const t = new V3(0, this.unk140.transY, 0);
                 if (this.unk144) this.unk144.moveTrans(t);
                 if (this.unk148) this.unk148.moveTrans(t.clone());
@@ -611,7 +628,6 @@ export class MammaBlockRotate extends MapObjBase {
                 break;
             }
         }
-        // TODO: the map model's two joints (moveJoint) aren't drawn moved: the viewer's map is static
     }
     initMapObj() {
         super.initMapObj();
@@ -625,6 +641,9 @@ export class MammaBlockRotate extends MapObjBase {
             const b = J.box(j), h = fr(b.maxY - b.minY);
             return { transY: fr(b.transY + h), h };
         };
+        // (the same joints as the drawn map's TJointObjs, which moveJoint moves for the viewer)
+        const R = mapJointObjs(this.world).getChild(0)?.getChild(0)?.getChild(0);
+        this.joint13C = R?.getChild(1) ?? null; this.joint140 = R?.getChild(2) ?? null;
         this.unk13C = at(1);
         if (this.unk144) { this.unk144.setUp(); this.unk144.moveTrans(new V3(0, this.unk13C.h, 0)); }
         this.unk140 = at(2);
@@ -707,7 +726,7 @@ export class GoalWatermelon extends MapObjBase {
         if (m.mactor) m.mactor.setBck('watermelon_shrink');
         m.offMapObjFlag(MOF.NO_ANIMATIONS);
         m.vel.set(0, 0, 0);
-        demoCamera(this.world, 'スイカゴールカメラ', m.pos);
+        this.world.startDemoCamera('スイカゴールカメラ', m.pos);
         this.state = GWS.SHRINK;
     }
     control() {

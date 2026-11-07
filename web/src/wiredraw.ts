@@ -95,3 +95,52 @@ export class WireDraw {
 
     destroy(device: GfxDevice) { this.upper.destroy(device); this.lower.destroy(device); }
 }
+
+/**
+ * Shadow Mario's water meter (Enemy/enemyMario.cpp TEnemyMario::drawHPMeter): quads given in view
+ * space (an identity position matrix), unlit, the material colour passed (GX_PASSCLR), depth LEQUAL
+ * without writes, no culling. The game sets no blend mode there (whatever the draw before left);
+ * here alpha blending, so the border's 0xC0 alpha shows as the game's translucent box.
+ */
+export class HPMeterDraw {
+    private dds: TDDraw[] = [];
+    private helper: GXMaterialHelperGfx;
+    private mp = new MaterialParams();
+    private dp = new DrawParams();
+    constructor() {
+        const mb = new GXMaterialBuilder('EMarioHPMeter');
+        mb.setChanCtrl(GX.ColorChannelID.COLOR0A0, false, GX.ColorSrc.REG, GX.ColorSrc.REG, 0, GX.DiffuseFunction.NONE, GX.AttenuationFunction.NONE);
+        mb.setTevOrder(0, GX.TexCoordID.TEXCOORD_NULL, GX.TexMapID.TEXMAP_NULL, GX.RasColorChannelID.COLOR0A0);
+        mb.setTevColorIn(0, GX.CC.ZERO, GX.CC.ZERO, GX.CC.ZERO, GX.CC.RASC);
+        mb.setTevAlphaIn(0, GX.CA.ZERO, GX.CA.ZERO, GX.CA.ZERO, GX.CA.RASA);
+        mb.setTevColorOp(0, GX.TevOp.ADD, GX.TevBias.ZERO, GX.TevScale.SCALE_1, true, GX.Register.PREV);
+        mb.setTevAlphaOp(0, GX.TevOp.ADD, GX.TevBias.ZERO, GX.TevScale.SCALE_1, true, GX.Register.PREV);
+        mb.setZMode(true, GX.CompareType.LEQUAL, false);
+        mb.setBlendMode(GX.BlendMode.BLEND, GX.BlendFactor.SRCALPHA, GX.BlendFactor.INVSRCALPHA);
+        mb.setCullMode(GX.CullMode.NONE);
+        mb.setUsePnMtxIdx(false);
+        this.helper = new GXMaterialHelperGfx(mb.finish());
+    }
+    /** quads: each 4 view-space [x, y, z] and an RGBA (0..255) colour, drawn in order */
+    prepare(device: GfxDevice, rim: GfxRenderInstManager, vi: Viewer.ViewerRenderInput, quads: { pts: number[]; color: number[] }[]) {
+        quads.forEach((q, i) => {
+            const d = this.dds[i] || (this.dds[i] = (() => { const t = new TDDraw('hp meter ' + i); t.setVtxDesc(GX.Attr.POS, true); return t; })());
+            d.beginDraw(rim.gfxRenderCache);
+            d.begin(GX.Command.DRAW_QUADS, 4);
+            for (let k = 0; k < 4; k++) d.position3f32(q.pts[k * 3], q.pts[k * 3 + 1], q.pts[k * 3 + 2]);
+            d.end();
+            d.endDraw(rim);
+            if (!d.hasIndicesToDraw()) return;
+            const inst = d.makeRenderInst(rim);
+            inst.sortKey = makeSortKey(GfxRendererLayer.TRANSLUCENT + 0x10 + i);
+            this.helper.setOnRenderInst(rim.gfxRenderCache, inst);
+            const c = q.color;
+            colorFromRGBA(this.mp.u_Color[ColorKind.MAT0], c[0] / 255, c[1] / 255, c[2] / 255, c[3] / 255);
+            this.helper.allocateMaterialParamsDataOnInst(inst, this.mp);
+            mat4.identity(this.dp.u_PosMtx[0] as any);
+            this.helper.allocateDrawParamsDataOnInst(inst, this.dp);
+            rim.submitRenderInst(inst);
+        });
+    }
+    destroy(device: GfxDevice) { for (const d of this.dds) d.destroy(device); }
+}

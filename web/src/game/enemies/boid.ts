@@ -10,6 +10,7 @@ import { World, SpineEnemy, EnemyManager, LiveManager, LiveActor, PathNode, Grap
 import { newAndRegisterObjByEventID } from '../mapobj/item.js';
 import { mapObjGlobals, newAndRegisterObj, MapObjBase } from '../mapobj/base.js';
 import { AT } from '../actortypes.js';
+import { psVecNormalize } from '../camera/lib.js';
 import { V } from '../version.js';
 import { register } from '../scene.js';
 import { jnormalize, setLength } from './animal.js';
@@ -173,9 +174,10 @@ export abstract class RealoidActor extends LiveActor {
         }
         const t = b.pos.clone(), r = this.baseTR;
         const up = new V3(0, 1, 0), dir = b.heading.clone(), n = new V3();
-        n.cross(up, dir).normalize();
-        up.cross(dir, n).normalize();
-        dir.cross(n, up).normalize();
+        // (VECNormalize: the SDK's PSVECNormalize, JP 0x80094EF0)
+        n.cross(up, dir); psVecNormalize(n, n);
+        up.cross(dir, n); psVecNormalize(up, up);
+        dir.cross(n, up); psVecNormalize(dir, dir);
         r[0] = -dir.x; r[4] = -dir.y; r[8] = -dir.z;
         r[1] = up.x; r[5] = up.y; r[9] = up.z;
         r[2] = n.x; r[6] = n.y; r[10] = n.z;

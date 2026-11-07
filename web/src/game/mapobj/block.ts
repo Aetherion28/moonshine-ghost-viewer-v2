@@ -14,8 +14,11 @@ import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
-import { MapObjBase, STATE_NORMAL } from './base.js';
+import { MapObjBase, STATE_NORMAL, UNIQUE_MAKERS, CUE_MOVE } from './base.js';
+import { HC } from '../engine.js';
+import { V } from '../version.js';
 import { HideObjBase } from './hide.js';
+import { MapObjGeneral } from './general.js';
 import { BreakHideObj } from './monte.js';
 
 // ---------------------------------------------------------------- TSandBlock
@@ -149,6 +152,68 @@ export class SuperHipDropBlock extends BreakHideObj {
         }
     }
 }
+
+// ---------------------------------------------------------------- TBreakableBlock
+/** TBreakableBlock: broken by Mario's hip drop on it */
+export class BreakableBlock extends MapObjGeneral {
+    constructor(w: World, name = '壊れるブロック') { super(w, name); }
+    touchPlayer(_a: HitActor) {
+        if (this.marioHipAttack()) {
+            // (SMSRumbleMgr->start(0x15, 0x14, mPosition): rumble)
+            this.kill();
+        }
+    }
+}
+UNIQUE_MAKERS.set('breakable_block', (w) => new BreakableBlock(w));
+
+// ---------------------------------------------------------------- TJuiceBlock
+/** TJuiceBlock: the block Yoshi's juice turns an enemy into (TSmallEnemy::changeByJuice drives it) */
+export class JuiceBlock extends MapObjBase {
+    /** unk138: its colour (GXColorS10, TEVREG0 of material 0) */
+    // (alpha, 0x13E: never written by the ROM (ctor, initMapObj, changeByJuice): operator new's leftover)
+    unk138 = [0, 0, 0, 0];
+    /** unk140: its scale as it grows */
+    unk140 = new V3(1, 1, 1);
+    /** unk14C: the enemy in it */
+    unk14C: any = null;
+    tevColorMaterialIndex = 0;
+    get tevColor0() { return this.unk138; }
+    constructor(w: World, name = 'ジュースブロック') { super(w, name); }
+    /** initMapObj (SMS_InitPacket_OneTevColor: tevColor0) */
+    initMapObj() { super.initMapObj(); this.unk140.set(1, 1, 1); }
+    /** moveObject: gone when its enemy is dead */
+    moveObject() {
+        super.moveObject();
+        if (this.unk14C !== null && this.unk14C.checkLiveFlag(LF.DEAD)) this.kill();
+    }
+    kill() { this.unk14C = null; this.makeObjDead(); }
+    /** touchActor (PAL only): another map object breaks it */
+    touchActor(a: HitActor) {
+        if (!(V.GMSP01 || V.GMSP01_NX)) { super.touchActor(a); return; }
+        if (a.isHitCategory(HC.MAP_OBJECT) && !a.isActorType(AT.JUICE_BLOCK)) this.kill();
+    }
+}
+
+// ---------------------------------------------------------------- TTelesaBlock
+/** TTelesaBlock: a box Boo's block; its joints scaled by unk140 (perform) */
+export class TelesaBlock extends JuiceBlock {
+    constructor(w: World, name = 'テレサブロック') { super(w, name); }
+    get tevColor0() { return undefined as any; }
+    initMapObj() { MapObjBase.prototype.initMapObj.call(this); }
+    perform(cue: number) {
+        this.liveFlag &= ~LF.UNK200;
+        if (!this.world.talkMode) super.perform(cue);
+        else if (cue & CUE_MOVE) JuiceBlock.prototype.moveObject.call(this);   // (then mMActor->perform: drawing)
+    }
+    /** perform's CUE_CALC_ANIM: anmMtx(1) *= scale(unk140.x, y, z), anmMtx(0) *= scale(unk140.y, y, z) (the viewer applies them) */
+    jointScales() { const u = this.unk140; return [[u.y, u.y, u.z], [u.x, u.y, u.z]]; }
+    setGroundCollision() {
+        if (!this.colMgr) return;
+        this.colMgr.moveActiveCollisionSRT(this.pos, this.rot, this.unk140);
+    }
+}
+UNIQUE_MAKERS.set('JuiceBlock', (w) => new JuiceBlock(w));
+UNIQUE_MAKERS.set('TelesaBlock', (w) => new TelesaBlock(w));
 
 register('SuperHipDropBlock', (w, n) => new SuperHipDropBlock(w, n));
 register('SandBlock', (w, n) => new SandBlock(w, n));

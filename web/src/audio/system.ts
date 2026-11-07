@@ -29,7 +29,9 @@ export class SoundSystem {
     /** held sounds (ID & 0xC00 clear: JAIBasic keeps them only while the game asks every frame): key -> slot track */
     private held = new Map<string, { tid: number; id: number }>();
     musicGain = 1; sfxGain = 1;
-    constructor(public files: SoundFiles, rate: number) {
+    /** a BGM stop's fade (JAISound::stop(fade): fade game frames, at 60 a second), samples left / total */
+    private fadeLeft = 0; private fadeTotal = 0;
+    constructor(public files: SoundFiles, public rate: number) {
         this.init = parseAAF(files.aaf);
         const bankByVirtual = new Map<number, number>();
         this.init.banks.forEach((b, i) => {
@@ -67,7 +69,14 @@ export class SoundSystem {
         const subs = Math.floor(seek * (32028.5 / 80));
         for (let i = 0; i < subs && this.bgm.seqState; i++) Mixer.skip(this.music);
     }
+    /** MSBgm::stopTrackBGM(track, fade): the music stopped over fade frames (0: at once) */
+    fadeStopBgm(frames: number) {
+        if (!this.bgm) return;
+        if (frames <= 0) { this.stopBgm(); return; }
+        this.fadeTotal = this.fadeLeft = Math.max(1, Math.round((frames / 60) * this.rate));
+    }
     stopBgm() {
+        this.fadeLeft = this.fadeTotal = 0;
         if (this.bgm) this.music.stop(this.bgm);
         this.bgm = null; this.bgmId = -1;
         for (const c of this.music.channels) c.alive = false;
@@ -166,7 +175,13 @@ export class SoundSystem {
         if (this.seSeq) this.seSeq.writePortApp(route(h.tid), 0);
     }
     render(L: Float32Array, R: Float32Array, n: number) {
-        this.mixer.players[0].gain = this.musicGain; this.mixer.players[1].gain = this.sfxGain;
+        let fade = 1;
+        if (this.fadeTotal > 0) {
+            this.fadeLeft = Math.max(0, this.fadeLeft - n);
+            fade = this.fadeLeft / this.fadeTotal;
+            if (this.fadeLeft === 0) this.stopBgm();
+        }
+        this.mixer.players[0].gain = this.musicGain * fade; this.mixer.players[1].gain = this.sfxGain;
         L.fill(0, 0, n); R.fill(0, 0, n);
         this.mixer.render(L, R, n);
     }

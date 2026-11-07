@@ -90,6 +90,8 @@ export class MapObjGrassGroup extends HitActor {
     unk68 = 0;
     /** the blades' tips (unk6C) */
     tips: V3[] = [];
+    /** the tips' roots as s16 (unk70: x, mPosition.y, z) and the tips' heights for the far draw (unk74: mPosition.y + tip y, s16) */
+    unk70: Int16Array = new Int16Array(0); unk74: Int16Array = new Int16Array(0);
     /** near (0) or far (1) */
     unk78 = 0;
     constructor(public world: World, name = '草群') { super(name); }
@@ -103,6 +105,12 @@ export class MapObjGrassGroup extends HitActor {
             const y = fr(fr(sy * MsRandF() + this.pos.y) + 100);   // (fmadds, then fadds)
             this.tips.push(new V3(x, y, z));
         }
+        this.unk70 = new Int16Array(this.unk68 * 3); this.unk74 = new Int16Array(this.unk68);
+        for (let i = 0; i < this.unk68; i++) {
+            const t = this.tips[i];
+            this.unk70[i * 3] = t.x; this.unk70[i * 3 + 1] = this.pos.y; this.unk70[i * 3 + 2] = t.z;
+            this.unk74[i] = fr(this.pos.y + t.y);
+        }
         const m = GRASS_MGRS.get(this.world);
         if (m) m.entryGrassGroup(this, this.unk68);
     }
@@ -113,21 +121,67 @@ export class MapObjGrassGroup extends HitActor {
         const d = Math.sqrt(V3.sub(this.pos, p).squared());
         this.unk78 = d < MapObjGrassManager.mDistNear ? 0 : 1;
     }
+    shouldDrawNear() { return this.unk78 === 0; }
+    shouldDrawFar() { return this.unk78 === 1; }
+    /** drawNear: a triangle per blade, root -dv / swung tip / root +dv; out gets [x, y, z, colour index] per vertex */
+    drawNear(m: MapObjGrassManager, out: number[]) {
+        if (!this.shouldDrawNear()) return;
+        const dv = MapObjGrassManager.mDrawVec;
+        let k = 0;
+        for (let i = 0; i < this.unk68; i++) {
+            const t = this.tips[i], x = t.x, z = t.z, midx = fr(x + m.unk20[k]);
+            out.push(fr(x - dv[0]), this.pos.y, fr(z - dv[2]), 1, midx, t.y, z, 0, fr(x + dv[0]), this.pos.y, fr(z + dv[2]), 1);
+            if (++k === 10) k = 0;
+        }
+    }
+    /** drawFar: the same from the s16 copies (GXPosition3s16) */
+    drawFar(m: MapObjGrassManager, out: number[]) {
+        if (!this.shouldDrawFar()) return;
+        const dv = MapObjGrassManager.mDrawVecS16, s16 = (v: number) => (v << 16) >> 16;
+        let k = 0;
+        for (let i = 0; i < this.unk68; i++) {
+            const x = this.unk70[i * 3], y = this.unk70[i * 3 + 1], z = this.unk70[i * 3 + 2], midx = s16(x + m.unk24[k]);
+            out.push(s16(x - dv[0]), y, s16(z - dv[2]), 1, midx, this.unk74[i], z, 0, s16(x + dv[0]), y, s16(z + dv[2]), 1);
+            if (++k === 10) k = 0;
+        }
+    }
 }
+/** the scene's grass manager (gpMapObjGrassManager), for the viewer's draw */
+export function grassManager(w: World) { return GRASS_MGRS.get(w) || null; }
 export class MapObjGrassManager extends NameRef {
     static mWidth = 12; static mSwingWidth = 50; static mSwingSpeed = fr(0.04); static mDistNear = 800; static mDistFar = 25000;
     groups: MapObjGrassGroup[] = []; unk18 = 0; unk1C = 0;
     /** the swing offsets the blades take in turn (ten) */
     unk20 = new Float32Array(10);
+    /** the same as s16 (unk24), for the far draw */
+    unk24 = new Int16Array(10);
+    /** mDrawVec / mDrawVecS16: the view's right axis times mWidth (initDrawNear) */
+    static mDrawVec = new Float32Array(3); static mDrawVecS16 = new Int16Array(3);
+    /** color_table: GXColor1x8 indexes it (0 the tip, 1 the roots) */
+    static color_table = [[0x3C, 0xC8, 0x3C, 0xFF], [0x28, 0x64, 0x28, 0xFF]];
     constructor(public world: World, name = '草管理') { super(name); GRASS_MGRS.set(world, this); perform(world, this); }
     entryGrassGroup(g: MapObjGrassGroup, n: number) { this.groups.push(g); this.unk1C += n; }
     perform(cue: number) {
         if (!(cue & CUE_CALC_ANIM)) return;
         let t = 0;
-        for (let i = 0; i < 10; i++) { this.unk20[i] = fr(MapObjGrassManager.mSwingWidth * fr(Math.sin(fr(this.unk18 + t)))); t = fr(t + fr(0.2)); }
+        for (let i = 0; i < 10; i++) { this.unk20[i] = fr(MapObjGrassManager.mSwingWidth * fr(Math.sin(fr(this.unk18 + t)))); this.unk24[i] = this.unk20[i]; t = fr(t + fr(0.2)); }
         this.unk18 = fr(this.unk18 + MapObjGrassManager.mSwingSpeed);
         if (this.unk18 > fr(3.14159 * 2)) this.unk18 = 0;
         for (const g of this.groups) g.calc();
+    }
+    /** initDrawNear's vector: the inverse view matrix's first column times mWidth (viewItm: column-major, camera to world) */
+    initDrawNear(viewItm: ArrayLike<number>) {
+        const w = MapObjGrassManager.mWidth, x = fr(viewItm[0] * w), y = fr(viewItm[1] * w), z = fr(viewItm[2] * w);
+        const v = MapObjGrassManager.mDrawVec, s = MapObjGrassManager.mDrawVecS16;
+        v[0] = x; v[1] = y; v[2] = z; s[0] = Math.trunc(x); s[1] = Math.trunc(y); s[2] = Math.trunc(z);
+    }
+    /** draw (CUE_DRAW): initDrawNear, every group's drawNear, initDrawFar, every group's drawFar */
+    draw(viewItm: ArrayLike<number>) {
+        this.initDrawNear(viewItm);
+        const near: number[] = [], far: number[] = [];
+        for (const g of this.groups) g.drawNear(this, near);
+        for (const g of this.groups) g.drawFar(this, far);
+        return { near, far };
     }
 }
 
@@ -155,6 +209,8 @@ const STATIC: [string, number, string | null, boolean, number, string | null][] 
     ['TargetArrow', 0, null, false, -1, null],
 ];
 export class MapStaticObj extends HitActor {
+    /** mEffectCoronaScale (initUnique: 1.8 on every stage) */
+    static mEffectCoronaScale = 0;
     actorName = ''; data: (typeof STATIC)[number] | null = null; soundId = -1;
     col: ObjCollisionManager | null = null;
     constructor(public world: World, name = '') { super(name); perform(world, this); }
@@ -173,11 +229,18 @@ export class MapStaticObj extends HitActor {
             c.setUpActiveCollisionTRS(this.pos, this.rot, this.scale);
         }
         this.soundId = d[4];
+        // mIdxGroupName: only "sea" has one (マップグループ)
+        if (name === 'sea') this.world.addToGroup('マップグループ', this);
+        this.initUnique();
+    }
+    /** initUnique: TopOfCorona's smoke scale (1.8 on stage 4 and elsewhere); ReflectSky's sky materials (drawing) */
+    initUnique() {
+        if (this.actorType === AT.TOP_OF_CORONA) MapStaticObj.mEffectCoronaScale = fr(1.8);
     }
     perform(cue: number) {
         if (!(cue & CUE_CALC_ANIM) || !this.data) return;
         if (this.soundId !== -1) this.world.sound(this.soundId, this.pos);
-        if (this.data[5]) this.world.effect(this.data[5], this.pos, this.data[1] === AT.TOP_OF_CORONA ? new V3(1.8, 1.8, 1.8) : undefined);
+        if (this.data[5]) this.world.effect(this.data[5], this.pos, this.data[1] === AT.TOP_OF_CORONA ? new V3(MapStaticObj.mEffectCoronaScale, MapStaticObj.mEffectCoronaScale, MapStaticObj.mEffectCoronaScale) : undefined);
     }
 }
 

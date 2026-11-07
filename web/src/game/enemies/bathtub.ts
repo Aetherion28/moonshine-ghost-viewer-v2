@@ -20,8 +20,7 @@
 // "バスタブの水", bathwater.ts) too: the binder's float_ floats on its getWaterHeight.
 //
 // Not here: the noses' and bodies' TEV colours (makeNoseColor, the GXColorS10s: drawing only), the
-// smoke and fly sound, the particles of the items, the anm sounds; the life count (TFlagManager's
-// MSF_LIFE_COUNT: not kept here, so it is taken as never changing).
+// smoke and fly sound, the particles of the items and the anm sounds.
 
 import { MSF } from '../flags.js';
 import { fr, V3, Quat, mtx, MsSin, MsCos, MsRandF, MsMtxSetRotRPH, matan } from '../math.js';
@@ -326,7 +325,7 @@ export class BathtubKiller extends SmallEnemy {
     generateItemBathtubKiller() {
         if (this.mKillerType !== KILLER_SHINE) return;
         const mgr = this.manager as BathtubKillerManager, im = mapObjGlobals(this.world).itemManager as any;
-        // TFlagManager's MSF_LIFE_COUNT (TODO: the sim never changes it: no 1-up / death counting yet)
+        // TFlagManager's MSF_LIFE_COUNT
         const lives = this.world.flags.getFlag(MSF.LIFE_COUNT);
         const wg = (this.world.mario as any).mWaterGun;
         let item: any = null;
@@ -340,7 +339,7 @@ export class BathtubKiller extends SmallEnemy {
         if (!item) return;
         if (item.isActorType(AT.BOTTLE_LARGE)) { this.world.effect('ms_enm_disap_a_w', item.pos, item.scale); this.world.effect('ms_enm_disap_b', item.pos, item.scale); }
     }
-    killBathtubKiller() { this.mHitMario = 0; this.onLiveFlag(LF.DEAD); }
+    killBathtubKiller() { this.mHitMario = 0; this.onLiveFlag(LF.DEAD); this.stopAnmSound(); }
     isDying() { const c = this.spine!.current; return c === KillerNerves.explosion || c === KillerNerves.brk; }
     breakBathtubKiller() { if (!this.isDying()) this.spine!.pushNerve(KillerNerves.brk); }
     explodeBathtubKiller() { if (!this.isDying()) this.spine!.pushNerve(KillerNerves.explosion); }

@@ -324,6 +324,7 @@ AmiNokoNerves.die = nerve<AmiNoko>('TNerveAmiNokoDie', (spine: S) => {
             self.onHitFilter(HF.NO_COLLISION);
             self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LF.HIDDEN); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
             self.holder = null;
+            self.stopAnmSound();
             spine.reset();
             spine.setNext(SmallEnemyNerves.die);
             spine.pushAfterCurrent(spine.default);

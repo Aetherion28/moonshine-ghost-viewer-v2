@@ -19,7 +19,7 @@
 // - the secret stage's Shine (world.exShineGot, from the run's FLUDD: player.ts sawFludd).
 // Everything else (shine count beyond the bounds above, lives, coins, records...) is unknown:
 // left at the game's fresh-save values (TFlagManager::firstStart: zero, correctFlag's minimums).
-// Not here: save/load to the card, options, blue coin / nozzle per-area flags (SMS_getShineStage only for VISITED).
+// (save/load to the card and the option file are left out: the sim has no memory card.)
 import { MSF } from './msflags.js';
 import { V } from './version.js';
 export { MSF };
@@ -42,16 +42,97 @@ const BANKS: Record<number, [number, boolean]> = {
     9: [MSF.OPTION_BOOL_END, true], 10: [MSF.OPTION_INT_END, false],
 };
 
+export const SAVE_SIZE = 4 + 8 + 8 + 4 + 2 + 2 + 64 + 0x200 + 0x200;
+const CARD_BOOLS = MSF.CARD_BOOL_END & 0xFFFF, CARD_INTS = MSF.CARD_INT_END & 0xFFFF;
+
 export class FlagManager {
     /** each bank's values (bools as 0/1), by the id's low 16 bits */
     private banks: Record<number, Int32Array> = {};
-    constructor() { for (const b in BANKS) this.banks[b] = new Int32Array(BANKS[b][0] & 0xFFFF); this.correctFlag(); this.correctOptFlag(); }
+    constructor() { for (const b in BANKS) this.banks[b] = new Int32Array(BANKS[b][0] & 0xFFFF); this.keepCard(); this.correctFlag(); this.correctOptFlag(); }
     /**
      * correctOptFlag's language (TFlagManager's constructor and loadOption; JP DOL 0x800E6D50: li r5, 0x100):
      * every version but PAL sets MSF_LANGUAGE to 0x100. PAL (and 3D All-Stars) take the saved language
      * or OSGetLanguage, which the sim can't know: left 0 (English).
      */
-    correctOptFlag() { if (!V.GMSP01 && !V.GMSP01_NX) this.setFlag(MSF.LANGUAGE, 0x100); }
+    correctOptFlag() {
+        this.setBool(!this.getBool(MSF.SAVED_RUMBLE_OFF), MSF.RUMBLE);
+        // OSGetSoundMode(): neither the ghost nor the trace (its flag image has no option banks) records it: stereo
+        this.setFlag(MSF.SOUND_MODE, this.getBool(MSF.SAVED_SURROUND) ? 2 : 1);
+        if (V.GMSP01 || V.GMSP01_NX) { const l = this.getFlag(MSF.SAVED_LANGUAGE); if (l !== 0) this.setFlag(MSF.LANGUAGE, l - 1); this.setBool(!this.getBool(MSF.SAVED_SUBTITLES_OFF), MSF.SUBTITLES); }
+        if (!V.GMSP01 && !V.GMSP01_NX) this.setFlag(MSF.LANGUAGE, 0x100);
+    }
+    /** resetOpt */
+    resetOpt() { this.banks[7].fill(0); this.banks[8].fill(0); }
+    /** mLastSaveTime / mLastSaveTimeBackup / mSavedLastSaveTime (OSGetTime: here Date.now()) */
+    lastSaveTime = 0; lastSaveTimeBackup = 0; savedLastSaveTime = 0;
+    /** mSavedCardBools / mSavedCardInts: the card banks as last loaded or saved */
+    private savedCard!: [Int32Array, Int32Array];
+    private keepCard() { this.savedCard = [this.banks[1].slice(), this.banks[2].slice()]; this.savedLastSaveTime = this.lastSaveTime; }
+    /** firstStart */
+    firstStart() { this.resetCard(); this.keepCard(); this.correctFlag(); }
+    /** restore: the card banks back as last loaded or saved */
+    restore() { this.resetCard(); this.lastSaveTime = this.savedLastSaveTime; this.banks[1].set(this.savedCard[0]); this.banks[2].set(this.savedCard[1]); this.correctFlag(); }
+    /**
+     * save: u32 4, s64 the time, u64 0, s32 MSF_SAVE_COUNT (counted first), u16 the Shine count, u16 0,
+     * 16 x u32 0, the card's bools (a bit each, low bit first) padded to 0x200, its ints padded to 0x200
+     */
+    save(time = Date.now()): Uint8Array {
+        this.lastSaveTimeBackup = this.lastSaveTime;
+        this.lastSaveTime = Math.trunc(time);
+        this.incFlag(MSF.SAVE_COUNT, 1);
+        const b = new Uint8Array(SAVE_SIZE), dv = new DataView(b.buffer);
+        dv.setUint32(0, 4);
+        dv.setBigInt64(4, BigInt(this.lastSaveTime));
+        dv.setInt32(20, this.getFlag(MSF.SAVE_COUNT));
+        dv.setUint16(24, this.getFlag(MSF.SHINE_COUNT) & 0xFFFF);
+        const bo = 28 + 64, io = bo + 0x200;
+        for (let i = 0; i < CARD_BOOLS; i++) if (this.getFlag(0x10000 + i)) b[bo + (i >> 3)] |= 1 << (i & 7);
+        for (let i = 0; i < CARD_INTS; i++) dv.setInt32(io + i * 4, this.getFlag(0x20000 + i));
+        return b;
+    }
+    /** load: resetCard, the card read in when the version is 4, kept as the saved copy, then correctFlag */
+    load(b: Uint8Array) {
+        this.resetCard();
+        const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+        if (b.length >= SAVE_SIZE && dv.getUint32(0) === 4) {
+            this.lastSaveTime = Number(dv.getBigInt64(4));
+            const bo = 28 + 64, io = bo + 0x200;
+            for (let i = 0; i < CARD_BOOLS; i++) this.setFlag(0x10000 + i, (b[bo + (i >> 3)] >> (i & 7)) & 1);
+            for (let i = 0; i < CARD_INTS; i++) this.setFlag(0x20000 + i, dv.getInt32(io + i * 4));
+        }
+        this.keepCard();
+        this.correctFlag();
+    }
+    /** saveSuccess: the card as written becomes the saved copy */
+    saveSuccess() { this.keepCard(); }
+    /** saveFail: the time back, the save uncounted */
+    saveFail() { this.lastSaveTime = this.lastSaveTimeBackup; this.incFlag(MSF.SAVE_COUNT, -1); }
+    /** saveOption: u32 2, the saved option bools (u8[1]) and ints (s32[1]), set from the options first */
+    saveOption(): Uint8Array {
+        this.setBool(!this.getBool(MSF.RUMBLE), MSF.SAVED_RUMBLE_OFF);
+        // (OSSetSoundMode: the console's, not kept here)
+        const m = this.getFlag(MSF.SOUND_MODE);
+        if (m === 0 || m === 1) this.setBool(false, MSF.SAVED_SURROUND); else if (m === 2) this.setBool(true, MSF.SAVED_SURROUND);
+        if (V.GMSP01 || V.GMSP01_NX) { this.setFlag(MSF.SAVED_LANGUAGE, this.getFlag(MSF.LANGUAGE) + 1); this.setBool(!this.getBool(MSF.SUBTITLES), MSF.SAVED_SUBTITLES_OFF); }
+        else this.setFlag(MSF.SAVED_LANGUAGE, 0);
+        const b = new Uint8Array(9), dv = new DataView(b.buffer);
+        dv.setUint32(0, 2);
+        const n = this.banks[7].length;
+        for (let i = 0; i < n; i++) if (this.banks[7][i]) b[4 + (i >> 3)] |= 1 << (i & 7);
+        dv.setInt32(5, this.banks[8][0] | 0);
+        return b;
+    }
+    /** loadOption: resetOpt, the saved options read in when the version is 2, then correctOptFlag */
+    loadOption(b: Uint8Array) {
+        this.resetOpt();
+        const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+        if (b.length >= 9 && dv.getUint32(0) === 2) {
+            const n = this.banks[7].length;
+            for (let i = 0; i < n; i++) this.banks[7][i] = (b[4 + (i >> 3)] >> (i & 7)) & 1;
+            if (this.banks[8].length) this.banks[8][0] = dv.getInt32(5);
+        }
+        this.correctOptFlag();
+    }
 
     private slot(flag: number, bools: boolean | null): Int32Array | null {
         const bank = flag >>> 16, d = BANKS[bank];
@@ -59,7 +140,7 @@ export class FlagManager {
         return this.banks[bank];
     }
     /** a copy (to ask decideMarioPosIdx, which clears flags, without touching these) */
-    clone(): FlagManager { const f = new FlagManager(); for (const b in this.banks) f.banks[b] = this.banks[b].slice(); return f; }
+    clone(): FlagManager { const f = new FlagManager(); for (const b in this.banks) f.banks[b] = this.banks[b].slice(); f.savedCard = [this.savedCard[0].slice(), this.savedCard[1].slice()]; f.lastSaveTime = this.lastSaveTime; f.lastSaveTimeBackup = this.lastSaveTimeBackup; f.savedLastSaveTime = this.savedLastSaveTime; return f; }
     getFlag(flag: number): number { const s = this.slot(flag, null); return s ? s[flag & 0xFFFF] : 0; }
     setFlag(flag: number, value: number) {
         const s = this.slot(flag, null); if (!s) return;
@@ -70,6 +151,12 @@ export class FlagManager {
     setBool(value: boolean, flag: number) { if (this.slot(flag, true)) this.setFlag(flag, value ? 1 : 0); }
     incFlag(flag: number, amount: number) { const s = this.slot(flag, false); if (s) s[flag & 0xFFFF] = (s[flag & 0xFFFF] + amount) | 0; }
     decFlag(flag: number, amount: number) { this.incFlag(flag, -amount); }
+    /** incGoldCoinFlag (FlagManager.cpp): the stage's coin count, and the area's record when it's beaten */
+    incGoldCoinFlag(area: number, amount: number) {
+        this.incFlag(MSF.GOLD_COIN_COUNT, amount);
+        area &= 0xFF;   // (u8; JP DOL 0x800E7BCC: addis 2, addi 5 -> MSF_COIN_RECORD_BASE + area)
+        if (this.getFlag(MSF.GOLD_COIN_COUNT) > this.getFlag(MSF.COIN_RECORD_BASE + area)) this.setFlag(MSF.COIN_RECORD_BASE + area, this.getFlag(MSF.GOLD_COIN_COUNT));
+    }
     incMario(amount: number) { this.incFlag(MSF.LIFE_COUNT, amount); if (this.getFlag(MSF.LIFE_COUNT) > 99) this.setFlag(MSF.LIFE_COUNT, 99); }
     getShineFlag(shine: number) { if (shine >= 120) shine = 0; return this.getFlag(MSF.SHINE_BASE + shine) !== 0; }
     setShineFlag(shine: number) {
@@ -153,11 +240,29 @@ export class FlagManager {
         // (MSF_MANTA_SPAWNED: no game code sets it; sirena0's event script appearmanta.sb does, run by
         // eventwatcher.ts)
     }
+    private static stageOf(area: number) { const st = shineStage(area & 0xFF); return st === 0 || st >= 10 ? 1 : st; }
     /** getNozzleRight(area, nozzle) */
     nozzleRight(area: number, nozzle: number) {
-        let st = shineStage(area); if (st === 0 || st >= 10) st = 1;
-        if (nozzle >= 2) nozzle = 0;
+        const st = FlagManager.stageOf(area); nozzle &= 0xFF; if (nozzle >= 2) nozzle = 0;
         return this.getFlag(MSF.NOZZLE_BASE + (st - 1) * 2 + nozzle) !== 0;
+    }
+    getNozzleRight(area: number, nozzle: number) { return this.nozzleRight(area, nozzle); }
+    /** setNozzleRight(area, nozzle) */
+    setNozzleRight(area: number, nozzle: number) {
+        const st = FlagManager.stageOf(area); nozzle &= 0xFF; if (nozzle >= 2) nozzle = 0;
+        const f = MSF.NOZZLE_BASE + (st - 1) * 2 + nozzle;
+        if (this.getFlag(f) === 0) this.setFlag(f, 1);
+    }
+    /** getBlueCoinFlag(area, blueCoin) */
+    getBlueCoinFlag(area: number, blueCoin: number) {
+        const st = FlagManager.stageOf(area); blueCoin &= 0xFF; if (blueCoin >= 50) blueCoin = 0;
+        return this.getFlag(MSF.BLUE_COIN_BASE + (st - 1) * 50 + blueCoin) !== 0;
+    }
+    /** setBlueCoinFlag(area, blueCoin) */
+    setBlueCoinFlag(area: number, blueCoin: number) {
+        const st = FlagManager.stageOf(area); blueCoin &= 0xFF; if (blueCoin >= 50) blueCoin = 0;
+        const f = MSF.BLUE_COIN_BASE + (st - 1) * 50 + blueCoin;
+        if (this.getFlag(f) === 0) { this.incFlag(MSF.BLUE_COIN_COUNT, 1); this.setFlag(f, 1); }
     }
 }
 

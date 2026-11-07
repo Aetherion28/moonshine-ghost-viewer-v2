@@ -8,6 +8,8 @@ import { vNormMs } from '../vecops.js';
 import { HitActor, MSG } from '../engine.js';
 import { MarioSpecial } from './special.js';
 import { S, A, MF } from './base.js';
+import { ANIME_DATA } from './tables.js';
+import { MultiMtxEffect } from '../mtxeffect.js';
 import { SE } from '../soundids.js';
 
 /** J3DGetTranslateRotateMtx (s16 angles: x, then y, then z, then the translation). */
@@ -141,13 +143,11 @@ export abstract class TMarioSim extends MarioSpecial {
         const y = fr(this.pos.y + fr(this.waveGetHeight(this.pos.x, wz, this.pos.z) - wz));
         j3dTRMtx(m, 0, this.mModelFaceAngle, 0, this.pos.x, y, this.pos.z);
     }
-    /** TMapObjWave::getHeight: the ground under (x, y + 50) (checkGroundExactY); a water surface: the sea's wave height, else that surface's; else y */
+    /** gpMapObjWave->getHeight */
     waveGetHeight(x: number, y: number, z: number) {
         const W: any = (this.world as any).mapObjWave;
         if (!W) return y;   // (no gpMapObjWave on the stage)
-        const [h, g] = this.world.col.checkGround(x, fr(fr(y + 50) - -78), z, 0);
-        if (g && g.isWaterSurface()) return g.isSea() ? W.getWaveHeight(x, z) : h;
-        return y;
+        return W.getHeight(x, y, z);
     }
     /** calcBaseMtxTorocco: the player's (the coaster's cart and track) */
     calcBaseMtxTorocco(m: Mtx) { j3dTRMtx(m, 0, this.mModelFaceAngle, 0, this.pos.x, this.pos.y, this.pos.z); }
@@ -276,6 +276,25 @@ export abstract class TMarioSim extends MarioSpecial {
         if (tr < -rollMax) tr = -rollMax;
         this.mWaistRoll = FMA(rate, fr(tr - this.mWaistRoll), this.mWaistRoll);
     }
+    /** TMario::mMultiMtxEffect (initModel: TimeLag on jnt_chest, jnt_arm_R1, jnt_arm_L1; TEnemyMario nulls its pointer) */
+    mMultiMtxEffect: MultiMtxEffect | null = null;
+    /** initModel's TMultiMtxEffect::setup(model, "Mario"): after the model's first calc */
+    setupMtxEffect(own: boolean) {
+        const e = new MultiMtxEffect();
+        e.mNumBones = 3; e.mBoneIDs = [this.mJointIdChest, this.mJointIdArmR1, this.mJointIdArmL1]; e.mMtxEffectType = [0, 0, 0];
+        e.setup(null, 'Mario', (this as any).world.files);
+        this.mModel.fx = e;
+        if (own) this.mMultiMtxEffect = e;
+    }
+    /** TMario::addCallBack's mMultiMtxEffect flags (MarioDraw.cpp:1786) */
+    addCallBackFx() {
+        const e = this.mMultiMtxEffect;
+        if (!e) return;
+        const W: any = (this as any).world;
+        if (0x4B0 > (W.moveTickCount | 0) || this.isUpperPumpingStyle()) e.flagOff(1);
+        else if ((ANIME_DATA[this.mAnimationId][4] & 2) !== 0 && this.mUpperState === 5 /* UPPER_STATE_IDLE */) e.flagOn(1);
+        else e.flagOff(1);
+    }
     calcAnim() {
         this.addUpper();
         this.calcBaseMtx(this.mModel.baseTR);
@@ -283,7 +302,8 @@ export abstract class TMarioSim extends MarioSpecial {
         this.mModel.update();
         const w = this.waistCtrl();
         this.mModel.jointCtrl = w ? { joint: this.mJointIdChnChest, r: w } : null;
-        this.mModel.calc();
+        this.addCallBackFx();
+        this.mModel.calc(true);
         this.mModel.fc[2].update();
     }
 }

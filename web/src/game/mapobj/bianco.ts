@@ -19,19 +19,15 @@ import { DONT_MOVE_XZ, WallCheck, BGCheckData } from '../collision.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { MapObjBase, STATE_NORMAL, mapObjGlobals, newAndRegisterObj } from './base.js';
+import { vtxPosArray } from './lib.js';
 import { HideObjBase } from './hide.js';
 import type { ItemManager } from './item.js';
 import {
     MsMtxSetRotX, MsMtxSetRotY, MsMtxSetRotZ, MTXConcat, rotationSetRotate, normalize, makeRootMtxRot, setRootMtx, setJointWorlds, restJointMtx,
     getWaterPlane, getWaterPos, getWaterSpeed, waterHitPlane, getVerticalVecToTargetXZ, marioGroundPlane, marioTouchGround4cm, marioHipDropping,
-    marioSpeedY, marioGroundLevel, marioWaterGun, marioSwimming, sendToMario, inStreamCube, MapObjLibWave, vtxPosCount,
+    marioSpeedY, marioGroundLevel, marioWaterGun, marioSwimming, sendToMario, inStreamCube, MapObjLibWave, vtxPosArray,
 } from './lib.js';
 
-/** marioIsOn (MapObjLib.cpp): Mario's ground is this object's collision and he's within 4cm of it */
-export const marioIsOn = (o: MapObjBase) => marioGroundPlane(o.world).actor === o && marioTouchGround4cm(o.world);
-/** marioHipAttack */
-export const marioHipAttack = (o: MapObjBase) => marioGroundPlane(o.world).actor === o && marioHipDropping(o.world)
-    && o.world.mario.pos.y + marioSpeedY(o.world) < marioGroundLevel(o.world);
 const DEG = 0.017453294;
 
 // ---------------------------------------------------------------- TBigWindmill
@@ -72,22 +68,121 @@ export class BigWindmill extends MapObjBase {
 }
 
 // ---------------------------------------------------------------- TMapObjRootPakkun
-/** TTrembleModelEffect: the model's vertices shaken (drawing only; its random draws are the game's) */
-class TrembleModelEffect {
-    n = 0; on = false; timer = 0;
-    constructor(public o: MapObjBase) {
+/**
+ * TTrembleModelEffect (MarioUtil/DrawUtil.cpp): the model's vertex positions shaken by a damped spring
+ * toward the model's own (s16 positions in fixed point, or f32). positions() is what the model
+ * draws with (unk18 / unk2C [unk9 ^ 1] after a movement; the model's own when not trembling).
+ */
+export class TrembleModelEffect {
+    /** unk4: the model's positions */
+    unk4: Int16Array | Float32Array | null = null;
+    unk8 = 0; unk9 = 0; unkA = 0; unkC = 0; unk10 = 0;
+    unk14: Int16Array | null = null; unk18: Int16Array[] = []; unk20: Int16Array | null = null; unk24 = 0; unk26 = 0;
+    unk28: Float32Array | null = null; unk2C: Float32Array[] = []; unk34: Float32Array | null = null; unk38 = 0; unk3C = 0;
+    private n = 0;
+    /** goes up whenever positions() changes (for the viewer) */
+    version = 0;
+    private cur: Int16Array | Float32Array | null = null;
+    constructor(o?: MapObjBase) { if (o) this.init(o); }
+    /** init */
+    init(o: MapObjBase) {
         const a = o.mactor;
-        this.n = a ? vtxPosCount(a.data.files.scene(a.model)) : 0;
+        const P = a ? vtxPosArray(a.data.files.scene(a.model)) : null;
+        this.unk10 = 0;
+        if (!P) return;
+        if (!P.f32) { this.unk8 = 0; this.unkA = P.frac; this.unkC = (1 << P.frac) << 16 >> 16; }
+        else { this.unk8 = 2; this.unkA = 0; this.unkC = 1; }
+        this.unk4 = P.data; this.n = P.data.length / 3; this.unk9 = 0;
+        if (!(this.unk8 & 2)) {
+            this.unk14 = (P.data as Int16Array).slice(); this.unk18 = [(P.data as Int16Array).slice(), (P.data as Int16Array).slice()];
+            this.unk20 = new Int16Array(P.data.length); this.unk24 = 0; this.unk26 = 0;
+        } else {
+            this.unk28 = (P.data as Float32Array).slice(); this.unk2C = [(P.data as Float32Array).slice(), (P.data as Float32Array).slice()];
+            this.unk34 = new Float32Array(P.data.length); this.unk38 = 0; this.unk3C = 0;
+        }
     }
-    tremble(_mag: number, _spring: number, _damp: number, dur: number) {
-        this.on = true;
-        for (let i = 0; i < this.n; i++) { MsRandF(); MsRandF(); MsRandF(); }
-        this.timer = dur;
+    /** the random offset: MsRandF inlined, 2 r - 1 (fmsubs) times the magnitude */
+    private static rnd(mag: number) { return fr(mag * FMS(2, MsRandF(), 1)); }
+    /** tremble */
+    tremble(mag: number, spring: number, damp: number, dur: number) {
+        if (!this.unk4) { this.unk10 = dur; return; }
+        this.unk8 |= 1;
+        const src = this.unk4;
+        if (!(this.unk8 & 2)) {
+            this.unk26 = Math.trunc(fr(spring * this.unkC)) << 16 >> 16;
+            this.unk24 = Math.trunc(fr(damp * this.unkC)) << 16 >> 16;
+            for (let i = 0; i < this.n * 3; i++) {
+                this.unk20![i] = Math.trunc(fr(this.unkC * TrembleModelEffect.rnd(mag)));
+                if (i % 3 === 2) for (let k = i - 2; k <= i; k++) { this.unk14![k] = src[k]; this.unk18[0][k] = src[k]; this.unk18[1][k] = src[k]; }
+            }
+        } else {
+            this.unk3C = spring; this.unk38 = damp;
+            for (let i = 0; i < this.n * 3; i++) {
+                this.unk34![i] = TrembleModelEffect.rnd(mag);
+                if (i % 3 === 2) for (let k = i - 2; k <= i; k++) { this.unk28![k] = src[k]; this.unk2C[0][k] = src[k]; this.unk2C[1][k] = src[k]; }
+            }
+        }
+        this.unk10 = dur;
+        this.unk8 &= ~4;
     }
+    /** clash: one random displacement kept (no spring back: unk8 & 4 stops the timer too) */
+    clash(mag: number) {
+        this.tremble(mag, 0, 0, 0);
+        if (!this.unk4) return;
+        if (!(this.unk8 & 2)) for (let i = 0; i < this.n * 3; i++) { const t = this.unk14![i] + this.unk20![i]; this.unk14![i] = t; this.unk18[0][i] = t; this.unk18[1][i] = t; }
+        else for (let i = 0; i < this.n * 3; i++) { const t = fr(this.unk28![i] + this.unk34![i]); this.unk28![i] = t; this.unk2C[0][i] = t; this.unk2C[1][i] = t; }
+        this.cur = !(this.unk8 & 2) ? this.unk18[0] : this.unk2C[0];
+        this.version++;
+        this.unk8 |= 4;
+    }
+    /** movement */
     movement() {
-        if (!this.on) return;
-        if (--this.timer <= 0) { this.on = false; return; }
+        if (!(this.unk8 & 1)) return;
+        if ((this.unk8 & 4) !== 4) {
+            this.unk10--;
+            if (this.unk10 <= 0) { this.reset(); return; }
+        }
+        if (!this.unk4) return;
+        const src = this.unk4;
+        if (!(this.unk8 & 2)) {
+            const p = this.unk14!, v = this.unk20!, A = this.unkA, out = this.unk18[this.unk9];
+            for (let i = 0; i < this.n * 3; i++) {
+                const diff = (src[i] - p[i]) << 16 >> 16;
+                v[i] = v[i] + (((diff * this.unk26) >> A) << 16 >> 16);
+                v[i] = (this.unk24 * v[i]) >> A;
+                p[i] = p[i] + v[i];
+                out[i] = p[i];
+            }
+            this.cur = out;
+        } else {
+            const p = this.unk28!, v = this.unk34!, out = this.unk2C[this.unk9];
+            for (let i = 0; i < this.n * 3; i++) {
+                const diff = fr(src[i] - p[i]);
+                v[i] = FMA(diff, this.unk3C, v[i]);
+                v[i] = fr(this.unk38 * v[i]);
+                p[i] = fr(p[i] + v[i]);
+                out[i] = p[i];
+            }
+            this.cur = out;
+        }
+        this.version++;
+        this.unk9 = 1 - this.unk9;
     }
+    /** reset */
+    reset() {
+        const src = this.unk4;
+        if (src) {
+            if (!(this.unk8 & 2)) { this.unk20!.fill(0); this.unk14!.set(src); this.unk18[0].set(src); this.unk18[1].set(src); }
+            else { this.unk34!.fill(0); this.unk28!.set(src); this.unk2C[0].set(src); this.unk2C[1].set(src); }
+        }
+        this.unk8 &= ~1;
+        this.cur = null;
+        this.version++;
+    }
+    /** the positions the model draws with (null: its own), and the s16 positions' frac */
+    positions(): Int16Array | Float32Array | null { return this.cur; }
+    /** the model's own positions (VTX1's) */
+    rest(): Int16Array | Float32Array | null { return this.unk4; }
 }
 export class MapObjRootPakkun extends MapObjBase {
     static mTremblePower = 15; static mTrembleAccel = fr(0.95); static mTrembleBrake = fr(0.98); static mTrembleTime = 360;
@@ -118,6 +213,8 @@ export class MapObjRootPakkun extends MapObjBase {
 export class BiancoWatermill extends MapObjBase {
     unk138 = fr(0.3);
     constructor(w: World, name = '水車（ビアンコ大）') { super(w, name); }
+    /** TBiancoWatermill::turnByEnemy: nothing */
+    turnByEnemy(_a: any, _p: any) { }
     initMapObj() {
         super.initMapObj();
         if (this.individualName === 'BiaWatermill01' || this.individualName === 'BiaWatermill00') this.bodyRadius = 1200;
@@ -450,8 +547,8 @@ export class LeafBoat extends MapObjBase {
     }
     control() {
         super.control();
-        if (marioHipAttack(this)) this.vel.y = fr(this.vel.y - this.unk154);
-        if (marioIsOn(this)) {
+        if (this.marioHipAttack()) this.vel.y = fr(this.vel.y - this.unk154);
+        if (this.marioIsOn()) {
             this.vel.y = fr(this.vel.y - this.unk150);
             const g = marioWaterGun(this.world);
             if (g.emitting) {
@@ -496,7 +593,7 @@ export class LeafBoatRotten extends LeafBoat {
     load(s: Stream) { super.load(s); this.unk170 = Math.imul(s.s32(), 10); }
     control() {
         super.control();
-        if (marioIsOn(this) && this.isState(STATE_NORMAL)) { this.stateTimer = this.unk170; this.state = 2; }
+        if (this.marioIsOn() && this.isState(STATE_NORMAL)) { this.stateTimer = this.unk170; this.state = 2; }
         const C = LeafBoatRotten.mRottenColor, t = this.tevColor;
         switch (this.state) {
             case 2: {
@@ -532,7 +629,7 @@ export class LeanBlock extends MapObjBase {
     defaultMtx: Mtx = mtx();
     constructor(w: World, name = '傾くブロック') { super(w, name); }
     touchPlayer(_a: HitActor) {
-        if (marioIsOn(this)) {
+        if (this.marioIsOn()) {
             const m = this.world.mario.pos;
             this.unk158.x = fr(this.unk158.x + fr(this.unk140 * fr(fr(m.x - this.pos.x) / this.unk138)));
             this.unk158.z = fr(this.unk158.z + fr(this.unk140 * fr(fr(m.z - this.pos.z) / this.unk13C)));
@@ -592,7 +689,7 @@ const FLOAT_PARAMS: [string, number, number, number, number, number, number, num
 export class MapObjFloatOnSea extends LeanBlock {
     wave: MapObjLibWave | null = null; unk198 = 0; unk19C = 0; unk1A0 = new V3(); unk1AC = 0;
     constructor(w: World, name = '海に浮くオブジェ') { super(w, name); }
-    touchPlayer(a: HitActor) { super.touchPlayer(a); if (marioIsOn(this) && this.wave) this.wave.push(); }
+    touchPlayer(a: HitActor) { super.touchPlayer(a); if (this.marioIsOn() && this.wave) this.wave.push(); }
     control() {
         super.control();
         if (!this.wave) return;

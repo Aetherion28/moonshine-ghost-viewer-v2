@@ -23,11 +23,13 @@
 // temperature) and the picket (BWPicket.model) are in world.extras; neither is drawn once it is in
 // the bath (the game stops performing them). Effects: 'bwan:<particle>' world effects.
 //
-// Not here: camera shake / rumble (shakeCamera), the bas animation sounds, the demo camera.
+// Not here: the bas animation sounds, the demo camera. (shakeCamera's shake and rumble are told as world events.)
 // MarioProxy never sends TAKE / THROWN / HIP_DROP to the picket and has no stick
 // (gpMarioOriginal->mIntendedYaw / mIntendedMag), so from a ghost the chomp stays staked until it
 // shakes the stake out and is never dragged to the bath: see the report.
 
+import { MsSqrtfHW } from '../math.js';
+import { marioTouchGround4cm } from '../mapobj/lib.js';
 import { fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsMtxSetXYZRPH, JMASSin, JMASCos } from '../math.js';
 import { World, NameRef, HitActor, TakeActor, LiveActor, SpineEnemy, EnemyManager, LiveManager, LF, HF, HC, MSG, nerve, Spine, Stream, Params, PSchema, SPINE_PARAMS,
     ANM_BCK, ANM_BTP, ANM_BRK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, PathNode, GraphWeb } from '../engine.js';
@@ -643,11 +645,29 @@ export class BossWanwan extends SpineEnemy {
         else if (b4or5) { if (pass(6) || pass(12)) sparks = true; }
         else if (a.checkCurBckFromIndex(BCK_SHAKE) && pass(4)) sparks = true;
         if (sparks) W.effect('bwan:hibana', this.getJointTrans(1));
+        if (b4or5 && pass(10)) this.shakeCamera(0x16);
         if (a.checkCurBckFromIndex(BCK_BARK)) {
-            if (pass(60) || pass(127) || pass(202)) { W.effect('bwan:jumpRock', this.pos); W.effect('bwan:jumpSmoke', this.pos); }
+            if (pass(60) || pass(127)) { this.shakeCamera(0x16); W.effect('bwan:jumpRock', this.pos); W.effect('bwan:jumpSmoke', this.pos); }
+            if (pass(202)) { this.shakeCamera(0x17); W.effect('bwan:jumpRock', this.pos); W.effect('bwan:jumpSmoke', this.pos); }
         }
+        if (a.checkCurBckFromIndex(BCK_SHAKE) && pass(40)) this.shakeCamera(0x16);
         if (this.hitPoints !== 0) W.effect('bwan:yugami', this.getJointTrans(1));
         if (this.unk190 !== 0 && this.hitPoints !== 0) { W.effect('bwan:hityuge', this.getJointTrans(1)); this.unk190 = 0; }
+    }
+    /** shakeCamera: on the ground within the shake length (mSLShakeLengthMax at full heat to mSLShakeLengthMaxHP0), a camera shake of that mode and SMSRumbleMgr->start(8) (told as world events) */
+    shakeCamera(mode: number) {
+        if (!marioTouchGround4cm(this.world)) return;
+        const dist = MsSqrtfHW(this.distToMarioSq);
+        const lenMax = this.PB.mSLShakeLengthMax, lenMaxHP0 = this.PB.mSLShakeLengthMaxHP0;
+        const heat = this.mactor!.checkCurBckFromIndex(BCK_BARK) ? 1 : fr(this.hitPoints / this.PB.mSLBWHitPointMax);
+        const length = FMA(lenMax, heat, fr(lenMaxHP0 * fr(1 - heat)));
+        const left = fr(length - dist);
+        if (left < 0) return;
+        let power = fr(left / length);
+        if (power > 1) power = 1;
+        this.world.cameraShake?.startShake(mode, fr(power * heat));
+        this.world.events.push({ t: this.world.tickCount, kind: 'cameraShake', data: { mode, power: fr(power * heat), p: this.pos.clone() } });
+        this.world.events.push({ t: this.world.tickCount, kind: 'rumble', data: { id: 8, p: this.pos.clone() } });
     }
     showMessage(msg: number) {
         const bit = 1 << (msg - 0xE001A);

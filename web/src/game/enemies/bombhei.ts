@@ -87,6 +87,17 @@ export class BombHei extends WalkerEnemy {
         }
         this.onLiveFlag(LF.UNK40);
     }
+    /** changeOut: out of the block dead (its coins), where the block was */
+    changeOut() {
+        this.world.sound(SE.EN_TELSA_RECOVER, this.pos);
+        this.onLiveFlag(LF.DEAD);
+        this.genEventCoin();
+        this.onHitFilter(HF.NO_COLLISION);
+        this.pos.set(this.juiceBlock.pos);
+        this.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK);
+        this.juiceBlock.kill();
+        this.juiceBlock = null;
+    }
     /** genEventCoin: a coin toward Mario when he picked it up (20 at most) */
     genEventCoin() {
         const man = this.manager as BombHeiManager;
@@ -108,11 +119,14 @@ export class BombHei extends WalkerEnemy {
         this.rot.y = rangeRand(0, 360);
         this.unk19C = 0;
         this.setBckAnm(BCK_DOWN);
-        // (the camera shake and rumble)
+        this.world.cameraShake?.startShake(6, 1);
+        // (the rumble)
     }
     calcRootMatrix() {
         super.calcRootMatrix();
-        // TODO: SMSGetMarDirector()->checkFlag(0xF) kills it (not modelled)
+        // SMSGetMarDirector()->checkFlag(0xF): a Shine got or a stage change pending
+        const T = this.world.talk;
+        if ((T && (T.dflags & 0xF)) || this.world.stageTransitionPending) { this.onLiveFlag(LF.DEAD); this.onHitFilter(HF.NO_COLLISION); }
         if (this.isBckAnm(BCK_DOWN) && this.mactor!.getFrameCtrl(ANM_BCK)!.checkPass(2)) {
             const e = this.world.conductor.makeOneEnemyAppear(this.pos, 'エフェクト爆発マネージャー', 1) as any;
             if (e && e.generate) e.generate(this.pos, this.scale);
@@ -275,6 +289,7 @@ BombHeiNerves.explosion = nerve<BombHei>('TNerveBombHeiExplosion', (spine: S) =>
         self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8);
         self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
         self.holder = null;
+        self.stopAnmSound();
         spine.reset();
         spine.setNext(spine.default);
         spine.pushAfterCurrent(spine.default);

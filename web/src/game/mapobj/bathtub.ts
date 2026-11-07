@@ -213,8 +213,8 @@ export class Bathtub extends MapObjBase {
         this.unk250 = P.quakeRelease; this.unk258 = P.quakeRecover; this.unk25C = P.quakeRecover; this.unk254 = P.hipdropRelease;
         this.unk248 = P.launchStopCount;
         const k = this.koopa();
-        this.world.events.push({ t: this.world.tickCount, kind: 'cameraShake', data: { mode: 25, power: 1, p: this.pos.clone() } });
-        this.world.events.push({ t: this.world.tickCount, kind: 'cameraShake', data: { mode: 26, power: 1, p: this.pos.clone() } });
+        this.world.cameraShake?.startShake(0x25, 1);
+        this.world.cameraShake?.startShake(0x26, 1);
         const m = this.world.mario as any;
         if (typeof m.throwMario === 'function') m.throwMario(new V3(0, 1, 0), 10);   // SMS_ThrowMario
         if (k) k.getDown();

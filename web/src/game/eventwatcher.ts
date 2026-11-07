@@ -548,7 +548,7 @@ const NPC: Record<string, Ev> = {
     },
     onTalkToDummyNpc: noop(0, (it) => { const d = any(search(it, 'ダミーＮＰＣ')); if (d) { onLive(d, LF.DEAD, false); onLive(d, LF.UNK40000, false); d.talkForbid = 120; } }),
     // the NPC's balloon (presentation)
-    setNpcBalloonMessage: noop(3, (it, a) => effect(it, 'balloon:' + a[1].getDataInt(), any(byHandle(it, a[0]))?.pos)),
+    setNpcBalloonMessage: noop(3, (it, a) => { const npc = any(byHandle(it, a[0])); if (npc && npc.setBalloonMessage) npc.setBalloonMessage(a[1].getDataInt(), a[2].getDataInt()); else effect(it, 'balloon:' + a[1].getDataInt(), npc?.pos); }),
     setNpcTalkForbidCount: noop(2, (it, a) => { const npc = any(byHandle(it, a[0])); if (npc) npc.talkForbid = a[1].getDataInt() & 0xFFFF; }),
     npcDanceOn: noop(1, (it, a) => call(byHandle(it, a[0]), 'npcDanceIn')),
     npcDanceOffHappyOn: noop(1, (it, a) => { const npc = any(byHandle(it, a[0])); call(npc, 'offActionFlag', NA_DANCE); call(npc, 'npcHappyIn', 2); }),

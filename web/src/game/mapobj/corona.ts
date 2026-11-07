@@ -24,7 +24,6 @@ import { SE } from '../soundids.js';
 import '../sound.js';
 import { MapObjBase, MOF, STATE_NORMAL } from './base.js';
 import { MTXConcat, normalize, setRootMtx, marioGroundPlane, marioTouchGround4cm, marioWaterGun, sendToMario, inStreamCube, mapObjWave } from './lib.js';
-import { marioIsOn } from './bianco.js';
 
 /** plane->getActor() == this && SMS_IsMarioTouchGround4cm() */
 const marioStandsOn = (o: MapObjBase) => { const p = marioGroundPlane(o.world); return !!p && p.actor === o && marioTouchGround4cm(o.world); };
@@ -254,7 +253,7 @@ export class MuddyBoat extends MapObjBase {
     }
     control() {
         super.control();
-        if (marioIsOn(this)) this.moveByWater();
+        if (this.marioIsOn()) this.moveByWater();
         switch (this.state) {
             case STATE_NORMAL:
                 this.unk140 = fr(this.unk140 * this.unk144);

@@ -19,7 +19,7 @@ import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import { holdKey } from '../sound.js';
-import { MapObjBase, mapObjGlobals } from './base.js';
+import { MapObjBase, mapObjGlobals, itemManager } from './base.js';
 import { HideObjBase } from './hide.js';
 import type { ItemManager } from './item.js';
 import { MTXConcat, MTXRotAxisRad, normalize, marioStatus } from './lib.js';
@@ -27,7 +27,6 @@ import { MTXConcat, MTXRotAxisRad, normalize, marioStatus } from './lib.js';
 const EPSILON = fr(3.81469727e-06);
 const UP = new V3(0, 1, 0);
 import { MSF } from '../flags.js';
-const itemManager = (w: World) => mapObjGlobals(w).itemManager as ItemManager | null;
 /** SMS_IsMarioStatusThrownDown: MARIO_STATUS_THROWN_DOWN (0x208B8; the ghost's proxy never is) */
 const marioThrownDown = (w: World) => marioStatus(w) === 0x208B8;
 /** SMS_IsMarioDashing: MARIO_FLAG_FLUDD_EMITTING (0x4000); the proxy: spraying with the turbo nozzle */

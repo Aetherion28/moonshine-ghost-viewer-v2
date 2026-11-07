@@ -17,7 +17,7 @@ import { MapObjBase, MapObjBaseManager, MOF, STATE_NORMAL, OBJ_MAKERS, UNIQUE_MA
 import { MapObjGeneral, GS } from './general.js';
 import { marioOnYoshi } from './lib.js';
 import { SE } from '../soundids.js';
-import { MSF } from '../flags.js';
+import { MSF, shineStage } from '../flags.js';
 import { holdKey } from '../sound.js';
 import { V } from '../version.js';
 
@@ -135,10 +135,11 @@ export class Coin extends Item {
     taken(a: HitActor) {
         const c = itemCounts(this.world);
         c.gold++;
+        this.world.flags.incGoldCoinFlag(shineStage(this.world.map), 1);
         this.world.sound(SE.SY_COIN, this.pos);
         tell(this.world, 'coinGet', this, { count: c.gold });
         if (this.container) this.container.receiveMessage(this, MSG.DETACH);
-        if (c.gold === 100) {
+        if (this.world.flags.getFlag(MSF.GOLD_COIN_COUNT) === 100) {
             const im = mapObjGlobals(this.world).itemManager as ItemManager | null;
             if (im) im.makeShineAppearWithDemo('シャイン（１００枚コイン用）', 'シャイン（１００枚コイン用）カメラ', this.pos.x, this.pos.y, this.pos.z);
         }
@@ -383,7 +384,6 @@ export class Shine extends Item {
     }
     appearWithDemo(camera: string) {
         this.unk18C = demoLength(this.world, camera);
-        this.world.events.push({ t: this.world.tickCount, kind: 'demoCamera', data: { name: camera, p: this.pos.clone(), frames: this.unk18C } });
         const T = this.world.talk;
         if (!T) { this.appearWithTime(this.unk18C, -1, -1, -1); return; }
         // TShine::appearWithTimeCallback (Item.cpp:739): the appearance starts with the demo, the world
@@ -433,6 +433,8 @@ export class ItemNozzle extends Item {
 }
 export class NozzleBox extends MapObjGeneral {
     nozzleType = 0; item: ItemNozzle | null = null; unk150 = 0; unk154 = 0; nozzleName = ''; unk15C = true; unk166 = false;
+    /** mBoxColor (GXColorS10) */
+    boxColor = { r: 0xFF, g: 0xFF, b: 0xFF, a: 0x64 };
     constructor(w: World, name = 'ノズルボックス') { super(w, name); }
     makeModelValid() {
         if (this.item && !this.item.checkLiveFlag(LF.DEAD)) { this.item.kill(); this.appear(); }
@@ -489,13 +491,16 @@ export class NozzleBox extends MapObjGeneral {
         this.unk15C = s.str() === 'valid';
         // (a rocket / turbo box is valid once this area has its right)
         const F = this.world.flags, m = this.world.map;
-        if (this.nozzleName === 'normal_nozzle_item') this.nozzleType = HOVER;
-        else if (this.nozzleName === 'rocket_nozzle_item') { this.nozzleType = ROCKET; if (F.nozzleRight(m, 0)) { this.unk15C = true; this.unk166 = true; } }
-        else if (this.nozzleName === 'back_nozzle_item') { this.nozzleType = TURBO; if (F.nozzleRight(m, 1)) { this.unk15C = true; this.unk166 = true; } }
+        const C = this.boxColor;
+        if (this.nozzleName === 'normal_nozzle_item') { this.nozzleType = HOVER; C.r = 0; C.g = 0; C.b = 0xFF; }
+        else if (this.nozzleName === 'rocket_nozzle_item') { this.nozzleType = ROCKET; C.r = 0xFF; C.g = 0; C.b = 0; if (F.nozzleRight(m, 0)) { this.unk15C = true; this.unk166 = true; } }
+        else if (this.nozzleName === 'back_nozzle_item') { this.nozzleType = TURBO; C.r = 0x5A; C.g = 0x5A; C.b = 0x78; if (F.nozzleRight(m, 1)) { this.unk15C = true; this.unk166 = true; } }
         this.unk150 = fr(s.f32() * 0.02);
         this.unk154 = s.f32();
         if (this.unk154 < 0) this.unk154 = 20;
-        this.startAnim(3); this.startAnim(2); this.startAnim(0);
+        this.initPacketMatColor(1, C); this.startAnim(3);
+        this.initPacketMatColor(1, C); this.startAnim(2);
+        this.initPacketMatColor(1, C); this.startAnim(0);
     }
 }
 
@@ -579,8 +584,8 @@ OBJ_MAKERS.unique = (w, name) => {
         case 'normal_nozzle_item': case 'back_nozzle_item': case 'rocket_nozzle_item': case 'yoshi_whistle_item': return new ItemNozzle(w);
         case 'joint_coin': return new Coin(w, 'コイン');
         case 'sand_bird_test': return new Item(w, 'アイテム');
-        // TODO: TJuiceBlock (MapObjBlock.cpp) and the other unique classes; a plain map object for now
-        case 'NormalBlock': case 'JuiceBlock': case 'no_data': case 'maregate': case 'SandBirdBlock': return new MapObjBase(w, '地形オブジェ基底');
+        // (TJuiceBlock / TTelesaBlock: block.ts)
+        case 'NormalBlock': case 'no_data': case 'maregate': case 'SandBirdBlock': return new MapObjBase(w, '地形オブジェ基底');
         case 'bigWindmillBlock': return new MapObjBase(w, '風車の台');
     }
     const make = UNIQUE_MAKERS.get(name);
@@ -588,9 +593,14 @@ OBJ_MAKERS.unique = (w, name) => {
 };
 /** newAndRegisterObjByEventID: what a hidden object holds (coins by event id, a Shine by name: 777). */
 export function newAndRegisterObjByEventID(w: World, id: number, name: string): MapObjBase | null {
+    // TItemManager::newAndRegisterCoin (static: only event 100 needs gpItemManager, its unk78)
     const im = mapObjGlobals(w).itemManager as ItemManager | null;
-    const c = im ? im.newAndRegisterCoin(id) : null;
-    if (c) return c;
+    let c: Coin | null | undefined;
+    if (id < 0x32) c = newAndRegisterObj(w, 'coin_blue') as Coin | null;
+    else if (id === 100) c = im ? im.unk78 : null;
+    else if (id === 200) c = newAndRegisterObj(w, 'coin_red') as Coin | null;
+    if (c) { c.eventId = id; return c; }
+    if (c === null) return null;   // (the game: a coin event never falls through to the table)
     switch (id) {
         case 777: return w.search(`シャイン（${name}）`) as MapObjBase | null;
         // the fruit (fruit.ts makes them by name)

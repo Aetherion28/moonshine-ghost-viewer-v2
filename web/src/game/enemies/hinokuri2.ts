@@ -9,11 +9,11 @@
 // Its four hit objects (THino2Hit: head, body, two feet) follow joints and forward what hits them;
 // the feet trample Mario and goop blobs while it walks.
 //
-// Not here: particles (goop / water), sounds, camera shakes, the shadow, the question manager,
+// Not here: particles (goop / water), sounds, the shadow, the question manager,
 // THino2Mask's drawing (only its hit count is kept), THino2MtxCalc's animation blending and foot
 // IK and the head callback's scaling (the joints are the plain BCK's).
 
-import { fr, V3, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsClamp, MsRandF } from '../math.js';
+import { fr, V3, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsClamp, MsRandF, rand } from '../math.js';
 import { World, SpineEnemy, EnemyManager, HitActor, LF, HF, HC, MSG, ANM_BCK, nerve, Spine, Stream, Params, PSchema, SPINE_PARAMS, LiveManager } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -189,9 +189,9 @@ export class Hinokuri2 extends SpineEnemy {
     }
     generateEnemy() {
         const p = this.checkLiveFlag(LF.CLIPPED_OUT) ? new V3(this.pos.x, fr(this.pos.y + 100), this.pos.z) : this.getJointTrans(0x14);
-        const name = MsRandF() > 0.5 ? 'ナメクリマネージャー' : 'ハムクリマネージャー';
-        // (TConductor::makeEnemyAppear(p, name, 1, 0): the first dead one)
-        this.world.conductor.makeOneEnemyAppear(p, name, 0);
+        // (rand() * (1.0f / (RAND_MAX + 1.0f)): fmuls of the converted rand(), JP 0x8026EF10)
+        const name = fr(fr(1 / 32768) * rand()) > 0.5 ? 'ナメクリマネージャー' : 'ハムクリマネージャー';
+        this.world.conductor.makeEnemyAppear(p, name, 1, 0);
     }
     /** changeBck (the blend into the new animation, THino2MtxCalc, isn't modelled) */
     changeBck(i: number) {
@@ -345,7 +345,11 @@ Hino2Nerves.graphWander = nerve<Hinokuri2>('TNerveHino2GraphWander', (spine: S) 
     }
     if (spine.time === 0) self.changeBck(BCK.WALK);
     if (self.mCurrentBck === BCK.WALK) self.walkToCurPathNode(self.marchSpeed, self.turnSpeed, 0);
-    // (frames 0x24 / 0x55 of the walk shake the camera)
+    const f = frameNo(self);
+    if (self.mLevel !== 0 && !self.checkLiveFlag(LF.CLIPPED_OUT) && !self.isAirborne() && (f === 0x24 || f === 0x55)) {
+        const ws = self.P.mSLWalkShake;
+        if (!(fr(ws * ws) < self.distToMarioSq)) self.world.cameraShake?.startShake(3, fr(0.8));
+    }
     return false;
 });
 Hino2Nerves.fly = nerve<Hinokuri2>('TNerveHino2Fly', (spine: S) => {
@@ -368,7 +372,11 @@ Hino2Nerves.jumpIn = nerve<Hinokuri2>('TNerveHino2JumpIn', (spine: S) => {
 });
 Hino2Nerves.landing = nerve<Hinokuri2>('TNerveHino2Landing', (spine: S) => {
     const self = spine.body;
-    if (spine.time === 0) self.changeBck(BCK.LANDING);
+    if (spine.time === 0) {
+        self.changeBck(BCK.LANDING);
+        const js = self.P.mSLJumpShake;
+        if (!(fr(js * js) < self.distToMarioSq)) self.world.cameraShake?.startShake(4, fr(0.8));
+    }
     return ends(self);
 });
 Hino2Nerves.turn = nerve<Hinokuri2>('TNerveHino2Turn', (spine: S) => {
@@ -387,7 +395,7 @@ Hino2Nerves.prePol = nerve<Hinokuri2>('TNerveHino2PrePol', (spine: S) => {
     if (self.mCurrentBck === BCK.WAIT && ends(self)) {
         const n = self.mWaitTimer + 1;
         if (n > self.P.mSLPrePolWait) {
-            if (MsRandF() < self.P.mSLStampProb) spine.pushAfterCurrent(Hino2Nerves.stamp);
+            if (fr(rand() * fr(1 / 32768)) < self.P.mSLStampProb) spine.pushAfterCurrent(Hino2Nerves.stamp);
             else spine.pushAfterCurrent(Hino2Nerves.pollute);
             self.mWaitTimer = 0;
             return true;
@@ -452,7 +460,11 @@ Hino2Nerves.squat = nerve<Hinokuri2>('TNerveHino2Squat', (spine: S) => {
     self.unk188 = 0;
     if (spine.time === 0) self.changeBck(BCK.SQUAT);
     if (ends(self)) {
-        if (self.mCurrentBck === BCK.SQUAT) self.changeBck(BCK.SQUAT_END);
+        if (self.mCurrentBck === BCK.SQUAT) {
+            const js = self.P.mSLJumpShake;
+            if (!(fr(js * js) < self.distToMarioSq)) self.world.cameraShake?.startShake(4, fr(0.8));
+            self.changeBck(BCK.SQUAT_END);
+        }
         if (self.mCurrentBck === BCK.SQUAT_END) { spine.pushAfterCurrent(Hino2Nerves.burst); return true; }
     }
     return false;
@@ -499,6 +511,8 @@ Hino2Nerves.stamp = nerve<Hinokuri2>('TNerveHino2Stamp', (spine: S) => {
     }
     const f = frameNo(self);
     if (!self.isAirborne() && (f === 0x1C || f === 0x3E)) {
+        const js = self.P.mSLJumpShake;
+        if (!(fr(js * js) < self.distToMarioSq)) self.world.cameraShake?.startShake(4, fr(0.8));
         const q = self.P.mSLStampQuakeLen;
         if (self.distToMarioSq < fr(q * q)) sendToMario(self.world, self, MSG.SUPER_HIP_DROP);
     }

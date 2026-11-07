@@ -5,6 +5,7 @@
 // their own animation, the others copy one of theirs. Also the helpers the other animals share
 // (SMS_Eular2Quat, TQuat4 rotate, CLBChaseGeneralConstantSpecifySpeed, items by event ID).
 
+import { SE, registerTrans, createRandPlayVec, startSeRandPlay } from '../sound.js';
 import { fr, V3, Quat, MsRandF, MsRandI, MsWrap, MsClamp, MsAngleDiff, MsGetRotFromZaxis, JMASSin, JMASCos, s16, Mtx, jgInvSqrt } from '../math.js';
 import { vSq, jgSqrt, vLen } from '../vecops.js';
 import { mslSinf, mslCosf } from '../math.js';
@@ -107,8 +108,8 @@ export function calcRotateZXYTranslate(m: Mtx, r: V3, t: V3) {
 }
 /** The director's last movement tick of the frame (TGraphics::unk0 & 2: DIRECTOR_FLAG_LAST_SIMULATION_TICK). */
 export const isLastTick = (w: World) => (w.tickCount & 3) === 0;
-/** SMS_IsInOtherFastCube: the cube manager isn't ported (nothing is in another "fast" cube). */
-export const isInOtherFastCube = (_w: World, _p: V3) => false;
+import { isInOtherFastCube } from '../mapwire.js';
+export { isInOtherFastCube };
 
 /**
  * An item a scene.bin event ID names (TMapObjBaseManager::newAndRegisterObjByEventID, through
@@ -171,6 +172,8 @@ export class MewManager extends AnimalManagerBase {
         this.clipRadius = this.animalSave.mSLViewClipRadius;
     }
     createModelData() { this.createModelDataArray(['kamome_high.bmd']); }
+    /** loadAfter: a rand-play slot per gull for its cry */
+    loadAfter() { super.loadAfter(); createRandPlayVec(this.world, SE.OBJ_KAMOME_SOLO, this.objs.length); }
 }
 
 // ---------------------------------------------------------------- TAnimalBase
@@ -178,6 +181,8 @@ export class AnimalBase extends SpineEnemy {
     /** mFrameTimer (TAnimalBaseUnk150): counted up to [1], only reset */
     frameTimer = [0, 1];
     constructor(w: World, public type: number, name = '?') { super(w, name); this.actorType = type | 0; }
+    /** loadAfter: a gull's position for its rand-played cry */
+    loadAfter() { if (this.actorType === AT.ANIMAL_MEW) registerTrans(this.world, SE.OBJ_KAMOME_SOLO, this.pos); }
     get save(): AnimalSave { return (this.manager as AnimalManagerBase).animalSave || readParams('', this.world.files, ANIMAL_SAVE); }
     init(m: LiveManager | null) {
         if (!m) { this.world.conductor.aloneActors.push(this); return; }
@@ -237,6 +242,7 @@ export class AnimalBase extends SpineEnemy {
                 this.posDelta.zero();
                 this.control();
                 this.pos.add(this.posDelta).fround();
+                if (this.actorType === AT.ANIMAL_MEW) startSeRandPlay(this.world, SE.OBJ_KAMOME_SOLO, this.instanceIndex);
             }
             cue &= ~CUE_MOVE;
         }

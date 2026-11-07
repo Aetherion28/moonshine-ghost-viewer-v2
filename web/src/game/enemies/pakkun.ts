@@ -64,6 +64,9 @@ export class Pakkun extends SmallEnemy {
     unk1B0 = 0; unk1B1 = 0; unk1B2a = 0; unk1B8 = 1; unk1BC = 0;
     static mHeadJntIndex = 0;
     constructor(w: World, name = 'パックン') { super(w, name); }
+    /** TPakkun::isCollidMove / decHpByWater: no collision moves, no damage by water */
+    isCollidMove(_a: HitActor) { return false; }
+    decHpByWater(_a: HitActor) { }
     load(s: Stream) {
         super.load(s);
         this.reset();
@@ -146,6 +149,8 @@ export class Pakkun extends SmallEnemy {
 
 export class StayPakkun extends Pakkun {
     constructor(w: World, name = '固定パックン') { super(w, name); }
+    /** TStayPakkun::setAfterDeadEffect: none */
+    setAfterDeadEffect() { }
     load(s: Stream) { super.load(s); this.unk199 = 1; }
     init(m: any) {
         super.init(m);

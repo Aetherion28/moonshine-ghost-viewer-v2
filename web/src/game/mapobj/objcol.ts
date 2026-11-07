@@ -40,7 +40,7 @@ export class ObjCollision {
     prev = new V3();
     file: ColFile | null = null;
     constructor(public w: World, public kind: number, public owner: LiveActor | null) { }
-    private gridKind() { return this.kind === KIND_MOVE ? 'move' : 'static'; }
+    private gridKind() { return this.kind === KIND_MOVE ? 'move' : this.kind === KIND_WARP ? 'warp' : 'static'; }
     private add(d: BGCheckData) { this.w.col.add(d, this.gridKind()); }
     /** loadCollisionData: "/scene/<path>.col" */
     init(path: string, flags: number) {

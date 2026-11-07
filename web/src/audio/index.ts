@@ -15,6 +15,7 @@ import { stageBgm } from './system.js';
 import { ANIME_DATA, ANIME_FILES } from '../game/player/tables.js';
 import { marioVoiceChange, startMarioVoice, isAnimVoice, VoiceContext } from './voice.js';
 import { SE } from '../game/soundids.js';
+import { PadRumble } from './rumble.js';
 
 interface GameFS { has(p: string): boolean; read(p: string): Promise<ArrayBuffer>; list(): string[]; }
 export interface AudioFrame {
@@ -82,9 +83,12 @@ export class GameAudio {
     private jingleUntil = 0;
     /** the music a stage's game code switched to (MSBgm::startBGM of a boss's), from QF t0 of that stage */
     private override: { id: number; seg: string; t0: number } | null = null;
+    /** a bgmStop's segment and time: no music there after it */
+    private bgmStopped: { seg: string; t: number } | null = null;
     private lastT = -1; private paused = true; private lastWall = 0; private lastMusicT = 0;
     /** held sounds: key -> the playback time it was last asked for */
     private held = new Map<string, number>();
+    private rumble = new PadRumble();
     private evKey: object | null = null; private evDone = 0;
     private bas: (BasEntry[] | null)[] = []; private bckFrames: number[] = [];
     private marioPrev: { anim: number; frame: number } | null = null;
@@ -174,6 +178,8 @@ export class GameAudio {
 
     /** Every viewer frame. */
     frame(f: AudioFrame) {
+        // the pad rumble (rumble.ts), with or without the sound
+        try { this.rumble.frame(f.events, f.eventsKey, f.tick, f.playing && Math.abs(f.speed - 1) < 1e-3); } catch { }
         if (!this.ready || !this.node) return;
         const now = performance.now() / 1000;
         const scrubbing = Math.abs(f.t - this.lastT) > 0 && !f.playing;
@@ -186,12 +192,13 @@ export class GameAudio {
         // the stage's music: started from the stage's start; re-seeked when the time jumps (a scrub,
         // a skip) or drifts far from the playback (a slow machine), else left to play on
         const ov = this.override && this.override.seg === f.segKey && f.t >= this.override.t0 ? this.override : null;
-        const id = this.music ? (ov ? ov.id : stageBgm(f.area, f.episode)) : -1;
+        const stopped = !!this.bgmStopped && this.bgmStopped.seg === f.segKey && f.t >= this.bgmStopped.t;
+        const id = this.music && !stopped ? (ov ? ov.id : stageBgm(f.area, f.episode)) : -1;
         const key = f.segKey + '|' + id;
         const musicT = Math.max(0, (f.t - (ov ? ov.t0 : f.segStart)) / QF_PER_SECOND);
         if (key !== this.bgmKey) {
             this.bgmKey = key; this.bgmRunning = false;
-            if (id < 0) this.post({ type: 'stopBgm' });
+            if (id < 0 && !stopped) this.post({ type: 'stopBgm' });   // (a bgmStop's fade is left to run)
         }
         if (id >= 0 && audible && now >= this.jingleUntil) {
             const dWall = now - this.lastWall, dMusic = musicT - this.lastMusicT;
@@ -219,6 +226,19 @@ export class GameAudio {
                     if (id === undefined || !this.music || (f.tick !== undefined && e.t !== undefined && e.t < f.tick - 3)) continue;
                     this.post({ type: 'bgm', id, seek: 0 });
                     this.jingleUntil = now + (JINGLES[id] ?? 5); this.bgmRunning = false;
+                    continue;
+                }
+                // MSBgm::stopTrackBGM(track, fade): the music the game code started (a boss's) stopped with its fade,
+                // and kept off for the rest of the stage segment (the sim plays one music track)
+                if (e.kind === 'bgmStop') {
+                    if (f.tick !== undefined && e.t !== undefined && e.t < f.tick - 3) continue;
+                    if (this.music) this.post({ type: 'fadeStopBgm', frames: e.data ? e.data.frames || 0 : 0 });
+                    this.override = null; this.bgmStopped = { seg: f.segKey, t: f.t };
+                    continue;
+                }
+                // (a held sound let go at once: JAIAnimeSound::stop, the anm sound's held entries)
+                if (e.kind === 'soundStop' && e.data && e.data.hold) {
+                    for (const k of [...this.held.keys()]) if (k.startsWith(e.data.hold)) { this.held.delete(k); this.post({ type: 'seRelease', hold: k }); }
                     continue;
                 }
                 if (e.kind !== 'sound' || !this.sfx) continue;

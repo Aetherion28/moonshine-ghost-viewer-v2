@@ -118,7 +118,7 @@ export abstract class MarioJump extends MarioRun {
                 if (this.mForwardVel > 16 && this.mStatus !== S.ROCKET_LANDING) {
                     this.playerRefrection(0);
                     this.mFaceAngle.y = s16(this.mFaceAngle.y + 0x8000);
-                    if (this.mWallPlane) { this.changePlayerStatus(S.WALL_SLIDE, 0, false); break; }
+                    if (this.mWallPlane) { this.changePlayerStatus(S.WALL_SLIDE, 0, false); if (this.isMario()) this.world.cameraShake?.startShake(1, 1); break; }
                     if (this.mVel.y > 0) this.mVel.y = 0;
                     if (this.mForwardVel >= 38) { this.changePlayerStatus(S.JUMP_SHORT_BACK_DOWN, 0, false); break; }
                     if (this.mForwardVel > 8) this.setPlayerVelocity(-8);
@@ -407,6 +407,7 @@ export abstract class MarioJump extends MarioRun {
                 this.attackRadius = this.mDeParams.mHipdropRadius; this.attackHeight = this.mDeParams.mAttackHeight;
                 const r = this.jumpProcess(0);
                 if (r === 1) {
+                    if (this.isMario()) this.world.cameraShake?.startShake(this.mStatusState === 2 ? 0 : 0x27, 1);
                     const a = this.mGroundPlane.actor as HitActor | null;
                     if (a) {
                         // the revolving fence's inner panel: he drops through it, flipping it

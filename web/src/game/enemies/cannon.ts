@@ -18,10 +18,11 @@
 //
 // Not here: the particles, the damage fog, rumble, the demo cameras (tyorocam_*), the mole's and
 // barrels' anm sounds, the Mario-in-the-cannon model (hodai_mario.bmd: unk238 is never set here),
-// TFlagManager's MSF_MONTY_MOLE_DEFEATED, and the director's STATE_UNK1 checks (taken as false).
+// and TFlagManager's MSF_MONTY_MOLE_DEFEATED.
 // The Bullet Bills (killerShoot's area-5 branch) come from enemies/killer.ts's キラーマネージャー.
 
 import { MSF } from '../flags.js';
+import { DIR } from '../player/player.js';
 import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, MsClamp, MsWrap, MsSin, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsMtxSetRotRPH, MsMtxSetXYZRPH, JMASSin, JMASCos, MsRandF, s16 } from '../math.js';
 import { World, Stream, HitActor, LiveActor, MActor, LF, HF, HC, MSG, ANM_BCK, ANM_BTK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, nerve, Spine, PathNode, PSchema, SpineEnemy, MoveCollision } from '../engine.js';
@@ -245,6 +246,8 @@ export class Cannon extends SmallEnemy {
         if (this.unk230 === 9) { this.unk239 = 0; this.setGoalPath(new PathNode(null, new V3(-565, 8500, 7675))); }
     }
     isCollidMove(_a: HitActor) { return false; }
+    /** TCannon::startChorobeiShout: nothing */
+    startChorobeiShout() { }
     isInhibitedForceMove() { return true; }
     isHitVallid(_m: number) { return false; }
     /** getModel()->getAnmMtx(j) (the base TR matrix for -1) */
@@ -450,7 +453,10 @@ export class Cannon extends SmallEnemy {
             v.scale(rate);
             k.rot.set(0, MsWrap(MsGetRotFromZaxisY(v), 0, 360), 0);
             k.scale.set(0.1, 0.1, 0.1);
-            // (TMarDirector STATE_UNK1: slower and bigger)
+            if (directorStateUnk1(this.world)) {
+                v.x = fr(v.x * 0.2); v.y = fr(v.y * 0.4); v.z = fr(v.z * 0.2);
+                k.scale.set(0.6, 0.6, 0.6);
+            }
             if (k.setColorType) k.setColorType();
             k.unk1A8 = v.clone();
             k.vel.set(v);
@@ -511,8 +517,8 @@ export class Cannon extends SmallEnemy {
         g.scale.y = MsClamp(fr(g.scale.y * fr(1.01)), 0, 0.22);
     }
 }
-/** TMarDirector::mState == STATE_UNK1 (not modelled) */
-const DIRECTOR_STATE_UNK1 = false;
+/** SMSGetMarDirector()->getState() == TMarDirector::STATE_UNK1 (player.ts DIR.DEMO) */
+function directorStateUnk1(w: World) { return !!w.director && w.director.state === DIR.DEMO; }
 
 /** MsVECMag2: the game's raw frsqrte estimate (0 for 0), via the shared vecops helper */
 const msVecMag = (v: V3) => msVecMag2(v);
@@ -555,8 +561,7 @@ CannonNerves.search = nerve<Cannon>('TNerveCannonSearch', (spine: S) => {
         }
     }
     if (self.unk2AC !== self.rot.y) { self.unk2AC = self.rot.y; self.world.sound(SE.EN_CANNON_MOVE, self.pos); }
-    // TODO: area 5 in the director's STATE_UNK1 faces Mario directly (MsGetRotFromZaxis(SMS_DistanceFromMarioVec).y); taken as never
-    if (self.unk230 === 5 && DIRECTOR_STATE_UNK1) self.rot.y = MsGetRotFromZaxis(V3.sub(self.world.mario.pos, self.pos)).y;
+    if (self.world.map === 5 && directorStateUnk1(self.world)) self.rot.y = MsGetRotFromZaxis(V3.sub(self.world.mario.pos, self.pos)).y;
     else self.turnToGoal();
     return false;
 });

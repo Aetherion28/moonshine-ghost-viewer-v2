@@ -14,7 +14,7 @@ const slice = (b: Uint8Array) => new ArrayBufferSlice(b.buffer as ArrayBuffer, b
 
 /** A BMD's joints: names, parents (hierarchy order), rest transforms, calc flags. */
 export class Skeleton {
-    names: string[] = []; parent: number[] = []; order: number[] = []; rest: JointTransformInfo[] = []; calcFlags: number[] = [];
+    names: string[] = []; parent: number[] = []; /** J3DJoint::getKind (JNT1's kind & 0xF) */ kinds: number[] = []; order: number[] = []; rest: JointTransformInfo[] = []; calcFlags: number[] = [];
     /** the rest transforms as J3DJoint keeps them (s16 rotations) */
     restTI: TI[] = [];
     loadFlags = 0;
@@ -50,7 +50,7 @@ export class Skeleton {
             t.scale[0] = v.getFloat32(d + 4); t.scale[1] = v.getFloat32(d + 8); t.scale[2] = v.getFloat32(d + 0xC);
             quatFromEulerRadians(t.rotation, v.getInt16(d + 0x10) / 0x7FFF * Math.PI, v.getInt16(d + 0x12) / 0x7FFF * Math.PI, v.getInt16(d + 0x14) / 0x7FFF * Math.PI);
             t.translation[0] = v.getFloat32(d + 0x18); t.translation[1] = v.getFloat32(d + 0x1C); t.translation[2] = v.getFloat32(d + 0x20);
-            this.rest.push(t); this.calcFlags.push(b[d + 2]); this.names.push(nameAt[i] || '');
+            this.rest.push(t); this.calcFlags.push(b[d + 2]); this.kinds.push(v.getUint16(d) & 0xF); this.names.push(nameAt[i] || '');
             this.restTI.push({ sx: v.getFloat32(d + 4), sy: v.getFloat32(d + 8), sz: v.getFloat32(d + 0xC), rx: v.getInt16(d + 0x10), ry: v.getInt16(d + 0x12), rz: v.getInt16(d + 0x14), tx: v.getFloat32(d + 0x18), ty: v.getFloat32(d + 0x1C), tz: v.getFloat32(d + 0x20) });
             this.parent.push(-1);
         }

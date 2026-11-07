@@ -21,7 +21,7 @@
 // else a stand-in MActor of map/map/Koopa_rail here (see koopaRail).
 //
 // Not here: the particles (sparks, smoke, fire, the parts' trails), the camera shake, the BGM
-// stop, the balloon messages (startTinKoopaMessage: the console's), the animation sounds (.bas),
+// stop, the animation sounds (.bas),
 // the skin deform, the light type and TTinKoopaMtxCalc (an empty blend calc).
 
 import { MSF } from '../flags.js';
@@ -408,6 +408,36 @@ export class TinKoopa extends SpineEnemy {
         if (!c) return;
         if (c.checkPass(c.end - 1)) { ++this.mLap; if (this.mLap > 2) this.mLap = 0; }
     }
+    checkTinKoopaMessage() {
+        this.checkTinKoopaKillerApproachingMessage();
+        this.checkTinKoopaFirstRocketMessage();
+        this.checkTinKoopaFirstFlameMessage();
+    }
+    checkTinKoopaKillerApproachingMessage() {
+        const M = this.unk1F0;
+        if (!M) return;
+        for (let i = 0; i < M.getActiveObjNum(); ++i) {
+            const k = M.getObj(i) as CoasterKiller;
+            if (k.checkLiveFlag(LF.DEAD)) continue;
+            if (this.checkKillerApproachingFromBack(k, this.world.mario.pos, this.getSaveParam2().mSLKillerApproachingDistance)) this.startTinKoopaMessage(0xE0009);
+        }
+    }
+    checkTinKoopaFirstRocketMessage() {
+        if (this.mTruckActor) {
+            const c = this.mTruckActor.getFrameCtrl(ANM_BCK);
+            if (this.mLap === 0 && c && c.checkPass(300)) this.startTinKoopaMessage(0xE000A);
+        }
+    }
+    checkTinKoopaFirstFlameMessage() {
+        if (!this.mTruckActor) return;
+        if (this.mFirstFlameMessageShown) return;
+        if (this.spine!.current !== TinKoopaNerves.wait) return;
+        const c = this.mTruckActor.getFrameCtrl(ANM_BCK);
+        if (!c) return;
+        if (c.checkPass(this.mBreakCount === 0 ? 2600 : 3100)) { this.startTinKoopaMessage(0xE000B); this.mFirstFlameMessageShown = true; }
+    }
+    /** startTinKoopaMessage: the console's startAppearBalloon(id, true) */
+    startTinKoopaMessage(id: number) { this.world.events.push({ t: this.world.tickCount, kind: 'balloon', data: { id } }); }
     checkTruckAnimationPass(frame: number) { const c = this.truckCtrl(); return !!c && c.checkPass(frame); }
     // ------------------------------------------------ the frame
     perform(cue: number) {
@@ -416,7 +446,7 @@ export class TinKoopa extends SpineEnemy {
             this.updateTimers();
             this.checkLap();
             this.mLaunchSchedule.checkOrder();
-            // (checkTinKoopaMessage: the balloons)
+            this.checkTinKoopaMessage();
             if (this.ownRail && this.mTruckActor) this.mTruckActor.frameUpdate();
         }
         super.perform(cue);
@@ -464,6 +494,11 @@ export class TinKoopa extends SpineEnemy {
         trans(this.jointMtx(1), this.unk190);
         trans(this.jointMtx(3), this.unk19C);
         trans(this.jointMtx(4), this.unk1A8);
+        const a = this.mactor;
+        if (a && this.spine!.current === TinKoopaNerves.break_) {
+            if ((this.mBreakCount === 0 || this.mBreakCount === 3) && a.checkBckPass(100)) this.world.cameraShake?.startShake(6, 1);
+            if ((this.mBreakCount === 1 || this.mBreakCount === 2) && a.checkBckPass(104)) this.world.cameraShake?.startShake(6, 1);
+        }
         if (this.unk1E4) this.unk1E4.emitPartsDisappearEffects();
     }
     // ------------------------------------------------ joints
@@ -495,7 +530,8 @@ TinKoopaNerves.damage = nerve<TinKoopa>('TNerveTinKoopaDamage', (spine: S) => {
     const self = spine.body, a = self.mactor;
     if (spine.time === 0) {
         self.changeBck(damageAnimationIndex[self.mBreakCount]);
-        // (ms_mkp_hibana_d1he on the head joint, the camera shake)
+        // (ms_mkp_hibana_d1he on the head joint)
+        self.world.cameraShake?.startShake(6, 1);
     }
     if (a && a.checkCurBckFromIndex(damageAnimationIndex[self.mBreakCount]) && a.curAnmEndsNext(ANM_BCK)) {
         self.changeBck(waitAnimationIndex[self.mBreakCount]);
@@ -507,7 +543,8 @@ TinKoopaNerves.break_ = nerve<TinKoopa>('TNerveTinKoopaBreak', (spine: S) => {
     const self = spine.body, a = self.mactor;
     if (spine.time === 0) {
         self.changeBck(breakAnimationIndex[self.mBreakCount]);
-        // (ms_mkp_hibana_d1he on the head joint, the camera shake)
+        // (ms_mkp_hibana_d1he on the head joint)
+        self.world.cameraShake?.startShake(6, 1);
         if (self.mBreakCount === 3) {
             if (self.unk1F0) self.unk1F0.unk60 = 1;
             // (MSBgm::stopTrackBGMs(7, 10))

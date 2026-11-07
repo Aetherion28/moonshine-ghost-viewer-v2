@@ -623,7 +623,8 @@ export class BossTelesa extends SpineEnemy {
             s.unk1E4[i] = fr(d * fr(hpSpeed + rangeRand(0.05, 0.1)));
         }
         this.rollRouletteCircle();
-        // (rumble and the camera shake: not here)
+        // (rumble)
+        this.world.cameraShake?.startShake(0x23, 1);
     }
     slotStart() {
         this.unk18C = 1;
@@ -807,9 +808,10 @@ BossTelesaNerves.die = nerve<BossTelesa>('TNerveBossTelesaDie', (spine: S) => {
         if (b.isSpicy && b.hitPoints !== 0) --b.hitPoints;
         b.offAllCollision();
         if (b.hitPoints !== 0) {
-            if (b.isSpicy) { a.setFromIndex(ANM_BRK, 1); b.setBckAnm(BCK_DAMAGE); }
-            else { b.setBckAnm(BCK_HIT); a.setFromIndex(ANM_BRK, 0); }
+            if (b.isSpicy) { a.setFromIndex(ANM_BRK, 1); b.setBckAnm(BCK_DAMAGE); w.cameraShake?.startShake(0x1F, 1); }
+            else { b.setBckAnm(BCK_HIT); a.setFromIndex(ANM_BRK, 0); w.cameraShake?.startShake(0x20, 1); }
         } else {
+            w.cameraShake?.startShake(0x21, 1);
             b.setBckAnm(BCK_DOWN);
             a.setFromIndex(ANM_BRK, 1);
             if (b.slot) b.slot.scale.set(0, 0, 0);
@@ -896,7 +898,7 @@ BossTelesaNerves.appear = nerve<BossTelesa>('TNerveBossTelesaAppear', (spine: S)
             b.onAllCollision();
         }
     } else if (b.checkCurAnmEnd(ANM_BCK) && !a.checkCurBckFromIndex(BCK_WAIT)) { b.setBckAnm(BCK_WAIT); a.setFromIndex(ANM_BTP, 2); }
-    if (a.checkCurBckFromIndex(BCK_APPEAR) && a.checkBckPass(40)) w.sound(SE.BS_TELESA_SLT_LAND, b.pos);
+    if (a.checkCurBckFromIndex(BCK_APPEAR) && a.checkBckPass(40)) { w.cameraShake?.startShake(0x22, 1); w.sound(SE.BS_TELESA_SLT_LAND, b.pos); }
     if (spine.time > 800) {
         const interval = BossTelesa.mTelesaGenerateInterval + (b.maxHitPoints() - b.hitPoints) * 100;
         if (spine.time % interval === 1) b.setBckAnm(BCK_SPIT);
@@ -998,6 +1000,8 @@ export class BubbleManager extends SmallEnemyManager {
 
 /** TBubble (バブル): rises off the ground growing, carrying an item or an enemy; splits into small ones that chase Mario */
 export class Bubble extends WalkerEnemy {
+    /** TBubble::setAfterDeadEffect: none */
+    setAfterDeadEffect() { }
     /** what it carries */
     unk198: LiveActor | null = null;
     /** its height over the ground (the drawn height: calcRootMatrix) */
@@ -1145,7 +1149,9 @@ BubbleNerves.split = nerve<Bubble>('TNerveBubbleSplit', (spine: BS) => {
  * TTelesaSlot (btelesaSlot; scene class TelesaSlot, the srotRulet model): the slot on King Boo's
  * belly. initMapObj: TSlotDrum::initMapObj (its own initNeonMatColor does nothing: the neons'
  * colours are only drawing), then TTelesaSlot's values and drum faces (installTelesaSlot).
- * TODO: its TMapCollisionMove (unk1DC, entryObjCollision / calcObjCollision) isn't ported.
+ * Its TMapCollisionMove (unk1DC) is only made (init(2, 0, 0, nullptr): two blank check data);
+ * calcObjCollision / entryObjCollision, the only ones that would set and enter them, are UNUSED
+ * and empty, so it never reaches the grid.
  */
 export class TelesaSlot extends SlotDrum {
     constructor(w: World, name = 'btelesaSlot') { super(w, name); }

@@ -9,21 +9,25 @@
 // sounds, the balloon messages and the talk itself (TMarDirector's talk mode isn't simulated:
 // an NPC only goes into its talk nerve if something sets LF_N.UNK40000).
 
+import { MSF } from '../flags.js';
 import { anmFrameRate } from '../version.js';
 import { fr, V3, MsRandF, MsRandI, MsWrap, MsClamp, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsIsInSight, JMASSin, JMASCos, matan, s16, IConverge } from '../math.js';
-import { MsSqrtf } from '../player/fmath.js';
+import { MsSqrtf, fmadd } from '../player/fmath.js';
 import { msVecMag2 } from '../vecops.js';
-import { World, Stream, HitActor, TakeActor, LiveActor, LiveManager, SpineEnemy, Spine, Nerve, nerve, LF, HF, HC, MSG, ANM_BCK, ANM_BTP, CUE_MOVE, CUE_CALC_ANIM, CUE_ENTRY, CUE_CALC_VIEW, PSchema, PType, readParams } from '../engine.js';
+import { World, Stream, HitActor, TakeActor, LiveActor, LiveManager, SpineEnemy, MActor, Spine, Nerve, nerve, LF, HF, HC, MSG, ANM_BCK, ANM_BTP, CUE_MOVE, CUE_CALC_ANIM, CUE_ENTRY, CUE_CALC_VIEW, PSchema, PType, readParams } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { NPC_BAS_TABLES } from '../bastables.js';
-import { CLBDegToShortAngle, chaseSpeedF, chaseSpeedS, chaseFrameF } from '../camera/lib.js';
+import { CLBDegToShortAngle, CLBRoundfS16, chaseSpeedF, chaseSpeedS, chaseFrameF, msVecNormalize, ratioI, twoDegS } from '../camera/lib.js';
+import { MsMtxSetRotRPH, mtx } from '../math.js';
+import { mat4 } from 'gl-matrix';
 import { newAndRegisterObjByEventID } from '../mapobj/item.js';
 import { mapObjGlobals, MapObjBase } from '../mapobj/base.js';
 import type { ItemManager } from '../mapobj/item.js';
-import { marioGroundLevel, marioTouchGround4cm } from '../mapobj/lib.js';
+import { marioGroundLevel, marioTouchGround4cm, mapObjWave } from '../mapobj/lib.js';
 import { NPC_INIT, NPC_ANM } from './npcdata.js';
+import { NpcParts } from './parts.js';
 
 // ---------------------------------------------------------------- enums
 /** EnumNpcAnmKind */
@@ -304,6 +308,8 @@ export class BaseNPC extends SpineEnemy {
     static mAngleYDiffWhenTaken = 0;
     /** unk158: who carries it (to see it put down) */
     unk158: TakeActor | null = null;
+    /** unk168: its TNpcParts (parts flags > 0) */
+    unk168: NpcParts | null = null;
     sink: NpcSink | null = null;
     neckJoint = -1;
     /** unk16C: the action data index (the scene's) */
@@ -510,6 +516,10 @@ export class BaseNPC extends SpineEnemy {
         }
         this.initNpcObjCollision(info.hit);
         if (this.mactor) this.neckJoint = this.mactor.jointIndex('kubi');
+        this.setHappyEffectMtxPtr();
+        switch (this.actorType) {
+            case T.NPC_MARE_MD: case T.NPC_MONTE_MH: this.setNoteEffectMtxPtr(); break;
+        }
         this.inbetween = new NpcInbetween(palFrame(this.P.mPosInbetweenFrame), palFrame(this.P.mMotionBlendFrame));
         const anm = NPC_ANM[k];
         this.lodAnm = new LodAnm(this, anm.index, 0, this.Q.mLodChangeDist);
@@ -547,8 +557,10 @@ export class BaseNPC extends SpineEnemy {
             parts |= 0x6;
             if (parts & 0x10) { parts |= 0x60; this.peachParasolIn(); } else parts &= ~0x60;
         }
-        // (sunflowers down while MSF_SUNFLOWERS_LEFT_TO_RESCUE: Pinna Park's; not simulated)
+        // (NpcInitPrg.cpp: TFlagManager MSF_SUNFLOWERS_LEFT_TO_RESCUE)
+        if (this.world.flags.getBool(MSF.SUNFLOWERS_LEFT_TO_RESCUE) && this.isSunflower()) this.sunflowerDownIn();
         this.look = { c0, c1, parts };
+        if (parts > 0) this.unk168 = new NpcParts(parts, this);
         const anm = NPC_ANM[this.kindIndex];
         if (anm.btp && this.lodAnm) this.lodAnm.indBtp = anm.btp;
         this.initBaseActionFlag();
@@ -562,12 +574,14 @@ export class BaseNPC extends SpineEnemy {
             if (burning && got) { b3 = false; this.offActionFlag(NA.BURNING | NA.UNK80 | NA.RUN); }
             else { if (got) coin = 2000; this.coin = new NpcCoin(this, coin); }
         }
-        void b3;
+        if (burning && b3) this.setSmokeEffectMtxPtr((parts & 0x800) !== 0);
         this.npcWaitIn();
         this.randomizeBckAndBtpFrame();
-        // (parts > 0: a TNpcParts; a jellyfish Mare's addJellyFishParts picks its jellyfish model
-        // with MsRandF() * gpMareJellyFishManager's model count: the viewer's, but the roll is the game's)
-        if (parts > 0 && this.isJellyFishMare()) MsRandF();
+        const bf = this.mactor ? this.mactor.getFrameCtrl(ANM_BCK) : null, f1 = bf ? bf.frame : 0;
+        if (this.unk168) {
+            if (this.isJellyFishMare()) this.unk168.addJellyFishParts(f1);
+            this.unk168.setPartsAnmFrame(f1);
+        }
     }
     private initBaseActionFlag() {
         const pick = (t: number[]) => { if (this.unk16C > t.length - 1) this.unk16C = 0; this.actionFlag = t[this.unk16C]; };
@@ -610,8 +624,36 @@ export class BaseNPC extends SpineEnemy {
         if (k === this.lodAnm.cur) return;
         if (!this.lodAnm.setBckAndBtpAnm(k)) return;
         if (k === NK.HAPPY && this.unk1D9 <= 2) this.emitHappyEffect();
-        // (the sunflowers' BRK and the parts' own animations: the viewer's)
+        // (the sunflowers' BRK: the viewer's)
+        if (this.unk168 && this.isPartsAnmNpc()) this.setPartsAnm(k);
         if (blend) this.inbetween.startMotionBlend(); else this.inbetween.stopMotionBlend();
+    }
+    /** setNpcAnm_'s parts animations (NpcAnm.cpp): Peach's hair / ponytail / parasol, MARE_MB's part 9, MARE_WB's part 10 */
+    private setPartsAnm(k: number) {
+        const P = this.unk168!;
+        const set = (a: MActor | null, i: number) => { if (a && !a.checkCurBckFromIndex(i)) a.setBckFromIndex(i); };
+        switch (this.actorType) {
+            case T.NPC_PEACH: {
+                const b8 = (this.unk1D8 & 1) !== 0;
+                set(P.getPartsMActor(0, 0), k === NK.UNK5 ? (b8 ? 4 : 6) : (b8 ? 3 : 5));
+                let i: number;
+                switch (k) {
+                    case NK.TAKEN: i = 7; break;
+                    case NK.UNK10: i = 14; break;
+                    case NK.UNK1A: i = 13; break;
+                    default: i = b8 ? 11 : (this.unk1D8 & 4) ? 9 : 8; break;
+                }
+                set(P.getPartsMActor(3, 0), i);
+                set(P.getPartsMActor(4, 0), k === NK.UNK5 ? -1 : 17);
+                break;
+            }
+            case T.NPC_MARE_MB: set(P.getPartsMActor(9, 0), k === NK.UNK6 ? 2 : k === NK.UNK5 ? 3 : 1); break;
+            case T.NPC_MARE_WB: {
+                const a = P.getPartsMActor(10, 0);
+                if (a) { set(a, k === NK.UNK5 ? 2 : k === NK.UNK6 ? 1 : 0); a.setFromIndex(ANM_BTP, k === NK.UNK5 ? 1 : 0); }
+                break;
+            }
+        }
     }
     requestNpcAnm(k: number, blend: boolean) {
         if (this.actorType < 0x400001E && this.actorType >= T.NPC_DUMMY) return;
@@ -886,6 +928,26 @@ export class BaseNPC extends SpineEnemy {
         this.lodAnm.indBck = [[21, 0], [-1, -1]]; this.lodAnm.indBtp = [[5, 0], [-1, -1]];
         this.requestNpcAnm(NK.UNK6, false);
     }
+    /** sunflowerDownIn_ */
+    sunflowerDownIn() {
+        this.unk1D8 |= 1; this.unk1D8 &= ~2;
+        this.lodAnm.indBck = [[2, 0], [3, 4], [-1, -1]];
+        this.lodAnm.indBtp = [[3, 0], [2, 0], [-1, -1]];
+    }
+    /** sunflowerReviveIn (ReviveSunflowerCallBack: an event's) */
+    sunflowerReviveIn() {
+        if (this.unk1D8 & 1) {
+            this.unk1D8 &= ~1; this.unk1D8 |= 2;
+            this.lodAnm.indBck = null; this.lodAnm.indBtp = null;
+            this.requestNpcAnm(NK.UNK1A, true);
+        }
+    }
+    /** setDummyConnectActor (evConnectDummyNpc) */
+    setDummyConnectActor(a: LiveActor) {
+        if (this.actorType !== T.NPC_DUMMY) return;
+        this.dummyConnect = a;
+        this.pos.set(a.pos); this.rot.set(a.rot);
+    }
     sunflowerReviving() {
         if ((this.unk1D8 & 2) && this.lodAnm.cur === NK.UNK1A && this.mactor!.isCurAnmAlreadyEnd(ANM_BCK)) {
             this.unk1D8 &= ~2;
@@ -912,7 +974,83 @@ export class BaseNPC extends SpineEnemy {
             default: this.requestNpcAnm(NK.UNK3, false); break;
         }
     }
-    private emitHappyEffect() { this.world.effect('npcHappy', this.pos); }
+    /** mHappyEffectMtxPtr / mNoteEffectMtxPtr / mSmokeEffectMtxPtr: the joints (getAnmMtx) the effects follow (-1: none) */
+    happyJoint = -1; noteJoint = -1; smokeJoint = -1;
+    /** mFireParticlePos / unk1F0 / mWaveParticlePos */
+    fireParticlePos = new V3(); unk1F0 = new V3(); waveParticlePos = new V3();
+    /** the model's joint matrices as of its last calc (getAnmMtx's array) */
+    anmJoints: mat4[] | null = null;
+    private jointPos(j: number, out: V3, onParts = false) {
+        if (onParts) {
+            const p = this.unk168 && this.unk168.getPart(0xB, 0);
+            const m = p && j >= 0 ? p.mactor!.anmMtx(j, p.baseTR, p.scale) : null;
+            if (!m) return false;
+            out.set(m[12], m[13], m[14]); return true;
+        }
+        if (!this.mactor || j < 0) return false;
+        const all = this.anmJoints || this.mactor.anmMtxAll(this.baseTR, this.scale);
+        const m = all && all[j]; if (!m) return false;
+        out.set(m[12], m[13], m[14]); return true;
+    }
+    /** setHappyEffectMtxPtr_ (NpcEffect.cpp) */
+    setHappyEffectMtxPtr() {
+        const n = this.isNormalMonte() ? 'koshi_null' : this.isNormalMare() ? 'koshi' : this.actorType === T.NPC_KINOPIO ? 'jnt_body' : null;
+        if (n !== null && this.mactor) this.happyJoint = this.mactor.jointIndex(n);
+    }
+    /** setNoteEffectMtxPtr_ */
+    setNoteEffectMtxPtr() {
+        let n: string | null = null;
+        switch (this.actorType) { case T.NPC_MONTE_MH: n = 'nose_jnt'; break; case T.NPC_MARE_MD: n = 'kuchi'; break; }
+        if (n && this.mactor) this.noteJoint = this.mactor.jointIndex(n);
+    }
+    /** setSmokeEffectMtxPtr_: the palm tree's yashi_jnt, or (parts 0x800) "ef_null" of parts model 0xB (the luggage) */
+    smokeOnParts = false;
+    setSmokeEffectMtxPtr(onParts: boolean) {
+        this.smokeOnParts = onParts;
+        const a = onParts ? (this.unk168 ? this.unk168.getPartsMActor(0xB, 0) : null) : this.mactor;
+        if (a) this.smokeJoint = a.jointIndex(onParts ? 'ef_null' : 'yashi_jnt');
+    }
+    /** getEffectScale_ */
+    getEffectScale() { return this.is(T.NPC_KINOPIO, T.NPC_KINOJII) ? new V3(1, 1, 1) : this.initScale.clone(); }
+    private static scaled(v: V3, k: number) { return new V3(fr(v.x * k), fr(v.y * k), fr(v.z * k)); }
+    /** setBalloonMessage: mBalloonCtrl->setNextMessage(msg, n) (the balloon is presentation: an effect event for the viewer) */
+    balloonMsg = -1; balloonArg = 0;
+    setBalloonMessage(msg: number, n: number) { this.balloonMsg = msg; this.balloonArg = n; this.world.effect('balloon:' + msg, this.pos); }
+    /** emitHappyEffect_ */
+    private emitHappyEffect() {
+        const s = BaseNPC.scaled(this.getEffectScale(), this.P.mSLCleanEffectScale);
+        const p = new V3(); if (!this.jointPos(this.happyJoint, p)) p.set(this.pos);
+        if (this.isNormalMonte()) this.world.effect('ms_mnt_kira', p, s);
+        else if (this.isNormalMare() || this.actorType === T.NPC_KINOPIO) this.world.effect('ms_mare_kira', p, s);
+    }
+    /** emitParticle_ (NpcEffect.cpp; the goop NPCs' dirty / wash effects are left out) */
+    emitParticle() {
+        const w = this.world;
+        if (this.smokeJoint >= 0 && this.checkActionFlag(NA.BURNING) && this.jointPos(this.smokeJoint, this.fireParticlePos, this.smokeOnParts)) {
+            const s = this.getEffectScale();
+            w.effect('ms_npc_kokuen', this.fireParticlePos, s);
+            const f = BaseNPC.scaled(s, this.burnStrength);
+            w.effect('ms_moe_fire_c', this.fireParticlePos, f);
+            w.effect('ms_moe_fire_a', this.fireParticlePos, f);
+            w.effect('ms_moe_fire_b', this.fireParticlePos, f);
+        }
+        if (this.noteJoint >= 0 && (this.actorType !== T.NPC_MARE_MD || this.lodAnm.cur !== NK.UNK5) && this.jointPos(this.noteJoint, this.unk1F0))
+            w.effect('ms_ynb_onpu', this.unk1F0, BaseNPC.scaled(this.getEffectScale(), 0.75));
+        if (this.actorType === T.NPC_MONTE_MF || w.map === 4) {
+            let h = 0, doEmit = false;
+            let s = this.getEffectScale();
+            if (this.actorType === T.NPC_MONTE_MF) { doEmit = true; s = BaseNPC.scaled(s, 1.5); }
+            else if (this.pos.y <= 30 && (this.posDelta.x !== 0 || this.posDelta.z !== 0)) {
+                const wv = mapObjWave(w); h = wv ? wv.getWaveHeight(this.pos.x, this.pos.z) : 0;
+                if (this.pos.y <= h) doEmit = true;
+            }
+            if (doEmit) {
+                this.waveParticlePos.set(new V3(this.pos.x, h, this.pos.z));
+                w.effect('ms_npc_hamon_b', this.waveParticlePos, s);
+                w.effect('ms_npc_hamon_a', this.waveParticlePos, s);
+            }
+        }
+    }
 
     // ------------------------------------------------------------ walking (NpcWalkTurn.cpp)
     /** (inlined in TBaseNPC::execWalk, JP 0x8017BAA8: the goal's flat offset (x, 0, z) squared as fmuls, fadds, against CLBSquared(10)) */
@@ -1059,9 +1197,21 @@ export class BaseNPC extends SpineEnemy {
             sp.pushNerve(N.wet);
         }
     }
-    private behaveToSandBomb(_a: LiveActor) {
-        // SMS_GetSandRiseUpRatio (Sirena's sand bomb bases): not ported
-        this.unk1C8 = 0;
+    private behaveToSandBomb(a: LiveActor) {
+        const last = this.unk1C8;
+        // SMS_GetSandRiseUpRatio: the base's root matrix's [1][1], clamped to 0..1
+        const m = typeof (a as any).rootMtx === 'function' ? (a as any).rootMtx() : null;
+        let r = m ? fr(m[5]) : 0;
+        if (r > 1) r = 1; else if (r < 0) r = 0;
+        this.unk1C8 = r;
+        if (r > last && r > fr(0.05) && last > fr(0.001) && this.isNerveCanGoToBlown()) {
+            const v = this.P.mSLBlownVelocity;
+            this.pos.y = fr(this.pos.y + v);
+            this.onLiveFlag(LF.AIRBORNE);
+            this.vel.set(0, v, 0);
+            const sp = this.spine!;
+            if (sp.current === N.wet) sp.setNext(N.blown); else sp.pushNerve(N.blown);
+        }
     }
     private changeNerveProc() {
         const sp = this.spine!, latest = this.latest(), w = this.world;
@@ -1239,7 +1389,7 @@ export class BaseNPC extends SpineEnemy {
         const m = this.world.mario.pos;
         if (this.isBeTrampledNpc() && !marioTouchGround4cm(this.world) && m.y > this.pos.y) {
             const dx = fr(m.x - this.pos.x), dz = fr(m.z - this.pos.z), b3 = fr(base * 3);
-            if (dx * dx + dz * dz < b3 * b3) r = this.Q.mSLDamageRadiusSmall;
+            if (fmadd(dz, dz, fmadd(dx, dx, 0)) < fr(b3 * b3)) r = this.Q.mSLDamageRadiusSmall;   // (JP 0x8017BDF0: fmadds twice)
         }
         this.damageRadius = r;
         this.calcEntryRadius();
@@ -1351,13 +1501,76 @@ export class BaseNPC extends SpineEnemy {
         }
         if (!run) { this.offLiveFlag(LF_N.UNK20000 | LF_N.UNK40000); return; }
         if (cue & CUE_MOVE) { this.movement(); cue &= ~CUE_MOVE; }
-        if ((cue & CUE_CALC_ANIM) && this.checkAnmOff()) cue &= ~CUE_CALC_ANIM;
+        if (cue & CUE_CALC_ANIM) {
+            if (this.checkActionFlag(NA.BURNING)) w.sound(SE.NPC_BURNING, this.pos);   // (behind gpMSound->gateCheck)
+            if (!this.checkLiveFlag(LF_N.UNK1000000 | LF.HIDDEN | LF.CLIPPED_OUT)) this.emitParticle();
+            if (this.checkAnmOff()) cue &= ~CUE_CALC_ANIM;
+        }
         if (cue & CUE_ENTRY) this.offLiveFlag(LF_N.UNK1000000);
         super.perform(cue);
+        if (this.unk168) this.unk168.partsPerform(cue);
     }
     kill() { }
     /** (perform skips the entry of one the manager clipped out, so the game doesn't draw it; one never in view has no root matrix yet) */
     drawn() { return super.drawn() && this.actorType !== T.NPC_DUMMY && !this.checkLiveFlag(LF.CLIPPED_OUT); }
+    /** isNeedNeckStraight (NpcBase.cpp): the neck turns back straight instead of toward Mario */
+    isNeedNeckStraight() {
+        const k = this.lodAnm.cur;
+        return (!!this.holder && this.holder === (this.world.mario as unknown)) || !this.isClean()
+            || this.actorType === T.NPC_MARE_MD
+            || (this.actorType === T.NPC_RACCOON_DOG && k === NK.UNK5)
+            || (this.isMare() && k === NK.UNKC)
+            || (((this.unk1D8 & 2) !== 0 || k === NK.UNK5) && this.actorType === T.NPC_PEACH);
+    }
+    /** unk230 (TNpcUnk230Struct): the neck's x / y angles as NPCNeckCallBack left them */
+    neckX = 0; neckY = 0;
+    /** NPCNeckCallBack's rotation of the neck joint (MTXConcat(anm, rot)), for the viewer */
+    neckRot: mat4 | null = null;
+    /** mMActor->calc(): J3DModel::calc with NPCNeckCallBack on "kubi" (setJointCallback in initNpcObj) */
+    calcModel(_intFrame: boolean) {
+        if (!this.mactor) return;
+        if (this.neckJoint === -1) { this.anmJoints = null; return; }
+        this.anmJoints = this.mactor.anmMtxAll(this.baseTR, this.scale, (j, w) => { if (j === this.neckJoint) this.neckCallBack(w); });
+    }
+    /** NPCNeckCallBack (NpcCallback.cpp, JP 0x8016CF84): the neck chases Mario's head (85 over his feet) within the search range */
+    neckCallBack(w: mat4) {
+        if (this.checkLiveFlag(LF.HIDDEN | LF.CLIPPED_OUT)) return;
+        const Q = this.Q;
+        let r30 = 0, r28 = 0;
+        let neckX = this.neckX, neckY = this.neckY;
+        const useTracking = !this.isNeedNeckStraight();
+        let lx = 0, ly = 0;
+        if (useTracking) {
+            const mp = this.world.mario.pos;
+            const my = fr(mp.y + 85);
+            const t = new V3(fr(mp.x - w[12]), fr(my - w[13]), fr(mp.z - w[14]));
+            const d2 = fr(fr(t.z * t.z) + fr(fr(t.x * t.x) + fr(t.y * t.y)));
+            if (d2 > fr(0.001) && d2 < fr(Q.mNeckTurnSearchDist * Q.mNeckTurnSearchDist) && Math.abs(fr(my - w[13])) < Q.mNeckTurnSearchHeight) {
+                const fwd = new V3(w[4], w[5], w[6]);
+                msVecNormalize(t, t);
+                const a = MsGetRotFromZaxis(fwd), b = MsGetRotFromZaxis(t);
+                lx = fr(fr(a.x) - fr(b.x)); ly = fr(fr(a.y) - fr(b.y));
+            }
+            const tmp = CLBDegToShortAngle(ly), maxY = Q.mNeckMaxAngleY;
+            r28 = tmp > maxY ? maxY : tmp < s16(-maxY) ? s16(-maxY) : tmp;
+        }
+        neckY = chaseSpeedS(neckY, r28, CLBRoundfS16(fr(Q.mNeckAngleYSpeed * anmFrameRate())))[0];
+        if (useTracking) {
+            const t2 = CLBDegToShortAngle(lx);
+            const tmp = t2 > Q.mNeckMaxAngleX ? Q.mNeckMaxAngleX : t2 < Q.mNeckMinAngleX ? Q.mNeckMinAngleX : t2;
+            const a = s16(Math.trunc(fr(0.5 * tmp)));
+            // CLBEaseOutInbetween<s16>(a, tmp, CLBCalcRatio<int>(mNeckMaxAngleY, 0, |neckY|))
+            r30 = twoDegS(a, tmp, ratioI(Q.mNeckMaxAngleY, 0, neckY >= 0 ? neckY : -neckY), a - tmp);
+        }
+        neckX = chaseSpeedS(neckX, r30, CLBRoundfS16(fr(Q.mNeckAngleXSpeed * anmFrameRate())))[0];
+        this.neckX = neckX; this.neckY = neckY;
+        const rot = mtx();
+        MsMtxSetRotRPH(rot, fr(neckY * fr(360 / 65536)), 0, fr(neckX * fr(360 / 65536)));
+        const R = this.neckRot || (this.neckRot = mat4.create());
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 4; j++) R[j * 4 + i] = rot[i * 4 + j];
+        R[3] = R[7] = R[11] = 0; R[15] = 1;
+        mat4.mul(w, w, R);
+    }
 }
 
 /** What perform reads off the NPC's manager (TNPCManager::unk58: the stage's far clip) */

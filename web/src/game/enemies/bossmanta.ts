@@ -81,7 +81,7 @@ const EPILOGUE = [
 const DAMAGE_SE = [SE.BS_MANTA_DAMAGE_1, SE.BS_MANTA_DAMAGE_2, SE.BS_MANTA_DAMAGE_3, SE.BS_MANTA_DAMAGE_4, SE.BS_MANTA_DAMAGE_5, SE.BS_MANTA_DAMAGE_5];
 const SEGMENT_SE = [SE.BS_MANTA_SEGMENT_1, SE.BS_MANTA_SEGMENT_2, SE.BS_MANTA_SEGMENT_3, SE.BS_MANTA_SEGMENT_4];
 
-const sendToMario = (w: World, from: HitActor, msg: number) => w.mario.receiveMessage(from, msg);
+import { sendToMario } from '../mapobj/lib.js';
 
 /** (anonymous namespace) AttackMario */
 function attackMario(w: World, attacker: HitActor) {
@@ -551,8 +551,7 @@ export class BossMantaManager extends EnemyManager {
         switch (this.battleState) {
             case 0:
                 if (this.flagMantaSpawned()) {
-                    this.world.effect('demo:sirena_manta', this.world.mario.pos);
-                    if (this.world.talk) this.world.talk.fireStartDemoCamera('sirena_manta');
+                                        this.world.startDemoCamera('sirena_manta');
                     (this.getObj(0) as BossManta | undefined)?.initNthGeneration(0);
                     // (MSBgm::stopTrackBGMs)
                     this.battleState++;

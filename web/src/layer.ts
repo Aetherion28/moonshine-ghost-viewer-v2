@@ -32,7 +32,14 @@ import { SMSPass, SunshineRenderer, SunshineSceneDesc } from './sms_scene.js';
 import { MarioModel, YoshiModel, parseArchive, setPlayerLights } from './mario.js';
 import { swapTextures, npcDress, npcPartColours, npcGoop } from './actors.js';
 import { SimRunner, LiveRunner, DiscCommon, SimInput, fileMap, FileMap } from './game/runner.js';
-import { WireDraw, WireLine } from './wiredraw.js';
+import { WireDraw, HPMeterDraw, WireLine } from './wiredraw.js';
+import { WaveDraw, RopeDraw, GrassDraw, LineDraw, BeamDraw, SplashDraw } from './wavedraw.js';
+import { leanMirrors } from './game/mapobj/mamma.js';
+import { BeamManager } from './game/enemies/beam.js';
+import { elasticCodes } from './game/mapobj/mare.js';
+import { grassManager, MapObjGrassManager } from './game/mapobj/view.js';
+import { setVtxPositions } from './vtxpos.js';
+import { BTI, BTIData } from '../noclip/Common/JSYSTEM/JUTTexture.js';
 import { MantaShadowQuads, mantaVolumeMaterials, setMantaVolumeAlpha } from './mantashadow.js';
 import { MarioShadow } from './marioshadow.js';
 import { BossMantaManager } from './game/enemies/bossmanta.js';
@@ -337,20 +344,66 @@ export class GameLayer {
             // goes with the scene; one kept from the stage before drew nothing on the next)
             const wd = this.wireDraw = new WireDraw();
             const mq = this.mantaQuads = new MantaShadowQuads();
+            // the sea's waves (wavedraw.ts: TMapObjWave's drawing, from the scene's map/map/wave.bti)
+            this.waveDraw = null;
+            const wf = r.rarc.findFileData('map/map/wave.bti');
+            if (wf) try { this.waveDraw = new WaveDraw(new BTIData(this.device, r.renderHelper.renderInstManager.gfxRenderCache, BTI.parse(wf, 'wave').texture)); } catch (e) { console.warn('[game layer] wave', e); }
+            // the hanging bridge's ropes (wavedraw.ts RopeDraw: /scene/mapObj/mon_bri_rope.bti)
+            this.ropeDraw = null;
+            const rf = r.rarc.findFileData('mapObj/mon_bri_rope.bti') || r.rarc.findFileData('mapobj/mon_bri_rope.bti');
+            if (rf) try { this.ropeDraw = new RopeDraw(new BTIData(this.device, r.renderHelper.renderInstManager.gfxRenderCache, BTI.parse(rf, 'rope').texture)); } catch (e) { console.warn('[game layer] rope', e); }
+            // the cogwheel's and the wire bells' ropes (the same drawing: /scene/mapObj/cogwheel_rope.bti)
+            this.cogRopeDraw = null;
+            const cogf = r.rarc.findFileData('mapObj/cogwheel_rope.bti') || r.rarc.findFileData('mapobj/cogwheel_rope.bti');
+            if (cogf) try { this.cogRopeDraw = new RopeDraw(new BTIData(this.device, r.renderHelper.renderInstManager.gfxRenderCache, BTI.parse(cogf, 'cogrope').texture)); } catch (e) { console.warn('[game layer] cogwheel rope', e); }
+            const gd = this.grassDraw = new GrassDraw();
+            const ld = this.lineDraw = new LineDraw();
+            const bd = this.beamDraw = new BeamDraw();
+            // FLUDD's splashes (wavedraw.ts SplashDraw: TSplashManager's /mario/timg/splash.bti)
+            this.splashDraw = null;
+            const sf = this.marioArc ? this.marioArc.findFileData('timg/splash.bti') : null;
+            if (sf) try { this.splashDraw = new SplashDraw(new BTIData(this.device, r.renderHelper.renderInstManager.gfxRenderCache, BTI.parse(sf, 'splash').texture), [168, 203, 227, 255]); } catch (e) { console.warn('[game layer] splash', e); }
             r.extraMain = (dev, rim, vi) => {
                 if (!this.live) return;
+                const gm = this.wireStage && this.wireStage.world ? grassManager(this.wireStage.world) : null;
+                if (gm) { const g = gm.draw(vi.camera.worldMatrix); gd.prepare(dev, rim, vi, g.near.concat(g.far), MapObjGrassManager.color_table); }
+                if (this.wireStage && this.wireStage.world) { const ls: number[][] = []; for (const e of elasticCodes(this.wireStage.world)) { const l = e.draw(); if (l) ls.push(l); } ld.prepare(dev, rim, vi, ls, [0, 0, 100, 255], 24); }
+                if (this.wireStage && this.wireStage.world) { const w = this.wireStage.world; for (const m of leanMirrors(w)) m.draw(); const bm = BeamManager.get(w); bd.prepare(dev, rim, vi, bm.drawAllBeam(), bm.mColor); }
+                const W: any = this.wireStage && this.wireStage.world ? this.wireStage.world : null;
+                const hb = W ? W.hangingBridge : null;
+                // (TMapObjBase::perform's CUE_DRAW: draw, unless dead)
+                const drawn = (list: any[] | undefined) => { const out: Float32Array[] = []; if (list) for (const o of list) if (!o.checkLiveFlag(LF.DEAD)) o.draw(out); return out; };
+                if (this.ropeDraw && W) { const st = hb ? hb.ropeStrips() : []; st.push(...drawn(W.ropeDrawers)); this.ropeDraw.prepare(dev, rim, vi, st); }
+                if (this.cogRopeDraw && W) this.cogRopeDraw.prepare(dev, rim, vi, drawn(W.cogRopeDrawers));
                 wd.prepare(dev, rim, vi, this.wireLines());
+                // Shadow Mario's water meter (TEnemyMario::drawHPMeter, in view space)
+                if (W && W.enemyMarios) {
+                    const vm = vi.camera.viewMatrix;
+                    const toView = (p: any) => ({ x: vm[0] * p.x + vm[4] * p.y + vm[8] * p.z + vm[12], y: vm[1] * p.x + vm[5] * p.y + vm[9] * p.z + vm[13], z: vm[2] * p.x + vm[6] * p.y + vm[10] * p.z + vm[14] }) as any;
+                    const q: any[] = [];
+                    for (const em of W.enemyMarios) if (!em.checkLiveFlag || !em.checkLiveFlag(LF.DEAD)) q.push(...em.drawHPMeter(toView));
+                    this.hpMeterDraw.prepare(dev, rim, vi, q);
+                }
+                const wv = this.wireStage && this.wireStage.world ? this.wireStage.world.mapObjWave : null;
+                if (this.waveDraw && wv && wv.hasTex) this.waveDraw.prepare(dev, rim, vi, wv.drawStrips(), wv.constructor.sColor);
                 if (this.mantaColor && this.mantaDrawn) mq.prepare(dev, rim, vi, this.mantaColor);
                 if (this.marioShadow) this.marioShadow.prepare(dev, rim, vi);
+                const sm = this.wireStage && this.wireStage.world ? this.wireStage.world.splashManager : null;
+                if (this.splashDraw && sm) {
+                    // (makeDL under the view matrix, as a game Mtx: rows of the column-major mat4)
+                    const m = vi.camera.viewMatrix, v = [m[0], m[4], m[8], m[12], m[1], m[5], m[9], m[13], m[2], m[6], m[10], m[14]];
+                    this.splashDraw.prepare(dev, rim, vi, sm.makeDL(v));
+                }
             };
-            // Mario's shadow (marioshadow.ts: /common/shadowCircle.bmd and shadowCircleLow.bmd as volumes)
+            // the bind shadows (marioshadow.ts: /common/shadowCircle.bmd, shadowCircleLow.bmd, shadowCube.bmd, ShipShadow.bmd as volumes)
             this.marioShadow = null;
             const cf = this.common && this.common.common ? this.common.common.files : null;
             const hiF = cf ? cf.get('shadowcircle.bmd') : null, loF = cf ? cf.get('shadowcirclelow.bmd') : null;
             if (hiF && loF) try {
                 const cache = r.renderHelper.renderInstManager.gfxRenderCache;
                 const md = (f: any) => new J3DModelData(this.device, cache, BMD.parse(new ArrayBufferSlice(f.buffer as ArrayBuffer, f.byteOffset, f.byteLength)));
-                this.marioShadow = new MarioShadow(md(hiF), md(loF), (m) => { m.passMask = SMSPass.MAIN; r.modelInstances.push(m); });
+                const cubeF = cf!.get('shadowcube.bmd'), shipF = cf!.get('shipshadow.bmd');
+                this.marioShadow = new MarioShadow(md(hiF), md(loF), (m) => { m.passMask = SMSPass.MAIN; r.modelInstances.push(m); }, cubeF ? md(cubeF) : null, shipF ? md(shipF) : null);
             } catch (e) { console.warn('[game layer] shadowCircle', e); }
             let la: any = null;
             const findAry = (o: any) => { if (la) return; if (o.type === 'Group') { if (o.klass === 'LightAry') la = o; else o.children.forEach(findAry); } };
@@ -362,12 +415,12 @@ export class GameLayer {
     }
 
     private destroyScene() {
-        if (this.renderer) { this.renderer.destroy(this.device); this.wireDraw.destroy(this.device); if (this.mantaQuads) this.mantaQuads.destroy(this.device); this.mantaQuads = null; }
+        if (this.renderer) { this.renderer.destroy(this.device); this.wireDraw.destroy(this.device); if (this.mantaQuads) this.mantaQuads.destroy(this.device); this.mantaQuads = null; if (this.waveDraw) this.waveDraw.destroy(this.device); this.waveDraw = null; if (this.ropeDraw) this.ropeDraw.destroy(this.device); this.ropeDraw = null; if (this.cogRopeDraw) this.cogRopeDraw.destroy(this.device); this.cogRopeDraw = null; if (this.grassDraw) this.grassDraw.destroy(this.device); this.grassDraw = null; if (this.lineDraw) this.lineDraw.destroy(this.device); this.lineDraw = null; if (this.beamDraw) this.beamDraw.destroy(this.device); this.beamDraw = null; if (this.splashDraw) this.splashDraw.destroy(this.device); this.splashDraw = null; this.hpMeterDraw.destroy(this.device); this.hpMeterDraw = new HPMeterDraw(); }
         this.gateStop();
         for (const v of this.bmtCache.values()) if (v) v.destroy(this.device);
         this.setLive(false);
         this.renderer = null; this.scene = ''; this.mirrors = []; this.byObj.clear(); this.boundGroup = null; this.marios.clear();
-        this.actorModels = []; this.fittingInsts = []; this.fittingFor = null; this.dataCache.clear(); this.bmtCache.clear(); this.files.clear();
+        this.actorModels = []; this.fittingInsts = []; this.fittingFor = null; this.cursorInst = null; this.cursorTried = false; this.dataCache.clear(); this.bmtCache.clear(); this.files.clear();
         this.drawn = false;
         this.simFiles = null; this.simMirrors.clear(); this.simPlaces.clear();
     }
@@ -449,6 +502,13 @@ export class GameLayer {
         m.name = spec.f;
         m.passMask = SMSPass.MAIN;
         if (spec.bmt) { const t = this.materialTable(spec.bmt, !!spec.tex); if (t) m.setModelMaterialData(t); }
+        // TBossHanachanManager::loadAfter: the body's and head's M_dummy is the sand bomb base's "suna"
+        // (SMS_ChangeTextureAll with gpMapObjManager->getSandBombBaseMatTable()'s texture)
+        if (/(^|\/)hana(body|head)_model\.bmd$/i.test(spec.f)) {
+            const t = this.materialTable('mapObj/SandBombBase.bmt', true), tex = t && t.tex1Data;
+            const si = tex ? tex.tex1.samplers.findIndex((x: any) => x.name === 'suna') : -1;
+            if (tex && si >= 0) { const ss = m.tex1Data.tex1.samplers; for (let i = 0; i < ss.length; i++) if (ss[i].name === 'M_dummy') tex.fillTextureMappingFromIndex(m.materialInstanceState.textureMappings[i], si); }
+        }
         const base = spec.f.replace(/\.(bmd|bdl)$/, '');
         // (the Chain Chomp's colours are the viewer's: its heat, then gold once cooled)
         const btk = this.files.get(base + '.btk'), brk = spec.f.startsWith('bwanwan/') ? null : this.files.get(base + '.brk');
@@ -693,6 +753,17 @@ export class GameLayer {
                         const inv = mat4.invert(mat4.create(), parent);
                         if (inv) { mat4.mul(dst, inv, w); return; }
                     }
+                    // NPCNeckCallBack: the neck joint turned toward Mario (TBaseNPC.neckRot, after the joint's own matrix)
+                    const nk = (a as any).neckRot as mat4 | null | undefined;
+                    if (nk && j === (a as any).neckJoint) { mat4.mul(dst, dst, nk); return; }
+                    // TTelesaBlock::perform: anmMtx(0) and anmMtx(1) each times their own scale, after the calc
+                    // (joint 1 not inheriting joint 0's: undone in its local)
+                    const js = (a as any).jointScales ? (a as any).jointScales() as number[][] : null;
+                    if (js) {
+                        if (j === 0) mat4.scale(dst, dst, js[0] as any);
+                        else if (j === 1) { const s0 = js[0]; mat4.scale(dst, dst, js[1] as any); mat4.mul(dst, mat4.fromScaling(mat4.create(), [1 / s0[0], 1 / s0[1], 1 / s0[2]]), dst); }
+                        return;
+                    }
                     const L = (a as any).locals as mat4[] | undefined;
                     if (L && L[j] && (a as any).mactor === (mm as any).mactor) { mat4.copy(dst, L[j]); return; }
                     const sc = (a as any).rootScale ? (a as any).rootScale() : 1;
@@ -705,7 +776,9 @@ export class GameLayer {
                 const look = (a as any).look, kind = (a as any).kindIndex;
                 if (look && kind !== undefined) {
                     const parts: { inst: J3DModelInstanceSimple; joint: number }[] = [];
-                    for (const p of npcDress(inst, kind, look)) {
+                    // (a simulated TNpcParts: its parts are world.extras, not made here)
+                    const dress = npcDress(inst, kind, look);
+                    for (const p of (a as any).unk168 ? [] : dress) {
                         const path = [...this.files.keys()].find((k) => k.endsWith('/' + p.file.toLowerCase()));
                         const pi = path ? this.makeInstance({ f: path } as any) : null;
                         if (!pi) continue;
@@ -717,6 +790,14 @@ export class GameLayer {
                         this.actorModels.push(pi);
                     }
                     (mm as any).parts = parts;
+                }
+                // a TNpcParts model (game/npc/parts.ts): SMS_InitChangeNpcColor by its colour index
+                const pc = (a as any).npcPartColor as { colors: any[]; idx: number } | null | undefined;
+                if (pc) npcPartColours(inst, pc.colors, pc.idx);
+                // SMS_UnifyMaterial: every material's first texture is material 0's (the model data is shared, as the game's is)
+                if ((a as any).unifyMaterial) {
+                    const m0 = inst.materialInstances.find((x) => x.materialData.material.index === 0);
+                    if (m0) for (const mi of inst.materialInstances) mi.materialData.material.textureIndexes[0] = m0.materialData.material.textureIndexes[0];
                 }
                 // the Phantamanta: its mesh as the shadow volume (mantashadow.ts): this instance its back
                 // faces, a twin on the same pose its front faces
@@ -740,12 +821,37 @@ export class GameLayer {
                 this.actorModels.push(inst);
             }
             const inst = m.inst;
+            // SMS_ChangeTextureAll(part, dummy, the host body's texture): once the body's model is made
+            const tfo = (a as any).textureFromOwner as { dummy: string; host: string } | null | undefined;
+            if (tfo && !(m as any).texDone) {
+                const host = this.simMirrors.get((a as any).owner);
+                if (host) {
+                    const hs = host.inst.tex1Data.tex1.samplers, hi = hs.findIndex((x) => x.name === tfo.host);
+                    const ps = inst.tex1Data.tex1.samplers;
+                    if (hi >= 0) for (let i = 0; i < ps.length; i++) if (ps[i].name === tfo.dummy) inst.materialInstanceState.textureMappings[i].copy(host.inst.materialInstanceState.textureMappings[hi]);
+                    (m as any).texDone = true;
+                }
+            }
+            // the jellyfish part (TNpcParts::partsPerform, CUE_CALC_ANIM): SMS_GetLightPerspectiveForEffectMtx as texture matrix 0's
+            // effect matrix on every material but _starglow1 (C_MTXPerspective's x and y scale, row 2 (0, 0, -1, 0), row 3 (0, 0, 0, 1))
+            const fxe = (a as any).effectMtxExcept as string | null | undefined;
+            if (fxe) {
+                const cot = 1 / Math.tan(this.camera.fovY / 2);
+                for (const mi of inst.materialInstances) {
+                    if (mi.name === fxe) continue;
+                    const tm = mi.materialData.material.texMatrices[0];
+                    if (tm) mat4.set(tm.effectMatrix, cot / this.camera.aspect, 0, 0, 0, 0, cot, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1);
+                }
+            }
             inst.visible = this.live && a.drawn() && !(gameView && (a as any).liveFlag & LF.CLIPPED_OUT);
             const twin = (m as any).twin as J3DModelInstanceSimple | undefined;
             if (twin) twin.visible = inst.visible;
             const parts = (m as any).parts as { inst: J3DModelInstanceSimple; joint: number }[] | undefined;
             if (parts) for (const p of parts) p.inst.visible = inst.visible;
             if (!inst.visible) continue;
+            // TTrembleModelEffect: the model's shaken vertex positions (vtxpos.ts)
+            const tr = (a as any).tremble;
+            if (tr && typeof tr.positions === 'function') { const p = tr.positions() || tr.rest(); if (p) setVtxPositions(this.device, inst.modelData, p, tr.version); }
             const B = a.baseTR, sc = a.scale;
             mat4.set(inst.modelMatrix, B[0] * sc.x, B[4] * sc.x, B[8] * sc.x, 0, B[1] * sc.y, B[5] * sc.y, B[9] * sc.y, 0, B[2] * sc.z, B[6] * sc.z, B[10] * sc.z, 0, B[3], B[7], B[11], 1);
             if (twin && this.mantaColor) {
@@ -768,6 +874,13 @@ export class GameLayer {
             if ((a as any).gateMovie) this.gateMovieOn(inst);
             // TEVREG1 (initPacketMatColor(GX_TEVREG1)): the surfing Blooper's colour, on every material
             const t1 = (a as any).tevColor1 as number[] | undefined;
+            // initPacketMatColor(model, reg, color): that TEV register on every material
+            const pk = (a as any).packetTevColor as ({ r: number; g: number; b: number; a: number } | null)[] | undefined;
+            if (pk) for (let r = 0; r < 2; r++) {
+                const p = pk[r]; if (!p) continue;
+                const c = { r: p.r / 255, g: p.g / 255, b: p.b / 255, a: p.a / 255 };
+                for (const mi of inst.materialInstances) mi.setColorOverride(r === 0 ? ColorKind.C0 : ColorKind.C1, c);
+            }
             if (t1) { const c = { r: t1[0] / 255, g: t1[1] / 255, b: t1[2] / 255, a: t1[3] / 255 }; for (const mi of inst.materialInstances) mi.setColorOverride(ColorKind.C1, c); }
             // TEVREG0 the game code sets (GXColorS10): the Fire Chomps' body and tail colour
             const tc = (a as any).tevColor0 as number[] | undefined;
@@ -777,13 +890,15 @@ export class GameLayer {
                 const c = { r: tc[0] / 255, g: tc[1] / 255, b: tc[2] / 255, a: tc[3] / 255 };
                 inst.materialInstances.forEach((mi, i) => { if (only ? mi.name === only : i === idx) mi.setColorOverride(ColorKind.C0, c); });
             }
-            const name = a.mactor!.bckName();
+            // (TEnemyManager::copyFromShared: an enemy sharing an animation shows its shared MActor's pose)
+            const am = (a as any).sharedPose || a.mactor!;
+            const name = am.bckName();
             if (name !== m.bck) {
                 m.bck = name || '';
-                const f = name ? this.files.get((a.mactor!.data.folder + '/' + name + '.bck').toLowerCase()) : null;
+                const f = name ? this.files.get((am.data.folder + '/' + name + '.bck').toLowerCase()) : null;
                 try { const k = f ? BCK.parse(f.buffer) : null; inst.bindANK1(k as any, m.pin); if (twin) twin.bindANK1(k as any, m.pin); } catch { }
             }
-            const fc = a.mactor!.getFrameCtrl(0);
+            const fc = am.getFrameCtrl(0);
             if (fc) m.pin.setTimeInFrames(fc.frame);
             // (an NPC's goop: KCOLOR0's alpha, as it's washed)
             const k0 = (a as any).look ? (a as any).unk174 as number[] : null;
@@ -1185,6 +1300,14 @@ export class GameLayer {
 
     /** the Phantamanta's shadow: its full-screen passes, this frame's getMantaColor (null: no manta manager) and whether a manta's volume is drawn */
     private mantaQuads: MantaShadowQuads | null = null;
+    private waveDraw: WaveDraw | null = null;
+    private splashDraw: SplashDraw | null = null;
+    private ropeDraw: RopeDraw | null = null;
+    private grassDraw: GrassDraw | null = null;
+    private lineDraw: LineDraw | null = null;
+    private beamDraw: BeamDraw | null = null;
+    private cogRopeDraw: RopeDraw | null = null;
+    private hpMeterDraw = new HPMeterDraw();
     /** Mario's shadow (TMBindShadowManager for the Marios) and the light group's first light's position */
     /** per-phase time spent drawing (ms, summed until the viewer reads and clears it) */
     perf = { sync: 0, shadow: 0, objects: 0, gpu: 0 };
@@ -1247,6 +1370,33 @@ export class GameLayer {
             }
         }
     }
+    /** TTalkCursor's MActor (/common/cursor_b/default.bmd, bck icon_rot, brk icon_flash) over the talk / take NPC */
+    private cursorInst: J3DModelInstanceSimple | null = null;
+    private cursorTried = false;
+    private syncTalkCursor() {
+        const r = this.renderer, w = this.wireStage && this.wireStage.world ? this.wireStage.world : null;
+        const C = this.live && w && w.talk ? w.talk.unk84 : null;
+        if (!this.cursorInst && C && r && !this.cursorTried && this.common && this.common.common) {
+            this.cursorTried = true;
+            const F = this.common.common.files, f = F.get('cursor_b/default.bmd');
+            if (f) try {
+                const sl = (b: Uint8Array) => new ArrayBufferSlice(b.buffer as ArrayBuffer, b.byteOffset, b.byteLength);
+                const bmd = BMD.parse(sl(f));
+                // TTalkCursor::perform's CUE_DRAW: GXSetZMode(GX_TRUE, GX_ALWAYS, GX_TRUE)
+                for (const md of bmd.mat3.materialEntries) { md.gxMaterial.ropInfo.depthTest = true; md.gxMaterial.ropInfo.depthFunc = GX.CompareType.ALWAYS; md.gxMaterial.ropInfo.depthWrite = true; }
+                const data = new J3DModelData(this.device, r.renderHelper.renderInstManager.gfxRenderCache, bmd);
+                const m = new J3DModelInstanceSimple(data); m.passMask = SMSPass.MAIN;
+                const bck = F.get('cursor_b/icon_rot.bck'), brk = F.get('cursor_b/icon_flash.brk');
+                if (bck) m.bindANK1(BCK.parse(sl(bck)));
+                if (brk) m.bindTRK1(BRK.parse(sl(brk)));
+                this.cursorInst = m; r.modelInstances.push(m); this.actorModels.push(m);
+            } catch (e) { console.warn('[game layer] TalkCursor', e); }
+        }
+        const m = this.cursorInst;
+        if (!m) return;
+        m.visible = !!(C && C.isVisible());
+        if (m.visible) mat4.fromTranslation(m.modelMatrix, [C.pos.x, C.pos.y, C.pos.z]);
+    }
     private wireLines(): WireLine[] {
         const M = this.wireStage && this.wireStage.world ? this.wireStage.world.mapWires : null;
         if (M && M.wires && M.wires.length)
@@ -1304,11 +1454,19 @@ export class GameLayer {
                 }
                 // the NPCs' and enemies' circles (TLiveActor::requestShadow at CUE_CALC_VIEW)
                 const G = st.world.groups;
-                if (G) for (const k of [7, 8, 9]) for (const a of G[k] || []) if ((a as any).mactor || (a as any).mMActor || (a as any).model) S.addActor(a, col, eye);
+                // every live actor with a model (TLiveActor::perform / performOnlyDraw, the enemy managers, TMapObjBase's simple view calc); Mario's own above
+                const seen = new Set<any>();
+                if (G) for (let k = 0; k < G.length; k++) if (k !== 6) for (const a of G[k] || []) {
+                    if (seen.has(a)) continue; seen.add(a);
+                    if ((a as any).mactor || (a as any).mMActor || (a as any).model) S.addActor(a, col, eye, this.shadowLight);
+                }
+                // TMBindShadowBody::entryDrawShadow from a drawObject (THanaSambo)
+                if (G) for (const k of [7, 8, 9]) for (const a of (G[k] || []) as any[]) if (a.unk1AC && typeof a.drawObject === 'function' && a.drawObject() && a.mactor) { const m = a.mactor.anmMtxAll(a.baseTR, a.scale); if (m) S.addBody(a, a.unk1AC, m, col, this.shadowLight, eye); }
             }
         }
         this.perf.shadow += performance.now() - _pt; _pt = performance.now();
         this.syncFittings();
+        this.syncTalkCursor();
         this.syncObjects();
         this.perf.objects += performance.now() - _pt; _pt = performance.now();
         mat4.copy(this.camera.worldMatrix, cam.matrixWorld.elements);

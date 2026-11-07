@@ -18,6 +18,8 @@
 // Not here: the camera shakes, rumble, the balloons and streaming movie (told as events), the
 // damage fog, the shadow, and the particles (effects by name).
 
+import { rumbleStart } from '../rumble.js';
+import { marioTouchGround4cm } from '../mapobj/lib.js';
 import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, MsWrap, MsClamp, MsAngleDiff, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsMtxSetXYZRPH, MsSin, MsCos, MsRandF, matan, frsqrte, JMASSin, JMASCos, jgNormalize } from '../math.js';
 import { vLen } from '../vecops.js';
@@ -524,6 +526,7 @@ export class BGTentacle extends NameRef {
                 o.gotTentacleDamage();
                 this.unk48 = 1; this.mDamageCount = 0;
                 o.world.effect('ms_boge_damage', o.getJointTrans([8, 14, 28, 34][this.index]));
+                o.rumblePad(1, o.pos);
                 break;
             case TS_STUN:
                 n[0].unk24 = true;
@@ -664,6 +667,7 @@ export class BGTentacle extends NameRef {
                     w.effect('ms_boge_attack', p);
                     this.unk4C = 1;
                     w.sound(SE.BS_GESO_ATK_IMPACT, this.takeHit.pos);
+                    this.owner.rumblePad(2, this.owner.pos);
                 }
             }
         }
@@ -771,6 +775,11 @@ export class BGTentacle extends NameRef {
         }
         this.hand.setJoints(cur.map(colMajor));
     }
+    /** continuousRumble: held by Mario, the pad shakes (amputee: every 4 frames, kind 1; held: every 16, kind 0) */
+    continuousRumble() {
+        if (this.mState === TS_AMPUTEE) { if (this.takeHit.holder && this.mTime % 4 === 0) this.owner.rumblePad(1, this.takeHit.pos); }
+        else if (this.mState === TS_HELD) { if (this.takeHit.holder && this.mTime % 16 === 0) this.owner.rumblePad(0, this.takeHit.pos); }
+    }
     perform(cue: number) {
         this.takeHit.perform(cue);
         if (cue & CUE_MOVE) for (const h of this.attackHits) { let p = fr(h.posOnSpline + fr(0.05)); if (p > fr(0.8)) p = fr(p - fr(0.8)); h.posOnSpline = p; }
@@ -782,6 +791,7 @@ export class BGTentacle extends NameRef {
             this.moveNode();
             this.decideOwnState();
             this.checkDamage();
+            this.continuousRumble();
             ++this.mTime;
         }
         const o = this.owner;
@@ -908,7 +918,17 @@ export class BossGesso extends SpineEnemy {
         });
         if (beakScale !== 1 && this.joints[26]) { const m = this.joints[26]; for (const i of [0, 1, 2, 8, 9, 10]) m[i] = fr(m[i] * beakScale); }
     }
-    rumblePad(_k: number, _p: V3) { }
+    /** rumblePad: with Mario on the ground, within 3000 of p: SMSRumbleMgr->start(8, &unk1A4), unk1A4 = (3000 - dist) / 1000 (at most 1), times 0.4 / 0.7 / 1 by kind */
+    rumblePad(k: number, p: V3) {
+        if (!marioTouchGround4cm(this.world)) return;
+        const d = this.world.mario.pos.clone().sub(p);
+        let f = fr(fr(3000 - fr(Math.hypot(d.x, d.y, d.z))) / 1000);
+        if (f < 0) return;
+        if (f > 1) f = 1;
+        if (k === 0) f = fr(f * fr(0.4)); else if (k === 1) f = fr(f * fr(0.7));
+        this.unk1A4 = f;
+        rumbleStart(this.world, 8, 1, this.unk1A4);
+    }
     lenFromToeToMario() {
         let min = 100000;
         for (const t of this.tentacles) { if (t.isThing2()) continue; const l = len(t.lastNode().pos); if (l < min) min = l; }
@@ -1157,6 +1177,7 @@ export class BossGesso extends SpineEnemy {
         if ((cue & CUE_CALC_ANIM) && (this.mBeak!.holder || this.tentacleHeld()) && ((w.mario as any).mIntendedMag || 0) > fr(0.1)) w.sound(SE.BS_GESO_PULL, this.pos);
         if (cue & CUE_MOVE) {
             this.checkTakeMsg();
+            if (this.mBeak!.holder && this.mTimeInCurrentAttackMode % 4 === 0) this.rumblePad(1, this.mBeak!.pos);
             if (this.unk1AC > 0) this.unk1AC--;
             if (this.unk1AE > 0) this.unk1AE--;
         }
@@ -1200,6 +1221,9 @@ export class BossGesso extends SpineEnemy {
     kill() { this.onLiveFlag(LF.DEAD); }
 }
 
+/** gpCameraShake->startShake(mode, 1) */
+function bgShake(g: BossGesso, mode: number) { g.world.cameraShake?.startShake(mode, 1); g.world.events.push({ t: g.world.tickCount, kind: 'cameraShake', data: { mode, power: 1, p: g.pos.clone() } }); }
+
 /** TBGBinder::bind: onto the ground (the higher of below and the old height), falling into the sea when it dies */
 function bgBind(g: BossGesso) {
     const w = g.world;
@@ -1221,6 +1245,8 @@ function bgBind(g: BossGesso) {
                 const k = g.BP.mSLColumnScale;
                 if (e && e.generate) e.generate(g.pos, new V3(k, k, k));
                 w.sound(SE.BS_GESO_DOWN_DIVE, g.pos);
+                g.unk1A4 = 1;
+                rumbleStart(w, 8, 1, g.unk1A4);
             }
         }
         return;
@@ -1283,9 +1309,14 @@ BGNerves.beakDamage = nerve<BossGesso>('TNerveBGBeakDamage', (spine: S) => {
         const c4 = a.getFrameCtrl(ANM_BTK);
         if (c4) { c4.rate = 1; c4.frame = 0; }
         btp(self, BTP_TEYEDAMAGE, 1.5, 0);
+        // (MSBgm::stopBGM(MSD_BGM_BOSS, 10); MSMainProc::setBossNotDamagedFlag(false))
+        if (self.world.map === 3 || self.world.map === 59) self.world.events.push({ t: self.world.tickCount, kind: 'bgmStop', data: { name: 'MSD_BGM_BOSS', frames: 10 } });
     }
     if (t === 1) self.mCork!.crush();
     if (t === 12) self.world.effect('ms_boge_hit', self.getJointTrans(27));
+    if (t === 18) { bgShake(self, 0x12); self.rumblePad(1, self.pos); }
+    if (t === 234) { bgShake(self, 0x13); self.rumblePad(2, self.pos); }
+    if (t === 510) { bgShake(self, 0x14); self.rumblePad(1, self.pos); }
     if (t === 510 || t === 236) {
         const p = self.getJointTrans(47);
         p.y = self.world.checkGround(p.x, fr(p.y + 500), p.z)[0];
@@ -1297,6 +1328,7 @@ BGNerves.beakDamage = nerve<BossGesso>('TNerveBGBeakDamage', (spine: S) => {
         const c4 = a.getFrameCtrl(ANM_BTK);
         if (c4) { c4.rate = 0; c4.frame = 0; }
         spine.pushAfterCurrent(BGNerves.pollute);
+        if (self.world.map === 3 || self.world.map === 59) self.world.events.push({ t: self.world.tickCount, kind: 'bgm', data: { name: 'MSD_BGM_BOSSGESO_2DN3RD', p: self.pos.clone() } });
         return true;
     }
     return false;
@@ -1309,6 +1341,8 @@ BGNerves.tentacleDamage = nerve<BossGesso>('TNerveBGTentacleDamage', (spine: S) 
         p.y = self.world.checkGround(p.x, fr(p.y + 500), p.z)[0];
         self.world.effect('ms_boge_hitdown', p);
     }
+    if (t === 10) { bgShake(self, 0x15); self.rumblePad(1, self.pos); }
+    if (t === 304) { bgShake(self, 0x14); self.rumblePad(1, self.pos); }
     if (self.mactor!.curAnmEndsNext(ANM_BCK)) {
         if (!self.tentacleHeld()) return true;
         spine.pushAfterCurrent(BGNerves.tentacleDamage);
@@ -1338,6 +1372,8 @@ BGNerves.die = nerve<BossGesso>('TNerveBGDie', (spine: S) => {
     if (t === 0) {
         self.changeBck(BCK_CRUSH);
         btp(self, BTP_TEYEDAMAGE, 1.5, 0);
+        // (MSBgm::stopTrackBGMs(7, 10) at 3 / 59, stopTrackBGM(1, 10) at 9; MSMainProc's boss flags)
+        if (w.map === 3 || w.map === 59 || w.map === 9) w.events.push({ t: w.tickCount, kind: 'bgmStop', data: { track: w.map === 9 ? 1 : 7, frames: 10 } });
         const cam = w.map === 9 ? 'bgeso_fall_camera3' : !self.is2ndFightNow() ? 'bgeso_fall_camera' : 'bgeso_fall_camera2';
         w.events.push({ t: w.tickCount, kind: 'demoCamera', data: { name: cam, p: self.pos.clone() } });
         if (w.map === 3 || w.map === 59) {
@@ -1348,7 +1384,10 @@ BGNerves.die = nerve<BossGesso>('TNerveBGDie', (spine: S) => {
         if (nk && nk.killChildren) nk.killChildren();
         w.sound(SE.BS_GESO_MHIT_NOBOICE, self.pos);
     }
-    if (w.map === 9 && t >= 740 && t <= 750) w.sound(SE.OBJ_QUAKE, self.pos);
+    if (w.map === 9 && t >= 740 && t <= 750) {
+        w.sound(SE.OBJ_QUAKE, self.pos);
+        if (t === 745) { self.unk1A4 = 1; rumbleStart(w, 8, 1, self.unk1A4); }
+    }
     if (a.checkCurBckFromIndex(BCK_CRUSH) && a.curAnmEndsNext(ANM_BCK)) {
         self.changeBck(BCK_FLY);
         self.changeAllTentacleState(TS_SYNCBODY);
@@ -1379,6 +1418,7 @@ BGNerves.pollute = nerve<BossGesso>('TNerveBGPollute', (spine: S) => {
     }
     if (t === 90) self.world.effect('ms_boge_osen', self.getJointTrans(27));
     if (t === 226) { self.world.effect('ms_boge_jump', self.getJointTrans(1)); self.unk190[3] = 230; }
+    if (t === 230) { self.world.cameraShake?.startShake(0x14, 1); self.rumblePad(2, self.pos); }
     if (self.mactor!.curAnmEndsNext(ANM_BCK)) { if (self.unk178) self.unk178.setBckFromIndex(-1); self.unk17C = 0; return true; }
     return false;
 });

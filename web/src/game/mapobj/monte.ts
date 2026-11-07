@@ -22,7 +22,7 @@ import '../sound.js';
 import { MapObjBase, STATE_NORMAL, mapObjGlobals, newAndRegisterObj, UNIQUE_MAKERS } from './base.js';
 import { HideObjBase } from './hide.js';
 import { MsMtxSetRotY, MTXConcat, makeRootMtxRot, setRootMtx, getWaterPos, marioWaterGun } from './lib.js';
-import { LeanBlock, marioIsOn, marioHipAttack } from './bianco.js';
+import { LeanBlock } from './bianco.js';
 
 const STATE_UNK2 = 2, STATE_UNK3 = 3, STATE_UNK4 = 4;
 /** sinf / cosf of an f32, rounded to f32 (the game's calls of the C library) */
@@ -54,6 +54,7 @@ export class JumpMushroom extends MapObjBase {
 // ---------------------------------------------------------------- THangingBridgeBoard
 export class HangingBridgeBoard extends LeanBlock {
     static mMarioAccelY = fr(0.15); static mMarioHipDropAccelY = 2; static mReturnAccelRate = fr(0.005); static mSpeedDownRate = fr(0.98);
+    static mRopeWidthX = 10; static mRopeWidthZ = 7; static mTexPosRate = fr(0.01);
     bridge: HangingBridge | null = null;
     prev: HangingBridgeBoard | null = null; next: HangingBridgeBoard | null = null;
     prev2: HangingBridgeBoard | null = null; next2: HangingBridgeBoard | null = null;
@@ -69,8 +70,8 @@ export class HangingBridgeBoard extends LeanBlock {
     control() {
         super.control();
         const H = HangingBridgeBoard;
-        if (marioIsOn(this)) { this.push(H.mMarioAccelY); this.pushNeighbor(H.mMarioAccelY); }
-        if (marioHipAttack(this)) { this.push(H.mMarioHipDropAccelY); this.pushNeighbor(H.mMarioHipDropAccelY); }
+        if (this.marioIsOn()) { this.push(H.mMarioAccelY); this.pushNeighbor(H.mMarioAccelY); }
+        if (this.marioHipAttack()) { this.push(H.mMarioHipDropAccelY); this.pushNeighbor(H.mMarioHipDropAccelY); }
         this.pos.y = fr(this.pos.y + this.vel.y);
         this.vel.y = fr(this.vel.y + fr(H.mReturnAccelRate * fr(this.initialPos.y - this.pos.y)));
         this.vel.y = fr(this.vel.y * H.mSpeedDownRate);
@@ -85,9 +86,11 @@ export class HangingBridgeBoard extends LeanBlock {
         this.vel.y = 0;
         this.pos.y = this.initialPos.y;
     }
-    // setGroundCollision: with Yoshi hatched and over the board, the collision follows the board's
-    // matrix (moveActiveCollisionMtx) instead.
-    // TODO: Yoshi isn't in the sim; always TMapObjBase's.
+    /** THangingBridgeBoard::setGroundCollision: with a hatched Yoshi over it, the collision follows the board's matrix */
+    setGroundCollision() {
+        if (this.yoshiHatchedOver()) { if (this.colMgr) this.colMgr.moveActiveCollisionMtx(this.rootMtx()); }
+        else super.setGroundCollision();
+    }
     initMapObj() {
         super.initMapObj();
         this.unk140 = fr(0.01); this.unk144 = fr(0.02); this.unk148 = fr(0.08);
@@ -108,7 +111,65 @@ export class HangingBridge extends NameRef {
     boards: HangingBridgeBoard[] = [];
     unk18 = new V3(); unk24 = new V3(); unk30 = [0, 0];
     unk3C = 0; unk40 = 0; unk44 = 0;
-    constructor(public world: World, name = 'つり橋') { super(name); }
+    constructor(public world: World, name = 'つり橋') { super(name); (world as any).hangingBridge = this; }
+    static mRopeWidthBetweenBoards = 10; static mRopeWidthBetweenBoardsY = 10; static mPointNumBetweenBoards = 10;
+    static mBetweenBoardsTexPosRate = fr(0.01);
+    /** unk38: the rope's sag at each point between two boards */
+    unk38: number[] = [];
+    /** perform: CUE_DRAW only (initDraw, each board's drawRopes, drawRopeBetweenBoards): see ropeStrips */
+    perform(_cue: number) { }
+    /** drawLowerMinus / drawLowerPlus / drawUpper (kind 0 / 1 / 2): param_4 pairs of [x, y, z, s, t] */
+    private drawPart(kind: number, a: V3, b: V3, w: number[], n: number, out: number[]) {
+        const H = HangingBridge, rate = fr(1 / n);
+        let x = a.x, y = a.y, z = a.z;
+        const sx = fr(rate * fr(b.x - x)), sy = fr(rate * fr(b.y - y)), sz = fr(rate * fr(b.z - z));
+        for (let i = 0; i < n; i++) {
+            const h = fr(y - this.unk38[i]), t = fr(H.mBetweenBoardsTexPosRate * fr(x + z));
+            const lo = fr(h - H.mRopeWidthBetweenBoardsY);
+            if (kind === 0) out.push(fr(x - w[0]), h, fr(z - w[1]), 0, t, x, lo, z, 1, t);
+            else if (kind === 1) out.push(x, lo, z, 0, t, fr(x + w[0]), h, fr(z + w[1]), 1, t);
+            else out.push(fr(x + w[0]), h, fr(z + w[1]), 0, t, fr(x - w[0]), h, fr(z - w[1]), 1, t);
+            x = fr(x + sx); y = fr(y + sy); z = fr(z + sz);
+        }
+    }
+    /** drawRopeBetweenBoards(height, n): six strips (each side's lower minus, lower plus, upper) */
+    private drawRopeBetweenBoards(h: number, n: number, out: Float32Array[]) {
+        const xw = fr(this.unk30[0] * this.unk3C), zw = fr(this.unk30[1] * this.unk3C);
+        const w = [fr(this.unk30[0] * HangingBridge.mRopeWidthBetweenBoards), fr(this.unk30[1] * HangingBridge.mRopeWidthBetweenBoards)];
+        for (const side of [0, 1]) {
+            const sg = side === 0 ? 1 : -1;
+            for (const kind of [0, 1, 2]) {
+                const v: number[] = [];
+                let prev = new V3(fr(this.unk18.x + sg * xw), fr(this.unk18.y + h), fr(this.unk18.z + sg * zw));
+                for (const b of this.boards) {
+                    const cur = b.ropes[side].clone(); cur.y = fr(cur.y + h);   // (setDrawPos)
+                    this.drawPart(kind, prev, cur, w, n, v); prev = cur;
+                }
+                const cur = new V3(fr(this.unk24.x + sg * xw), fr(this.unk24.y + h), fr(this.unk24.z + sg * zw));
+                this.drawPart(kind, prev, cur, w, n, v); prev = cur;
+                this.drawPart(kind, prev, cur, w, n, v);
+                out.push(new Float32Array(v));
+            }
+        }
+    }
+    /** THangingBridgeBoard::drawOneRope at p: an 8-vertex strip round the hanging rope */
+    private static drawOneRope(p: V3, out: Float32Array[]) {
+        const B = HangingBridgeBoard;
+        const xp = fr(p.x + B.mRopeWidthX), xm = fr(p.x - B.mRopeWidthX), zp = fr(p.z + B.mRopeWidthZ), zm = fr(p.z - B.mRopeWidthZ);
+        const by = p.y, ty = fr(p.y + HangingBridge.mRopeHeight);
+        const tt = fr(B.mTexPosRate * fr(ty - p.y)), bt = fr(B.mTexPosRate * fr(by - p.y));
+        out.push(new Float32Array([p.x, ty, zp, 0, tt, p.x, by, zp, 0, bt, xm, ty, zm, 1, tt, xm, by, zm, 1, bt,
+            xp, ty, zm, 2, tt, xp, by, zm, 2, bt, p.x, ty, zp, 3, tt, p.x, by, zp, 3, bt]));
+    }
+    /** perform's CUE_DRAW geometry, for the viewer: triangle strips of [x, y, z, s, t] vertices */
+    ropeStrips(): Float32Array[] {
+        const out: Float32Array[] = [];
+        if (!this.boards.length || !this.unk38.length) return out;
+        for (const b of this.boards) { HangingBridge.drawOneRope(b.ropes[0], out); HangingBridge.drawOneRope(b.ropes[1], out); }
+        this.drawRopeBetweenBoards(0, HangingBridge.mPointNumBetweenBoards, out);
+        this.drawRopeBetweenBoards(HangingBridge.mRopeHeight, 1, out);
+        return out;
+    }
     initMonte() {
         for (let i = 0; i < this.boards.length; i++) {
             const p = MONTE_BOARDS[i];
@@ -166,6 +227,10 @@ export class HangingBridge extends NameRef {
             if (i < B.length - 1) B[i].next = B[i + 1];
             if (i < B.length - 2) B[i].next2 = B[i + 2];
         }
+        const N = HangingBridge.mPointNumBetweenBoards, step = fr(1 / N);
+        let angle = 0;
+        this.unk38 = [];
+        for (let i = 0; i < N; i++) { this.unk38.push(fr(50 * sinf(fr(fr(3.14) * angle)))); angle = fr(angle + step); }
     }
 }
 
@@ -175,10 +240,34 @@ export class SwingBoard extends MapObjBase {
     /** unk138: the rope length; unk13C its angle (degrees), unk144 its speed, unk148 the speed past which it slows; unk140 how much a spray pushes */
     unk138 = 5000; unk13C = 0; unk140 = 0; unk144 = 0; unk148 = 0;
     unk14C: Mtx = mtx(); unk17C = new V3();
-    constructor(w: World, name = 'ブランコ') { super(w, name); }
+    static mBoardWidth = 315; static mRopeWidthX = 10; static mRopeWidthZ = 7; static mTexPosRate = fr(0.01);
+    constructor(w: World, name = 'ブランコ') { super(w, name); ((w as any).ropeDrawers ??= []).push(this); }
+    /** drawOneRope(top, bottom): a strip of 8 [x, y, z, s, t] */
+    private drawOneRope(a: V3, b: V3, out: Float32Array[]) {
+        const S = SwingBoard;
+        const xPB = fr(b.x + S.mRopeWidthX), xMB = fr(b.x - S.mRopeWidthX), zPB = fr(b.z + S.mRopeWidthZ), zMB = fr(b.z - S.mRopeWidthZ);
+        const xPA = fr(a.x + S.mRopeWidthX), xMA = fr(a.x - S.mRopeWidthX), zPA = fr(a.z + S.mRopeWidthZ), zMA = fr(a.z - S.mRopeWidthZ);
+        const t = fr(this.unk138 * S.mTexPosRate);
+        out.push(Float32Array.of(
+            a.x, a.y, zPA, 0, t, b.x, b.y, zPB, 0, 0,
+            xPA, a.y, zMA, 1, t, xPB, b.y, zMB, 1, 0,
+            xMA, a.y, zMA, 2, t, xMB, b.y, zMB, 2, 0,
+            a.x, a.y, zPA, 3, t, b.x, b.y, zPB, 3, 0));
+    }
+    /** initDraw + draw (perform's CUE_DRAW): its two ropes from the board's ends (getAnmMtx(0)'s x axis) up to the hanging point; textured with the bridge rope texture */
+    draw(out: Float32Array[]) {
+        const S = SwingBoard, m = this.rootMtx(), ip = this.initialPos, p = this.pos;
+        const ax = fr(S.mBoardWidth * m[0]), az = fr(S.mBoardWidth * m[8]);
+        const bottom = new V3(fr(ax + ip.x), fr(this.unk138 + ip.y), fr(az + ip.z));
+        const top = new V3(fr(ax + p.x), fr(60 + p.y), fr(az + p.z));
+        this.drawOneRope(top, bottom, out);
+        bottom.x = fr(ip.x - ax); bottom.z = fr(ip.z - az);
+        top.x = fr(p.x - ax); top.z = fr(p.z - az);
+        this.drawOneRope(top, bottom, out);
+    }
     swing() {
         const g = marioWaterGun(this.world);
-        if (marioIsOn(this) && g.emitting) {
+        if (this.marioIsOn() && g.emitting) {
             const e = g.mtx, d = new V3(-e[0], 0, -e[8]);
             const m = this.rootMtx();
             this.unk144 = fr(this.unk144 + fr(this.unk140 * fr(fr(fr(m[2] * d.x) + fr(m[6] * d.y)) + fr(m[10] * d.z))));
@@ -186,7 +275,7 @@ export class SwingBoard extends MapObjBase {
     }
     control() {
         super.control();
-        if (marioIsOn(this)) this.swing();
+        if (this.marioIsOn()) this.swing();
         const S = SwingBoard;
         this.unk13C = fr(this.unk13C + this.unk144);
         const old = this.unk144;

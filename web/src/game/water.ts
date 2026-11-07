@@ -71,6 +71,8 @@ export class Water {
         const L = this.splashLog;
         while (L.length && L[0].tick < this.tick - 80) L.shift();
         L.push({ x, y, z, tick: this.tick });
+        // gpSplashManager->newSplash(pos, 5.0f)
+        if (this.w.splashManager) this.w.splashManager.newSplash(x, y, z, 5);
     }
     constructor(public w: World, files: Files) {
         for (let i = 0; i < SLOT_NUM; i++) { this.pos.push(new V3()); this.vel.push(new V3()); this.hit.push(null); this.plane.push(null); }
@@ -111,6 +113,8 @@ export class Water {
     }
 
     /** wind: pushes the drops in flight. */
+    /** checkFlagBottom4Bits (ModelWaterManager.hpp): the drop's state in its flag's low bits */
+    checkFlagBottom4Bits(i: number, f: number) { return (this.flag[i] & 0xF) === f; }
     wind(v: V3) { for (let i = 0; i < this.count; i++) if ((this.flag[i] & 0xF) === 1) this.vel[i].add(v); }
     /** TObjHitCheck::checkWater: the actor each drop in flight is in (for move to tell). */
     checkHits(hc: ObjHitCheck) {

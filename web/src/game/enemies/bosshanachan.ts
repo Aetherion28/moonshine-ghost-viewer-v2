@@ -25,19 +25,21 @@
 // (jointMatricesBlend between the BCK and the one before it: TNpcInbetween's ratio). The sand
 // pillar (sunabashira.bmd) is an extra while UNK10000 is on.
 //
-// Not here: particles (emitParticle_'s MsRandF calls are kept for the RNG), the camera shake and
-// rumble (emitCamShake_), the BGM (MSBgm start / stop / tempo / modBgm: the fade is taken as done),
+// Not here: particles (emitParticle_'s MsRandF calls are kept for the RNG), the BGM (MSBgm start / stop / tempo / modBgm: the fade is taken as done),
 // the target arrow, the circle shadows and damage fog, the manager's sand texture swap
 // (loadAfter), the anm sounds, the mirror actor (寝てるボスハナチャンin鏡) and the
 // MSF_WIGGLER_FALLING flag. The director's state 4 (the balloon timer) is taken as always on.
 
-import { fr, V3, MsWrap, MsAngleDiff, MsAngleWrap, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsRandF, matan, JMASSin, JMASCos, s16, MsMtxSetXYZRPH } from '../math.js';
+import { rumbleStart } from '../rumble.js';
+import { fr, V3, MsWrap, MsAngleDiff, MsAngleWrap, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsRandF, matan, JMASSin, JMASCos, s16, MsMtxSetXYZRPH, MsSqrtfHW } from '../math.js';
+import { DIR } from '../player/player.js';
 import { World, HitActor, LiveActor, SpineEnemy, EnemyManager, LiveManager, LF, HF, HC, MSG, nerve, Spine, Stream, Params, PSchema,
     ANM_BCK, ANM_BTP, ANM_BTK, ANM_BRK, ANM_FRAME_RATE, FC_ONCE, CUE_MOVE, CUE_CALC_ANIM, PathNode, FrameCtrl, MoveCollision } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { Skeleton, parseBCK, jointMatricesBlend } from '../skeleton.js';
 import { mapObjGlobals } from '../mapobj/base.js';
 import { marioGroundPlane, marioTouchGround4cm } from '../mapobj/lib.js';
+import { ratioF } from '../camera/lib.js';
 import type { ItemManager } from '../mapobj/item.js';
 import type { BGCheckData } from '../collision.js';
 import { NpcInbetween, palFrame } from '../npc/base.js';
@@ -74,6 +76,7 @@ const DEMO_PARAMS = { mSLViewClipFar: ['f', 25000], mSLViewClipRadius: ['f', 350
 const cHitPoint1_RailName = 'bosshanachan2', cHitPoint2_RailName = 'bosshanachan1';
 const cBodyMapCollisionFileName = '/scene/bosshanachan/hanabody_col.col', cHeadMapCollisionFileName = '/scene/bosshanachan/hanahead_col.col';
 const sEmitSandFrameFoot = [14, 34];
+const sSnortStepFrames = [21, 36, 55];
 
 /** EnumBossHanachanAnmKind (names guessed from the BCKs they pick) */
 const ANM = {
@@ -769,6 +772,7 @@ export class BossHanachan extends SpineEnemy {
                     }
                 }
                 this.emitParticle_();
+                this.emitCamShake_();
             }
             const pil = this.unk19C!;
             if (this.checkLiveFlag(LF.UNK10000) && pil.mactor && pil.mactor.curAnmEndsNext(ANM_BCK)) this.offLiveFlag(LF.UNK10000);
@@ -793,6 +797,42 @@ export class BossHanachan extends SpineEnemy {
             }
         }
     }
+    /**
+     * emitCamShake_: the steps' camera shakes (gpCameraShake->startShake) — GraphWander's foot passes by
+     * Mario's distance, Snort's steps, GetUp's landing (and its BGM track stop with UNK20000).
+     * (SMSRumbleMgr->start with Mario on the ground: rumble.ts)
+     */
+    emitCamShake_() {
+        const w = this.world;
+        if (w.director && w.director.state === DIR.DEMO) return;
+        const n = this.spine!.getLatestNerve();
+        const c = this.mBodyParts[0].mactor!.getFrameCtrl(ANM_BCK);
+        if (!c) return;
+        const shake = (mode: number, power: number) => { w.cameraShake?.startShake(mode, power); w.events.push({ t: w.tickCount, kind: 'cameraShake', data: { mode, power, p: this.pos.clone() } }); };
+        const P = this.unk1BC;
+        if (n === BHNerves.graphWander) {
+            const d = MsSqrtfHW(this.distToMarioSq);
+            let k: number;
+            if (d <= P.mSLCamShakeMaxDist) k = 1;
+            else if (d >= P.mSLCamShakeZeroDist) k = 0;
+            else k = MsClamp(ratioF(P.mSLCamShakeZeroDist, P.mSLCamShakeMaxDist, d), 0, 1);
+            const onGround = marioTouchGround4cm(w);
+            for (let i = 0; i < sEmitSandFrameFoot.length; i++) if (c.checkPass(sEmitSandFrameFoot[i])) {
+                shake(0xB, k);
+                if (onGround) for (const b of this.mBodyParts) rumbleStart(w, 8, 1, b.unk154);
+            }
+        } else if (n === BHNerves.snort) {
+            for (let i = 0; i < sSnortStepFrames.length; i++) if (c.checkPass(sSnortStepFrames[i])) { shake(0xA, 1); if (marioTouchGround4cm(w)) rumbleStart(w, 8, 1, null); }
+        } else if (n === BHNerves.getUp) {
+            const a = this.mBodyParts[0].curAnm;
+            if ((a === ANM.UNK9 || a === ANM.UNK12) && c.checkPass(9)) {
+                shake(0xC, 1);
+                if (marioTouchGround4cm(w)) rumbleStart(w, 8, 1, null);
+                // (MSBgm::stopTrackBGM(1, 30))
+                if (this.checkLiveFlag(LF.UNK20000)) w.events.push({ t: w.tickCount, kind: 'bgmStop', data: { track: 1, frames: 30 } });
+            }
+        }
+    }
     emitOneTimeSandPillar_(b: BHPartsBody) {
         this.onLiveFlag(LF.UNK10000);
         const c = b.center();
@@ -809,6 +849,7 @@ export class BossHanachan extends SpineEnemy {
         p.pos.set(this.unk1A0);
         const a = p.mactor;
         if (a) { a.setBckFromIndex(37); a.setFromIndex(ANM_BTK, 2); a.setFromIndex(ANM_BRK, 2); }
+        this.world.cameraShake?.startShake(8, 1);
         this.world.sound(SE.BS_HANA_TUMBLE, this.unk1A0);
     }
     isTumbleCompletelyAllBody() {
@@ -871,6 +912,8 @@ export class BossHanachan extends SpineEnemy {
             this.setGoalPath(new PathNode(null, V3.add(this.pos, d)));
             this.walkToCurPathNode(this.marchSpeed, this.turnSpeed, 0);
         }
+        this.world.cameraShake?.keepShake(9, 1);
+        // (the rumble while Mario's on the ground, its first 120 ticks)
     }
     goToInitialRecoverGraphNode() {
         const t = this.tracer;

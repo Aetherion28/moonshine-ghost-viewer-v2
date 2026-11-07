@@ -17,6 +17,7 @@ import { AT } from '../actortypes.js';
 import { POLLUTION_TYPE } from '../pollution.js';
 import { mapWarpStream } from '../mapwarp.js';
 import { thinkCubeArea } from '../mapwire.js';
+import { MSF } from '../flags.js';
 import { TMarioSim, j3dTRMtx } from './tmario.js';
 import { S, A, MF, ControllerWork, bg, marioBckInfo, marioFile } from './base.js';
 import { ANIME_DATA } from './tables.js';
@@ -174,6 +175,7 @@ export class PlayerMario extends TMarioSim {
         j3dTRMtx(this.mModel.baseTR, this.mFaceAngle.x, this.mModelFaceAngle, this.mFaceAngle.z, this.pos.x, this.pos.y, this.pos.z);
         this.mModel.update();
         this.mModel.calc();
+        this.setupMtxEffect(true);
     }
     /** TMario::load: his place, his angle, FLUDD's water (percent) and whether he has FLUDD */
     load(s: Stream) {
@@ -204,7 +206,7 @@ export class PlayerMario extends TMarioSim {
             const c = playerHooks.makeCamera ? playerHooks.makeCamera(this.world, this) : makePlayerCamera(this.world, this as any);
             this.simCamera = c; this.camera = c; this.cameraApprox = false;
             const G = this.mWaterGun as any;
-            if (G && G.cameraHook && (c as any).isLButtonCamera) G.cameraHook = { isLButtonCamera: () => (c as any).isLButtonCamera(), isJetCoaster1stCamera: () => false, pitch: () => { const t = (c as any).cur; return t ? t.pitch | 0 : 0; } };   // (gpCamera->getCurrentTarget().mPitch: lha 0xa4 @0x8014c510)
+            if (G && G.cameraHook && (c as any).isLButtonCamera) G.cameraHook = { isLButtonCamera: () => (c as any).isLButtonCamera(), isJetCoaster1stCamera: () => !!((c as any).isJetCoaster1stCamera && (c as any).isJetCoaster1stCamera()), pitch: () => { const t = (c as any).cur; return t ? t.pitch | 0 : 0; } };   // (gpCamera->getCurrentTarget().mPitch: lha 0xa4 @0x8014c510)
             if ((c as any).setWaterGun && G) (c as any).setWaterGun(G);
         } catch (e) { console.warn('[player] camera', e); }
     }
@@ -654,6 +656,8 @@ export class PlayerMario extends TMarioSim {
     mRailType = 0; mToroccoAngle = 0; mToroccoPos = new V3();
     /** the cart's base matrix (the track's joint 0): the viewer draws the cart on it (layer.ts) */
     toroccoTR: Mtx = mtx(); private railTR: Mtx = mtx();
+    /** mTorocco->getModel()->getAnmMtx(2): the cart's seat as last calculated (CPolarSubCamera::getToroccoMtx_) */
+    toroccoAnmMtx: Mtx | null = null;
     private static readonly ONE = new V3(1, 1, 1);
     /** MActor::calcAnm: the frames on, then the joints (here: joint j's world matrix as a game Mtx) */
     private static calcAnmMtx(a: MActor, base: Mtx, j: number): Mtx | null {
@@ -687,7 +691,7 @@ export class PlayerMario extends TMarioSim {
             this.railTR = mtx();
             this.onFlag(MF.HAS_FLUDD);
             const seat = PlayerMario.calcAnmMtx(this.mTorocco, this.toroccoTR, 2);
-            if (seat) this.pos.set(fr(seat[3]), fr(seat[7]), fr(seat[11]));
+            if (seat) { this.toroccoAnmMtx = seat; this.pos.set(fr(seat[3]), fr(seat[7]), fr(seat[11])); }
             this.mToroccoAngle = this.mFaceAngle.y;
         } catch (e) { console.warn('[player] torocco', e); this.mTorocco = this.mPinaRail = this.mKoopaRail = null; }
     }
@@ -712,6 +716,7 @@ export class PlayerMario extends TMarioSim {
         const rail = this.mRailType === 0 ? this.mPinaRail : this.mRailType === 1 ? this.mKoopaRail : null;
         if (rail) { const r0 = PlayerMario.calcAnmMtx(rail, this.railTR, 0); if (r0) this.toroccoTR = r0; }
         const seat = this.mTorocco ? PlayerMario.calcAnmMtx(this.mTorocco, this.toroccoTR, 2) : null;
+        if (seat) this.toroccoAnmMtx = seat;
         const rot = mtx();
         MsMtxSetRotRPH(rot, 0, fr(0.0054931640625 * this.mToroccoAngle), 0);
         const a = seat || mtx();
@@ -1015,6 +1020,7 @@ export class PlayerMario extends TMarioSim {
         this.mInvincibilityFrames = invincible;
         this.decHP(damage);
         if (this.checkFlag(MF.HAS_FLUDD) && this.mWaterGun) for (let i = 0; i < waterEmit; i++) this.mWaterGun.damage();
+        if (downType !== 3) this.world.cameraShake?.startShake(2, 1);
         if (downType !== 3) this.calcDamagePos(from.pos);
         if (this.mHealth > 0) this.startVoice(damage > 1 ? SE.MV01_DAMAGE_BIG_01 : downType === 0 ? SE.MV03_DAMAGE_LITLE_01 : SE.MV02_DAMAGE_MID_01);
         this.mDirty = fadd(this.mDirty, dirty);
@@ -1078,7 +1084,12 @@ export class PlayerMario extends TMarioSim {
     }
     /** the Blooper he surfs (mSurfGesso: for drawing; the game draws gpMapObjManager's model of that colour) */
     mSurfGesso: HitActor | null = null;
-    getCoin() { ++this.mCoinCount; this.incHP(1); }
+    getCoin() {
+        ++this.mCoinCount;
+        this.incHP(1);
+        // (MarioReceiveMsg.cpp: every 50th gold coin of the stage's count is a 1-up)
+        if (this.world.flags.getFlag(MSF.GOLD_COIN_COUNT) % 50 === 0) this.world.flags.incMario(1);
+    }
     getCoinRed() { this.incHP(2); }
     getCoinBlue() { this.incHP(2); }
     private dmg(sender: HitActor, p: { [k: string]: number }) {
@@ -1123,6 +1134,7 @@ export class PlayerMario extends TMarioSim {
                         if (!((m.unk13A | 0) === 0 && (m.unk13C | 0) < 120)) {
                             this.mHealth = this.mDeParams.mHPMax;
                             if (this.checkFlag(MF.HAS_FLUDD) && this.mWaterGun) this.mWaterGun.addWater(this.mWaterGun.getMaxWater());
+                            this.world.flags.incMario(1);
                             this.event('1up');
                             return true;
                         }
@@ -1655,6 +1667,7 @@ export class PlayerMario extends TMarioSim {
         switch (this.mStatusState) {
             case 0:
                 if (this.mHeldObject) { (this.mHeldObject as HitActor).receiveMessage(this.mHeldObject, MSG.UNKD); this.mHeldObject = null; }
+                this.world.conductor.killEnemiesWithin(this.pos, 2000);
                 if (this.jumpProcess(0) === 1) { if (this.world.talk) this.world.talk.fireGetStar(this.unk384); if (this.unk384) this.unk384.receiveMessage(this, MSG.TAKE); this.mStatusState = 1; }
                 break;
             case 1: this.setAnimation(A.DEMO_SHINE_GET, 1); this.stopProcess(); break;

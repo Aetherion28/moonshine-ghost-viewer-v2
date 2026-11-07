@@ -151,8 +151,9 @@ export class Amenbo extends SmallEnemy {
         this.chasing = true;
         this.searchCooldown = this.PA.mIsNotSearchTimerMax;
     }
-    setWalkDirV(v: V3) { this.q1D0.setRotateFromTo(new V3(0, 0, 1), v, 1); this.q1C0.set(this.quat); this.t1E0 = 0; }
-    setWalkDirQ(q: Quat) { this.q1C0.set(this.quat); this.q1D0.mul(q, this.quat); this.t1E0 = 0; }
+    getQuat() { return this.quat; }
+    setWalkDirV(v: V3) { this.q1D0.setRotateFromTo(new V3(0, 0, 1), v, 1); this.q1C0.set(this.getQuat()); this.t1E0 = 0; }
+    setWalkDirQ(q: Quat) { this.q1C0.set(this.getQuat()); this.q1D0.mul(q, this.quat); this.t1E0 = 0; }
     isStartMoving() { return this.mactor!.getFrameCtrl(ANM_BCK)!.checkPass(63); }
     isFindOutMario() {
         const m = this.world.mario;
@@ -165,7 +166,9 @@ export class Amenbo extends SmallEnemy {
     isOverTerritory(out: V3) { out.set(this.initial).sub(this.pos); out.y = 0; const r = this.PA.mTerritoryRange; return r * r < out.squared(); }
     isAttacking() { return this.spine!.getLatestNerve() !== AmenboNerves.hitWater || this.mactor!.checkCurAnm('amenbo_hit1_end', ANM_BCK); }
     isFreeze() { return this.spine!.getLatestNerve() !== AmenboNerves.hitWater; }
-    isChangedBlock() { return false; }
+    isChangedBlock() { return this.spine!.getLatestNerve() === SmallEnemyNerves.change; }
+    /** changeByJuice (and its TMirrorActor hidden: the sim has no mirror copy) */
+    changeByJuice() { return super.changeByJuice(); }
     isWaterFromWaterGun(a: HitActor) { const w = this.world.water, i = (a as WaterHitActor).unk68; return !!w && i >= 0 && (w.flag[i] & 0x40) !== 0; }
     activateJumpBase() {
         if (this.warp.isSetUp()) this.deactivateJumpBase();

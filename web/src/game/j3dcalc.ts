@@ -138,7 +138,7 @@ function quatLerp(a: number[], b: number[], t: number, out: number[]) {
     return out;
 }
 /** PSMTXQuat(q): its paired-single code lane by lane */
-function mtxQuat(q: number[], m: Mtx | number[]) {
+export function mtxQuat(q: number[], m: Mtx | number[]) {
     const [x, y, z, w] = q;
     const x2 = fmul(x, x), y2 = fmul(y, y);
     const t4a = psmadd(z, z, x2), t4b = psmadd(w, w, y2);

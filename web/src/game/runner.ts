@@ -13,11 +13,12 @@ import { MarioSample, MarioTrack } from './mario.js';
 import { LiveActor, NameRef, World, calcKeyCode, LF, shineIDofExStage } from './engine.js';
 import { rngCtx, srand, fr } from './math.js';
 import { CraneRotY } from './mapobj/ricco.js';
-import { feedbackCtx, FeedbackReplay, traceStatusCtx, traceStatusByTick, traceRngCtx, traceRngByState, traceActorCtx, traceActorsByTick, sessionCtx, traceSessionByTick } from './feedback.js';
+import { TraceFeeds } from './feedback.js';
 import { npcSinkSetup, npcSinkCounterOf } from './npc/base.js';
 import type { MarioView } from '../ghost/mstr.js';
 import type { TraceActors } from '../ghost/mstrghost.js';
 import './npc/manager.js';
+import './stageevent.js';
 import './enemies/pakkun.js';
 import './enemies/sambo.js';
 import './enemies/bosspakkun.js';
@@ -86,10 +87,11 @@ import { NO_PAD } from './player/pad.js';
 import type { StickCamera } from './camera/types.js';
 import { matan, s16 } from './math.js';
 import './bathwater.js';
+import './splash.js';
 import { writeSmsGhost, type GhostFrame, type GhostSegment } from './ghostwrite.js';
 import { LiveDirector, LiveTiming, decideMarioPosIdx, entranceStart, gotShineFromSamples, moveStage, decideNextStageOfMiss, plazaDemoOnStart, stageDemoName, liveRunCarry, loadGapQf, Area, selectMenuInput } from './stagechange.js';
 import { FlagManager, MSF, flagsFromTraceImage } from './flags.js';
-import { loadSlot, storeSlot, eraseSlot, readSave, writeSave, startArea, SAVE_SIZE } from './savefile.js';
+import { loadSlot, storeSlot, eraseSlot, readSave, writeSave, startArea, SAVE_SIZE, storeOption, loadOptionBlock } from './savefile.js';
 import { DIR } from './player/player.js';
 import { parseStageArc, sceneForRoute } from '../stagearc.js';
 import './mapevent.js';
@@ -678,12 +680,8 @@ export class SimRunner {
      * game had even where the simulation alone would drift. false ("Simulate"): the game code alone.
      */
     playRecording = true;
-    /** the current stage's recorded GPU feedback (null: the trace has none) */
-    feedback: FeedbackReplay | null = null;
-    traceStatus: ((d: number) => number | null) | null = null;
-    traceRng: ((state: number) => number | null) | null = null;
-    traceActor: ((key: number, x: number, z: number, d: number) => [number, number, number] | null) | null = null;
-    traceSession: ((field: number) => number | null) | null = null;
+    /** the current stage's recorded values the sim reads (game/feedback.ts TraceFeeds; null: no trace) */
+    feeds: TraceFeeds | null = null;
     /** where the last stage built left initSinkNpc_'s counter */
     private sinkCarry: { seg: number; n: number } | null = null;
     /** Play recording: the first ghost QF where the game code's Mario differed from the trace before he was put back (-1: none yet) */
@@ -859,15 +857,7 @@ export class SimRunner {
                 this.sync = { replay: true, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: cam, lostLives: P.lostLives, lateInputsQf: -1, controlQf: -1 };
             } else this.sync = { replay: false, firstDriftQf: -1, driftErr: 0, maxErr: 0, frames: 0, exactFrames: 0, camera: '', lostLives: [], lateInputsQf: -1, controlQf: -1 };
             this.rng = g.rng ? new RngReplay(g.rng, segI, q0, () => q0 + st0.qf) : null;
-            // a trace's GPU results (the camera's read of Mario's occlusion, Bowser's bath-water height): game/feedback.ts
-            this.feedback = g.trace && g.trace.feedback && g.trace.feedback.count ? new FeedbackReplay(g.trace.feedback, q0, () => st0.qf) : null;
-            // Mario's recorded status after each tick (checkStickRotate's leftover stack flags: player/move.ts)
-            this.traceStatus = g.trace && g.trace.ticks.length ? traceStatusByTick(g.trace.ticks, q0 + g.header.startQf, () => st0.qf) : null;
-            // the trace's rolls by RNG state (uninitialised memory a recorded roll gives away: enemies/tobipuku.ts)
-            this.traceRng = g.trace && g.trace.rng && g.trace.rng.count ? traceRngByState(g.trace.rng) : null;
-            this.traceActor = g.trace && g.trace.actors && g.trace.actors.count ? traceActorsByTick(g.trace.actors, q0 + g.header.startQf, () => st0.qf) : null;
-            // Moonshine's settings as the runner changed them (the Ricco fruit machine: mapobj/ricco.ts)
-            this.traceSession = g.trace ? traceSessionByTick(g.trace.session, q0, () => st0.qf) : null;
+            this.feeds = g.trace ? new TraceFeeds(g, q0, () => st0.qf) : null;
         }
         const st = this.stage!;
         const track = this.track(inp, segI);
@@ -875,10 +865,9 @@ export class SimRunner {
         while (st.qf + 4 <= want) {
             st.camera = this.camera(inp, q0 + st.qf + 4, segI);
             rngCtx.roll = this.rng ? this.rng.roll : null; rngCtx.node = this.rng ? this.rng.node : null;
-            feedbackCtx.take = this.feedback ? this.feedback.take : null;
-            traceStatusCtx.at = this.traceStatus; traceRngCtx.next = this.traceRng; traceActorCtx.at = this.traceActor; sessionCtx.at = this.traceSession;
+            if (this.feeds) this.feeds.install();
             try { st.runFrame(track, st.player ? this.padAt(inp.ghost, st.qf + (isInputTrace(inp.ghost) ? 0 : 4)) : null); } catch (e) { this.error = e; console.warn('[game] frame', e); this.stage = null; return false; }
-            finally { rngCtx.roll = null; rngCtx.node = null; feedbackCtx.take = null; traceStatusCtx.at = null; traceRngCtx.next = null; traceActorCtx.at = null; sessionCtx.at = null; }
+            finally { rngCtx.roll = null; rngCtx.node = null; TraceFeeds.clear(); }
             if (st.player && this.camKeys) {
                 const k = this.camKeys.get(q0 + st.qf);
                 const turn = k ? (st.player.simCamera as any).correctYawToRecorded(k.fwd, k.pos) : 0;
@@ -1187,7 +1176,9 @@ export class LiveRunner extends SimRunner {
                 if (!this.fileAsked && !L.record) { this.saveSlot = 0; this.fileAsked = true; }
                 // (a restart of a run playing a file starts again from the file's save)
                 const sv = this.saveSlot >= 0 && !L.record ? loadSlot(this.saveSlot) : null;
-                this.carry = this.saveSlot >= 0 && !L.record ? { flags: (sv && readSave(sv)) || new FlagManager(), prevArea: -1 } : null; this.notice = ''; this.loadQf = this.loadLeft = 0;
+                this.carry = this.saveSlot >= 0 && !L.record ? { flags: (sv && readSave(sv)) || new FlagManager(), prevArea: -1 } : null;
+                // (TApplication: the option block read in, loadOption)
+                { const ob = this.carry && loadOptionBlock(); if (ob) this.carry!.flags.loadOption(ob); } this.notice = ''; this.loadQf = this.loadLeft = 0;
                 this.recording = L.record ? [] : null;
             } else if (this.stage) this.qfBase += this.stage.qf + Math.max(STAGE_LOAD_QF, this.loadQf);
             this.pending = null; this.paused = false; this.screen = null; this.leaving = null;
@@ -1316,6 +1307,8 @@ export class LiveRunner extends SimRunner {
     private save(st: Stage, what: string) {
         if (this.saveSlot < 0) { this.notice = 'No file is being played: nothing saved'; this.noticeUntil = st.frame + 90; return; }
         const ok = storeSlot(this.saveSlot, writeSave(st.world.flags));
+        // (TCardSave: saveSuccess once the card is written, else saveFail)
+        if (ok) { st.world.flags.saveSuccess(); storeOption(st.world.flags.saveOption()); } else st.world.flags.saveFail();
         this.notice = ok ? `${what} to file ${'ABC'[this.saveSlot]} (${SAVE_SIZE} bytes, in this browser)` : 'The save could not be written (browser storage unavailable)';
         this.noticeUntil = st.frame + 120;
     }
@@ -1346,8 +1339,7 @@ export class LiveRunner extends SimRunner {
             if (m === undefined || (m && m.choice < 0)) return;
             this.screen = null;
             // (TFlagManager::restore: the file's save back, when the run plays a file)
-            const saved = this.saveSlot >= 0 ? loadSlot(this.saveSlot) : null, back = saved ? readSave(saved) : null;
-            if (back) { G.flags = f = back; } else { f.setFlag(MSF.LIFE_COUNT, 0); f.correctFlag(); }
+            if (this.saveSlot >= 0) f.restore(); else { f.setFlag(MSF.LIFE_COUNT, 0); f.correctFlag(); }
             f.setBool(true, MSF.UNK30001);
             G.next = f.getFlag(MSF.SHINE_COUNT) ? { stage: 1, scenario: 0xFF } : { stage: 0, scenario: 0 };
             add(!m ? 'Game over' : m.choice === 1 ? 'Back to the title: the game goes to its title screen here (the run goes on from the save)' : '');

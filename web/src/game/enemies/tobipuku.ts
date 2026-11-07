@@ -10,7 +10,7 @@
 // Not here: the Yoshi juice change (changeOut / scalingChangeActor) and the particles.
 
 import { fr, V3, MsSin, MsCos, MsClamp, MsWrap, MsGetRotFromZaxis, MsMtxSetXYZRPH, JMASSin, JMASCos, s16, randState } from '../math.js';
-import { World, Stream, HitActor, LF, HF, MSG, ANM_BCK, CUE_MOVE, nerve, Spine, PathNode, SpineEnemy, PSchema } from '../engine.js';
+import { ANM_FRAME_RATE, World, Stream, HitActor, LF, HF, MSG, ANM_BCK, CUE_MOVE, nerve, Spine, PathNode, SpineEnemy, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
@@ -307,6 +307,22 @@ export class TobiPuku extends WalkerEnemy {
     forceKill() { }
     genEventCoin() { }
     initAttacker(a: HitActor) { this.rot.set(a.rot); this.spine!.pushNerve(TobiNerves.fly); this.unk184 = 1; }
+    /** changeOut: out of the block where it was (not killed) */
+    changeOut() {
+        this.offLiveFlag(LF.HIDDEN);
+        this.pos.set(this.juiceBlock.pos);
+        this.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK);
+        this.juiceBlock.kill();
+        this.juiceBlock = null;
+    }
+    /** scalingChangeActor: its block grows to 3 wide */
+    scalingChangeActor() {
+        const b = this.juiceBlock;
+        const xz = MsClamp(fr(b.unk140.x + fr(0.02)), 0, 3);
+        b.unk140.x = b.unk140.z = xz; b.scale.x = b.scale.z = xz;
+        const y = MsClamp(fr(b.unk140.y + fr(0.01)), 0, SmallEnemyManager.mBlockYScale);
+        b.unk140.y = y; b.scale.y = y;
+    }
 }
 
 export class PukuPuku extends TobiPuku {
@@ -421,6 +437,7 @@ TobiNerves.die = nerve<TobiPuku>('TNerveTobiPukuDie', (spine: S) => {
         self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8);
         self.offLiveFlag(LF.HIDDEN); self.offLiveFlag(LF.UNK10000);
         self.holder = null;
+        self.stopAnmSound();
         spine.reset();
         spine.setNext(SmallEnemyNerves.die);
         spine.pushAfterCurrent(spine.default);

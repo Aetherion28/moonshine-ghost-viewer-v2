@@ -524,7 +524,7 @@ export class KoopaJrSubmarine extends SpineEnemy {
     appearShineKiller(_n: number) {
         const g = (this.world.mario as any).mWaterGun;
         const km = this.mKoopaJr && this.mKoopaJr.mKillerManager;
-        // TFlagManager's MSF_LIFE_COUNT (TODO: the sim never changes it: no 1-up / death counting yet)
+        // TFlagManager's MSF_LIFE_COUNT
         const lives = this.world.flags.getFlag(MSF.LIFE_COUNT);
         let p: number;
         if (!g || g.mCurrentWater === 0) p = 0.5;

@@ -26,6 +26,7 @@ class GameAudioProcessor extends AudioWorkletProcessor {
                     }
                     case 'bgm': if (this.sys) this.sys.playBgm(m.id, m.seek || 0); break;
                     case 'stopBgm': if (this.sys) this.sys.stopBgm(); break;
+                    case 'fadeStopBgm': if (this.sys) this.sys.fadeStopBgm(m.frames || 0); break;
                     case 'se': if (this.sys && !this.paused) this.sys.playSe(m.id, m.vol, m.pan, m.pitch, m.hold); break;
                     case 'voice': if (this.sys && !this.paused) this.sys.playVoice(m.id, m.vol, m.pan, !!m.ifQuiet, m.unlessId ?? -1); break;
                     case 'stopVoice': if (this.sys) this.sys.stopVoice(); break;

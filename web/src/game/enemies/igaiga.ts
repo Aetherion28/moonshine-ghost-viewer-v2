@@ -462,13 +462,15 @@ export class Gorogoro extends RollEnemy {
         if (this.pos.y > this.groundHeight) this.onLiveFlag(LF.AIRBORNE);
         if (!this.checkLiveFlag(LF.CLIPPED_OUT)) {
             const isMill = (a: any) => !!a && a.actorType === AT.BIA_WATERMILL01;
-            // (the watermill turns: TBiancoWatermill::turnByEnemy — not simulated)
-            if (this.groundPlane && isMill(this.groundPlane.actor)) { super.walkBehavior(kind, fr(0.2 * k)); return; }
+            if (this.groundPlane && isMill(this.groundPlane.actor)) { this.groundPlane.actor.turnByEnemy(this, this.groundPlane); super.walkBehavior(kind, fr(0.2 * k)); return; }
             const [, roof] = this.world.checkRoof(this.pos.x, this.pos.y + this.headHeight, this.pos.z);
-            if (roof && isMill(roof.actor)) { super.walkBehavior(kind, fr(0.3 * k)); return; }
+            if (roof && isMill(roof.actor)) { roof.actor.turnByEnemy(this, roof); super.walkBehavior(kind, fr(0.3 * k)); return; }
             if (this.unk138 && this.unk138.actor) {
                 const r = { center: [this.pos.x, this.pos.y + this.headHeight, this.pos.z] as [number, number, number], radius: this.wallRadius, maxResults: 4, flags: 0, results: [] as any[] };
-                if (this.world.isTouchedWallsAndMoveXZ(r)) { super.walkBehavior(kind, fr(0.2 * k)); return; }
+                if (this.world.isTouchedWallsAndMoveXZ(r)) {
+                    for (const wall of r.results) if (wall && isMill(wall.actor)) wall.actor.turnByEnemy(this, wall);
+                    super.walkBehavior(kind, fr(0.2 * k)); return;
+                }
             }
         }
         this.turnSpeed = this.PR.mSLTurnSpeedLow;
@@ -554,6 +556,7 @@ GorogoroNerves.die = nerve<Gorogoro>('TNerveGorogoroDie', (spine: SG) => {
         self.onHitFilter(0x1);
         self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LF.HIDDEN); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
         self.holder = null;
+        self.stopAnmSound();
         spine.reset();
         spine.setNext(SmallEnemyNerves.die);
         spine.pushAfterCurrent(spine.default);

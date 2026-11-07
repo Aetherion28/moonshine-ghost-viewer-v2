@@ -10,6 +10,8 @@ import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, smallParams, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, walkerParams } from './walker.js';
 import { register } from '../scene.js';
+import { MBindShadowBody } from '../bindshadow.js';
+import { Skeleton } from '../skeleton.js';
 
 const FLOWER_PARAMS = {
     ...SPINE_PARAMS,
@@ -200,13 +202,20 @@ export class HanaSambo extends SmallEnemy {
     unk194!: HanaSamboHead; unk198: any; unk19C = new V3(); unk1A8: SamboFlower | null = null; unk1B0 = 0;
     mactorD: MActor | null = null; mactorMain: MActor | null = null;
     static mHeadJntIndex = 3; static mPollenJntIndex = 6;
+    /** unk1AC: its TMBindShadowBody (scale 1.5) */
+    unk1AC: MBindShadowBody | null = null;
     constructor(w: World, name = 'ハナサンボ') { super(w, name); }
+    /** drawObject: TLiveActor's, then unless dead / hidden / UNK8 unk1AC->entryDrawShadow (the viewer's shadow: marioshadow.ts addBody) */
+    drawObject() { return !!this.unk1AC && !this.checkLiveFlag(LF.DEAD | LF.HIDDEN | LF.UNK8); }
+    isHitValid(m: number) { return m === 0xB; }
+    isCollidMove(_a: HitActor) { return false; }
     load(s: Stream) { super.load(s); this.reset(); this.setGoalPath(new PathNode(this.world.mario)); }
     init(m: any) {
         super.init(m);
         this.actorType = AT.HANA_SAMBO; this.unk150 = 0x11;
         this.unk198 = this.getSaveParam();
         this.spine!.initWith(HanaNerves.hide);
+        this.unk1AC = new MBindShadowBody(this, this.mactor ? Skeleton.of(this.world.files.scene(this.mactor.model)) : null, 1.5);
         this.setGoalPath(new PathNode(this.world.mario));
         this.unk194 = new HanaSamboHead('ハナサンボヘッド');
         this.world.addToGroup('敵グループ', this.unk194);

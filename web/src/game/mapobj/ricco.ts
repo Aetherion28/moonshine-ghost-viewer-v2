@@ -4,7 +4,7 @@
 // Bloopers' models, and the fruit tank: a switch (two, one down at a time) Mario hip-drops to
 // send a random fruit down into the tank.
 
-import { fr, V3, mtx, MsRandF } from '../math.js';
+import { fr, V3, Mtx, mtx, MsRandF } from '../math.js';
 import { World, Stream, HitActor, MSG, ANM_BCK, LF, HF } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -12,7 +12,7 @@ import { SE } from '../soundids.js';
 import '../sound.js';
 import { MapObjBase, MOF, mapObjGlobals, newAndRegisterObj, UNIQUE_MAKERS } from './base.js';
 import { Item } from './item.js';
-import { MsMtxSetRotX, MsMtxSetRotY, MTXConcat, makeRootMtxRot, setRootMtx } from './lib.js';
+import { MsMtxSetRotX, MsMtxSetRotY, MTXConcat, makeRootMtxRot, setRootMtx, setJointWorlds } from './lib.js';
 import { LeanBlock, MapObjFloatOnSea } from './bianco.js';
 import type { ResetFruit } from './fruit.js';
 import { sessionSetting, SessionField } from '../feedback.js';
@@ -103,7 +103,14 @@ export class CraneCargo extends LeanBlock {
         this.unk158.zero();
         MapObjBase.prototype.control.call(this);
     }
-    // calc: updateRootMtxTrans (which writes all three into one cell) then calcLeanMtx into joint 1: drawing only
+    /** calc: updateRootMtxTrans (the game's writes all three into [0][3]: only z stays) then calcLeanMtx into joint 1's matrix */
+    calc() {
+        const root = this.rootMtx().slice() as Mtx;
+        root[3] = this.pos.x; root[3] = fr(this.pos.y - this.yOffset); root[3] = this.pos.z;
+        const lean = mtx();
+        this.calcLeanMtx(lean);
+        setJointWorlds(this, new Map([[0, root], [1, lean]]));
+    }
 }
 
 // ---------------------------------------------------------------- TRiccoWatermill
@@ -216,6 +223,7 @@ export class SurfGesoObj extends Item {
         else if (this.individualName === 'SurfGesoGreen') this.unk154 = [0xB4, 0xFF, 0xB4, 0xFF];
         // (SMS_MakeMActorFromSDLModelData(gpMapObjManager's surfgeso model): mapObj/surfgeso.bmd)
         this.mactor = this.initMActor('surfgeso.bmd');
+        const c = this.unk154; this.initPacketMatColor(1, { r: c[0], g: c[1], b: c[2], a: c[3] });   // GX_TEVREG1
         if (this.mactor) this.mactor.setBck('surfgeso_run1');
     }
 }
@@ -275,8 +283,7 @@ export class FruitLauncher extends MapObjBase {
             const x = fr(FruitLauncher.mObjSpeedXZ * fr(MsRandF() - 0.5));
             fruit.vel.set(x, -FruitLauncher.mObjSpeedY, z);
             fruit.offLiveFlag(LF.UNK10);
-            this.world.events.push({ t: this.world.tickCount, kind: 'demoCamera', data: { name: 'フルーツタンクカメラカメラ', p: fruit.pos.clone() } });
-            if (this.world.talk) this.world.talk.fireStartDemoCamera('フルーツタンクカメラカメラ', fruit.pos.clone());
+            this.world.startDemoCamera('フルーツタンクカメラカメラ', fruit.pos);
             this.world.sound(SE.SY_COLLECT_DELIGHT, null);
             if (MapObjBase.isFruit(fruit)) (fruit as ResetFruit).killByTimer(FruitLauncher.mFruitLiveTime);
         }

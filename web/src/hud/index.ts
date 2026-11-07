@@ -25,6 +25,7 @@ import { TalkView } from './talkview.js';
 import { PauseMenu, GameOverMenu, SelectMenu } from './menus.js';
 import { Wipe, HX_W, HX_H } from './wipe.js';
 import { MovieScreen } from './moviescreen.js';
+import './menu.js';
 import { loadSlot } from '../game/savefile.js';
 
 interface GameFS { has(p: string): boolean; read(p: string): Promise<ArrayBuffer>; }

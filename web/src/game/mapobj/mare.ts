@@ -15,7 +15,7 @@
 // in corona.ts. MareGate isn't in this TU.
 
 import { fr, V3, mtx, MsMtxSetRotRPH, mtxMultVec } from '../math.js';
-import { World, Stream, Actor, HitActor, TakeActor, HF, MSG, ANM_BCK } from '../engine.js';
+import { World, Stream, Actor, HitActor, TakeActor, HF, LF, MSG, ANM_BCK, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
@@ -23,7 +23,6 @@ import '../sound.js';
 import '../mapwire.js';
 import { MapObjBase, STATE_NORMAL, mapObjGlobals, newAndRegisterObj, UNIQUE_MAKERS } from './base.js';
 import { MTXConcat, makeRootMtxRot, setRootMtx, restJointMtx, waterID, getWaterPlane, marioSpeedY, sendToMario } from './lib.js';
-import { marioIsOn } from './bianco.js';
 import { MsMtxSetTRS } from './objcol.js';
 import type { ItemManager } from './item.js';
 
@@ -46,7 +45,7 @@ export class CogwheelScale extends MapObjBase {
         return super.receiveMessage(sender, msg);
     }
     touchPlayer(_a: HitActor) {
-        if (marioIsOn(this)) this.unk148 = this.unk13C;
+        if (this.marioIsOn()) this.unk148 = this.unk13C;
         const c = this.unk158!;
         if (fr(this.pos.y - this.yOffset) > fr(150 + this.world.mario.pos.y)) {
             if ((this.unk154 && c.unk138 > 0) || (!this.unk154 && c.unk138 < 0)) {
@@ -79,7 +78,26 @@ export class Cogwheel extends MapObjBase {
     unk138 = 0; unk13C = 0; unk140 = 0; unk144 = 0; unk148 = 0; unk14C = 0;
     unk150: CogwheelScale | null = null; unk154 = new V3(); unk160 = 0;
     unk164: CogwheelScale | null = null; unk168 = new V3(); unk174 = 0;
-    constructor(w: World, name = '天秤') { super(w, name); }
+    constructor(w: World, name = '天秤') { super(w, name); ((w as any).cogRopeDrawers ??= []).push(this); }
+    /** initDraw + draw (perform's CUE_DRAW): the two ropes, each a strip of 8 [x, y, z, s, t] from its end (unk154 / unk168) up to 600 / 1200 above its scale's collision base; textured with /scene/mapObj/cogwheel_rope.bti */
+    draw(out: Float32Array[]) {
+        const C = Cogwheel, L = this.unk150, R = this.unk164;
+        if (!L || !R) return;
+        const yBot = this.unk154.y;
+        const rope = (e: V3, dy: number, yTop: number, s: number[]) => {
+            const x1 = fr(e.x + C.mRopeWidthX), x0 = fr(e.x - C.mRopeWidthX), z1 = fr(e.z + C.mRopeWidthZ), z0 = fr(e.z - C.mRopeWidthZ);
+            const vTop = fr(C.mTexPosRate * fr(yTop - dy)), vBot = fr(C.mTexPosRate * fr(yBot - dy));
+            out.push(Float32Array.of(
+                x0, yTop, z0, s[0], vTop, x0, yBot, z0, s[0], vBot,
+                x1, yTop, z1, s[1], vTop, x1, yBot, z1, s[1], vBot,
+                x1, yTop, z0, s[2], vTop, x1, yBot, z0, s[2], vBot,
+                x0, yTop, z1, s[3], vTop, x0, yBot, z1, s[3], vBot));
+        };
+        let dy = fr(L.pos.y - L.yOffset);
+        rope(this.unk154, dy, fr(600 + dy), [0, 1, 2, 3]);
+        dy = fr(R.pos.y - R.yOffset);
+        rope(this.unk168, dy, fr(1200 + dy), [0, 1, 0, 1]);
+    }
     /** rebound */
     rebound() {
         this.unk138 = fr(this.unk138 * -this.unk148);
@@ -137,10 +155,18 @@ export class Cogwheel extends MapObjBase {
 }
 
 // ---------------------------------------------------------------- TMapObjElasticCode
+const ELASTIC_CODES = new WeakMap<World, MapObjElasticCode[]>();
+/** the scene's elastic codes, for the viewer's draw */
+export function elasticCodes(w: World) { return ELASTIC_CODES.get(w) || []; }
 export class MapObjElasticCode extends MapObjBase {
     /** unk138 the held thing's weight, unk13C the spring, unk140 the damping */
     unk138 = 0; unk13C = 0; unk140 = 0;
-    constructor(w: World, name = 'ゴムひも') { super(w, name); }
+    constructor(w: World, name = 'ゴムひも') { super(w, name); let l = ELASTIC_CODES.get(w); if (!l) ELASTIC_CODES.set(w, l = []); l.push(this); }
+    /** draw (TMapObjBase::perform's CUE_DRAW unless dead): a GX_LINES line, width 24 (GX_TO_ZERO), colour {0, 0, 100}, from 1000 over the start to the object */
+    draw(): number[] | null {
+        if (this.checkLiveFlag(LF.DEAD)) return null;
+        return [this.initialPos.x, fr(this.initialPos.y + 1000), this.initialPos.z, this.pos.x, this.pos.y, this.pos.z];
+    }
     control() {
         super.control();
         this.vel.y = fr(this.vel.y * this.unk140);
@@ -237,7 +263,19 @@ export class MapObjGrowTree extends MapObjBase {
 export class WireBell extends MapObjBase {
     /** unk138 its wire, unk13C how far below the wire it hangs, unk140 - unk148 its rope's drawing, unk14C its point on the wire */
     unk138 = -1; unk13C = 200; unk140 = 10; unk144 = 5; unk148 = fr(0.01); unk14C = new V3();
-    constructor(w: World, name = 'ワイヤー鈴（紫）') { super(w, name); }
+    constructor(w: World, name = 'ワイヤー鈴（紫）') { super(w, name); ((w as any).cogRopeDrawers ??= []).push(this); }
+    /** initDraw + draw (perform's CUE_DRAW): its rope, a strip of 8 [x, y, z, s, t] from its point on the wire down to it; textured with /scene/mapObj/cogwheel_rope.bti */
+    draw(out: Float32Array[]) {
+        const xP = fr(this.unk14C.x + this.unk140), xM = fr(this.unk14C.x - this.unk140);
+        const zP = fr(this.unk14C.z + this.unk144), zM = fr(this.unk14C.z - this.unk144);
+        const bot = this.pos.y, top = this.unk14C.y;
+        const tT = fr(this.unk148 * fr(top - bot)), tB = fr(this.unk148 * fr(bot - this.pos.y));
+        out.push(Float32Array.of(
+            xM, top, zM, 0, tT, xM, bot, zM, 0, tB,
+            xP, top, zP, 1, tT, xP, bot, zP, 1, tB,
+            xP, top, zM, 0, tT, xP, bot, zM, 0, tB,
+            xM, top, zP, 1, tT, xM, bot, zP, 1, tB));
+    }
     control() {
         const wm = this.world.mapWires;
         if (wm) this.unk14C.set(wm.getPointOnWire(this.unk138, this.pos));
@@ -310,7 +348,7 @@ export class MareFall extends MapObjBase {
 }
 
 // ---------------------------------------------------------------- TMareCork
-/** The cannon (TCannon, Enemy/cannon.cpp) it plugs. TODO: TCannon isn't in the sim; this is what the cork uses of it. */
+/** The cannon (TCannon, enemies/cannon.ts) it plugs: what the cork uses of it */
 interface CannonLike extends TakeActor { isObject?(): boolean; startChorobeiShout?(): void; }
 export class MareCork extends MapObjBase {
     /** unk138 the cannon, unk13C the spray's place (bound: stays 0), unk148 the jet's place, unk154 popped */
@@ -362,7 +400,6 @@ export class MareEventPoint extends HitActor {
         if (msg === MSG.SPRAYED_BY_WATER) {
             const wm = this.world.water as any;
             const id = waterID(sender);
-            // TODO: gpModelWaterManager->checkFlagBottom4Bits(id, 1): the drop's flags; taken as unset when the sim has none.
             const flagged = wm && typeof wm.checkFlagBottom4Bits === 'function' ? !!wm.checkFlagBottom4Bits(id, 1) : false;
             const plane = getWaterPlane(this.world, sender);
             if (!flagged && plane) {
@@ -391,12 +428,18 @@ register('WireBell', (w, n) => new WireBell(w, n));
 register('Puncher', (w, n) => new MapObjPuncher(w, n));
 /**
  * TMarineSnow (マリンスノー, Map/MarineSnow.cpp; scene class MarineSnow: Noki Bay's deep water and
- * Gooper Blooper's arena): an actor that every CUE_CALC_ANIM moves to the camera's place and emits
- * the marine snow particle there. Drawing only, no rand(): minimal here (its position isn't moved,
- * the sim has no camera).
+ * Gooper Blooper's arena): an actor that every CUE_CALC_ANIM moves to the camera's place
+ * (gpCamera->unk124: the input-driven Mario's camera, when there is one) and emits the marine snow
+ * particle there, bound to its position (particles aren't simulated).
  */
 export class MarineSnow extends Actor {
-    constructor(_w: World, name = 'マリンスノー') { super(name); }
+    constructor(public world: World, name = 'マリンスノー') { super(name); world.conductor.others.push(this); }
+    perform(cue: number) {
+        if (!(cue & CUE_CALC_ANIM)) return;
+        const C: any = (this.world.mario as any).simCamera;
+        if (C && C.unk124) this.pos.set(C.unk124.x, C.unk124.y, C.unk124.z);
+        // (emitAndBindToPosPtr(OTHERS_MARINESNOW_MS_MARE_MARINSNOW, &mPosition, 1, this): a particle)
+    }
 }
 register('MarineSnow', (w, n) => new MarineSnow(w, n));
 register('MareFall', (w, n) => new MareFall(w, n));

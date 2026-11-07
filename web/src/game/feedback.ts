@@ -151,3 +151,38 @@ export function traceSessionByTick(S: { qf: number[]; bytes: Uint8Array[] } | un
         return b && field < b.length ? b[field] : null;
     };
 }
+
+/**
+ * Every recorded value the sim reads from a trace while it plays one (the GPU feedback, Mario's recorded
+ * status, the rolls by RNG state, the actors by tick, Moonshine's settings), built for one stage and put
+ * in their contexts around each frame. The viewer's runner and the test harness both play a trace
+ * through this, so a new kind of recorded value is added here once. off: kinds to leave out (harness flags).
+ */
+export class TraceFeeds {
+    feedback: FeedbackReplay | null = null;
+    status: ((d: number) => number | null) | null = null;
+    rng: ((state: number) => number | null) | null = null;
+    actor: ((key: number, x: number, z: number, d: number) => [number, number, number] | null) | null = null;
+    session: ((field: SessionField) => number | null) | null = null;
+    constructor(g: any, q0: number, qfNow: () => number, off: { feedback?: boolean; status?: boolean; rng?: boolean; actor?: boolean; session?: boolean } = {}) {
+        const T = g && g.trace;
+        if (!T) return;
+        // the GPU results (the camera's read of Mario's occlusion, Bowser's bath-water height)
+        if (!off.feedback && T.feedback && T.feedback.count) this.feedback = new FeedbackReplay(T.feedback, q0, qfNow);
+        // Mario's recorded status after each tick (checkStickRotate's leftover stack flags: player/move.ts)
+        if (!off.status && T.ticks.length) this.status = traceStatusByTick(T.ticks, q0 + g.header.startQf, qfNow);
+        // the rolls by RNG state (uninitialised memory a recorded roll gives away: enemies/tobipuku.ts)
+        if (!off.rng && T.rng && T.rng.count) this.rng = traceRngByState(T.rng);
+        if (!off.actor && T.actors && T.actors.count) this.actor = traceActorsByTick(T.actors, q0 + g.header.startQf, qfNow);
+        // Moonshine's settings as the runner changed them (the Ricco fruit machine: mapobj/ricco.ts)
+        if (!off.session) this.session = traceSessionByTick(T.session, q0, qfNow);
+    }
+    install() {
+        feedbackCtx.take = this.feedback ? this.feedback.take : null;
+        traceStatusCtx.at = this.status; traceRngCtx.next = this.rng; traceActorCtx.at = this.actor; sessionCtx.at = this.session;
+    }
+    static clear() {
+        feedbackCtx.take = null;
+        traceStatusCtx.at = null; traceRngCtx.next = null; traceActorCtx.at = null; sessionCtx.at = null;
+    }
+}

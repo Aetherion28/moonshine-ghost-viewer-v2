@@ -3,6 +3,8 @@
 // far clip from npcFarClip.prm). The model swaps (straw, goop, the jellyfish's textures) and the
 // parts' models are the viewer's.
 
+import { isInOtherFastCube } from '../mapwire.js';
+import { fr } from '../math.js';
 import { World, Stream, EnemyManager, LiveManager, ObjManager, AnmData, LF } from '../engine.js';
 import { register } from '../scene.js';
 import { BaseNPC, npcParams, condParams } from './base.js';
@@ -52,10 +54,15 @@ export class NPCManager extends EnemyManager {
         if (!this.anmData) this.anmData = new AnmData(this.info.anm ? this.info.anm.toLowerCase() : this.folder(), this.world.files);
         return this.anmData;
     }
-    /** clipEnemies: the frustum (near unk54, the stage's far clip, radius unk3C). TODO: SMS_IsInOtherFastCube (the fast cubes) isn't checked, nor Delfino Plaza's 15000 far clip under ground. */
+    /** clipEnemies: one in another fast cube (its position + 75 up) is out, else the frustum (near unk54, the stage's far clip, radius unk3C; in Delfino Plaza at least 15000 in a demo or under ground) */
     clipActors() {
+        let far = this.farClip;
+        const C: any = (this.world.mario as any).simCamera;
+        if (this.world.map === 1 && C && (C.isDemoCamera() || C.mMode === 0xD || (C.mPrevMode === 0xD && (C.isNowInbetween() || C.mMode === 0x13))) && far < 15000) far = 15000;
         for (const o of this.objs as BaseNPC[]) {
-            if (this.world.inView(o.pos, this.unk3C, this.farClip, this.unk54)) o.offLiveFlag(LF.CLIPPED_OUT);
+            const q = o.pos.clone(); q.y = fr(q.y + 75);
+            if (o.checkLiveFlag(LF.UNK2000) && isInOtherFastCube(this.world, q)) { o.onLiveFlag(LF.CLIPPED_OUT); continue; }
+            if (this.world.inView(o.pos, this.unk3C, far, this.unk54)) o.offLiveFlag(LF.CLIPPED_OUT);
             else o.onLiveFlag(LF.CLIPPED_OUT);
         }
     }
@@ -72,7 +79,32 @@ const NPCS: [string, number][] = [
     ['NPCDummy', AT.NPC_DUMMY], ['NPCBoard', AT.NPC_BOARD],
 ];
 for (const [cls, type] of NPCS) register(cls, (w, n) => new BaseNPC(w, type, n));
-for (const k of Object.keys(MANAGERS)) register(k, (w, n) => new NPCManager(w, k, n));
+/**
+ * TMonteWBaseManager (TMonteWManager / WA / WB and, as TMonteWSpecialManager, WC): its common parts
+ * keeper (makeCommonPartsModelDataKeeper_(9, monteWCommon): the viewer's parts), the straw texture
+ * swap (changeTextureToStraw_: the viewer's), createAnmData from /scene/monteWCommon (the special
+ * manager's is TObjManager's: its own folder).
+ */
+export class MonteWBaseManager extends NPCManager {
+    constructor(w: World, kind: string, name = '', public special = false) { super(w, kind, name); }
+    createAnmData() { return new AnmData(this.special ? this.folder() : 'montewcommon', this.world.files); }
+    getMActorAnmData() {
+        if (!this.anmData) this.anmData = this.createAnmData();
+        return this.anmData;
+    }
+}
+/**
+ * TMareMBaseManager (a TMareBaseManager: the mare common bmts, getBmt_ the normal / pollution one,
+ * the viewer's): its common parts keeper (makeCommonPartsModelDataKeeper_(0xD, mareMCommon)) and
+ * createModelData: /scene/mareM/mareM.bmd.
+ */
+export class MareMBaseManager extends NPCManager {
+    createModelData() { this.modelFiles = ['marem/marem.bmd']; }
+}
+const MONTE_W = new Set(['MonteWManager', 'MonteWAManager', 'MonteWBManager', 'MonteWCManager']);
+const MARE_M = new Set(['MareMManager', 'MareMAManager', 'MareMBManager', 'MareMCManager', 'MareMDManager']);
+for (const k of Object.keys(MANAGERS)) register(k, (w, n) =>
+    MONTE_W.has(k) ? new MonteWBaseManager(w, k, n, k === 'MonteWCManager') : MARE_M.has(k) ? new MareMBaseManager(w, k, n) : new NPCManager(w, k, n));
 
 /** TBoardNpcManager: the signboards' manager (a TLiveManager), boardNpc.bmd from its folder, clipped as the enemies are */
 export class BoardNpcManager extends LiveManager {

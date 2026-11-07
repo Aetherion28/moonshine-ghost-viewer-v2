@@ -88,7 +88,7 @@ const mOpenRollSpeed = 0.3, mUseObjCollision = true, mForcePow = 10, mUseMapColl
 
 const rowMajor = (m: mat4): Mtx => { const r = mtx(); r[0] = m[0]; r[1] = m[4]; r[2] = m[8]; r[3] = m[12]; r[4] = m[1]; r[5] = m[5]; r[6] = m[9]; r[7] = m[13]; r[8] = m[2]; r[9] = m[6]; r[10] = m[10]; r[11] = m[14]; return r; };
 const transMtx = (x: number, y: number, z: number) => { const m = mtx(); m[3] = x; m[7] = y; m[11] = z; return m; };
-const sendToMario = (w: World, from: HitActor, msg: number) => w.mario.receiveMessage(from, msg);
+import { sendToMario } from '../mapobj/lib.js';
 /** SMS_MarioMoveRequest */
 const marioMoveRequest = (w: World, p: V3) => { const m = w.mario as any; return m.moveRequest ? m.moveRequest(p) : false; };
 
@@ -961,6 +961,7 @@ function execSpin(e: BossEel) {
     const P = e.EP;
     const sp = chase(e.turnSpeed, P.mSLSpinMaxSpeed, P.mSLSpinAccel);
     e.turnSpeed = fr(sp);
+    e.world.cameraShake?.keepShake(0x18, 1);
     if (e.checkLiveFlag(LF_SPIN_REVERSE)) {
         e.rot.y = fr(e.rot.y - e.turnSpeed);
         if (e.rot.y <= 0) e.world.sound(SE.BS_UNG_ROLL, e.pos);
@@ -1002,6 +1003,7 @@ EelNerves.appear = nerve<BossEel>('TNerveBossEelAppear', (spine: ES) => {
         e.barrierCollision!.offHitFilter(HF.NO_COLLISION);
         e.setBckAnm(BCK_APPEAR);
         e.inDemo = true;
+        e.world.cameraShake?.startShake(0x19, 1);
         const d = fr(fc().end * 2);
         e.appearAcceleration = fr(fr(P.mSLAppearMoveDistY / d) / d);
     }
@@ -1042,7 +1044,7 @@ function execBack(spine: ES) {
     const e = spine.body;
     if (spine.time === 1) {
         e.world.sound(SE.BS_UNG_DOWN, e.pos);
-        if (e.toothBroken) { e.toothBroken = false; e.setBckAnm(BCK_BACK_BROKEN); }
+        if (e.toothBroken) { e.toothBroken = false; e.setBckAnm(BCK_BACK_BROKEN); e.world.cameraShake?.startShake(0x1A, 1); }
         else e.setBckAnm(BCK_BACK);
     }
     e.appearOffset = fr(e.appearOffset - fr(e.EP.mSLAppearMoveDistY / fr(e.mactor!.getFrameCtrl(ANM_BCK)!.end * 2)));
@@ -1084,6 +1086,7 @@ EelNerves.die = nerve<BossEel>('TNerveBossEelDie', (spine: ES) => {
     if (spine.time === 0) {
         e.world.sound(SE.BS_UNG_VOICE_LAST, e.pos);
         e.world.effect('balloon:e0014', e.pos);
+        e.world.cameraShake?.startShake(0x1E, 1);
         e.setBckAnm(BCK_DIE);
         e.invalidateAllCollision();
         e.heartCoin!.generate(e.pos);
@@ -1109,13 +1112,15 @@ EelNerves.mouthOpenWait = nerve<BossEel>('TNerveBossEelMouthOpenWait', (spine: E
     if (spine.time === 0) {
         if (e.toothBroken) e.toothBroken = false;
         e.setBckAnm(BCK_OPEN);
+        e.world.cameraShake?.startShake(0x1B, 1);
     } else if (e.checkCurAnmEnd(0)) {
-        if (a.checkCurBckFromIndex(BCK_OPEN)) { e.setBckAnm(BCK_BREATH_IN); e.generateVortex(); }
+        if (a.checkCurBckFromIndex(BCK_OPEN)) { e.setBckAnm(BCK_BREATH_IN); e.world.cameraShake?.startShake(0x1C, 1); e.generateVortex(); }
         else {
             const open = P.mSLMouthOpenFrame;
             if (spine.time > open - P.mSLCanEatFrame && e.canEatMario()) { spine.pushAfterCurrent(EelNerves.eat); return true; }
             if (spine.time > open) {
                 if (a.checkCurBckFromIndex(BCK_CLOSE)) return true;
+                e.world.cameraShake?.startShake(0x1D, 1);
                 e.setBckAnm(BCK_CLOSE);
             }
         }

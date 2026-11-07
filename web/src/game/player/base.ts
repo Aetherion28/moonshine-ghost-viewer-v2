@@ -7,6 +7,7 @@
 // are kept in double, which the game (single-precision FPU, fused multiply-adds) doesn't always.
 // s16 angles are wrapped with s16().
 
+import { rumbleStart } from '../rumble.js';
 import { fr, V3, s16, JMASSin, JMASCos, matan, mtx, Mtx } from '../math.js';
 import { World, TakeActor, HitActor, Params, PSchema, FrameCtrl, FC_LOOP } from '../engine.js';
 import { BGCheckData, WallCheck, DONT_MOVE_XZ } from '../collision.js';
@@ -15,6 +16,7 @@ import { concat } from '../j3dcalc.js';
 import type { mat4 } from 'gl-matrix';
 import * as P from './params.js';
 import { S, MF, A, ANIME_DATA, ANIME_FILES } from './tables.js';
+import { MultiMtxEffect } from '../mtxeffect.js';
 import { AT } from '../actortypes.js';
 import type { Yoshi } from './yoshi.js';
 
@@ -121,18 +123,23 @@ export class MarioModel {
      * both at the body's frame; TMario::doRunningAnimation sets the ratio), the chest down the upper
      * body's while unk24[1].unk3 isn't 0xff (that slot's ratio stays 0).
      */
-    calc(): mat4[] | null {
+    /** the joints' TMultiMtxEffect callbacks (set on the model data by TMultiMtxEffect::setup) */
+    fx: MultiMtxEffect | null = null;
+    /** fx: J3DModel::calc from calcAnim (the joint callbacks step); else the stored matrices (getAnmMtx) */
+    calc(fx = false): mat4[] | null {
+        if (this.joints && !fx) return this.joints;
         const up = this.upperCalc !== -1 && this.upperJoint >= 0 && this.anm[1] >= 0;
         const J = this.jointCtrl;
         const key = this.anm[0] + '|' + this.fc[0].frame + '|' + this.blendRatio + '|' + (up ? this.anm[1] + '@' + this.fc[1].frame : '-') + '|' + Array.from(this.baseTR).join(',') + (J ? '|' + J.joint + ':' + Array.from(J.r).join(',') : '');
-        if (!this.joints || key !== this.jointsKey) {
+        if (!this.joints || fx || key !== this.jointsKey) {
             const sk = Skeleton.of(marioFile('bmd/ma_mdl1.bmd'));
             if (!sk) return null;
             const b = this.anm[0] >= 0 ? marioFile(`bck/ma_${ANIME_FILES[this.anm[0]]}.bck`) : null;
             const ub = up ? marioFile(`bck/ma_${ANIME_FILES[this.anm[1]]}.bck`) : null;
             const upper = up ? { joint: this.upperJoint, anm: { anm: ub ? parseBCK(ub) : null, frame: this.fc[1].frame } } : null;
             // MarioWaistCtrl & co.: MTXConcat(J3DSys::mCurrentMtx, r, J3DSys::mCurrentMtx) after the joint's anm matrix
-            const post = J ? (j: number, cur: number[]) => { if (j === J.joint) concat(cur, J.r, cur); } : null;
+            const F = fx ? this.fx : null;
+            const post = J || F ? (j: number, cur: number[]) => { if (J && j === J.joint) concat(cur, J.r, cur); if (F) F.jointCallback(j, cur); } : null;
             const ob = this.blendRatio !== 0 ? marioFile(`bck/ma_${ANIME_FILES[MarioModel.OLD_BODY_BCK]}.bck`) : null;
             this.joints = jointMatricesBlendExact(sk, { anm: b ? parseBCK(b) : null, frame: this.fc[0].frame }, ob ? { anm: parseBCK(ob), frame: this.fc[0].frame } : null, this.blendRatio, false, this.baseTR, [1, 1, 1], this.joints || [], post, upper, this.rows, this.locals);
             this.jointsKey = key;
@@ -377,7 +384,8 @@ export abstract class MarioBase extends TakeActor {
      */
     marioVoicePlaying(): boolean { return marioVoiceHooks.playing ? marioVoiceHooks.playing(this) : false; }
     startSoundActor(_id: number) { }
-    rumbleStart(_a: number, _b: number) { }
+    /** rumbleStart: SMSRumbleMgr->start(idx, repeat), the player's only (gpMarioOriginal) */
+    rumbleStart(idx: number, repeat: number) { if (this.isMario()) rumbleStart(this.world, idx, repeat, null); }
     emitParticle(_id: number, _a?: number) { return false; }
     // the joint positions: f32-stored as setPositions does
     protected jointTrans(j: number, out: V3) { const m = this.mModel.anmMtx(j); if (m) out.set(fr(m[12]), fr(m[13]), fr(m[14])); }

@@ -9,13 +9,15 @@
 // sail on a bounce-on-landing floor (setJumpReaction). Its collision is only moved (so only
 // there) while something touches it or Mario / Yoshi are within 1000.
 //
-// Not here: spline rails (rowToCurPathNode's traceSpline, init's start on the rail: TSplineRail
-// isn't ported), the ponponsen sound's actor binding beyond the SE helper, the ship shadow
-// (requestShadow) and the question manager's request.
+// On a spline rail (a graph named "S_...") it rides the rail instead (rowToCurPathNode's
+// traceSpline), starting on the rail's current point.
+//
+// Not here: the ponponsen sound's actor binding beyond the SE helper and the question manager's
+// request.
 
 import { V } from '../version.js';
-import { fr, V3, mtx, Mtx, MsMtxSetRotRPH, MsSin, MsCos, MsAngleDiff, MsGetRotFromZaxis } from '../math.js';
-import { World, Stream, Actor, HitActor, LiveManager, SpineEnemy, EnemyManager, MoveCollision, LF, HF, ANM_BCK, ANM_FRAME_RATE, FrameCtrl, nerve, Spine, PSchema, readParams, SPINE_PARAMS } from '../engine.js';
+import { fr, V3, mtx, Mtx, MsMtxSetRotRPH, MsSin, MsCos, MsAngleDiff, MsGetRotFromZaxis, MsWrap } from '../math.js';
+import { World, Stream, Actor, HitActor, LiveManager, SpineEnemy, EnemyManager, MoveCollision, LF, HF, ANM_BCK, ANM_FRAME_RATE, FrameCtrl, nerve, Spine, PSchema, readParams, SPINE_PARAMS, ShadowRequest, SHADOW_TYPE } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
@@ -63,6 +65,19 @@ export class FruitsBoat extends SpineEnemy {
         this.onLiveFlag(LF.UNK10);
     }
     get P(): any { return this.getSaveParam(); }
+    /** TFruitsBoat::requestShadow: a SHIP shadow of its shadow radii, turned by (s16) its Y rotation */
+    requestShadow(): ShadowRequest | null {
+        if (this.liveFlag & (LF.DEAD | LF.HIDDEN | LF.UNK8)) return null;
+        if ((this.liveFlag & (LF.UNK200 | LF.CLIPPED_OUT)) && !(this.liveFlag & LF.FORCE_SHADOW)) return null;
+        const r = new ShadowRequest();
+        r.pos.set(this.pos);
+        r.rx = this.mShadowRadiusX; r.rz = this.mShadowRadiusZ;
+        r.type = SHADOW_TYPE.SHIP;
+        r.rotY = (Math.trunc(this.rot.y) << 16) >> 16;
+        r.actorType = this.actorType;
+        r.force = (this.liveFlag & LF.FORCE_SHADOW) !== 0;
+        return r;
+    }
     getBoatType() { return (this.manager as FruitsBoatManager).mBoatType; }
     /** setBckTrack: the manager folder's BCK of that name (0), or none (-1) */
     setBckTrack(name: string) {
@@ -114,9 +129,18 @@ export class FruitsBoat extends SpineEnemy {
         const m = this.mactor ? this.mactor.anmMtx(0, this.baseTR, this.scale) : null;
         return m ? toMtx(m) : this.baseTR.slice();
     }
-    /** rowToCurPathNode (a spline rail's traceSpline isn't ported) */
+    /** rowToCurPathNode: along a spline rail by traceSpline, else walkToCurPathNode */
     rowToCurPathNode(speed: number) {
-        this.walkToCurPathNode(speed, this.turnSpeed, 0);
+        const t = this.tracer, S = t.graph ? t.graph.spline : null;
+        if (S) {
+            const splineSpeed = t.calcSplineSpeed(speed);
+            t.traceSpline(splineSpeed);
+            const [pos, rot] = S.getPosAndRot(t.unk14);
+            pos.sub(this.pos).fround();
+            this.posDelta.add(pos).fround();
+            this.rot.y = rot.y;
+            if (splineSpeed < 0) this.rot.y = MsWrap(fr(180 + this.rot.y), 0, 360);
+        } else this.walkToCurPathNode(speed, this.turnSpeed, 0);
         this.world.sound(SE.OBJ_PONPONSEN, this.pos);
     }
     load(s: Stream) {
@@ -137,7 +161,11 @@ export class FruitsBoat extends SpineEnemy {
         this.offHitFilter(HF.NO_COLLISION);
         this.tracer.reset();
         this.goToShortestNextGraphNode();
-        // TODO: on a spline rail it starts on the rail's current point (moveToShortestNext): not ported
+        const tg = this.tracer.graph;
+        if (tg && tg.spline) {
+            this.pos.set(this.tracer.current());
+            this.tracer.moveTo(tg.getShortestNextIndex(this.tracer.cur, this.tracer.prev, -1));   // moveToShortestNext
+        }
         let t = this.getBoatType();
         if (t < 0 || t > 3) t = 3;
         this.mapCollision = new MoveCollision(this.world, (FOLDERS[t] + '/' + MODELS[t] + '.col').toLowerCase(), this);

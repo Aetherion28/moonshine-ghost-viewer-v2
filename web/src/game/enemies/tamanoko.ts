@@ -11,14 +11,14 @@
 // (isHitValid). Asleep it is harmless and tramples what bumps it. Dead, it leaves a sunflower
 // (TTamaNokoFlower) that blooms where it was and puts out 5 coins round it.
 //
-// Not here: the particles (zzz, blur, sand, rock), the shadow request, camera shake beyond an
+// Not here: the particles (zzz, blur, sand, rock), camera shake beyond an
 // event, rumble, sounds but the landing one, the flower's anm sound; Mario's invincibility
 // (gpMarioOriginal->isInvincible) isn't recorded, so taken as never; TNpcEvent::reviveOneSunflower
 // (the stage's sunflowers' revival) is only told to the viewer (an event).
 
 import { msVecMag2 } from '../vecops.js';
 import { fr, V3, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, JMASSin, JMASCos, mtx, mtxMultVec } from '../math.js';
-import { World, Stream, HitActor, LiveActor, SpineEnemy, PathNode, LF, HF, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, nerve, Spine, PSchema } from '../engine.js';
+import { World, Stream, HitActor, LiveActor, SpineEnemy, PathNode, LF, HF, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, nerve, Spine, PSchema, ShadowRequest } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
@@ -39,7 +39,7 @@ const BCK_FLOWER_GROW = 0, BCK_APPEAR = 1, BCK_ATTACK = 2, BCK_DOWN = 3, BCK_LAN
     BCK_RUN_START = 8, BCK_RUN = 9, BCK_WALK = 10, BCK_SLEEP = 11, BCK_WAIT_END = 12, BCK_WAIT = 13, BCK_WAIT_START = 14, BCK_WATERHIT = 15, BCK_WATERHIT_LOOP = 16;
 
 const isSand = (d: { bgType: number }) => d.bgType === 0x701 || d.bgType === 0x4701 || d.bgType === 0x8701 || d.bgType === 0xC701;
-const shake = (w: World, p: V3, mode: number) => w.events.push({ t: w.tickCount, kind: 'cameraShake', data: { mode, power: 1, p: p.clone() } });
+const shake = (w: World, p: V3, mode: number) => w.cameraShake?.startShake(mode, 1);
 
 // ---------------------------------------------------------------- TTamaNokoFlower
 /** TTamaNokoFlower (a TSharedParts: tamaflower_model1.bmd on its TamaNoko's position): drawn once it has died (unk34) */
@@ -98,10 +98,31 @@ export class TamaNoko extends WalkerEnemy {
     mIsDoingJumpAttack = false; mIsSunkInGround = false;
     unk19C: TamaNokoFlower | null = null;
     unk1A0 = new V3(); unk1AC = new V3();
+    changeByJuice() { return false; }
     unk1B8 = false; unk1B9 = true;
     mAirAttackTimer = 0; mWakeUpTimer = 0;
     get unk198(): any { return this.getSaveParam(); }
     constructor(w: World, name = 'タマノコ') { super(w, name); }
+    /** TTamaNoko::requestShadow: under joint 1 (its body) when not clipped out, else at its position */
+    requestShadow(): ShadowRequest | null {
+        if (this.checkLiveFlag(LF.DEAD | LF.UNK8 | LF.HIDDEN)) return null;
+        if (this.checkLiveFlag(LF.UNK200 | LF.CLIPPED_OUT) && !this.checkLiveFlag(LF.FORCE_SHADOW)) return null;
+        const r = new ShadowRequest();
+        if (!this.checkLiveFlag(LF.CLIPPED_OUT)) {
+            const m = this.mactor ? this.mactor.anmMtx(1, this.baseTR, this.scale) : null;
+            r.pos.set(m ? m[12] : this.pos.x, this.groundHeight, m ? m[14] : this.pos.z);
+            if (!this.isAirborne()) r.needsGroundCheck = false;
+        } else {
+            r.pos.set(this.pos);
+            if (!this.isAirborne()) { r.needsGroundCheck = false; r.pos.y = this.groundHeight; }
+        }
+        r.rx = r.rz = this.scaledBodyRadius;
+        r.type = this.getShadowType();
+        r.rotY = this.rot.y;
+        r.actorType = this.actorType;
+        r.force = this.checkLiveFlag(LF.FORCE_SHADOW);
+        return r;
+    }
     load(s: Stream) { super.load(s); this.reset(); }
     init(m: any) {
         super.init(m);

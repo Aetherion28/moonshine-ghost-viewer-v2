@@ -33,7 +33,7 @@
 //   script's next setTalkMsgID opens it again at 3). The board (TBaseNPC NPC_BOARD) has its own
 //   window: TBoundPane moves (60 then 25 ticks in, 60 out) and a 4-a-tick fade, no text timing.
 //
-// What is left out: the presentation (the 2D panes' drawing, the sounds, the talk cursor, the
+// What is left out: the presentation (the 2D panes' drawing, the sounds, the
 // telop / balloon / Mario icon of the console), makeBoxLine's cut of a line wider than its curve
 // (the messages fit), the pause / guide / card save / stage transition / game over states
 // updateGameMode asks of the director (nextState), the demo's jingle (MSBgm::getHandle(2)), and
@@ -45,7 +45,8 @@
 // (duration + 1) * 2 ticks), and when the camera's rest frames run out the mode returns to 0 (2 from 4).
 
 import { fr, V3 } from './math.js';
-import { World, NameRef, LF, CUE_MOVE, CUE_CALC_ANIM } from './engine.js';
+import { register } from './scene.js';
+import { World, NameRef, LF, CUE_MOVE, CUE_CALC_ANIM, CUE_CALC_VIEW, CUE_ENTRY } from './engine.js';
 import { AT } from './actortypes.js';
 import { V } from './version.js';
 import { cameraBck } from './camera/bck.js';
@@ -602,8 +603,39 @@ function talkCameraMode(npc: any) {
     return typeof npc.isSmallNpc === 'function' && npc.isSmallNpc() ? CM_TALK_B : CM_TALK_A;
 }
 
+// ---------------------------------------------------------------- TTalkCursor (System/TalkCursor.cpp)
+/**
+ * The talk cursor (会話カーソル, made by MarNameRefGen for "TalkCursor"): an MActor of
+ * /common/cursor_b (default.bmd, bck icon_rot, brk icon_flash) drawn with GXSetZMode(TRUE,
+ * ALWAYS, TRUE). unkC: its view-object flags; CUE_CALC_VIEW | CUE_ENTRY on (loadAfter) keeps it
+ * from being drawn.
+ */
+export const TALK_CURSOR_HIDE = CUE_CALC_VIEW | CUE_ENTRY;
+export class TalkCursor extends NameRef {
+    /** unkC: the view-object flags (testPerform's mask) */
+    get unkC() { return this.flags; } set unkC(v: number) { this.flags = v; }
+    /** unk10's model base TR matrix's translation (TPosition3f(getCursorPos()): no rotation, scale 1) */
+    pos = new V3();
+    /** loadAfter: the MActor set up with icon_rot / icon_flash; hidden */
+    loadAfter() { this.unkC |= TALK_CURSOR_HIDE; }
+    /** perform: CUE_DRAW sets GXSetZMode(TRUE, ALWAYS, TRUE) (the renderer draws it on top); the rest go to the MActor (bck / brk: the renderer's) */
+    perform(_cue: number) { }
+    /** associateNPC: put the cursor over npc (getCursorPos) and show it; null hides it */
+    associateNPC(npc: any) {
+        if (npc) {
+            this.pos.set(npc.getCursorPos());
+            this.unkC &= ~TALK_CURSOR_HIDE;
+        } else {
+            this.unkC |= TALK_CURSOR_HIDE;
+        }
+    }
+    isVisible() { return (this.unkC & TALK_CURSOR_HIDE) === 0; }
+}
+
 // ---------------------------------------------------------------- TMarDirector's talk part
 export class TalkDirector {
+    /** unk84: the talk cursor (会話カーソル, MarDirectorSetup2's search; a stage without one gets a hidden stand-in) */
+    unk84: TalkCursor;
     /** unk124: the game mode (0 game, 1 / 2 talk, 3 / 4 demo); unk125 its last; unk126 the next asked */
     unk124 = 0; unk125 = 0; unk126 = 0;
     /** unk128: bit 1 a talk NPC near this tick, bit 2 the tick before */
@@ -623,6 +655,8 @@ export class TalkDirector {
     fastText = true;
     constructor(public world: World, stageBmg: Uint8Array | null, sysBmg: Uint8Array | null) {
         this.talk = new Talk2D(world, stageBmg, sysBmg, this);
+        const c = world.search('会話カーソル');
+        if (c instanceof TalkCursor) this.unk84 = c; else { this.unk84 = new TalkCursor('会話カーソル'); this.unk84.loadAfter(); }
     }
     /** the player (gpMarioOriginal) */
     private mario(): any { const m: any = this.world.mario; return m && m.mGamePad ? m : null; }
@@ -662,6 +696,7 @@ export class TalkDirector {
     }
     /** movement_game (TMarDirector::movement in the game state, after the console's list) */
     movementGame() {
+        this.unk84.associateNPC(null);
         const m = this.mario();
         if (!m || this.unk124 !== 0) return;
         const P = m.mGamePad;
@@ -670,10 +705,12 @@ export class TalkDirector {
         const C = this.camera();
         if (C && typeof C.isLButtonCamera === 'function' && C.isLButtonCamera()) return;
         if (C && typeof C.isDemoCamera === 'function' && C.isDemoCamera()) return;
-        if (this.findNearestTakeNPC()) return;
+        const take = this.findNearestTakeNPC();
+        if (take) { this.unk84.associateNPC(take); return; }
         const npc = this.findNearestTalkNPC();
         if (!npc) return;
         this.unkA0 = npc;
+        this.unk84.associateNPC(npc);
         P.onFlag(PAD_FLAG_TALK_NPC);
         this.unk128 |= 1;
         if ((this.unk128 & 2) && P.checkFrameMeaning(MEANING_TALK_B)) this.unk126 = 1;
@@ -898,8 +935,18 @@ export class TalkDirector {
     }
 }
 
-declare module './engine.js' { interface World { talk: TalkDirector | null; } }
+declare module './engine.js' {
+    interface World {
+        talk: TalkDirector | null;
+        /** SMSGetMarDirector()->fireStartDemoCamera(name, p, frames, 0, true, cb): the callback gets 0 as the demo starts and 1 as it ends */
+        startDemoCamera(name: string, p?: V3 | null, frames?: number, cb?: ((phase: number) => void) | null): void;
+    }
+}
 World.prototype.talk = null;
+World.prototype.startDemoCamera = function (this: World, name: string, p: V3 | null = null, frames = -1, cb: ((phase: number) => void) | null = null) {
+    if (this.talk) this.talk.fireStartDemoCamera(name, p ? p.clone() : null, frames, 0, true, null, cb);
+    else if (cb) cb(0);
+};
 
 /** set the stage's talk up: its NPCs (TBaseNPC's, in their loadAfter order) and the messages */
 export function installTalk(w: World, objects: NameRef[], stageBmg: Uint8Array | null, sysBmg: Uint8Array | null) {
@@ -908,3 +955,5 @@ export function installTalk(w: World, objects: NameRef[], stageBmg: Uint8Array |
     w.talk = t;
     return t;
 }
+
+// (registered in scene.ts: 'TalkCursor')

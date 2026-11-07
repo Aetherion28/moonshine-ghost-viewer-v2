@@ -5,7 +5,7 @@
 // are the hardware's (math.ts).
 
 import { fmadd as FMA, fnmsub as FNMS, fmsub as FMS } from '../player/fmath.js';
-import { fr, s16, matan, JMASSin, JMASCos, frsqrte, MsSqrtfHW, jgNormalize } from '../math.js';
+import { fr, s16, matan, JMASSin, JMASCos, frsqrte, MsSqrtfHW, jgNormalize, mslSinf, mslCosf } from '../math.js';
 
 /** A TVec3<f32> / Vec */
 export interface Vec { x: number; y: number; z: number; }
@@ -201,4 +201,53 @@ export function isPointInCube(p: Vec, c: Vec, r: Vec, s: Vec) {
         }
     }
     return fr(-s.x * 0.5) < dx && dx < fr(s.x * 0.5) && 0 < dy && dy < s.y && fr(-s.z * 0.5) < dz && dz < fr(s.z * 0.5);
+}
+
+/**
+ * JGeometry::TRotation3::setRotate(axis, angle), the out-of-line copy RotateAboutAxis calls (JP
+ * 0x80357848; the same as mapobj/lib.ts's rotationSetRotate): the axis through TVec3::normalize, MSL's
+ * sinf / cosf, the diagonal fmadds, each off-diagonal entry two fmuls and an fadds / fsubs. r[row*3+col].
+ */
+export function setRotate33(ax: Vec, rad: number): number[] {
+    const n = jgNormalize({ x: ax.x, y: ax.y, z: ax.z });
+    const s = mslSinf(rad), c = mslCosf(rad), t = fr(1 - c);
+    const x = n.x, y = n.y, z = n.z;
+    const tx = fr(t * x), ty = fr(t * y);
+    const txy = fr(tx * y), txz = fr(tx * z), tyz = fr(ty * z), sx = fr(s * x), sy = fr(s * y), sz = fr(s * z);
+    return [
+        FMA(t, fr(x * x), c), fr(txy - sz), fr(txz + sy),
+        fr(txy + sz), FMA(t, fr(y * y), c), fr(tyz - sx),
+        fr(txz - sy), fr(tyz + sx), FMA(t, fr(z * z), c),
+    ];
+}
+/**
+ * RotateAboutAxis (cameralib.hpp): setRotate, then CLBMultTranspose33 of the vector
+ * (each lane fmadds(z, m[2][c], fmadds(x, m[0][c], y * m[1][c])), as at JP 0x80358020).
+ */
+export function rotateAboutAxis(axis: Vec, angle: number, v: Vec) {
+    const m = setRotate33(axis, angle);
+    const x = v.x, y = v.y, z = v.z;
+    v.x = FMA(z, m[6], FMA(x, m[0], fr(y * m[3])));
+    v.y = FMA(z, m[7], FMA(x, m[1], fr(y * m[4])));
+    v.z = FMA(z, m[8], FMA(x, m[2], fr(y * m[5])));
+    return v;
+}
+/** CLBRotatePosAndUp (cameralib.cpp, JP 0x80357F0C): the position about offset, and the up, by sAngle1 about axis1 then sAngle2 about axis2 */
+export function rotatePosAndUp(a1: number, a2: number, axis1: Vec, axis2: Vec, offset: Vec, pos: Vec, up: Vec) {
+    // (short * (360 / 65536) then * (PI / 180), both single)
+    const r1 = fr(fr(fr(360 / 65536) * a1) * fr(Math.PI / 180)), r2 = fr(fr(fr(360 / 65536) * a2) * fr(Math.PI / 180));
+    const v1 = vec(fr(pos.x - offset.x), fr(pos.y - offset.y), fr(pos.z - offset.z));
+    rotateAboutAxis(axis1, -r1, v1);
+    pos.x = fr(offset.x + v1.x); pos.y = fr(offset.y + v1.y); pos.z = fr(offset.z + v1.z);
+    rotateAboutAxis(axis1, -r1, up);
+    const v2 = vec(fr(pos.x - offset.x), fr(pos.y - offset.y), fr(pos.z - offset.z));
+    rotateAboutAxis(axis2, -r2, v2);
+    pos.x = fr(offset.x + v2.x); pos.y = fr(offset.y + v2.y); pos.z = fr(offset.z + v2.z);
+    rotateAboutAxis(axis2, -r2, up);
+}
+/** MsGetRotFromYaxisZ (MathUtil.hpp): the roll of a Y axis, degrees */
+export function msGetRotFromYaxisZ(a: Vec): number {
+    if (a.y === 0) return a.x >= 0 ? -90 : 90;
+    if (a.y >= 0) return -fr(fr(360 / 65536) * matan(a.y, a.x));
+    return fr(180 + fr(fr(360 / 65536) * matan(-a.y, a.x)));
 }

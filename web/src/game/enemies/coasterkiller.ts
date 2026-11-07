@@ -197,7 +197,7 @@ CoasterKillerNerves.explosion = nerve<CoasterKiller>('TNerveCoasterKillerExplosi
         self.unk1AC = fr(fr(self.PC.mSLBombRange * self.bodyScale) / self.attackRadius);
         self.rot.x = 0;
         self.setDeadAnm();
-        // (the camera shake)
+        self.world.cameraShake?.startShake(6, 1);
     }
     if (self.unk190 < self.unk1AC) self.unk190 = fr(self.unk190 * 1.3);
     else {

@@ -11,6 +11,7 @@
 // from the ghost (landed on his body).
 
 import { V } from '../version.js';
+import { marioTouchGround4cm } from '../mapobj/lib.js';
 import { fr, V3, JMASSin, JMASCos, s16, rand, JMAHermiteInterpolation, MsSin, MsCos, MsGetRotFromZaxisY, MsAngleDiff, MsWrap } from '../math.js';
 import { World, SpineEnemy, EnemyManager, LF, HF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, MActor, readParams, SPINE_PARAMS, PSchema, CUE_MOVE, CUE_CALC_ANIM, NameRef, ANM_BRK, ANM_BTK, ANM_FRAME_RATE, MoveCollision, PathNode, LiveActor } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -91,6 +92,7 @@ export class PolDrop extends HitActor {
         this.stamp.mactor!.setBck('pollut_ball_stamp');
         this.owner.world.effect('osendan', this.pos);
         this.owner.world.sound(SE.BS_BSPAKU_POLLUT_GND, this.pos);
+        this.owner.rumblePad(2, this.pos);
     }
     move() {
         if (this.unk80 === 0) { this.onHitFilter(HF.NO_COLLISION); return; }
@@ -131,6 +133,7 @@ export class PolDrop extends HitActor {
             for (const c of this.collisions) {
                 if (!c.isActorType(AT.MARIO)) continue;
                 c.receiveMessage(this, MSG.ATTACK);
+                this.owner.rumblePad(2, this.pos);
                 this.unk80 = !this.owner.world.mario.isJumping() ? 2 : 0;   // SMS_IsMarioTouchGround4cm
             }
         }
@@ -431,6 +434,20 @@ export class BossPakkun extends SpineEnemy {
         return false;
     }
     startBGM() { if (this.unk1CC === 0) this.unk1CC = 1; }
+    /** unk1C8: the rumble's power (SMSRumbleMgr reads it) */
+    unk1C8 = 0;
+    /** rumblePad: on the ground within 3000 of p, a rumble of (3000 - dist) / 1000 (at most 1; kind 0 x0.4, 1 x0.7), SMSRumbleMgr->start(8) (told as a world event) */
+    rumblePad(type: number, p: V3) {
+        if (!marioTouchGround4cm(this.world)) return;
+        const distance = V3.sub(this.world.mario.pos, p).length();
+        let power = fr(fr(3000 - distance) / 1000);
+        if (power < 0) return;
+        if (power > 1) power = 1;
+        if (type === 0) power = fr(power * fr(0.4));
+        else if (type === 1) power = fr(power * fr(0.7));
+        this.unk1C8 = power;
+        this.world.events.push({ t: this.world.tickCount, kind: 'rumble', data: { id: 8, power, p: p.clone() } });
+    }
     showMessage(msg: number) {
         const i = msg - 0xe0000, mask = i === 1 ? 0 : 1 << i;
         if (!(this.unk1C0 & mask)) this.world.effect('balloon:' + msg.toString(16), this.pos);
@@ -634,7 +651,7 @@ BPNerves.vomit = nerve<BossPakkun>('TNerveBPVomit', (spine: S) => {
         self.world.events.push({ t: self.world.tickCount, kind: 'item', data: { type: AT.BOTTLE_LARGE, p: new V3(fr(self.pos.x + 700 * JMASSin(ang)), fr(self.pos.y + 1), fr(self.pos.z + 700 * JMASCos(ang))) } });
     }
     if (a.curAnmEndsNext(ANM_BCK)) {
-        if (a.checkCurBckFromIndex(21)) { self.weakPoint = WEAK_NONE; self.changeBck(20); self.vomit!.vomit(); }
+        if (a.checkCurBckFromIndex(21)) { self.weakPoint = WEAK_NONE; self.changeBck(20); self.vomit!.vomit(); self.rumblePad(1, self.pos); }
         else {
             if (!self.is2ndFightNow()) { if (!(self.unk1C0 & 1)) self.world.effect('balloon:e0000', self.pos); self.unk1C0 |= 1; }
             return true;
@@ -669,18 +686,21 @@ BPNerves.swallow = nerve<BossPakkun>('TNerveBPSwallow', (spine: S) => {
 BPNerves.tumbleIn = nerve<BossPakkun>('TNerveBPTumbleIn', (spine: S) => {
     const self = spine.body;
     if (spine.time === 0) self.changeBck(3);
+    if (spine.time === 348) { self.world.cameraShake?.startShake(0xe, 1); self.world.events.push({ t: self.world.tickCount, kind: 'cameraShake', data: { mode: 0xe, power: 1, p: self.pos.clone() } }); self.rumblePad(2, self.pos); }
     if (self.mactor!.curAnmEndsNext(ANM_BCK)) { spine.pushAfterCurrent(BPNerves.tumble); return true; }
     return false;
 });
 BPNerves.tumble = nerve<BossPakkun>('TNerveBPTumble', (spine: S) => {
     const self = spine.body;
     if (spine.time === 0) { self.changeBck(6); self.weakPoint = WEAK_NAVEL; }
+    self.world.cameraShake?.keepShake(0x11, 1);
+    if (Math.trunc(spine.time / 60) % 2 !== 0) self.rumblePad(0, self.pos);
     if (spine.time >= self.P.mSLTumbleTime) { self.weakPoint = WEAK_NONE; spine.pushAfterCurrent(BPNerves.tumbleOut); return true; }
     return false;
 });
 BPNerves.tumbleOut = nerve<BossPakkun>('TNerveBPTumbleOut', (spine: S) => {
     const self = spine.body, a = self.mactor!;
-    if (spine.time === 0) self.changeBck(14);
+    if (spine.time === 0) { self.changeBck(14); self.world.cameraShake?.startShake(0x10, 1); self.world.events.push({ t: self.world.tickCount, kind: 'cameraShake', data: { mode: 0x10, power: 1, p: self.pos.clone() } }); self.rumblePad(0, self.pos); }
     if (a.curAnmEndsNext(ANM_BCK)) {
         if (a.checkCurBckFromIndex(14)) {
             self.changeBck(22);
@@ -700,7 +720,7 @@ BPNerves.tumbleOut = nerve<BossPakkun>('TNerveBPTumbleOut', (spine: S) => {
 });
 BPNerves.getUp = nerve<BossPakkun>('TNerveBPGetUp', (spine: S) => {
     const self = spine.body, a = self.mactor!;
-    if (spine.time === 0) self.changeBck(14);
+    if (spine.time === 0) { self.changeBck(14); self.world.cameraShake?.startShake(0x10, 1); self.world.events.push({ t: self.world.tickCount, kind: 'cameraShake', data: { mode: 0x10, power: 1, p: self.pos.clone() } }); self.rumblePad(0, self.pos); }
     if (a.curAnmEndsNext(ANM_BCK)) { if (a.checkCurBckFromIndex(14)) self.changeBck(19); else return true; }
     return false;
 });
@@ -807,8 +827,8 @@ BPNerves.fall = nerve<BossPakkun>('TNerveBPFall', (spine: S) => {
     const self = spine.body, a = self.mactor!;
     if (spine.time === 0) { self.offLiveFlag(LF.UNK10); self.onLiveFlag(LF.AIRBORNE); self.changeBck(10); }
     if (a.checkCurBckFromIndex(10)) { if (a.curAnmEndsNext(ANM_BCK)) self.changeBck(9); }
-    else if (a.checkCurBckFromIndex(9)) { if (!self.isAirborne()) self.changeBck(8); }
-    else if (a.checkCurBckFromIndex(8)) { if (a.curAnmEndsNext(ANM_BCK)) self.changeBck(14); }
+    else if (a.checkCurBckFromIndex(9)) { if (!self.isAirborne()) { self.changeBck(8); self.world.cameraShake?.startShake(15, 1); self.world.events.push({ t: self.world.tickCount, kind: 'cameraShake', data: { mode: 15, power: 1, p: self.pos.clone() } }); self.rumblePad(2, self.pos); } }
+    else if (a.checkCurBckFromIndex(8)) { if (a.curAnmEndsNext(ANM_BCK)) { self.changeBck(14); self.world.cameraShake?.startShake(16, 1); self.world.events.push({ t: self.world.tickCount, kind: 'cameraShake', data: { mode: 16, power: 1, p: self.pos.clone() } }); self.rumblePad(0, self.pos); } }
     else if (a.checkCurBckFromIndex(14) && a.curAnmEndsNext(ANM_BCK)) {
         if (self.is2ndFightNow()) chooseSecondFight(spine, self);
         else spine.pushAfterCurrent(BPNerves.wait);

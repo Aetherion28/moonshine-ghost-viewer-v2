@@ -55,12 +55,9 @@ import { quat, mat4 } from 'gl-matrix';
 const pad2 = (n: number) => String(n).padStart(2, '0');
 /** TMapObjBase::isDemo */
 const isDemo = (w: World) => w.talkMode || w.demoMode;
-/** TMapObjBase::marioIsOn */
-const marioIsOn = (w: World, a: LiveActor) => marioGroundPlane(w).actor === a && !(w.mario as any).isJumping();
 /** SMS_MarioWarpRequest */
 const marioWarpRequest = (w: World, p: V3, angle: number) => { const m = w.mario as any; if (typeof m.warpRequest === 'function') m.warpRequest(p.clone(), angle); };
 /** TMarDirector::fireStartDemoCamera / fireEndDemoCamera (the camera itself isn't driven from here) */
-const demoCamera = (w: World, name: string, p: V3 | null) => { w.effect('demo:' + name, p ? p.clone() : new V3()); if (w.talk) w.talk.fireStartDemoCamera(name, p ? p.clone() : null); };
 
 // ================================================================ the map model's joints
 /** JNT1's per-joint data the game reads (J3DJoint's J3DTransformInfo, getMin / getMax). */
@@ -111,6 +108,18 @@ export class JointObj {
     alive() { for (const c of this.children) c.alive(); this.set(this.flags & ~(JOINT_DEAD | JOINT_ASLEEP | JOINT_SITTING)); }
     kill() { for (const c of this.children) c.kill(); if (!(this.flags & JOINT_DEAD)) this.set((this.flags | JOINT_DEAD) & ~(JOINT_ASLEEP | JOINT_SITTING)); }
     awake() { for (const c of this.children) c.awake(); if (this.flags & (JOINT_SITTING | JOINT_ASLEEP)) this.set(this.flags & ~(JOINT_SITTING | JOINT_ASLEEP)); }
+    /** stand: a sitting joint shown again */
+    stand() { for (const c of this.children) c.stand(); if (this.flags & JOINT_SITTING) this.set(this.flags & ~JOINT_SITTING); }
+    /** sit: a joint none of dead / asleep / sitting hidden as sitting */
+    sit() { for (const c of this.children) c.sit(); if (!(this.flags & (JOINT_SITTING | JOINT_ASLEEP | JOINT_DEAD))) this.set(this.flags | JOINT_SITTING); }
+    /** initChildren: the J3D children counted, then filled from the last slot down (the first J3D child last) */
+    initChildren() {
+        const n = this.j3dChildren.length;
+        this.children = new Array(n);
+        for (let i = n; i > 0; i--) { const c = this.j3dChildren[n - i]; this.children[i - 1] = c; c.indexInParent = i - 1; }
+    }
+    /** mIndexInParent */
+    indexInParent = 0;
     sleep() { for (const c of this.children) c.sleep(); if (!(this.flags & JOINT_DEAD) && !(this.flags & JOINT_ASLEEP)) this.set((this.flags & ~JOINT_SITTING) | JOINT_ASLEEP); }
     /** its shapes drawn (J3DShpFlag_Visible off) */
     shown() { return (this.flags & (JOINT_DEAD | JOINT_ASLEEP | JOINT_SITTING)) === 0; }
@@ -137,7 +146,7 @@ export class MapJointModel extends JointObj {
         });
         // J3DNode::appendChild in INF1 order; TJointObj::initChildren fills them in reverse
         for (const j of sk.order) { const p = sk.parent[j]; if (p >= 0) this.joints[p].j3dChildren.push(this.joints[j]); }
-        for (const o of this.joints) o.children = o.j3dChildren.slice().reverse();
+        for (const o of this.joints) o.initChildren();
     }
     parentOf(o: JointObj) { const p = this.parent[o.index]; return p >= 0 ? this.joints[p] : null; }
     /** J3DModel::calc after setTransformInfo (TMapObjBase::calcMap): tell the viewer */
@@ -164,7 +173,7 @@ export const getBuildingJointObj = (w: World, i: number) => mapJoints(w).getChil
 /** TMapObjBase::setJointTransX/Y/Z, getJointTrans*, setJointScaleY, getJointScaleY, moveJoint */
 const setJointTrans = (j: JointObj, k: number, v: number) => { j.trans[k] = fr(v); j.model.version++; };
 const setJointScaleY = (j: JointObj, v: number) => { j.scale[1] = fr(v); j.model.version++; };
-const moveJoint = (j: JointObj, x: number, y: number, z: number) => { j.trans[0] = fr(j.trans[0] + x); j.trans[1] = fr(j.trans[1] + y); j.trans[2] = fr(j.trans[2] + z); j.model.version++; };
+export const moveJoint = (j: JointObj, x: number, y: number, z: number) => { j.trans[0] = fr(j.trans[0] + x); j.trans[1] = fr(j.trans[1] + y); j.trans[2] = fr(j.trans[2] + z); j.model.version++; };
 
 /** TMapObjBase::newAndInitBuildingCollisionWarp / Move: "/scene/map/map/building%02d.col" */
 export function newAndInitBuildingCollision(w: World, kind: number, i: number, owner: LiveActor | null) {
@@ -437,7 +446,7 @@ export class MapEventSinkBianco extends MapEventSinkInPollutionReset {
             if (this.unk64) this.unk64.alive();   // (SMS_ShowJoint(unk64->getMesh(), true))
             marioWarpRequest(this.world, this.unk6C, this.unk78);
             this.unk50[this.mRaisingBuildingIdx].set(7170, 3675, -185);
-            demoCamera(this.world, 'bianco0_event0', null);
+            this.world.startDemoCamera('bianco0_event0', null);
         }
     }
     watch() {
@@ -489,13 +498,13 @@ export class AirportEventSink extends MapEventSinkInPollutionReset {
     }
     control() {
         if (this.unk4C === this.unk40 - 300) this.world.pollution?.offLayer(0);
-        // (unk4C > unk48: gpCameraShake->keepShake(CAM_SHAKE_MODE_UNK5, 0.1))
+        if (this.unk4C > this.unk48) this.world.cameraShake?.keepShake(5, fr(0.1));
         return super.control();
     }
     watch() {
         if (!this.mIsBuildingRecovered[0] && this.unk6C && this.unk6C.checkLiveFlag(LF.DEAD)) {
             this.mRaisingBuildingIdx = 0;
-            demoCamera(this.world, '空港坂上げカメラ', this.unk6C.pos);
+            this.world.startDemoCamera('空港坂上げカメラ', this.unk6C.pos);
             startDecay(this.world, 0);
             return true;
         }
@@ -542,7 +551,7 @@ export class MapEventSirenaSink extends MapEventSink {
         const w = this.world;
         startDecay(w, 0);
         this.mRaisingBuildingIdx = 0;
-        demoCamera(w, 'ホテル上げカメラ', this.unk68);
+        w.startDemoCamera('ホテル上げカメラ', this.unk68);
         itemManager(w)?.makeShineAppearWithDemo('シャイン（ホテル上げ用）', 'ホテル上げシャインカメラ', this.unk68.x, this.unk68.y, this.unk68.z);
         w.flags.setBool(true, MSF.HOTEL_RISING);
         marioWarpRequest(w, this.unk74, this.unk80);
@@ -577,6 +586,7 @@ export class DolpicEventBiancoGate extends MapEvent {
         const g = this.unk20;
         if (!g) return true;
         g.pos.y = fr(g.pos.y + this.unk24);
+        this.world.cameraShake?.keepShake(5, 1);
         if (this.world.pollution) this.world.pollution.clean(g.pos.x, g.pos.y, g.pos.z, 10000, this.world.map);
         if (g.pos.y >= g.initialPos.y) {
             g.pos.y = g.initialPos.y;
@@ -617,6 +627,7 @@ export class DolpicEventRiccoMammaGate extends MapEvent {
         const m: Mtx = mtx();
         m[5] = scale;
         this.unk24!.moveMtx(m);
+        this.world.cameraShake?.keepShake(5, 1);
         setJointScaleY(j, scale);
         setJointTrans(j, 1, fr(300 * fr(1 - scale)));
         this.unk1C!.calc();
@@ -628,7 +639,7 @@ export class DolpicEventRiccoMammaGate extends MapEvent {
         setJointScaleY(this.unk20!, 1);
         this.unk24!.remove();
         this.unk28!.setUp();
-        demoCamera(this.world, 'end', null);
+        this.world.startDemoCamera('end', null);
         this.unk18 = 0;
         return true;
     }
@@ -640,8 +651,8 @@ export class DolpicEventRiccoMammaGate extends MapEvent {
         setJointScaleY(j, this.unk34);
         this.unk24!.setUp();
         this.unk44 = this.unk38;
-        if (this.unk2C === MSF.RICCO_UNLOCKABLE) { demoCamera(w, 'マニ屋上げデモカメラ', this.unk48); startDecay(w, 0); }
-        else { demoCamera(w, '灯台上げデモカメラ', this.unk48); startDecay(w, 1); }
+        if (this.unk2C === MSF.RICCO_UNLOCKABLE) { w.startDemoCamera('マニ屋上げデモカメラ', this.unk48); startDecay(w, 0); }
+        else { w.startDemoCamera('灯台上げデモカメラ', this.unk48); startDecay(w, 1); }
         marioWarpRequest(w, this.unk54, this.unk60);
         return true;
     }
@@ -714,8 +725,9 @@ export class MareWallRock extends LiveActor {
                 const j = this.unk104!;
                 if (!isDemo(w)) {
                     j.trans[2] = fr(j.trans[2] - MareWallRock.mAppearSpeed);
-                    if (marioIsOn(w, this)) this.pos.z = fr(this.pos.z - MareWallRock.mAppearSpeed);
+                    if (MapObjBase.marioIsOnActor(this)) this.pos.z = fr(this.pos.z - MareWallRock.mAppearSpeed);
                     w.sound(SE.OBJ_QUAKE, this.pos);
+                    w.cameraShake?.keepShake(5, 0.5);
                 }
                 j.model.calc();
                 const z = j.trans[2];
@@ -730,7 +742,7 @@ export class MareWallRock extends LiveActor {
                 const j = this.unk104!;
                 if (!isDemo(w)) {
                     j.trans[2] = fr(j.trans[2] + MareWallRock.mDepressSpeed);
-                    if (marioIsOn(w, this)) this.pos.z = fr(this.pos.z + MareWallRock.mDepressSpeed);
+                    if (MapObjBase.marioIsOnActor(this)) this.pos.z = fr(this.pos.z + MareWallRock.mDepressSpeed);
                 }
                 j.model.calc();
                 const z = j.trans[2];
@@ -823,6 +835,7 @@ export class MareEventDepressWall extends NameRef {
                 if (!isDemo(w)) {
                     x = plus ? fr(x + MareEventDepressWall.mDepressSpeed) : fr(x - MareEventDepressWall.mDepressSpeed);
                     w.sound(SE.OBJ_QUAKE, this.unk34[i]);
+                    w.cameraShake?.keepShake(5, 0.5);
                 }
                 setJointTrans(this.unk30[i], 0, x);
                 this.unk28[i].moveTrans(new V3(x, 0, 0));
@@ -948,6 +961,7 @@ export class MareEventBumpyWall extends MapObjBase {
             if (!isDemo(w)) {
                 v = sign > 0 ? fr(v + this.unk140) : fr(v - this.unk140);
                 w.sound(SE.OBJ_QUAKE, this.pos);
+                w.cameraShake?.keepShake(5, 0.5);
             }
             setJointTrans(j, k, v);
             this.unk14C!.moveTrans(t);   // (the translation from before this tick's step, as the game's)
@@ -1054,10 +1068,10 @@ World.prototype.setNextStage = function (this: World, stage: number, actor: any)
     this.nextArea = na;
     if (actor || this.map !== 1 || (next !== 5 && next !== 6 && next !== 8)) return;
     if (next === 5) {
-        demoCamera(this, 'hodai_dpt_pinna1', null);
+        this.startDemoCamera('hodai_dpt_pinna1', null);
         const cannon = this.search('デモ砲台') as any;
         if (cannon && typeof cannon.startDemo === 'function') cannon.startDemo();
-    } else demoCamera(this, next === 6 ? 'camera_sirena_gate_in' : 'camera_monte_gate_in', null);
+    } else this.startDemoCamera(next === 6 ? 'camera_sirena_gate_in' : 'camera_monte_gate_in', null);
 };
 
 /**

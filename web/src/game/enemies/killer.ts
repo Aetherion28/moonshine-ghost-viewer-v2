@@ -21,7 +21,7 @@
 // Bullet Bill) is taken as never set.
 
 import { fr, V3, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsGetRotFromZaxis, MsSin, MsCos, MsClamp, mtx, mtxMultVec } from '../math.js';
-import { World, Stream, HitActor, LiveActor, SpineEnemy, PathNode, LF, HF, HC, MSG, ANM_BCK, MActor, nerve, Spine, PSchema } from '../engine.js';
+import { ANM_FRAME_RATE, World, Stream, HitActor, LiveActor, SpineEnemy, PathNode, LF, HF, HC, MSG, ANM_BCK, MActor, nerve, Spine, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
@@ -220,6 +220,17 @@ export class Killer extends FlyEnemy {
             this.vel.set(0, 0, 0);
         }
     }
+    /** changeOut: out of the block dead (its coins), where the block was */
+    changeOut() {
+        this.world.sound(SE.EN_TELSA_RECOVER, this.pos);
+        this.onLiveFlag(LF.DEAD);
+        this.genEventCoin();
+        this.onHitFilter(HF.NO_COLLISION);
+        this.pos.set(this.juiceBlock.pos);
+        this.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK);
+        this.juiceBlock.kill();
+        this.juiceBlock = null;
+    }
     /** genEventCoin: 2 coins (8 for the gold one) round it */
     genEventCoin() {
         const num = this.unk1A6 ? 8 : 2;
@@ -247,7 +258,7 @@ export class Killer extends FlyEnemy {
         this.setBckAnm(BCK_DOWN);
         const e = this.world.conductor.makeOneEnemyAppear(this.pos, 'エフェクト爆発マネージャー', 1) as any;
         if (e && e.generate) e.generate(this.pos, this.scale);
-        this.world.events.push({ t: this.world.tickCount, kind: 'cameraShake', data: { mode: 6, power: 1, p: this.pos.clone() } });
+        this.world.cameraShake?.startShake(6, 1);
     }
     attackToMario() {
         if (this.world.mario.pos.y < this.pos.y) {
@@ -336,6 +347,7 @@ KillerNerves.explosion = nerve<Killer>('TNerveKillerExplosion', (spine: KS) => {
         if (self.checkCurAnmEnd(ANM_BCK)) {
             self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
             self.holder = null;
+            self.stopAnmSound();
             spine.reset();
             spine.setNext(SmallEnemyNerves.die);
             spine.pushAfterCurrent(spine.default);

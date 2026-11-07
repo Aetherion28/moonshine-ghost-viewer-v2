@@ -53,6 +53,8 @@ class CameraBckDemo implements DemoBck {
     private pos: number; private at: number;
     private mats: mat4[] = [];
     private tmp = new JointTransformInfo();
+    /** the frame the frame control was last set to (startDemo: 0; setFrame) */
+    private start = 0;
     constructor(private anm: ANK1, private sk: Skeleton | null) {
         // J3DFrameCtrl's attribute is the bck's loop mode (0: once)
         this.totalFrames = anm.loopMode !== 0 ? -1 : (anm.duration + 1) * 2;
@@ -61,16 +63,18 @@ class CameraBckDemo implements DemoBck {
         if (this.pos < 0) this.pos = 1;
         if (this.at < 0) this.at = 0;
     }
-    /** J3DFrameCtrl::update after n calls from frame 0 at rate 2, the bck's attribute */
+    /** TCameraBck::setFrame: J3DFrameCtrl::setFrame(f) */
+    setFrame(f: number) { this.start = f; }
+    /** J3DFrameCtrl::update after n calls from the start frame (0 unless setFrame) at rate 2, the bck's attribute */
     frameAfter(n: number): number {
         const end = this.anm.duration;
-        let f = n * RATE();
+        let f = this.start + n * RATE();
         switch (this.anm.loopMode) {
             case 0: if (f >= end) f = end - fr(0.001); break;          // ONCE
             case 1: if (f >= end) f = 0; break;                     // ONCE_AND_RESET
             case 2: if (end > 0) f = f % end; break;               // LOOP (start 0, loop 0)
             case 3: case 4: {                                       // PING_PONG (MIRROR / MIRROR_LOOP)
-                if (end > 0) { const p = f % (2 * end); f = p < end ? p : 2 * end - p; if (this.anm.loopMode === 3 && n * RATE() >= 2 * end) f = 0; }
+                if (end > 0) { const p = f % (2 * end); f = p < end ? p : 2 * end - p; if (this.anm.loopMode === 3 && this.start + n * RATE() >= 2 * end) f = 0; }
                 break;
             }
         }

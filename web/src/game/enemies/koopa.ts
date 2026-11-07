@@ -161,7 +161,8 @@ N.tumble = nerve<Koopa>('TNerveKoopaTumble', (s) => {
     const k = s.body;
     k.changeAnm(KOOPA_ANM_HIPDROP, 0, P(k).tumbleSpeed);
     if (s.getTime() === 190) {
-        // (the camera shake, ms_kp_hipdrop on the tub's root joint, rumble when Mario's on the ground)
+        k.world.cameraShake?.startShake(0x27, 1);
+        // (ms_kp_hipdrop on the tub's root joint, rumble when Mario's on the ground)
         k.world.effect('ms_kp_hipdrop', k.pos);
     }
     return k.endsAnm();

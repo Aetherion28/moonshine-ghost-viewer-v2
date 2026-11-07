@@ -165,6 +165,7 @@ export class ChuuHana extends WalkerEnemy {
         this.unk1EC.set(this.posDelta);
         if (!this.isAirborne() && (!this.groundPlane.actor || this.groundPlane.actor !== this.unk218)) this.kill();
     }
+    isFindMario(_k: number) { return false; }
     isCollidMove(a: HitActor) {
         if (a.isActorType(AT.CHUU_HANA)) {
             const o = a as ChuuHana;

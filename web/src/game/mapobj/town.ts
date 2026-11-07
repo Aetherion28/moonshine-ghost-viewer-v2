@@ -156,7 +156,7 @@ export class MapObjSwitch extends MapObjBase {
             this.world.sound(SE.OBJ_AP_BUTTON, this.pos);
             this.removeMapCollision();
             for (let i = 0; i < this.unk13C; i++) this.unk144[i].action(this.unk140);
-            // TODO: fireStartDemoCamera("オブジェスイッチ用カメラ"): the demo camera isn't driven from here
+            this.world.startDemoCamera('オブジェスイッチ用カメラ');
             this.stateTimer = this.unk140;
             this.onHitFilter(HF.NO_COLLISION);
             return true;
@@ -292,7 +292,11 @@ export class Manhole extends MapObjGeneral {
         const next = fr(fc.frame + fc.rate);
         if ((fc.frame <= 45 && 45 < next) || (fc.frame <= 125 && 125 < next)) this.world.sound(SE.OBJ_MANHOLE_CLOSE, this.pos);
     }
-    // setGroundCollision: with a hatched Yoshi over it, only moved (TODO: Yoshi isn't simulated, so always TMapObjBase's)
+    /** TManhole::setGroundCollision: with a hatched Yoshi over it, only moved to its place */
+    setGroundCollision() {
+        if (this.yoshiHatchedOver()) { if (this.colMgr) this.colMgr.moveActiveCollisionTrans(this.pos); }
+        else super.setGroundCollision();
+    }
     makeManholeUnuseful(o: MapObjBase) {
         if (this.unk154) return;
         this.unk154 = o;

@@ -2,10 +2,10 @@
 // in degrees, through 16-bit binary angles into a 4096-entry sine table (JMANewSinTable(12)),
 // and an arctangent table (matan); these are reproduced, since enemies' turns and paths follow
 // from them.
-import { fmadd as fmaddExact, fnmsub as FNMS, fmsub as FMS } from './player/fmath.js';
+import { fr, fmadd as fmaddExact, fnmsub as FNMS, fmsub as FMS } from './player/fmath.js';
 const FMA = fmaddExact;
 
-export const fr = Math.fround;
+export { fr };
 
 // ---------------------------------------------------------------- MSL rand (MSL_Common/rand.c)
 let next = 1;
@@ -72,6 +72,55 @@ export function mslCosf(x: number): number {
     const xx = fr(f * f);
     if (q & 1) return fr(fr(fr(-fmaS(xx, fmaS(xx, fmaS(xx, fmaS(C[1], xx, C[3]), C[5]), C[7]), C[9])) * f) * T[2 * q]);
     return fr(fmaS(xx, fmaS(xx, fmaS(xx, fmaS(C[0], xx, C[2]), C[4]), C[6]), C[8]) * T[2 * q + 1]);
+}
+// MSL atanf / atan2f (MSL_Common_Embedded/Math/Single_precision/inverse_trig.c), as the DOL has them
+// (atanf @0x80086B4C: the reduction's fadds / fdivs / fnmsubs, the polynomial in fmadds; atan2f @0x80086E14)
+const ATAN_C = [0.999999999, -0.3333333213, 0.19999886356, -0.14281650536, 0.11041179874, -0.084597554152, 0.04714243524].map(fr);
+const ATAN_ONEP_HI = [6.82842, 3.239828, 2.0, 1.446462, 1.17157292, 1.039566130].map(fr);
+const ATAN_ONEP_LO = [0.000007135, 0.00000082, 0, 0.00000063, 0, 0].map(fr);
+const ATAN_XI_HI = [0, 0.39269, 0.5890486, 0.7853981, 0.981747, 1.178097, 1.374446].map(fr);
+const ATAN_XI_LO = [0, 0.000009081698724, 0.000000023, 0.000000063, 0.000000704, 0.00000025, 0.00000079].map(fr);
+const ATAN_INV_HI = [2.414213, 1.49660575, 1.0, 0.668178618, 0.414213568, 0.198912367].map(fr);
+const ATAN_INV_LO = [0.000000562, 0, 0, 0, 0, 0].map(fr);
+const f32bits = (v: number) => { const b = new DataView(new ArrayBuffer(4)); b.setFloat32(0, v); return b.getInt32(0); };
+/** MSL atanf */
+export function mslAtanf(x: number): number {
+    x = fr(x);
+    const neg = f32bits(x) < 0;
+    x = Math.abs(x);
+    let z: number, index = -1, inv = false;
+    if (x >= fr(2.414213565)) { z = fr(1 / x); inv = true; }
+    else if (fr(0.4142135624) < x) {
+        index++;
+        const b = f32bits(x);
+        switch (b & 0x7F800000) {
+            case 0x3F000000: if (b >= 0x3F08D5B9) index++; if (b >= 0x3F521801) index++; break;
+            case 0x3F800000: index += 2; if (b >= 0x3F9BF7EC) index++; if (b >= 0x3FEF789E) index++; break;
+            case 0x40000000: index += 4; break;
+        }
+        z = fr(1 / fr(ATAN_INV_HI[index] + fr(x + ATAN_INV_LO[index])));
+        z = fr(FNMS(z, ATAN_ONEP_HI[index], ATAN_INV_HI[index]) + FNMS(z, ATAN_ONEP_LO[index], ATAN_INV_LO[index]));
+    } else z = x;
+    const zz = fr(z * z), C = ATAN_C;
+    const p = fmaS(zz, fmaS(zz, fmaS(zz, fmaS(zz, fmaS(zz, C[6], C[5]), C[4]), C[3]), C[2]), C[1]);
+    z = fmaS(fr(z * zz), p, z);
+    z = fr(z + ATAN_XI_LO[index + 1]);
+    z = fr(z + ATAN_XI_HI[index + 1]);
+    if (inv) { z = fr(z - fr(Math.PI / 2)); return neg ? z : -z; }
+    return neg ? -z : z;
+}
+/** MSL atan2f */
+export function mslAtan2f(y: number, x: number): number {
+    y = fr(y); x = fr(x);
+    const sx = f32bits(x) < 0, sy = f32bits(y) < 0, PI = fr(Math.PI);
+    if (sx === sy) {
+        if (sx) return fr(mslAtanf(fr(y / x)) - PI);
+        if (x !== 0) return mslAtanf(fr(y / x));
+        return fr(Math.PI / 2);
+    }
+    if (x < 0) return fr(PI + mslAtanf(fr(y / x)));
+    if (x !== 0) return mslAtanf(fr(y / x));
+    return sy ? -fr(Math.PI / 2) : fr(Math.PI / 2);
 }
 const sinAll = new Float32Array(4096 + 1024);
 { const step = fr(fr(6.2831855) / 4096); for (let i = 0; i < sinAll.length; i++) sinAll[i] = mslSinf(fr(step * i)); }

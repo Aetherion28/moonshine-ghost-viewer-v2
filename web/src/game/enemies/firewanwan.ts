@@ -12,8 +12,7 @@
 // (TNerveFireWanwanRecover). Thrown into the pond (checkInPond) it dies (TNerveFireWanwanDie:
 // silver, sunk); with every one dead the manager makes the boss Shine appear.
 //
-// Not here: particles, camera shake and rumble (updateCameraShake / updateRumble: their timers
-// only gate rumble), the help balloons (told to the viewer as 'balloon:<id>' effects, as
+// Not here: particles and rumble (updateRumble: its timers only gate rumble), the help balloons (told to the viewer as 'balloon:<id>' effects, as
 // bosspakkun does). MarioProxy never sends TAKE, so the tail is never grabbed from a ghost.
 //
 // From the binary (the decomp's NonMatching source has these wrong): checkHungTail is
@@ -542,6 +541,7 @@ export class FireWanwan extends SmallEnemy {
         if (this.mStopSearchTimer > 0) this.mStopSearchTimer -= 1;
         this.updateSquareToMario();
         this.updateCollisionFromParam();
+        this.updateCameraShake();
         this.updatePollute();
         this.updateHitPoint();
         this.checkHungTail();
@@ -565,6 +565,10 @@ export class FireWanwan extends SmallEnemy {
         if (this.isDefeat()) return;
         const P = this.PF;
         this.setHitParams(P.mSLAttackRadius, P.mSLAttackHeight, P.mSLDamageRadius, P.mSLDamageHeight);
+    }
+    updateCameraShake() {
+        const r = this.PF.mCamShakeRange;
+        if ((this.isWalking() || this.isAttacking()) && this.distToMarioSq < fr(r * r)) this.world.cameraShake?.keepShake(3, 0.5);
     }
     updatePollute() {
         if (!this.tail!.isOnFire) return;
@@ -678,6 +682,7 @@ export class FireWanwan extends SmallEnemy {
             if (f < 0) this.vel.set(scaleAdd(Math.abs(fr(f * 2)), this.vel, total));
             this.rot.set(0, MsWrap(MsGetRotFromZaxisY(this.vel), 0, 360), 0);
             this.world.effect('wallKick', this.pos, this.scale);
+            this.world.cameraShake?.startShake(3, 8);
             this.stopTriggerSound();
             this.world.sound(SE.EN_WANWAN_REFLECT, this.pos);
         }

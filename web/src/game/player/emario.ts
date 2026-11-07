@@ -143,7 +143,25 @@ export class EnemyMario extends TMarioSim {
     /** the stamp's base matrix this tick (isDispStamp) */
     stampTR: Mtx = mtx();
 
-    constructor(w: World, em: TEMario) { super(w, 'マリオ'); this.mEMario = em; }
+    constructor(w: World, em: TEMario) { super(w, 'マリオ'); this.mEMario = em; ((w as any).enemyMarios ??= []).push(this); }
+    /**
+     * drawHPMeter(viewMtx), at perform's CUE_DRAW with EM_FLAG_DISP_HP_METER and mWaterHitTimer > 0: two
+     * quads in view space at his position + 210 up (the view matrix applied by toView), z his depth:
+     * the border (left - 5 .. left + 96 + 5, y +-15) in 0x000000C0, the water left (left .. left +
+     * mWaterCounter * 1.5, y +-10) in 0x4040FFFF; left = x - 48. Each quad: 4 [x, y, z] and its colour.
+     */
+    drawHPMeter(toView: (p: V3) => V3): { pts: number[]; color: number[] }[] {
+        if (!(this.checkEMFlag(EM_FLAG.DISP_HP_METER) && this.mWaterHitTimer > 0)) return [];
+        const w = new V3(this.pos.x, fr(this.pos.y + 210), this.pos.z);
+        const sp = toView(w);
+        const top = fr(sp.y - 10), bottom = fr(sp.y + 10), left = fr(sp.x - 48);
+        const bl = fr(left - 5), br = fr(fr(left + 96) + 5), bt = fr(top - 5), bb = fr(bottom + 5), z = sp.z;
+        const right = fr(left + fr(this.mWaterCounter * 1.5));
+        return [
+            { pts: [bl, bt, z, br, bt, z, br, bb, z, bl, bb, z], color: [0, 0, 0, 0xC0] },
+            { pts: [left, top, z, right, top, z, right, bottom, z, left, bottom, z], color: [0x40, 0x40, 0xFF, 0xFF] },
+        ];
+    }
     get graph() { return this.mEMario.tracer.graph || this.world.nullGraph; }
     marioPos() { return this.world.mario.pos; }
     padFrameL() { return false; }
@@ -176,6 +194,7 @@ export class EnemyMario extends TMarioSim {
         j3dTRMtx(this.mModel.baseTR, this.mFaceAngle.x, this.mModelFaceAngle, this.mFaceAngle.z, this.pos.x, this.pos.y, this.pos.z);
         this.mModel.update();
         this.mModel.calc();
+        this.setupMtxEffect(false);
     }
     canJumpToNode() { const i = this.graph.findNearestNodeIndex(this.pos, -1); return i >= 0 && this.graph.checkFlag(i, 2); }
 
@@ -337,8 +356,7 @@ export class EnemyMario extends TMarioSim {
         const g = E.goal.point();
         this.setStickToAngle(matan(fr(g.z - this.pos.z), fr(g.x - this.pos.x)) & 0xFFFF, 1);
         ++this.mEMDoingTimer;
-        // (every 100: gpConductor->makeEnemyAppear(pos, "ハムクリマネージャー", 1, 0))
-        if (this.mEMDoingTimer % 100 === 0) this.world.conductor.makeOneEnemyAppear(this.pos.clone(), 'ハムクリマネージャー', 1);
+        if (this.mEMDoingTimer % 100 === 0) this.world.conductor.makeEnemyAppear(this.pos.clone(), 'ハムクリマネージャー', 1, 0);
     }
     emTurning() {
         const d = s16(this.mTargetAngle - this.mFaceAngle.y);

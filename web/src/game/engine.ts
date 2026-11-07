@@ -303,6 +303,10 @@ export class TakeActor extends HitActor {
     getTakingMtx(): Mtx | null { return null; }
     /** TTakeActor::getRadiusAtY: a pole's / tree's radius at height y (Mario climbing it is drawn that far off its axis): mDamageRadius */
     getRadiusAtY(_y: number) { return this.damageRadius; }
+    /** TTakeActor::moveRequest: just there */
+    moveRequest(p: V3): boolean { this.pos.set(p); return true; }
+    /** TTakeActor::isTaken */
+    isTaken() { return this.holder !== null; }
     ensureTakeSituation() {
         if (this.held && this.held.holder !== this) this.held = null;
         if (this.holder && this.holder.held !== this) this.holder = null;
@@ -519,6 +523,8 @@ const EX_SHINE = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x
 export function shineIDofExStage(area: number) { return area <= 0x14 || area >= 0x35 ? 0xFF : EX_SHINE[area - 0x15]; }
 
 export class World {
+    /** the stage's TMarDirector (its mState: player.ts DIR), when Mario is played */
+    director: { state: number } | null = null;
     col!: MapCollision;
     files!: Files;
     byName = new Map<string, NameRef>();
@@ -530,6 +536,8 @@ export class World {
     water: Water | null = null;
     fludd: Fludd | null = null;
     pollution: Pollution | null = null;
+    /** gpCameraShake (camera/shake.ts), once the game camera is made */
+    cameraShake: { startShake(mode: number, scale: number): void; keepShake(mode: number, scale: number): void } | null = null;
     graphs = new Map<string, GraphWeb>();
     /** Actors no manager holds (enemies' attachments: Piranha Plant seeds...), drawn too. */
     extras: LiveActor[] = [];
@@ -540,6 +548,8 @@ export class World {
     moveTickCount = 0; tickCount = 0;
     /** TMarDirector state the game code asks about. */
     map = 0; stage = 0;
+    /** SMS_LoadParticle's table: particle id -> .jpa file */
+    particleFiles = new Map<number, string>();
     /** TFlagManager's Shine flag of this secret stage's Shine (SMS_getShineIDofExStage): got before the run */
     exShineGot = false;
     /** a trace's actors alive at their first record, by exact position (IntroTiming.traceAlive); null without a trace */
@@ -613,10 +623,13 @@ export class LiveManager extends ObjManager {
     constructor(world: World, name = '') { super(world, name); world.conductor.liveManagers.push(this); }
     load(s: Stream) { super.load(s); }
     manageActor(a: LiveActor) { a.instanceIndex = this.objs.length; this.manageObj(a); }
-    /** clipActorsAux: in the game camera's view (within far, radius r), else CLIPPED_OUT. */
+    /** clipActorsAux: one in another fast cube is CLIPPED_OUT, else in the game camera's view (within far, radius r) or CLIPPED_OUT. */
     clipActorsAux(far: number, r: number) {
         for (const o of this.objs as LiveActor[]) {
-            if (!o.checkLiveFlag(LF.ENABLE_CLIPPING)) o.offLiveFlag(LF.CLIPPED_OUT);
+            if (!o.checkLiveFlag(LF.ENABLE_CLIPPING)) { o.offLiveFlag(LF.CLIPPED_OUT); continue; }
+            const p = o.pos.clone(); p.y = Math.fround(p.y + 75);
+            // (SMS_IsInOtherFastCube: livemanager.cpp)
+            if (o.checkLiveFlag(LF.UNK2000) && this.world.isInOtherFastCube(p)) o.onLiveFlag(LF.CLIPPED_OUT);
             else if (this.world.inView(o.pos, r, far)) o.offLiveFlag(LF.CLIPPED_OUT);
             else o.onLiveFlag(LF.CLIPPED_OUT);
         }
@@ -632,6 +645,14 @@ export class LiveManager extends ObjManager {
 }
 
 // ---------------------------------------------------------------- TLiveActor
+/** MarioUtil/ShadowUtil.hpp's shadow types */
+export const SHADOW_TYPE = { CIRCLE: 0, SQUARE: 1, TREE: 2, SHIP: 3 } as const;
+/** TCircleShadowRequest */
+export class ShadowRequest {
+    pos = new V3(); rx = 0; rz = 0; rotY = 0; type: number = SHADOW_TYPE.CIRCLE; needsGroundCheck = true; actorType = 0;
+    /** sent by forceRequest (no distance / size / area checks) */
+    force = false;
+}
 export class LiveActor extends TakeActor {
     world: World;
     manager: LiveManager | null = null;
@@ -750,6 +771,25 @@ export class LiveActor extends TakeActor {
         this.calcRidePos();
     }
     kill() { this.liveFlag |= LF.DEAD | LF.UNK40; }
+    /** TLiveActor::getShadowType */
+    getShadowType(): number { return SHADOW_TYPE.CIRCLE; }
+    /**
+     * TLiveActor::requestShadow (at CUE_CALC_VIEW): the TCircleShadowRequest it sends the bind
+     * shadow manager (force: forceRequest, for FORCE_SHADOW), or null
+     */
+    requestShadow(): ShadowRequest | null {
+        if (this.liveFlag & (LF.DEAD | LF.HIDDEN | LF.UNK8)) return null;
+        if ((this.liveFlag & (LF.UNK200 | LF.CLIPPED_OUT)) && !(this.liveFlag & LF.FORCE_SHADOW)) return null;
+        const r = new ShadowRequest();
+        r.pos.set(this.pos);
+        if (!this.isAirborne()) { r.pos.y = this.groundHeight; r.needsGroundCheck = false; }
+        r.rx = r.rz = this.scaledBodyRadius;
+        r.type = this.getShadowType();
+        r.rotY = this.rot.y;
+        r.actorType = this.actorType;
+        r.force = (this.liveFlag & LF.FORCE_SHADOW) !== 0;
+        return r;
+    }
     // ---- the animation sounds (anmsound.ts: TLiveActor::setAnmSound / setCurAnmSound / updateAnmSound)
     anmSoundPath: string | null = null;
     anmSound: AnmSound | null = null;
@@ -774,6 +814,8 @@ export class LiveActor extends TakeActor {
         const fc = this.mactor.getFrameCtrl(ANM_BCK);
         if (fc) this.anmSound.loop(this.world, this.pos, fc.frame, fc.rate);
     }
+    /** stopAnmSound */
+    stopAnmSound() { if (this.anmSound && this.anmSoundPath) this.anmSound.stop(this.world); }
     /** false: the port sets its sound itself (setAnmSound) */
     anmSoundAuto = true;
     perform(cue: number) {
@@ -803,6 +845,8 @@ export class LiveActor extends TakeActor {
     calcModel(_intFrame: boolean) { }
     performOnlyDraw(cue: number) { if (this.liveFlag & (LF.UNK200 | LF.DEAD)) return; if (this.mactor && (cue & CUE_CALC_ANIM)) this.calcRootMatrix(); }
     getJointTrans(_i: number): V3 { return this.pos.clone(); }
+    /** getFocalPoint: its position */
+    getFocalPoint(): V3 { return this.pos.clone(); }
     /** For the viewer: shown at all, and the matrix it's drawn with. */
     drawn() { return !(this.liveFlag & (LF.DEAD | LF.HIDDEN)) && !(this.liveFlag & LF.UNK200); }
 }
@@ -1037,6 +1081,8 @@ function overrideNode(i: number) { const n = rngCtx.node ? rngCtx.node(rngCtx.cu
 
 // ---------------------------------------------------------------- TSpineEnemy
 export class SpineEnemy extends LiveActor {
+    /** the shared MActor whose pose copyFromShared gave its model this frame (null: its own) */
+    sharedPose: MActor | null = null;
     goal = new PathNode(); goal104 = new PathNode(); goalStack: PathNode[] = [];
     tracer = new GraphTracer();
     unk128 = 0; unk12C = 0; unk130 = 0;
@@ -1319,17 +1365,66 @@ export class EnemyManager extends LiveManager {
         const n = this.saveParams.mSLActiveEnemyNum;
         return n > this.getObjNum() ? this.getObjNum() : n;
     }
+    /** clipEnemies: without params, gpConductor's mEnemyFarClip and radius 300 */
     clipActors() {
         const p = this.saveParams;
-        this.clipActorsAux(p ? p.mSLFarClip : 5000, p ? p.mSLClipRadius : 300);
+        this.clipActorsAux(p ? p.mSLFarClip : this.world.conductor.condFarClip(), p ? p.mSLClipRadius : 300);
     }
     perform(cue: number) {
-        if (this.shared) { this.performShared(cue); return; }
+        this.changeDrawBuffer(cue);
+        if (this.shared) { this.performShared(cue); this.restoreDrawBuffer(cue); return; }
         if (cue & CUE_CALC_ANIM) { this.clipActors(); this.setFlagOutOfCube(); }
         const num = this.getActiveObjNum();
         if (cue & CUE_MOVE) for (let i = num; i < this.objs.length; i++) (this.objs[i] as LiveActor).onLiveFlag(LF.DEAD);
         for (let i = 0; i < num; i++) this.objs[i].testPerform(cue);
+        this.restoreDrawBuffer(cue);
     }
+    setSharedFlags() {
+        if (!this.shared) return;
+        for (const e of this.objs as SpineEnemy[]) {
+            e.offLiveFlag(LF.UNK4000);
+            if (!e.checkLiveFlag(LF.HIDDEN | LF.CLIPPED_OUT)) {
+                const idx = e.mactor!.getCurAnmIdx(ANM_BCK);
+                for (const s of this.shared) if (idx < 0 || idx === s.idx) { e.onLiveFlag(LF.UNK4000); break; }
+            }
+        }
+    }
+    /** updateAnmSoundShared: each shown enemy's animation sound at its shared MActor's BCK frame and rate */
+    updateAnmSoundShared() {
+        if (!this.shared) return;
+        if (!(this.objs[0] as LiveActor).anmSound) return;
+        for (const e of this.objs as SpineEnemy[]) {
+            if (e.checkLiveFlag(LF.HIDDEN | LF.CLIPPED_OUT)) continue;
+            const idx = e.mactor!.getCurAnmIdx(ANM_BCK);
+            for (const s of this.shared) {
+                if (idx < 0 || idx === s.idx) {
+                    if (e.anmSoundPath && e.anmSound) { const c = s.get(e.instanceIndex).getFrameCtrl(ANM_BCK); if (c) e.anmSound.loop(this.world, e.pos, c.frame, c.rate); }
+                    break;
+                }
+            }
+        }
+    }
+    /**
+     * copyFromShared: each active UNK4000 enemy (not hidden or clipped out) drawn with the pose of its
+     * shared MActor (the first set whose BCK it plays): sharedPose, which the viewer draws instead of its own
+     */
+    copyFromShared() {
+        const n = this.getActiveObjNum();
+        for (let i = 0; i < n; i++) {
+            const e = this.objs[i] as SpineEnemy;
+            e.sharedPose = null;
+            if (!e.checkLiveFlag(LF.UNK4000) || e.checkLiveFlag(LF.HIDDEN | LF.CLIPPED_OUT)) continue;
+            const idx = e.mactor!.getCurAnmIdx(ANM_BCK);
+            for (const s of this.shared!) {
+                if (idx >= 0 && idx !== s.idx) continue;
+                e.sharedPose = s.get(e.instanceIndex);
+                break;
+            }
+        }
+    }
+    /** changeDrawBuffer / restoreDrawBuffer: empty (blr) */
+    changeDrawBuffer(_cue: number) { }
+    restoreDrawBuffer(_cue: number) { }
     performShared(cue: number) {
         const num = this.getActiveObjNum();
         let alive = 0;
@@ -1338,14 +1433,10 @@ export class EnemyManager extends LiveManager {
         if (cue & CUE_CALC_ANIM) {
             this.clipActors();
             for (const s of this.shared!) for (const a of s.mactors) a.frameUpdate();
-            // setSharedFlags
-            for (const e of this.objs as SpineEnemy[]) {
-                e.offLiveFlag(LF.UNK4000);
-                if (!e.checkLiveFlag(LF.HIDDEN | LF.CLIPPED_OUT)) {
-                    const idx = e.mactor!.getCurAnmIdx(ANM_BCK);
-                    for (const s of this.shared!) if (idx < 0 || idx === s.idx) { e.onLiveFlag(LF.UNK4000); break; }
-                }
-            }
+            this.setSharedFlags();
+            this.updateAnmSoundShared();
+            // (CUE_CALC_VIEW's copyFromShared: the sim's CalcAnim is its last cue of the frame)
+            this.copyFromShared();
         }
         if (cue & CUE_MOVE) for (let i = num; i < this.objs.length; i++) this.objs[i].onHitFilter(HF.NO_COLLISION);
         for (let i = 0; i < num; i++) {
@@ -1363,86 +1454,153 @@ export class EnemyManager extends LiveManager {
     getNearestEnemy(p: V3) { let best: SpineEnemy | null = null, d = 0; for (let i = 0; i < this.getActiveObjNum(); i++) { const c = this.objs[i] as SpineEnemy; if (c.checkLiveFlag(LF.DEAD)) continue; const x = Math.sqrt(sqDist(p, c.pos)); if (!best || d > x) { best = c; d = x; } } return best; }
     countLivingEnemy() { let n = 0; for (let i = 0; i < this.getActiveObjNum(); i++) if (!(this.objs[i] as LiveActor).checkLiveFlag(LF.DEAD)) n++; return n; }
     killChildren() { for (const o of this.objs as LiveActor[]) o.onLiveFlag(LF.DEAD | LF.UNK40); }
+    /** getDeadEnemy: the first dead one of the active ones */
+    getDeadEnemy(): SpineEnemy | null {
+        const num = this.getActiveObjNum();
+        for (let i = 0; i < num; ++i) if ((this.objs[i] as LiveActor).checkLiveFlag(LF.DEAD)) return this.objs[i] as SpineEnemy;
+        return null;
+    }
+    /** getFarOutEnemy: the first dead one, else the clipped-out reusable (UNK800) one nearest Mario */
+    getFarOutEnemy(): SpineEnemy | null {
+        let dist = -1, best: SpineEnemy | null = null;
+        for (let i = 0; i < this.getActiveObjNum(); ++i) {
+            const e = this.objs[i] as SpineEnemy;
+            if (e.checkLiveFlag(LF.DEAD)) { best = e; break; }
+            if (!e.checkLiveFlag(LF.CLIPPED_OUT) || !e.checkLiveFlag(LF.UNK800)) continue;
+            if (!best || dist > e.distToMarioSq) { best = e; dist = e.distToMarioSq; }
+        }
+        return best;
+    }
+    /** killChildrenWithin: (enemies or bosses only) every one within radius of p (VECSquareDistance <= r*r) */
+    killChildrenWithin(p: V3, radius: number) {
+        if (!this.objs.length) return;
+        const o0 = this.objs[0] as HitActor;
+        if (!o0.isHitCategory(HC.ENEMY) && !o0.isHitCategory(HC.BOSS)) return;
+        for (const e of this.objs as LiveActor[]) if (sqDist(p, e.pos) <= fr(radius * radius)) e.onLiveFlag(LF.DEAD | LF.UNK40);
+    }
 }
 
-// ---------------------------------------------------------------- TObjHitCheck
+// ---------------------------------------------------------------- TObjHitCheck (Strategic/ObjHitCheck.cpp)
+/** checkDistance (JP 0x80115BE8): fadds for the heights and radii, fmuls r * r, fmadds dx * dx + dz * dz */
 function checkDistance(a: V3, ar: number, ah: number, b: V3, dr: number, dh: number) {
-    if (a.y > b.y + dh) return false;
-    if (a.y + ah < b.y) return false;
-    const r = ar + dr, dx = a.x - b.x, dz = a.z - b.z;
-    return !(r * r <= dx * dx + dz * dz);
+    if (a.y > fr(b.y + dh)) return false;
+    if (fr(a.y + ah) < b.y) return false;
+    const r = fr(ar + dr), dx = fr(a.x - b.x), dz = fr(a.z - b.z);
+    return !(fr(r * r) <= FMA_(dx, dx, fr(dz * dz)));
 }
 export const IDX = { MAP: 0, EMPTY: 1, MANAGER: 2, OBJECT: 3, GRAFFITI: 4, ITEM: 5, PLAYER: 6, ENEMY: 7, BOSS: 8, NPC: 9, WATER_PARTICLE: 10, INIT: 11 };
+/** TStrategy's mHitCheckOffFlags bits (nothing in the game sets them: TStrategy's constructor zeroes them) */
+export const HIT_CHECK_OFF = { PLAYER: 0x40, WATER: 0x80, ENEMY: 0x100, BOSS: 0x200, NPC: 0x400, OBJECT: 0x800 };
 export class ObjHitCheck {
+    /** unk0: the 256 cells' lists (TObjCheckList chains; here arrays, newest last, walked from the end) */
     table: HitActor[][] = [];
-    constructor(public w: World) { }
+    /** gpStrategy->mHitCheckOffFlags */
+    hitCheckOffFlags = 0;
+    constructor(public w: World) { this.initTable(); }
+    private isHitCheckOff(f: number) { return (this.hitCheckOffFlags & f) !== 0; }
     /**
      * getTableIndex (inlined; JP 0x80115A64 in checkWater): f32 sums of the |coordinates| (fabs, fadds),
      * fsubs / fadds the entry radius, fmuls by the f32 10/700, then __cvt_fp2unsigned (a negative is 0)
      */
-    private index(p: V3, r: number): [number, number] {
+    getTableIndex(p: V3, r: number): [number, number] {
         const s = fr(fr(Math.abs(p.z)) + fr(fr(Math.abs(p.x)) + fr(Math.abs(p.y))));
         const k = fr(10 / 700);
         const u = (v: number) => (v < 0 ? 0 : v >= 4294967296 ? 0xFFFFFFFF : Math.trunc(v) >>> 0);
         const i = u(fr(k * fr(s - r))), e0 = u(fr(k * fr(s + r)));
-        const e = i === e0 ? e0 + 1 : e0;
+        const e = i === e0 ? (e0 + 1) >>> 0 : e0;
         return [i & 0xFF, e & 0xFF];
     }
-    private suffer(att: HitActor, suf: HitActor) {
+    /** suffererIsInAttackArea */
+    suffererIsInAttackArea(att: HitActor, suf: HitActor) {
         if (att.collisions.length >= att.colCapacity) return;
         if (att.collisions.includes(suf)) return;
         att.collisions.push(suf);
     }
-    private checkInList(a: HitActor, list: HitActor[]) {
-        // (the game's lists are newest first; the filter tests and checkDistance inlined, same order and results)
-        const af = a.hitFilter, aCat = a.actorType & HC_MASK, ap = a.pos;
-        const aAtk = !(af & HF.NO_ATTACK), aDmg = !(af & HF.NO_DAMAGE);
+    /** checkActorsInList: both ways with every actor already in the cell (newest first) */
+    checkActorsInList(a: HitActor, list: HitActor[]) {
         for (let k = list.length - 1; k >= 0; k--) {
-            const c = list[k], cf = c.hitFilter, cp = c.pos;
-            if (aAtk && !(cf & HF.NO_DAMAGE) && (af & (c.actorType & HC_MASK)) !== 0
-                && checkDistance(ap, a.attackRadius, a.attackHeight, cp, c.damageRadius, c.damageHeight)) this.suffer(a, c);
-            if (aDmg && !(cf & HF.NO_ATTACK) && (cf & aCat) !== 0
-                && checkDistance(cp, c.attackRadius, c.attackHeight, ap, a.damageRadius, a.damageHeight)) this.suffer(c, a);
+            const c = list[k];
+            if (!a.checkHitFilter(HF.NO_ATTACK) && !c.checkHitFilter(HF.NO_DAMAGE) && a.canAttack(c)
+                && checkDistance(a.pos, a.attackRadius, a.attackHeight, c.pos, c.damageRadius, c.damageHeight)) this.suffererIsInAttackArea(a, c);
+            if (!c.checkHitFilter(HF.NO_ATTACK) && !a.checkHitFilter(HF.NO_DAMAGE) && c.canAttack(a)
+                && checkDistance(c.pos, c.attackRadius, c.attackHeight, a.pos, a.damageRadius, a.damageHeight)) this.suffererIsInAttackArea(c, a);
         }
     }
-    private entry(a: HitActor, i: number) {
+    /** entryActor */
+    entryActor(a: HitActor, i: number) {
         if (!a.checkHitFilter(HF.NO_ATTACK) || !a.checkHitFilter(HF.NO_DAMAGE)) this.table[i].push(a);
     }
-    private entryGroup(g: HitActor[] | null, check: boolean) {
+    /** checkAndEntryGroup */
+    checkAndEntryGroup(g: HitActor[] | null) {
         if (!g) return;
         for (const a of g) {
             a.collisions.length = 0;
             if (a.checkHitFilter(HF.NO_COLLISION)) continue;
-            let [i, e] = this.index(a.pos, a.entryRadius);
+            let [i, e] = this.getTableIndex(a.pos, a.entryRadius);
             while (i !== e) {
-                if (check) this.checkInList(a, this.table[i]);
-                this.entry(a, i);
+                this.checkActorsInList(a, this.table[i]);
+                this.entryActor(a, i);
                 i = i === 0xFF ? 0 : i + 1;
             }
         }
     }
-    clearHitNum() { for (const k of [IDX.ENEMY, IDX.BOSS, IDX.NPC, IDX.PLAYER, IDX.WATER_PARTICLE, IDX.ITEM]) for (const a of this.w.groups[k] || []) a.collisions.length = 0; }
-    checkActorsHit() {
-        if (this.table.length !== 256) { this.table = []; for (let i = 0; i < 256; i++) this.table.push([]); } else for (const L of this.table) L.length = 0;
-        const g = this.w.groups;
-        this.entryGroup(g[IDX.OBJECT], false);
-        this.entryGroup(g[IDX.ENEMY], true);
-        this.entryGroup(g[IDX.BOSS], true);
-        this.entryGroup(g[IDX.NPC], true);
-        this.entryGroup(g[IDX.PLAYER], true);
-        this.w.checkWater(this);
-        const m = this.w.mario;
-        for (const a of g[IDX.ITEM] || []) {
+    /** entryGroup */
+    entryGroup(g: HitActor[] | null) {
+        if (!g) return;
+        for (const a of g) {
             a.collisions.length = 0;
             if (a.checkHitFilter(HF.NO_COLLISION)) continue;
-            if (checkDistance(a.pos, a.attackRadius, a.attackHeight, m.pos, m.damageRadius, m.damageHeight)) this.suffer(a, m);
+            let [i, e] = this.getTableIndex(a.pos, a.entryRadius);
+            while (i !== e) { this.entryActor(a, i); i = i === 0xFF ? 0 : i + 1; }
         }
     }
-    /** checkWaterWithActorsInList for a drop at p: undefined when its cells span nothing (the slot keeps what it had). */
+    /** clearGroup */
+    clearGroup(g: HitActor[] | null) { if (g) for (const a of g) a.collisions.length = 0; }
+    /** checkGroupPlayer: each one against Mario only */
+    checkGroupPlayer(g: HitActor[] | null) {
+        if (!g) return;
+        const m = this.w.mario;
+        for (const a of g) {
+            a.collisions.length = 0;
+            if (a.checkHitFilter(HF.NO_COLLISION)) continue;
+            if (checkDistance(a.pos, a.attackRadius, a.attackHeight, m.pos, m.damageRadius, m.damageHeight)) this.suffererIsInAttackArea(a, m);
+        }
+    }
+    /** checkGroup (empty in the game) */
+    checkGroup(_g: HitActor[] | null) { }
+    clearHitNum() {
+        const g = this.w.groups;
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.ENEMY)) this.clearGroup(g[IDX.ENEMY]);
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.BOSS)) this.clearGroup(g[IDX.BOSS]);
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.NPC)) this.clearGroup(g[IDX.NPC]);
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.PLAYER)) this.clearGroup(g[IDX.PLAYER]);
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.WATER)) this.clearGroup(g[IDX.WATER_PARTICLE]);
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.OBJECT)) this.clearGroup(g[IDX.ITEM]);
+    }
+    /** initTable */
+    initTable() {
+        if (this.table.length !== 256) { this.table = []; for (let i = 0; i < 256; i++) this.table.push([]); } else for (const L of this.table) L.length = 0;
+    }
+    checkActorsHit() {
+        this.initTable();
+        const g = this.w.groups;
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.OBJECT)) this.entryGroup(g[IDX.OBJECT]);
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.ENEMY)) this.checkAndEntryGroup(g[IDX.ENEMY]);
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.BOSS)) this.checkAndEntryGroup(g[IDX.BOSS]);
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.NPC)) this.checkAndEntryGroup(g[IDX.NPC]);
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.PLAYER)) this.checkAndEntryGroup(g[IDX.PLAYER]);
+        // checkWater: the model water manager's live drops (water.ts checkHits, through waterHitAt)
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.WATER) && (!this.w.water || this.w.water.askDoWaterHitCheck())) this.w.checkWater(this);
+        if (!this.isHitCheckOff(HIT_CHECK_OFF.OBJECT)) this.checkGroupPlayer(g[IDX.ITEM]);
+    }
+    /** checkWater's per-drop part: undefined when its cells span nothing (the slot keeps what it had), else checkWaterWithActorsInList */
     waterHitAt(p: V3, ar: number, ah: number, er: number): HitActor | null | undefined {
-        const [i, e] = this.index(p, er);
+        const [i, e] = this.getTableIndex(p, er);
         if (i === e) return undefined;
-        const L = this.table[i];
+        return this.checkWaterWithActorsInList(p, ar, ah, this.table[i]);
+    }
+    /** checkWaterWithActorsInList (ar, ah: TModelWaterManager::mStaticHitActor's attack radius and height) */
+    checkWaterWithActorsInList(p: V3, ar: number, ah: number, L: HitActor[]): HitActor | null {
         for (let k = L.length - 1; k >= 0; k--) {
             const c = L[k];
             if (c.isHitCategory(HC.PLAYER) || c.checkHitFilter(HF.NO_DAMAGE)) continue;
@@ -1473,6 +1631,39 @@ export class Conductor {
         r.resetToPosition(p);
         return r;
     }
+    /** makeEnemyAppear: up to count dead ones put at p; mode 1 also clipped-out reusable ones, 2 also unclipped reusable ones */
+    makeEnemyAppear(p: V3, name: string, count: number, mode: number) {
+        const m = this.getManagerByName(name);
+        if (!m) return 0;
+        let result = 0;
+        for (const a of m.objs as SpineEnemy[]) if (a.checkLiveFlag(LF.DEAD)) { a.resetToPosition(p); if (++result >= count) return result; }
+        if (mode === 0) return result;
+        for (const a of m.objs as SpineEnemy[]) if (!a.checkLiveFlag(LF.DEAD) && a.checkLiveFlag(LF.UNK800) && a.checkLiveFlag(LF.CLIPPED_OUT)) { a.resetToPosition(p); if (++result >= count) return result; }
+        if (mode === 1) return result;
+        for (const a of m.objs as SpineEnemy[]) if (!a.checkLiveFlag(LF.DEAD) && !a.checkLiveFlag(LF.CLIPPED_OUT) && a.checkLiveFlag(LF.UNK800)) { a.resetToPosition(p); if (++result >= count) return result; }
+        return result;
+    }
+    /** killEnemiesWithin: every enemy manager's but the Petey Piranha's (ボスワンワンマネージャー) */
+    killEnemiesWithin(p: V3, radius: number) {
+        for (const m of this.enemyManagers) if (m.name !== 'ボスワンワンマネージャー') m.killChildrenWithin(p, radius);
+    }
+    /** isBossDefeated: by the director's stage (area) number: 3, the Gooper Blooper's left alive; else every ヒノクリ２ killed (UNK40) */
+    isBossDefeated() {
+        if (this.w.map === 3) {
+            const m = this.getManagerByName('ボスゲッソーマネージャー') as EnemyManager | null;
+            return !m || m.countLivingEnemy() === 0;
+        }
+        const m = this.getManagerByName('ヒノクリ２マネージャー');
+        if (!m) return true;
+        for (const e of m.objs as LiveActor[]) if (!e.checkLiveFlag(LF.UNK40)) return false;
+        return true;
+    }
+    /** mCondParams.mEnemyFarClip (/conductor.prm) */
+    condFarClipVal: number | null = null;
+    condFarClip() {
+        if (this.condFarClipVal === null) { const p = readParams('/conductor.prm', this.w.files, { mEnemyFarClip: ['f', 5000] } as PSchema) as any; this.condFarClipVal = fr(p.mEnemyFarClip); }
+        return this.condFarClipVal;
+    }
     /** genEnemyFromPollution (enemies/enemytable.ts sets it when the stage has a TStageEnemyInfoTable) */
     performHead: ((cue: number) => void) | null = null;
     perform(cue: number) {
@@ -1492,6 +1683,10 @@ declare module './engine.js' {
         inAreaCube(p: V3): boolean;
         inView(p: V3, r: number, far: number, near?: number): boolean;
         effect(kind: string, p: V3, s?: V3): void;
+        /** TGCConsole2::startAppearBalloon(code, flag): the help balloon (told to the HUD) */
+        balloon(code: number, flag: boolean): void;
+        /** TGCConsole2::startAppearJetBalloon(kind, count) */
+        jetBalloon(kind: number, count: number): void;
         newAndRegisterCoin(id: number): any;
         makeCoinAppear(coin: any): any;
         makeCoinAt(x: number, y: number, z: number): any;
@@ -1506,6 +1701,8 @@ World.prototype.addToGroup = function (this: World, name: string, a: HitActor) {
 World.prototype.inAreaCube = function () { return true; };
 /** Effects and sounds the game makes (particles, splashes): told to the viewer. */
 World.prototype.effect = function (this: World, kind: string, p: V3, s?: V3) { this.events.push({ t: this.tickCount, kind, data: { p: p.clone(), s: s ? s.clone() : null } }); };
+World.prototype.balloon = function (this: World, code: number, flag: boolean) { this.events.push({ t: this.tickCount, kind: 'balloon', data: { code, flag } }); };
+World.prototype.jetBalloon = function (this: World, kind: number, count: number) { this.events.push({ t: this.tickCount, kind: 'jetBalloon', data: { kind, count } }); };
 World.prototype.newAndRegisterCoin = function () { return null; };
 World.prototype.makeCoinAppear = function (this: World, _c: any) { return null; };
 World.prototype.makeCoinAt = function (this: World, x: number, y: number, z: number) { this.events.push({ t: this.tickCount, kind: 'coin', data: { p: new V3(x, y, z) } }); return null; };

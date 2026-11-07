@@ -15,11 +15,13 @@
 
 import { msVecMag2 } from '../vecops.js';
 import { fr, V3, MsSin, MsCos, MsClamp, MsMtxSetXYZRPH } from '../math.js';
-import { World, LiveActor, LF, HF, HC, nerve, Spine, Stream, PathNode, ANM_BCK, HitActor, PSchema, MActor, CUE_CALC_ANIM } from '../engine.js';
+import { ANM_FRAME_RATE, World, LiveActor, LF, HF, HC, nerve, Spine, Stream, PathNode, ANM_BCK, HitActor, PSchema, MActor, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, WalkerNerves, walkerParams } from './walker.js';
 import { register } from '../scene.js';
+import { mapObjGlobals, newAndRegisterObj } from '../mapobj/base.js';
+import type { JuiceBlock } from '../mapobj/block.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 
@@ -255,13 +257,42 @@ export class Telesa extends WalkerEnemy {
         if (t.x === 0 && t.z === 0) return true;
         return msVecMag2(t) < 200;   // (MsVECMag2 (0x800c57d0): the length from the raw frsqrte estimate, not the square)
     }
-    /** (box Boos: a TelesaBlock map object, which the viewer doesn't have: the game returns false without one) */
+    /** changeByJuice: a box Boo (unk150 & 0x40) turns into its TelesaBlock, any juice or water */
     changeByJuice() {
         if (this.unk150 & 0x40) {
-            if (this.juiceBlock) return true;
-            return false;
+            if (this.juiceBlock !== null) return true;
+            const mom = mapObjGlobals(this.world).mapObjManager;
+            this.juiceBlock = mom ? mom.makeObjAppearAt(this.pos.x, this.pos.y, this.pos.z, AT.TELESA_BLOCK, true) : null;
+            if (this.juiceBlock === null) return false;
+            const b = this.juiceBlock as JuiceBlock;
+            b.scale.set(1, 1, 1);
+            b.unk140.set(0.1, 0.1, 0.1);
+            b.rot.y = this.rot.y;
+            b.offLiveFlag(LF.HIDDEN);
+            this.onHitFilter(HF.NO_COLLISION);
+            this.onLiveFlag(LF.HIDDEN);
+            this.spine!.pushNerve(SmallEnemyNerves.change);
+            this.spine!.pushAfterCurrent(TelesaNerves.freeze);
+            this.world.sound(SE.EN_TELESA_FIX, this.pos);
+            this.world.sound(SE.OBJ_AWAY_INTO_GRAF, this.pos);
+            this.unk185 = 1;
+            return true;
         }
         return false;
+    }
+    scalingChangeActor() {
+        const b = this.juiceBlock as JuiceBlock;
+        b.unk140.x = b.unk140.z = MsClamp(fr(b.unk140.x + fr(0.02)), 0, SmallEnemyManager.mBlockXZScale);
+        b.unk140.y = MsClamp(fr(b.unk140.y + fr(0.01)), 0, SmallEnemyManager.mBlockYScale);
+    }
+    changeOut() {
+        this.onHitFilter(HF.NO_COLLISION);
+        this.world.sound(SE.EN_TELSA_RECOVER, this.pos);
+        this.offLiveFlag(LF.HIDDEN);
+        this.pos.set(this.juiceBlock.pos);
+        this.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK);
+        this.juiceBlock.kill();
+        this.juiceBlock = null;
     }
     getChangeBlockTime() { return 3000; }
     isInhibitedForceMove() { return true; }
@@ -420,7 +451,8 @@ export class BoxTelesa extends Telesa {
         super.load(s);
         this.setTypeCanSee();
         this.unk150 = 0x40;
-        // (gpMapObjManager->newAndRegisterObj("TelesaBlock"): the block it turns into; no map objects here)
+        const block = newAndRegisterObj(this.world, 'TelesaBlock');
+        if (block) { block.onLiveFlag(LF.DEAD); block.pos.set(0, 0, 0); block.scale.set(1, 1, 1); }
     }
     reset() { super.reset(); this.baseColor = TELESA_COLOR[1]; }
     isEatenByYosshi() { return false; }
@@ -504,6 +536,7 @@ TelesaNerves.die = nerve<Telesa>('TNerveTelesaDie', (spine: S) => {
     if (self.checkCurAnmEnd(ANM_BCK) || self.unk184) {
         self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
         self.holder = null;
+        self.stopAnmSound();
         self.onHitFilter(HF.NO_COLLISION);
         spine.reset();
         spine.setNext(TelesaNerves.die);

@@ -49,6 +49,8 @@ export class AnmSound {
     private prev = NaN;
     private key = 'anm' + nextKey++ + ':';
     constructor(public list: BasEntry[] | null) { }
+    /** JAIAnimeSound::stop: its held sounds let go */
+    stop(w: World) { w.events.push({ t: w.tickCount, kind: 'soundStop', data: { hold: this.key } }); }
     /** animeLoop(pos, frame, rate): the entries the BCK passed since last frame, and the held ones it's inside */
     loop(w: World, p: V3, frame: number, rate: number) {
         const L = this.list, prev = this.prev;

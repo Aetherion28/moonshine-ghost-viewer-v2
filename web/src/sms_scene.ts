@@ -8,14 +8,14 @@ import * as Viewer from '../noclip/viewer.js';
 import ArrayBufferSlice from '../noclip/ArrayBufferSlice.js';
 import { assert, assertExists, readString } from '../noclip/util.js';
 
-import { mat4, quat, vec3 } from 'gl-matrix';
+import { mat4, quat, vec3, vec4 } from 'gl-matrix';
 import { Camera } from '../noclip/Camera.js';
-import { colorFromRGBA } from '../noclip/Color.js';
+import { White, colorCopy, colorFromRGBA, colorNewCopy } from '../noclip/Color.js';
 import { J3DModelData, J3DModelInstance, J3DModelMaterialData } from '../noclip/Common/JSYSTEM/J3D/J3DGraphBase.js';
 import { J3DModelInstanceSimple } from '../noclip/Common/JSYSTEM/J3D/J3DGraphSimple.js';
 import { BCK, BMD, BMT, BPK, BRK, BTK, BTP } from '../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
 import * as JPA from '../noclip/Common/JSYSTEM/JPA.js';
-import { transformVec3Mat4w1 } from '../noclip/MathHelpers.js';
+import { computeModelMatrixSRT, transformVec3Mat4w1 } from '../noclip/MathHelpers.js';
 import { Destroyable, SceneContext } from '../noclip/SceneBase.js';
 import { gfxDeviceNeedsFlipY } from '../noclip/gfx/helpers/GfxDeviceHelpers.js';
 import { makeBackbufferDescSimple, opaqueBlackFullClearRenderPassDescriptor } from '../noclip/gfx/helpers/RenderGraphHelpers.js';
@@ -24,7 +24,7 @@ import { GfxRenderCache } from '../noclip/gfx/render/GfxRenderCache.js';
 import { GfxrAttachmentSlot } from '../noclip/gfx/render/GfxRenderGraph.js';
 import { GfxRenderInstList, GfxRenderInstManager } from '../noclip/gfx/render/GfxRenderInstManager.js';
 import { EFB_HEIGHT, EFB_WIDTH, Light, lightSetWorldPosition } from '../noclip/gx/gx_material.js';
-import { GXRenderHelperGfx, fillSceneParamsDataOnTemplate } from '../noclip/gx/gx_render.js';
+import { ColorKind, GXRenderHelperGfx, fillSceneParamsDataOnTemplate } from '../noclip/gx/gx_render.js';
 
 const sjisDecoder = new TextDecoder('sjis')!;
 
@@ -142,7 +142,16 @@ export interface SceneBinObjGroup extends SceneBinObjBase {
     children: SceneBinObj[];
 }
 
-export type SceneBinObj = SceneBinObjGroup | SceneBinObjAmbColor | SceneBinObjLight | SceneBinObjMapObj | SceneBinObjStaticObj | SceneBinObjUnk;
+/** TSunModel's scene.bin entry (SunModel / SunsetModel: JDrama::TActor::load's TRS). */
+export interface SceneBinObjSunModel extends SceneBinObjBase {
+    type: 'SunModel';
+    sunset: boolean;
+    x: number; y: number; z: number;
+    rotationX: number; rotationY: number; rotationZ: number;
+    scaleX: number; scaleY: number; scaleZ: number;
+}
+
+export type SceneBinObj = SceneBinObjSunModel | SceneBinObjGroup | SceneBinObjAmbColor | SceneBinObjLight | SceneBinObjMapObj | SceneBinObjStaticObj | SceneBinObjUnk;
 
 export function readSceneBin(buffer: ArrayBufferSlice): SceneBinObj {
     let offs = 0x00;
@@ -201,6 +210,12 @@ export function readSceneBin(buffer: ArrayBufferSlice): SceneBinObj {
     {
         const [paramsSize, x, y, z, r, g, b, a, intensity] = unpack(params, 'fffBBBBf');
         return { type: 'Light', klass, name, size, x, y, z, r, g, b, a, intensity };
+    }
+    case 'SunModel':
+    case 'SunsetModel':
+    {
+        const [paramsSize, x, y, z, rotationX, rotationY, rotationZ, scaleX, scaleY, scaleZ] = unpack(params, 'fffffffff');
+        return { type: 'SunModel', klass, name, size, sunset: klass === 'SunsetModel', x, y, z, rotationX, rotationY, rotationZ, scaleX, scaleY, scaleZ };
     }
     case 'MapStaticObj':
     {
@@ -495,6 +510,62 @@ class LightConfig {
     }
 }
 
+/**
+ * TSunModel::perform: the sun sits 250000 units from the camera along (mPosition - camera), is drawn
+ * only while its centre's projected position is within ±unk1A8 (3.0), and fades material 0/1's TEV
+ * colour 0 alpha toward CLBLinearInbetween(unk68, 255, ratio) / CLBEaseOutInbetween(unk74, 255, ratio)
+ * with CLBChaseDecrease. ratio (unk194) is the share of the 17 GXPeekZ samples at the far plane
+ * (getZBufValue); WebGL can't peek the depth buffer mid-frame, so every sample counts as clear.
+ */
+export class SunModel {
+    private pos = vec3.create();
+    private scale = vec3.create();
+    private rot = vec3.create();
+    private c0 = colorNewCopy(White);
+    private c1 = colorNewCopy(White);
+    private unk9C: number; private unkA0: number;
+    private readonly unk68 = -1; private readonly unk74 = 50;
+    private carry = 0;
+    private scratch = vec4.create();
+    constructor(public inst: J3DModelInstanceSimple, o: SceneBinObjSunModel) {
+        vec3.set(this.pos, o.x, o.y, o.z);
+        vec3.set(this.rot, o.rotationX, o.rotationY, o.rotationZ);
+        vec3.set(this.scale, o.scaleX * 0.4, o.scaleY * 0.4, o.scaleZ * 0.4);
+        const mats = inst.modelMaterialData.materialData!;
+        colorCopy(this.c0, mats[0].material.colorRegisters[0]);
+        if (mats.length > 1) colorCopy(this.c1, mats[1].material.colorRegisters[0]);
+        this.unk9C = this.unk68; this.unkA0 = this.unk74;
+    }
+    public perform(viewerInput: Viewer.ViewerRenderInput): void {
+        const cam = viewerInput.camera;
+        const eye = vec3.create(); mat4.getTranslation(eye, cam.worldMatrix);
+        const dir = vec3.sub(vec3.create(), this.pos, eye); vec3.normalize(dir, dir);
+        const at = vec3.scaleAndAdd(vec3.create(), eye, dir, 250000.0);
+        const v = this.scratch; vec4.set(v, at[0], at[1], at[2], 1);
+        vec4.transformMat4(v, v, cam.clipFromWorldMatrix);
+        const sx = v[0] / v[3], sy = v[1] / v[3];
+        const inBounds = v[3] > 0 && -3.0 <= sx && sx <= 3.0 && -3.0 <= sy && sy <= 3.0;
+        const ratio = inBounds ? 1.0 : 0.0;
+        // 30 Hz game steps
+        this.carry += Math.min(viewerInput.deltaTime, 200) / (1000 / 30);
+        for (; this.carry >= 1; this.carry--) {
+            const a4 = this.unk68 + (255.0 - this.unk68) * ratio;
+            const t = 1 - (1 - ratio) * (1 - ratio);
+            const a8 = this.unk74 + (255.0 - this.unk74) * t;
+            this.unk9C += (this.unk9C < a4 ? 0.1 : 0.01) * (a4 - this.unk9C);
+            this.unkA0 += (this.unkA0 < a8 ? 0.1 : 0.01) * (a8 - this.unkA0);
+        }
+        this.inst.visible = inBounds;
+        if (!inBounds) return;
+        const d = Math.PI / 180;
+        computeModelMatrixSRT(this.inst.modelMatrix, this.scale[0], this.scale[1], this.scale[2], this.rot[0] * d, this.rot[1] * d, this.rot[2] * d, at[0], at[1], at[2]);
+        this.c0.a = ((this.unk9C | 0) & 0xFF) / 255; this.c1.a = ((this.unkA0 | 0) & 0xFF) / 255;
+        const mis = this.inst.materialInstances;
+        if (mis[0]) mis[0].setColorOverride(ColorKind.C0, this.c0);
+        if (mis[1]) mis[1].setColorOverride(ColorKind.C0, this.c1);
+    }
+}
+
 export class SunshineRenderer implements Viewer.SceneGfx {
     public renderHelper: GXRenderHelperGfx;
     public renderInstListSky = new GfxRenderInstList();
@@ -517,6 +588,9 @@ export class SunshineRenderer implements Viewer.SceneGfx {
     public beforePrepare: ((viewerInput: Viewer.ViewerRenderInput) => void) | null = null;
     /** Called after the main pass's models are prepared, with that list current (the layer's wires). */
     public extraMain: ((device: GfxDevice, renderInstManager: GfxRenderInstManager, viewerInput: Viewer.ViewerRenderInput) => void) | null = null;
+
+    /** TSunModel (Camera/sunmodel.cpp), if the stage has one */
+    public sunModel: SunModel | null = null;
 
     private copyFilter: CopyFilter | null = null;
     /** The interlaced picture's vertical copy filter (off: the progressive-scan picture). */
@@ -572,6 +646,7 @@ export class SunshineRenderer implements Viewer.SceneGfx {
         if (this.beforePrepare !== null)
             this.beforePrepare(viewerInput);
         this.warmPrograms(device);
+        if (this.sunModel !== null) this.sunModel.perform(viewerInput);
         const _t0 = performance.now();
         if (this.objLightConfig !== null)
             for (let i = 0; i < this.modelInstances.length; i++)
@@ -769,6 +844,13 @@ export class SunshineSceneDesc implements Viewer.SceneDesc {
             this.createRendererForSceneBinMapObj(device, cache, renderer, rarc, obj);
         } else if (obj.type === 'StaticObj') {
             this.createRendererForSceneBinStaticObj(device, cache, renderer, rarc, obj);
+        } else if (obj.type === 'SunModel') {
+            // TSunModel::load: "/scene/sun" (or "/scene/sunset") model.bmd + model.btk, scaling * 0.4
+            const inst = SunshineSceneDesc.createSunshineSceneForBasename(device, cache, SMSPass.MAIN, rarc, obj.sunset ? 'sunset/model' : 'sun/model', false);
+            if (inst !== null) {
+                renderer.modelInstances.push(inst);
+                renderer.sunModel = new SunModel(inst, obj);
+            }
         }
     }
 

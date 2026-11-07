@@ -10,7 +10,7 @@ import { assert, readString } from '../../../util.js';
 import BitMap from '../../../BitMap.js';
 import { Color, colorCopy, colorNewFromRGBA, colorNewFromRGBA8, TransparentBlack, White } from '../../../Color.js';
 import { AABB } from '../../../Geometry.js';
-import { compileLoadedVertexLayout, compileVtxLoader, getAttributeByteSize, GX_Array, GX_VtxAttrFmt, GX_VtxDesc, LoadedVertexData, LoadedVertexLayout } from '../../../gx/gx_displaylist.js';
+import { compileLoadedVertexLayout, compileVtxLoader, getAttributeByteSize, GX_Array, GX_VtxAttrFmt, GX_VtxDesc, LoadedVertexData, LoadedVertexLayout, VtxLoader } from '../../../gx/gx_displaylist.js';
 import * as GX from '../../../gx/gx_enum.js';
 import * as GX_Material from '../../../gx/gx_material.js';
 import { ColorKind } from '../../../gx/gx_render.js';
@@ -416,6 +416,9 @@ export interface Shape {
     bbox: AABB;
     boundingSphereRadius: number;
     materialIndex: number;
+    // (kept to re-run the vertices with new arrays: a trembling model's positions)
+    vtxLoader?: VtxLoader;
+    vtxArrays?: GX_Array[];
 }
 
 export interface SHP1 {
@@ -532,7 +535,7 @@ function readSHP1Chunk(buffer: ArrayBufferSlice, bmd: BMD): SHP1 {
         const materialIndex = -1;
 
         // Now we should have a complete shape. Onto the next!
-        shapes.push({ shapeMtxType, loadedVertexLayout, mtxGroups, bbox, boundingSphereRadius, materialIndex });
+        shapes.push({ shapeMtxType, loadedVertexLayout, mtxGroups, bbox, boundingSphereRadius, materialIndex, vtxLoader, vtxArrays });
 
         shapeInitDataIdx += 0x28;
     }

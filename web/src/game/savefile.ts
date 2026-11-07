@@ -9,35 +9,17 @@
 // The card file around it (the banner, the icon, the comment and the file's second copy) is
 // CardManager's and isn't written: only the game's own save contents.
 
-import { FlagManager, MSF } from './flags.js';
+import { FlagManager, MSF, SAVE_SIZE } from './flags.js';
 
-export const SAVE_SIZE = 4 + 8 + 8 + 4 + 2 + 2 + 64 + 0x200 + 0x200;
-const BOOLS = MSF.CARD_BOOL_END & 0xFFFF, INTS = MSF.CARD_INT_END & 0xFFFF;
+export { SAVE_SIZE };
 
-/** TFlagManager::save (it counts the save first: MSF_SAVE_COUNT + 1) */
-export function writeSave(f: FlagManager, time = Date.now()): Uint8Array {
-    f.incFlag(MSF.SAVE_COUNT, 1);
-    const b = new Uint8Array(SAVE_SIZE), dv = new DataView(b.buffer);
-    dv.setUint32(0, 4);
-    dv.setBigInt64(4, BigInt(Math.trunc(time)));
-    dv.setInt32(20, f.getFlag(MSF.SAVE_COUNT));
-    dv.setUint16(24, f.getFlag(MSF.SHINE_COUNT) & 0xFFFF);
-    const bo = 28 + 64, io = bo + 0x200;
-    for (let i = 0; i < BOOLS; i++) if (f.getFlag(0x10000 + i)) b[bo + (i >> 3)] |= 1 << (i & 7);
-    for (let i = 0; i < INTS; i++) dv.setInt32(io + i * 4, f.getFlag(0x20000 + i));
-    return b;
-}
-/** TFlagManager::load: a fresh save's flags with the card's read in (resetCard, then correctFlag); null: not a save */
+/** TFlagManager::save */
+export function writeSave(f: FlagManager, time = Date.now()): Uint8Array { return f.save(time); }
+/** TFlagManager::load into a fresh manager; null: not a save */
 export function readSave(b: Uint8Array): FlagManager | null {
-    if (b.length < SAVE_SIZE) return null;
-    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
-    if (dv.getUint32(0) !== 4) return null;
+    if (b.length < SAVE_SIZE || new DataView(b.buffer, b.byteOffset, b.byteLength).getUint32(0) !== 4) return null;
     const f = new FlagManager();
-    f.resetCard();
-    const bo = 28 + 64, io = bo + 0x200;
-    for (let i = 0; i < BOOLS; i++) f.setFlag(0x10000 + i, (b[bo + (i >> 3)] >> (i & 7)) & 1);
-    for (let i = 0; i < INTS; i++) f.setFlag(0x20000 + i, dv.getInt32(io + i * 4));
-    f.correctFlag();
+    f.load(b);
     return f;
 }
 /** what the file select shows of a save: its Shines, its time */
@@ -61,6 +43,12 @@ export function loadSlot(slot: number): Uint8Array | null {
 }
 export function storeSlot(slot: number, b: Uint8Array): boolean {
     try { let s = ''; for (const v of b) s += String.fromCharCode(v); localStorage.setItem(KEY(slot), btoa(s)); return true; } catch { return false; }
+}
+/** the card's option block (CardManager::writeOptionBlock / getOptionReadStream): one key */
+const OPT_KEY = 'ghostViewer.option';
+export function storeOption(b: Uint8Array): boolean { try { let s = ''; for (const v of b) s += String.fromCharCode(v); localStorage.setItem(OPT_KEY, btoa(s)); return true; } catch { return false; } }
+export function loadOptionBlock(): Uint8Array | null {
+    try { const s = localStorage.getItem(OPT_KEY); if (!s) return null; const bin = atob(s), b = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); return b; } catch { return null; }
 }
 export function eraseSlot(slot: number) { try { localStorage.removeItem(KEY(slot)); } catch { } }
 
