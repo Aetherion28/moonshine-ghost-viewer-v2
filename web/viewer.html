@@ -638,6 +638,35 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   const stageEl = $('stage');
   const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // Shaders compiled a few a frame: a material three hasn't made a program for yet is drawn only while
+  // the frame's budget lasts (its mesh is hidden this frame otherwise), so a stage's ~80 programs don't
+  // all compile in its first frame. Without KHR_parallel_shader_compile (Firefox) each compile stops
+  // the page, and that first frame took 4 s. The budget adapts to how long the last frame's compiles took.
+  renderer.debug.checkShaderErrors = false;   // (the status read after each link waits for it)
+  {
+    const render = renderer.render.bind(renderer), hidden = [];
+    let budget = 2;
+    renderer.render = (sc, cam) => {
+      const seen = new Set();
+      let fresh = 0;
+      sc.traverseVisible((o) => {
+        if (!o.material) return;
+        const ms = Array.isArray(o.material) ? o.material : [o.material];
+        let wait = false;
+        for (const m of ms) {
+          if (renderer.properties.get(m).program || seen.has(m)) continue;
+          if (fresh >= budget) { wait = true; break; }
+          seen.add(m); fresh++;
+        }
+        if (wait) { o.visible = false; hidden.push(o); }
+      });
+      const t = performance.now();
+      render(sc, cam);
+      if (fresh) { const ms = performance.now() - t; budget = ms < 8 ? Math.min(budget * 2, 64) : Math.max(1, budget >> 1); }
+      for (const o of hidden) o.visible = true;
+      hidden.length = 0;
+    };
+  }
   stageEl.prepend(renderer.domElement);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 1, 10, 200000);

@@ -1331,7 +1331,11 @@ class GfxImplP_GL implements GfxSwapChain, GfxDevice {
         this._currentRenderPassDescriptor = null;
     }
 
+    /** (queryProgramReady without KHR_parallel_shader_compile) the ms a frame may spend waiting on links */
+    private static readonly COMPILE_BUDGET_MS = 12;
+    private _compileSpent = 0;
     public beginFrame(): void {
+        this._compileSpent = 0;
     }
 
     public endFrame(): void {
@@ -1625,8 +1629,17 @@ class GfxImplP_GL implements GfxSwapChain, GfxDevice {
             if (this._KHR_parallel_shader_compile !== null) {
                 complete = gl.getProgramParameter(program.gl_program, this._KHR_parallel_shader_compile!.COMPLETION_STATUS_KHR);
             } else {
-                // If we don't have async shader compilation, assume all compilation is done immediately :/
-                complete = true;
+                // No async compilation (Firefox): finish the link now (the status read waits for it), but only
+                // while this frame's compile budget lasts; past it the program reports not ready, so the
+                // draws that may skip it do, and the compiling is spread over the next frames.
+                if (this._compileSpent > GfxImplP_GL.COMPILE_BUDGET_MS) {
+                    complete = false;
+                } else {
+                    const t = performance.now();
+                    gl.getProgramParameter(program.gl_program, gl.LINK_STATUS);
+                    this._compileSpent += performance.now() - t;
+                    complete = true;
+                }
             }
 
             if (complete)
