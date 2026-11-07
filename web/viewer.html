@@ -7779,9 +7779,33 @@ void main() {
     temp.forEach((o) => { o.parent.remove(o); o.geometry.dispose(); });
     if (fxWarmStep >= 4) { fxWarmKey = key; fxWarmStep = 0; }
   }
+  // The static objects' particles (TMapStaticObj::perform emits its particle every frame at its
+  // position: Corona Mountain's smoke, Bianco's boss light): one held emitter each, from the stage
+  // archive's file (v1data.sceneJpa), at the object's global scale.
+  let stFx = { key: '', runs: [] };
+  function staticFx() {
+    const r = gameLayer && gameLayer.renderer, P = r && r.staticParticles;
+    if (!P || !P.length || !v1data || !gameLayer.scene) return [];
+    if (stFx.key !== gameLayer.scene) {
+      stFx = { key: gameLayer.scene, runs: [] };
+      v1data.sceneJpa(stFx.key, [...new Set(P.map((p) => p.file))]).then((res) => { Object.assign(JPA_RES, res); }).catch((e) => console.warn('[fx] static particles', e));
+      return [];
+    }
+    const f0 = Math.floor(performance.now() * 30 / 1000), all = [];
+    P.forEach((p, i) => {
+      const res = JPA_RES['scene:' + p.file];
+      if (!res) return;
+      const M = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, p.x, p.y, p.z, 1], sc = [p.scale, p.scale, p.scale];
+      const run = stFx.runs[i] = jpaHoldRun(stFx.runs[i], f0, () => true,
+        (c) => { const em = JPA.makeEmitter(res, Math.imul(i + 1, 0x9e3779b1) ^ c); em.dynScale = sc.slice(); em.ptclScale = sc.slice(); return em; }, () => M, undefined, true);
+      all.push(...run.dying);
+      if (run.em) all.push(run.em);
+    });
+    return all;
+  }
   function drawJpa() {
     if (typeof JPA === 'undefined' || typeof JPA_RES === 'undefined') return;
-    const list = [];
+    const list = staticFx();
     fxOwners().forEach((g) => { if (g.visible && g.jpa && g.jpa.length) list.push(...g.jpa); });
     objNodes.forEach((o) => { if (o.visible && o.userData.bwJpa && o.userData.bwJpa.length) list.push(...o.userData.bwJpa); });
     objNodes.forEach((o) => { if (o.userData.bg && o.userData.bgJpa && o.userData.bgJpa.length) list.push(...o.userData.bgJpa); });

@@ -589,6 +589,9 @@ export class SunshineRenderer implements Viewer.SceneGfx {
     /** Called after the main pass's models are prepared, with that list current (the layer's wires). */
     public extraMain: ((device: GfxDevice, renderInstManager: GfxRenderInstManager, viewerInput: Viewer.ViewerRenderInput) => void) | null = null;
 
+    /** The static objects' particles (TMapStaticObj with a particle path): the file in the scene archive, where, its global scale */
+    public staticParticles: { file: string; x: number; y: number; z: number; scale: number }[] = [];
+
     /** TSunModel (Camera/sunmodel.cpp), if the stage has one */
     public sunModel: SunModel | null = null;
 
@@ -1187,6 +1190,8 @@ export class SunshineSceneDesc implements Viewer.SceneDesc {
             k: string; // model key
             m?: string; // model name
             p?: string; // particle system path
+            id?: number; // its resource ID
+            scale?: number; // its emitter's global scale
         };
 
         const modelCache = renderer.modelCache;
@@ -1216,7 +1221,7 @@ export class SunshineSceneDesc implements Viewer.SceneDesc {
         }
 
         const modelLookup: ModelLookup[] = [
-            { k: 'BiancoBossEffectLight', p: 'map/map/ms_wmlin_light.jpa' },
+            { k: 'BiancoBossEffectLight', p: 'map/map/ms_wmlin_light.jpa', id: 0x151 },
             { k: 'BiancoRiver', m: 'BiancoRiver' },
             { k: 'BiaWaterPollution', m: 'BiaWaterPollution' },
             { k: 'IndirectObj', m: 'IndirectObj' },
@@ -1235,7 +1240,10 @@ export class SunshineSceneDesc implements Viewer.SceneDesc {
             //{ k: 'sea', m: 'sea' },
             { k: 'sun_mirror', m: 'sun_mirror' },
             { k: 'TargetArrow', m: 'TargetArrow' },
-            { k: 'TopOfCorona', p: 'mapObj/ms_coronasmoke.jpa' },
+            { k: 'TopOfCorona', p: 'mapObj/ms_coronasmoke.jpa', id: 0x146, scale: 1.8 },
+            // (TMapStaticObj's table entries with neither model nor particle: sounds, an air wall, a sea)
+            { k: 'falls' }, { k: 'fountain' }, { k: 'MareFalls' }, { k: 'SoundObjRiver' }, { k: 'SoundObjWaterIntoWater' },
+            { k: 'BiancoAirWall' }, { k: 'riccoSea' }, { k: 'mareSeaPollutionS34567' },
         ];
 
         let modelEntry = modelLookup.find((lt) => obj.model === lt.k);
@@ -1254,16 +1262,13 @@ export class SunshineSceneDesc implements Viewer.SceneDesc {
             modelInstance.passMask = SMSPass.MAIN;
         }
 
-        if (modelEntry.p !== undefined) {
-            const jpaFilename = modelEntry.p.toLowerCase();
-            const jpaFile = assertExists(rarc.findFile(jpaFilename), jpaFilename);
-            const jpaData = lookupEffect(jpaFile);
-        }
+        // TMapStaticObj::perform emits its particle (type 1) every frame at its position: the viewer
+        // keeps one emitter there (TopOfCorona's at TMapStaticObj::mEffectCoronaScale, 1.8)
+        if (modelEntry.p !== undefined && rarc.findFile(modelEntry.p.toLowerCase()))
+            renderer.staticParticles.push({ file: modelEntry.p.toLowerCase(), x: obj.x, y: obj.y, z: obj.z, scale: modelEntry.scale ?? 1 });
 
-        if (modelInstance === null) {
-            console.log(`couldn't load ${JSON.stringify(modelEntry)}`);
+        if (modelInstance === null)
             return null;
-        }
 
         const q = quat.create();
         quat.fromEuler(q, obj.rotationX, obj.rotationY, obj.rotationZ);

@@ -121,6 +121,13 @@ export class V1Data {
         if (sg && common && game) Object.assign(out, await buildShineGet(sg, common, game, (img, alpha) => pngDataUri(img, alpha)));
         return out;
     }
+    /** Particle files of a stage archive (e.g. the static objects' mapObj/ms_coronasmoke.jpa), keyed `scene:<file>` in JPA_RES */
+    async sceneJpa(scene: string, files: string[]) {
+        const arc = await this.sceneArc(scene);
+        if (!arc) return {};
+        const byLower = new Map([...arc.keys()].map((k) => [k.toLowerCase(), k]));
+        return exportJpa(files.filter((f) => byLower.has(f.toLowerCase())).map((f) => [`scene:${f}`, arc, byLower.get(f.toLowerCase())!] as [string, Arc, string]));
+    }
     /** Gooper Blooper's particles (added to JPA_RES where he is): bgeso/jpa in a stage archive that has him. */
     async gessoJpa(scene: string | null) {
         const scenes = [scene, 'ricco8', ...this.index.flatMap((e) => e.scenes)].filter((s): s is string => !!s);
