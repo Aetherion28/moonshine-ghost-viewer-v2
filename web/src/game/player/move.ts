@@ -414,7 +414,8 @@ export abstract class MarioMove extends MarioBase {
         const dir = inc > dec ? 2 : 3;
         if (q[0] + q[1] + q[2] + q[3] >= 4) return [1, dir];
         // (only where the game started that spin this tick: the record before it isn't the spin already)
-        if (spin) { const s = spin(dir) >>> 0; if (traceStatusAfterTick() === s && traceStatusAfterTick(-1) !== s) return [1, dir]; }
+        // (the recorded status is the player's: Shadow Mario / Il Piantissimo keep the cleared flags)
+        if (spin && this === this.world.mario) { const s = spin(dir) >>> 0; if (traceStatusAfterTick() === s && traceStatusAfterTick(-1) !== s) return [1, dir]; }
         return [0, 4];
     }
     makeHistory() {
