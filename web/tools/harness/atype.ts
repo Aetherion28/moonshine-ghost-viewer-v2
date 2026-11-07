@@ -1,0 +1,4 @@
+import { readFileSync } from 'node:fs';
+import { replayMstr } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstr.ts';
+const B = readFileSync(process.argv[2]); const ids = new Set(process.argv[3].split(',').map(Number)); const seen = new Map<number,string>();
+replayMstr(B.buffer.slice(B.byteOffset, B.byteOffset + B.length), { onActor: (aid: number, _p: number, ext: number, words: Uint32Array, _c: boolean, _f: number, tick: number) => { if (!ids.has(aid)) return; const f=(n:number)=>new Float32Array(new Uint32Array([words[n]]).buffer)[0]; const s = (words[19]>>>0).toString(16)+(process.env.V?" v "+[43,44,45].map(n=>f(n).toFixed(4)).join(" ")+" p "+[4,5,6].map(n=>f(n).toFixed(1)).join(" ")+" lf "+(words[60]>>>0).toString(16):""); if (seen.get(aid) !== s) { seen.set(aid, s); console.log(tick, aid, 'type', s, 'ext', ext.toString(16)); } } } as any);

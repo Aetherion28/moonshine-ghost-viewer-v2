@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const [a,b] = (process.env.EQ||'0,0').split(',').map(Number); const o = st.runFrame.bind(st);
+  st.runFrame = (...x) => { const r = o(...x); if (st.qf >= a && st.qf <= b) { const e = P.mWaterGun.mEmitPos[0]; console.log('EP', st.qf, [e.x,e.y,e.z].map(v=>v.toFixed(3)).join(','), 'mario', [P.pos.x,P.pos.y,P.pos.z].map(v=>v.toFixed(3)).join(',')); } return r; }; }

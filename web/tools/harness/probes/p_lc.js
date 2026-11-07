@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); let last = null;
+  P.testPerform = (c) => { const r = o(c); const C = P.camera || P.simCamera; const v = C && C.isLButtonCamera ? C.isLButtonCamera() : 'na'; const m = P.simCamera && P.simCamera.mMode; const k = v + ' ' + m; if (k !== last && st.qf > 700 && st.qf < 1013) { console.log('LC', st.qf, 'Lcam', v, 'mode', m); last = k; } return r; }; }

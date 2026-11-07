@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); const [a,b] = (process.env.GT||'0,0').split(',').map(Number);
+  P.testPerform = (c) => { const r = o(c); if (st.qf >= a && st.qf <= b) { const g = P.mGroundPlane; console.log('GT', st.qf, 'bg', g && g.bgType.toString(16), 'actor', g && g.actor && g.actor.name, 'gy', P.mFloorPosition.y, 'pos', P.pos.x.toFixed(2), P.pos.y.toFixed(2), P.pos.z.toFixed(2), 'fl', P.mFlag.toString(16)); } return r; }; }

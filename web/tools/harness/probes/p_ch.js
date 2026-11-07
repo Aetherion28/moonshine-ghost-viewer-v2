@@ -1,0 +1,2 @@
+{ const st = globalThis.__st; const [a,b] = (process.env.CQ||'0,0').split(',').map(Number); const o = st.runFrame.bind(st);
+  st.runFrame = (...x) => { const r = o(...x); if (st.qf >= a && st.qf <= b && st.qf % 4 === 0) { const W = st.world; const all = [...W.conductor.liveManagers.flatMap((m) => m.objs || [])]; let i = 0; for (const q of all) if (q.constructor.name === 'ChuuHana') console.log('CH', st.qf, i++, [q.pos.x,q.pos.y,q.pos.z].join(',')); } return r; }; }

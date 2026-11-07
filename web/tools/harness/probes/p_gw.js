@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); let d = 0;
+  P.testPerform = (c) => { if (!d && st.qf >= 841) { d = 1; const W = st.world; for (const fl of [0, 1, 2, 4, 8]) { for (const [x, y, z] of [[-4569.673, 57.92, 5458.849], [-4539.9, 70.77, 5487.07]]) { const [h, g] = W.col.checkGround(x, y, z, fl); console.log('GW flag', fl, 'at', x, y, z, '->', h, g && g.bgType.toString(16), g && g.isWaterSurface && g.isWaterSurface()); } } } return o(c); }; }

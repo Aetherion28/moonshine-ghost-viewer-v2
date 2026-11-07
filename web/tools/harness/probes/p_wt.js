@@ -1,0 +1,4 @@
+{ const st = globalThis.__st; const W = st.world.water; const [a,b] = (process.env.WQ||'0,0').split(',').map(Number); const info = new WeakMap();
+  const me = W.makeEmit.bind(W); W.makeEmit = (e) => { const n = W.count; me(e); if (st.qf >= a - 40 && st.qf <= b) info.set(W.pos[n], { t: st.qf, log: [] }); };
+  const mv = W.move.bind(W); W.move = () => { mv(); if (st.qf >= a - 40 && st.qf <= b) for (let i = 0; i < W.count; i++) { const r = info.get(W.pos[i]); if (r) r.log.push(`${st.qf}:${W.pos[i].x.toFixed(2)},${W.pos[i].y.toFixed(2)},${W.pos[i].z.toFixed(2)} v${W.vel[i].y.toFixed(2)} f${W.flag[i]&15}`); } };
+  globalThis.__wl = (i) => { if (st.qf >= a && st.qf <= b) { const r = info.get(W.pos[i]); console.log('DROP landed', st.qf, 'emitted', r && r.t, '\n  ' + (r ? r.log.join('\n  ') : '')); } }; }

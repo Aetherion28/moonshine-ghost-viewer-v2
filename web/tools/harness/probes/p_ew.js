@@ -1,0 +1,1 @@
+{ const st = globalThis.__st; let done = 0; const P = globalThis.__P; const o = P.testPerform.bind(P); P.testPerform = (c) => { if (!done && st.qf >= 1500) { done = 1; const EG = st.world.eventGroup; console.log('EW', EG ? EG.watchers.map((w) => w.file).join(' ') : '-'); } return o(c); }; }

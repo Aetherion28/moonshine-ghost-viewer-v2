@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const [a,b] = (process.env.SQ||'0,0').split(',').map(Number); const o = P.changePlayerStatus.bind(P);
+  P.changePlayerStatus = (s, ...r) => { if (st.qf >= a && st.qf <= b && (s>>>0) === 0x208B8) console.log('ST', st.qf, (s>>>0).toString(16), (new Error().stack||'').split('\n').slice(2,9).map(l=>l.trim().split(' ')[1]).join(' < ')); return o(s, ...r); }; }

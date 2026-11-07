@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const [a,b] = (process.env.VYQ||'0,0').split(',').map(Number);
+  const v = P.mVel; let y = v.y; Object.defineProperty(v, 'y', { get: () => y, set: (n) => { if (st.qf >= a && st.qf <= b && n !== y) console.log('VY', st.qf, y, '->', n, 'fv', P.mForwardVel, (new Error().stack||'').split('\n').slice(2,6).map(l=>l.trim().split(' ')[1]).join(' < ')); y = n; } }); }

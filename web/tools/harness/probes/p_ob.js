@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const [a, b, nm] = (process.env.OBQ || '0,0,x').split(','); const o = st.runFrame.bind(st);
+  st.runFrame = (...x) => { const r = o(...x); if (st.qf >= +a && st.qf <= +b) { const W = st.world; const all = [...W.conductor.liveManagers.flatMap((m) => m.objs || []), ...(W.conductor.others || [])]; for (const q of all) if (String(q.name) === nm) console.log('OB', st.qf, 'pos', [q.pos.x,q.pos.y,q.pos.z].join(','), 'rot', [q.rot.x,q.rot.y,q.rot.z].join(','), 'mario', [P.pos.x,P.pos.y,P.pos.z].join(',')); } return r; }; }

@@ -1,0 +1,1 @@
+{ const st = globalThis.__st; const m = new Map(); const [a,b] = (process.env.WQ||'0,0').split(',').map(Number); globalThis.__wl = () => { if (st.qf >= a && st.qf <= b) m.set(st.qf, (m.get(st.qf) || 0) + 1); }; process.on('exit', () => { for (const [q, n] of [...m].sort((x,y)=>x[0]-y[0])) console.log('WL', q, n); }); }

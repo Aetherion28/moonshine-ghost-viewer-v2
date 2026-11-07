@@ -1,0 +1,4 @@
+{ const st = globalThis.__st, P = globalThis.__P; const W = st.world; const all = [...W.conductor.liveManagers.flatMap((m) => m.objs || []), ...(W.conductor.others || [])];
+  const seen = new Set(); const rcs = []; const walk = (x) => { if (!x || seen.has(x)) return; seen.add(x); if (x.constructor && /Coin/.test(x.constructor.name)) rcs.push(x); for (const c of (x.objs || x.children || [])) walk(c); }; for (const x of all) walk(x); for (const g of W.groups || []) for (const x of g || []) walk(x);
+  const red = rcs.filter((x) => x.constructor.name === 'CoinRed'); console.log('REDS', red.length, red.map((x) => x.name + '@' + x.pos.x.toFixed(0) + ',' + x.pos.y.toFixed(0) + ',' + x.pos.z.toFixed(0)).join(' | '));
+  for (const x of red) { const t = x.taken.bind(x); x.taken = (a) => { console.log('TAKEN', st.qf, x.name, x.pos.x.toFixed(1), x.pos.y.toFixed(1), x.pos.z.toFixed(1)); return t(a); }; } }

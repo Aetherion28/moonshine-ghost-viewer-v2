@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const [a, b] = (process.env.VYW || '0,0').split(',').map(Number); const vel = P.mVel; let v = vel.y;
+  Object.defineProperty(vel, 'y', { get() { return v; }, set(n) { if (st.qf >= a && st.qf <= b && n !== v) console.log('VYW', st.qf, v, '->', n, (new Error().stack || '').split('\n').slice(2, 7).map((x) => x.trim().split(' ')[1]).join('<')); v = n; }, configurable: true }); }

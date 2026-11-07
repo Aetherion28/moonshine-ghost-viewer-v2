@@ -1,0 +1,1 @@
+{ const st = globalThis.__st; const W = st.world.water; const o = W.splash.bind(W); W.splash = (x, y, z) => { if (st.qf < 1013) console.log('SP', st.qf, x.toFixed(2), y.toFixed(2), z.toFixed(2)); return o(x, y, z); }; }

@@ -1,0 +1,4 @@
+{ const st = globalThis.__st, P = globalThis.__P; const [a, b] = (process.env.GND || '0,0').split(',').map(Number);
+  const o = P.testPerform.bind(P); P.testPerform = (c) => { if (st.qf >= a && st.qf <= b) { const g = P.mGroundPlane, x = g && g.actor; if (x) { const near = (t) => Math.hypot(t.p1[0] - g.p1[0], t.p1[1] - g.p1[1], t.p1[2] - g.p1[2]);
+    const rep = (name, mc) => { if (!mc) return; let best = 1e9; for (const t of mc.tris) best = Math.min(best, near(t)); console.log('  ', name, 'n', mc.tris.length, 'nearest', best.toFixed(2)); };
+    (x.unk1C0 || []).forEach((mc, i) => rep('barrel' + i, mc)); rep('futa', x.unk2B0); console.log('GND', st.qf, 'g', JSON.stringify(g.p1), 'flags', g.flags, 'data', g.data, 'bg', g.bgType, 'col keys', Object.keys(st.world.col).slice(0, 20).join(',')); } } return o(c); }; }

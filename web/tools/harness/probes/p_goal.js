@@ -1,0 +1,3 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); let hooked = 0;
+  P.testPerform = (c) => { const m = st.world.search('モンテマン'); if (m && !hooked) { hooked = 1; const em = m.mEnemyMario; const rg = em.reachGoal.bind(em); em.reachGoal = () => { console.log('GOAL', st.qf, new Error().stack.split('\n').slice(2,5).join(' <- ')); return rg(); }; }
+    const r = o(c); if (m && st.qf >= 6138 && st.qf <= 6145) { const em = m.mEnemyMario; const R = em.mInputReplays && em.mInputReplays[em.mReplayIndex]; console.log('RP', st.qf, R && R.mReplayPos, R && R.mReplayLength, 'doing', em.mEMDoing); } return r; }; }

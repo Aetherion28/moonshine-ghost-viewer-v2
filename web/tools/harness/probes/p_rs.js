@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, C = globalThis.__rngCtx, rs = globalThis.__randState; const prev = C.roll; const [a,b] = (process.env.RQS||'0,0').split(',').map(Number);
+  C.roll = (who) => { if (st.qf >= a && st.qf <= b) { const pre = rs(), post = (Math.imul(0x41C64E6D, pre) + 12345) >>> 0; const v = ((post >>> 16) & 0x7fff) / 32768; const stk = (new Error().stack || '').split('\n').slice(3, 7).map((l) => l.trim().split(' ')[1]).join(' < '); if (!/Cap|cap|tremble|Tremble/.test(stk)) console.log('RS', st.qf, v.toFixed(4), stk); } return prev ? prev(who) : null; }; }

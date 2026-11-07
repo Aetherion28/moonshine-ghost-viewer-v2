@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const [a, b] = (process.env.CEC || '0,0').split(',').map(Number); const G = P.mWaterGun; const o = G.calcAnimFromMario.bind(G);
+  G.calcAnimFromMario = () => { const r = o(); if (st.qf >= a && st.qf <= b) console.log('CEC', st.qf, 'u1CEC', G.unk1CEC, 'u1CFA', G.unk1CFA, 'u1CF8', G.unk1CF8, 'upper', P.mUpperState, 'st', (P.mStatus>>>0).toString(16), 'bck', G.mFluddModel.bckName()); return r; }; }

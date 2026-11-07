@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); let last = '';
+  P.testPerform = (c) => { const T = st.world.talk && st.world.talk.talk; if (T && st.qf >= 636 && st.qf <= 800) { const k = `248=${T.unk248} 26C=${T.unk26C} 340=${T.unk340} 26A=${T.unk26A} 26D=${T.unk26D} 274=${T.unk274} 224=${T.unk224.join(',')} 228=${T.unk228.join(',')} 2DE=${T.unk2DE}`; if (k !== last) { console.log('T26', st.qf, k, 'btn', P.mGamePad.mButton.mButton.toString(16)); last = k; } } return o(c); }; }

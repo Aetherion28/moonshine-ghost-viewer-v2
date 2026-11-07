@@ -1,0 +1,1 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.cameraTick.bind(P); P.cameraTick = (f) => { const r = o(f); const C = P.simCamera; if (st.qf % 20 === 0 || (st.qf >= 838 && st.qf <= 846)) console.log('HOLD', st.qf, 'mode', C.mMode, 'h4', C.hold.unk4, 'h0', C.hold.unk0, 'st', (P.mStatus >>> 0).toString(16), 'cmd1C', C.cmd.unk1C); return r; }; }

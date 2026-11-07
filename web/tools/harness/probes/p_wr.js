@@ -1,0 +1,1 @@
+{ const st = globalThis.__st; const [a,b] = (process.env.WQ||'0,0').split(',').map(Number); globalThis.__wr = (k, i, x, y, z, n) => { if (st.qf >= a && st.qf <= b) console.log('WR', st.qf, k, i, x.toFixed(1), y.toFixed(1), z.toFixed(1), n || ''); }; }

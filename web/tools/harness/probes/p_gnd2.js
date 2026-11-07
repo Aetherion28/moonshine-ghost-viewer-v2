@@ -1,0 +1,5 @@
+{ const st = globalThis.__st, P = globalThis.__P; const [a, b] = (process.env.GND || '0,0').split(',').map(Number);
+  const o = P.testPerform.bind(P); P.testPerform = (c) => { if (st.qf >= a && st.qf <= b) { const g = P.mGroundPlane; const W = st.world; const found = [];
+    const seen = new Set(); const visit = (x, path, d) => { if (!x || typeof x !== 'object' || seen.has(x) || d > 4) return; seen.add(x); if (Array.isArray(x)) { if (x.includes(g)) found.push(path); x.slice(0, 50).forEach((y, i) => visit(y, path + '[' + i + ']', d + 1)); return; } for (const k of Object.keys(x)) { if (k === 'world' || k === 'w' || k === 'owner') continue; visit(x[k], path + '.' + k, d + 1); } };
+    for (const x of W.conductor.liveManagers.flatMap((m) => m.objs || [])) if (x.name === '砲台') { const n0 = found.length; seen.clear(); visit(x, 'cannon@' + x.pos.x.toFixed(0) + ',' + x.pos.y.toFixed(0) + ',' + x.pos.z.toFixed(0) + ':' + (x.spine && x.spine.current && x.spine.current.name) + ':a' + x.unk230, 0); }
+    console.log('GND', st.qf, g && g.actor && g.actor.name, found.join(' ')); } return o(c); }; }

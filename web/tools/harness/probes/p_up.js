@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const [a, b] = (process.env.UP || '0,0').split(',').map(Number); const G = P.mWaterGun; const o = G.perform.bind(G);
+  G.perform = (c) => { const N = G.getCurrentNozzle(); const pre = N.mInsidePressure; const r = o(c); if ((c & 1) && st.qf >= a && st.qf <= b) console.log('UP', st.qf, 'aR', P.unk108.mAnalogR, 'upper', P.mUpperState, 'pres', pre, '->', N.mInsidePressure, 'spray', N.mSprayState, 'water', G.mCurrentWater, 'max', N.P.mAmountMax, 'inwater', (P.mFlags >>> 0).toString(16)); return r; }; }

@@ -1,0 +1,1 @@
+{ const st = globalThis.__st; process.on('exit', () => { const T = st.world.talk; console.log('LANG', st.world.flags.getFlag(0x40000 + 0) ); for (const l of T.talk.log) console.log('TL', l[0], l[1]); }); }

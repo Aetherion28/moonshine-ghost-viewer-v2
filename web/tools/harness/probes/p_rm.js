@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const [a, b] = (process.env.RMQ || '0,0').split(','); const o = P.checkRideMovement.bind(P);
+  P.checkRideMovement = () => { if (st.qf >= +a && st.qf <= +b && P.unk2C0) { const m = P.getRidingMtx(); const q = P.unk2C0; console.log('RM', st.qf, Array.from(m).map(v=>v.toFixed(4)).join(' '), 'anmRoot', !!q.anmRoot, 'mof', (q.mapObjFlag>>>0).toString(16), 'anim', q.mactor && q.mactor.curBck && q.mactor.curBck()); } return o(); }; }
