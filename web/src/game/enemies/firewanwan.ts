@@ -247,7 +247,10 @@ export class FireWanwanTailHit extends TakeActor {
             const v = this.rubber.nodes[4].vel.clone().scale(P.mTailEndPowRate);
             v.y = 0;
             this.pos.add(v).fround();
-            this.moveRequest(this.pos);
+            // (bindBody: the holder is moved to the tail, at its own height; the tail keeps its matrix's rotation)
+            const hp = this.pos.clone();
+            hp.y = this.holder.pos.y;
+            this.holder.moveRequest(hp);
             this.unk74[3] = this.pos.x; this.unk74[7] = this.pos.y; this.unk74[11] = this.pos.z;
             this.prevTailLength = this.curTailLength;
             this.curTailLength = this.rubber.getLength();

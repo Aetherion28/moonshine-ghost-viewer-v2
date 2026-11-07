@@ -193,13 +193,13 @@ Common JP callers: 0x800c2458/24ac/2504 TTrembleModelEffect::tremble (Mario's ca
 
 ## 11. Current state (2026-11-06)
 
-First drift per trace, 141 batch traces (runs73, with the big port below):
+First drift per trace, 141 batch traces (runs74):
 
 | Desync | Runs |
 |---|---|
 | under 5 s | 0 |
-| 5–15 s | 10 |
-| 15–30 s | 24 |
+| 5–15 s | 8 |
+| 15–30 s | 26 |
 | 30 s+ | 14 |
 | never | 93 |
 
@@ -227,6 +227,8 @@ The big port of 2026-11-06 (one commit, see the fix log) added most of the decom
 - Pinna Park 1 a/81BCC929_263FE90D (PAL, 5 s): its occlusion comes from the flag word. Taking it one label later fixes it, but the JP traces with real records say the same label, so that would be a fit. Needs a PAL trace with feedback records.
 - Long runs: Gelato 4 (TSpcInterp mLocked is garbage: take it from the recording if it's recorded), Pianta 8, Delfino bell (water hits on the bell), Sirena (rule 12).
 
+- Pinna Park Beach 2 b/1DD461CB_…026 (first drift 1436): Mario lands on a TCannon's dome (dome 2, cannondom.col moved by moveMtx(getConnectedMtx()) with the dome's sway unk28 concatenated in place) at y 751.6 in the sim, 746.2 in the game, then falls in the game. The RNG is in step and the dome code matches the decomp; the cannon isn't in the actor records, so its angle can't be checked. Needs the cannon recorded, or a decomp difference found in its BCK / joint path.
+
 ## 13. Refuted (don't retry without new evidence)
 
 - 2026-11-06 The TBathtubData port (bathwater.ts getPos / getGravityDir with fused ops, MSL atanf / atan2f and the 2^-18 epsilon): coronaBoss a/2A1D8909_80000028 1712 -> 1044 (Mario thrown down at QF 1041 by BathWater.tryHitMario), everything else the same (runs72). Probably one piece of it is wrong; port the pieces one at a time against the DOL.
@@ -237,6 +239,7 @@ The big port of 2026-11-06 (one commit, see the fix log) added most of the decom
 
 ## 14. Fix log (newest first)
 
+- 2026-11-06 TFireWanwanTailHit::bindBody moves its holder (enemies/firewanwan.ts, fireWanwan.cpp): the tail adds its last node's velocity x mTailEndPowRate (y 0) to its position and calls mHolder->moveRequest at the tail's x, z and the holder's y, then setTrans. The port called the tail's own moveRequest, whose translation() (identity33 + setTrans) wiped the rotation SMS_CalcToDirMatrix had just given the taking matrix, so pulling Mario (TMario::pulling: face angle from getTakingMtx) faced -32768 and wasn't dragged. Pianta Village 1 (monte0). runs74 vs runs73: 2 better (a/2A1D8909_…025 1612 -> 2040, b/A7E1056F_…041 1564 -> 1904), 0 worse.
 - 2026-11-06 The static objects' particles are drawn and the model-less ones are quiet (sms_scene.ts static table from MapStaticObject.cpp's TActorData: falls, fountain, MareFalls, the SoundObj* sounds, BiancoAirWall, riccoSea and mareSeaPollutionS34567 have neither model nor particle). TMapStaticObj::perform emits its particle (type 1) every CALC_ANIM at its position, TopOfCorona's at mEffectCoronaScale 1.8: renderer.staticParticles lists them, V1Data.sceneJpa exports the files from the stage archive into JPA_RES (`scene:<file>`), and viewer.html staticFx keeps one held emitter each (jpaHoldRun). Corona Mountain's smoke (mapObj/ms_coronasmoke.jpa, 0x146) is in nearly every stage; Bianco boss's light (map/map/ms_wmlin_light.jpa, 0x151) in biancoBoss. Not yet checked by eye.
 - 2026-11-06 Firefox still had a 3.6 s first game-draw frame and a 2.8 s frame from warmFx. noclip now compiles a program only when it is first drawn (createRenderPipeline no longer compiles; queryProgramReady compiles within the 12 ms budget whatever the extension, and _setProgram compiles a program a draw can't skip). warmFx waits until renderer.shadersPending (set by the render wrapper) is 0 and then warms one scene a call (renderer.compile on the whole scene made every pending program at once). Headless: longest frame 0.47 s, stage drawn 1.5 s after a disc load.
 - 2026-11-06 Shaders compile a few a frame where the browser can't compile in the background (Firefox has no KHR_parallel_shader_compile and no shader cache, so a disc load's first frame took 7.7 s there: 3.6 s game draw, 4.1 s overlay; 0.76 s in Chrome). noclip (GfxPlatformWebGL2.ts queryProgramReady): without the extension a program is finished only while the frame's link waits stay under 12 ms (COMPILE_BUDGET_MS, reset in beginFrame); the others report not ready and their draws skip, as they do with the extension. three.js (viewer.html, a wrapper on renderer.render): a mesh whose material has no program yet is hidden for the frame once the frame's budget of new materials is used (it doubles while compiles take under 8 ms, else halves); checkShaderErrors is off (its status read waits for each link). Headless, no extension: the stage is drawn 1.6 s after a disc load instead of ~10 s, the longest frame 0.4 s, and everything is drawn once settled. The `[slow frame]` console line (frames over 400 ms, with the game-draw / overlay split and the overlay's program count) is the way to check this on a user's browser.
