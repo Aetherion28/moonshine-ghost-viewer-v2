@@ -214,7 +214,7 @@ export function readSceneBin(buffer: ArrayBufferSlice): SceneBinObj {
     case 'SunModel':
     case 'SunsetModel':
     {
-        const [paramsSize, x, y, z, rotationX, rotationY, rotationZ, scaleX, scaleY, scaleZ] = unpack(params, 'fffffffff');
+        const [paramsSize, x, y, z, rotationX, rotationY, rotationZ, scaleX, scaleY, scaleZ] = unpack(params, 'fffffffff.');
         return { type: 'SunModel', klass, name, size, sunset: klass === 'SunsetModel', x, y, z, rotationX, rotationY, rotationZ, scaleX, scaleY, scaleZ };
     }
     case 'MapStaticObj':

@@ -45,7 +45,7 @@ export class WaveDraw {
         mb.setTevColorOp(1, GX.TevOp.ADD, GX.TevBias.ZERO, GX.TevScale.SCALE_2, true, GX.Register.PREV);
         mb.setTevAlphaIn(1, GX.CA.ZERO, GX.CA.TEXA, GX.CA.APREV, GX.CA.ZERO);
         mb.setTevAlphaOp(1, GX.TevOp.ADD, GX.TevBias.ZERO, GX.TevScale.SCALE_2, true, GX.Register.PREV);
-        mb.setBlendMode(GX.BlendMode.BLEND, GX.BlendFactor.SRCALPHA, GX.BlendFactor.SRCCOLOR);
+        mb.setBlendMode(GX.BlendMode.BLEND, GX.BlendFactor.SRCALPHA, GX.BlendFactor.SRCCLR);
         mb.setAlphaCompare(GX.CompareType.GEQUAL, ALPHA_LARGE, GX.AlphaOp.OR, GX.CompareType.LEQUAL, ALPHA_SMALL);
         mb.setZMode(true, GX.CompareType.LEQUAL, false);
         mb.setCullMode(GX.CullMode.NONE);
