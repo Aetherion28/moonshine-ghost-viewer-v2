@@ -882,6 +882,9 @@ class GfxImplP_GL implements GfxSwapChain, GfxDevice {
         if (this._currentProgram === gl_program)
             return;
 
+        if (program.compileState === GfxProgramCompileStateP_GL.NeedsCompile)
+            this._tryCompileProgram(program);
+
         this._programCompiled(program);
         this.gl.useProgram(gl_program);
         this._currentProgram = gl_program;
@@ -1144,15 +1147,7 @@ class GfxImplP_GL implements GfxSwapChain, GfxDevice {
         const program = descriptor.program as GfxProgramP_GL;
         const inputLayout = descriptor.inputLayout as GfxInputLayoutP_GL | null;
 
-        if (program.compileState === GfxProgramCompileStateP_GL.NeedsCompile) {
-            if (inputLayout !== null) {
-                this._setVAO(inputLayout.vao);
-                this._tryCompileProgram(program);
-                this._setVAO(null);
-            } else {
-                this._tryCompileProgram(program);
-            }
-        }
+        // (compiled when first drawn: queryProgramReady, within the frame's budget, or _setProgram)
 
         const megaState = descriptor.megaStateDescriptor;
         const colorAttachmentFormats = descriptor.colorAttachmentFormats.slice();
@@ -1621,9 +1616,15 @@ class GfxImplP_GL implements GfxSwapChain, GfxDevice {
         const gl = this.gl;
 
         if (program.compileState === GfxProgramCompileStateP_GL.NeedsCompile) {
-            // This should not happen.
-            throw new Error("whoops");
-        } if (program.compileState === GfxProgramCompileStateP_GL.Compiling) {
+            // Programs compile when first drawn, a few a frame: a stage's first frame used to compile
+            // all of them (3.6 s in Firefox, which compiles while the page waits).
+            if (this._compileSpent > GfxImplP_GL.COMPILE_BUDGET_MS)
+                return false;
+            const t = performance.now();
+            this._tryCompileProgram(program);
+            this._compileSpent += performance.now() - t;
+        }
+        if (program.compileState === GfxProgramCompileStateP_GL.Compiling) {
             let complete: boolean;
 
             if (this._KHR_parallel_shader_compile !== null) {

@@ -660,6 +660,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
         }
         if (wait) { o.visible = false; hidden.push(o); }
       });
+      renderer.shadersPending = fresh + hidden.length;
       const t = performance.now();
       render(sc, cam);
       if (fresh) { const ms = performance.now() - t; budget = ms < 8 ? Math.min(budget * 2, 64) : Math.max(1, budget >> 1); }
@@ -7755,22 +7756,28 @@ void main() {
   // The water's and the particles' shaders, compiled ahead (WebGL compiles a program the first time
   // it draws with it: half a second or more of a stopped picture the first time FLUDD sprays or an
   // effect first shows), once the game layer is up and again when more effects come in.
-  let fxWarmKey = '';
+  let fxWarmKey = '', fxWarmStep = 0;
   function warmFx() {
     if (!gameLive || typeof JPA === 'undefined' || typeof JPA_RES === 'undefined') return;
     const n = Object.keys(JPA_RES).length, key = String(n);
     if (!n || key === fxWarmKey) return;
-    fxWarmKey = key;
+    // (once the stage's own programs are made, which renderer.render spreads over frames: compile()
+    // would make all of them at once; then one scene a call, for the same reason)
+    if (renderer.shadersPending) return;
     ensureJpaBatches();
+    const step = fxWarmStep++;
     // (each in the scene it's drawn in: a program depends on the scene's lights and shadows; the
     // scene's other programs are already there)
-    const temp = [[waterScene, dropMat], [waterScene, splashMat], [scene, spotMat]].map(([S, m]) => { const o = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), m); o.frustumCulled = false; S.add(o); return o; });
+    const temp = (step === 0 ? [[waterScene, dropMat], [waterScene, splashMat]] : step === 1 ? [[scene, spotMat]] : [])
+      .map(([S, m]) => { const o = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), m); o.frustumCulled = false; S.add(o); return o; });
+    const S = [waterScene, scene, jpaScene1, jpaScene3][step];
     const was = [];
-    [jpaScene1, jpaScene3].forEach((S) => S.children.forEach((o) => { was.push([o, o.visible]); o.visible = true; }));
-    try { renderer.compile(waterScene, camera); renderer.compile(scene, camera); renderer.compile(jpaScene1, camera); renderer.compile(jpaScene3, camera); }
+    if (S === jpaScene1 || S === jpaScene3) S.children.forEach((o) => { was.push([o, o.visible]); o.visible = true; });
+    try { renderer.compile(S, camera); }
     catch (e) { console.warn('[fx] shader warm-up', e); }
     was.forEach(([o, v]) => { o.visible = v; });
     temp.forEach((o) => { o.parent.remove(o); o.geometry.dispose(); });
+    if (fxWarmStep >= 4) { fxWarmKey = key; fxWarmStep = 0; }
   }
   function drawJpa() {
     if (typeof JPA === 'undefined' || typeof JPA_RES === 'undefined') return;
