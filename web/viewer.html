@@ -8543,7 +8543,7 @@ void main() {
     else viewStep(dt, now, true);
     if (gameLive && loopFrame % 30 === 0) warmFx();   // (after the frame: the stage is on screen first)
     clipFrame();
-    { const d = performance.now() - _lt; perfAcc.loop += d; if (d > 400) console.info(`[slow frame] ${Math.round(d)} ms: game draw ${Math.round(perfAcc.game - _pa0)} ms, overlay ${Math.round(perfAcc.three - _pa1)} ms`); if (window.__benchFrames) { window.__benchFrames.push(d, now - (window.__benchLast || now)); if (_ps) { const e = perfSnap(), o = { work: d }; for (const k in e) o[k] = e[k] - _ps[k]; window.__benchSlow.push(o); } } window.__benchLast = now; }
+    { const d = performance.now() - _lt; perfAcc.loop += d; if (d > 400) console.info(`[slow frame] ${Math.round(d)} ms: game draw ${Math.round(perfAcc.game - _pa0)} ms, overlay ${Math.round(perfAcc.three - _pa1)} ms, overlay shaders ${renderer.info.programs.length}`); if (window.__benchFrames) { window.__benchFrames.push(d, now - (window.__benchLast || now)); if (_ps) { const e = perfSnap(), o = { work: d }; for (const k in e) o[k] = e[k] - _ps[k]; window.__benchSlow.push(o); } } window.__benchLast = now; }
     requestAnimationFrame(loop);
     if (deferSim && !simQueued) { simQueued = true; simChannel.port2.postMessage(0); }
   }
