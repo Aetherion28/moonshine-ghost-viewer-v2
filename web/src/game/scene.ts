@@ -72,6 +72,7 @@ export class Stage {
 
     constructor(public files: StageFiles, public sceneName: string, map: number, stage: number, intro: IntroTiming | null = null) {
         const w = this.world;
+        w.sceneName = sceneName;
         w.files = files;
         w.map = map; w.stage = stage;
         // (live play's later stages: the save's flags carried over from the stage before, stagechange.ts)

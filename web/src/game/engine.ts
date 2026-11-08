@@ -523,6 +523,8 @@ const EX_SHINE = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x
 export function shineIDofExStage(area: number) { return area <= 0x14 || area >= 0x35 ? 0xFF : EX_SHINE[area - 0x15]; }
 
 export class World {
+    /** the scene file's name (e.g. 'mamma4'), set by the Stage before anything loads */
+    sceneName = '';
     /** the stage's TMarDirector (its mState: player.ts DIR), when Mario is played */
     director: { state: number } | null = null;
     col!: MapCollision;

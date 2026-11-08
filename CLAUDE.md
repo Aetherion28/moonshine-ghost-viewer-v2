@@ -9,7 +9,7 @@ It is the shared memory of every agent that worked here before you.
 
 doge is taking over development. **After reading this file, before any other work, tell doge (the person you're talking to) the list below in full, then explain what was being worked on** (use sections 11–12 for that: the current numbers, the open threads, and the last thing in progress).
 
-The 48 batch traces that still aren't in sync (runs75, 2026-11-07), earliest drift first. Paths are under `/tmp/claude-0/up3/` (the user's three trace archives, section 6):
+The 47 batch traces that still aren't in sync (runs77, 2026-11-08), earliest drift first. Paths are under `/tmp/claude-0/up3/` (the user's three trace archives, section 6):
 
 - `a/trace_81BCC929_263FE90D.msgt` (first drift at tick 600, 5.0 s)
 - `b/trace_A7E1056F_8000000B.msgt` (first drift at tick 1248, 10.4 s)
@@ -57,10 +57,9 @@ The 48 batch traces that still aren't in sync (runs75, 2026-11-07), earliest dri
 - `b/trace_A7E1056F_80000009.msgt` (first drift at tick 5684, 47.4 s)
 - `b/trace_A7E1056F_80000027.msgt` (first drift at tick 5980, 49.8 s)
 - `b/trace_41726535_8000003F.msgt` (first drift at tick 6408, 53.4 s)
-- `b/trace_1DD461CB_80000011.msgt` (first drift at tick 6492, 54.1 s)
 - `b/trace_41726535_80000023.msgt` (first drift at tick 12488, 104.1 s)
 
-What was being worked on last (2026-11-07): Gelato Beach 5, `b/trace_1DD461CB_80000011.msgt`, the race against Il Piantissimo. After the spin fix he follows the game's course exactly, but he reaches the goal one tick later than in the game, so the forced talk at the finish starts at a different tick. This is the run closest to full sync. Everything already checked is in its entry in section 12; the open question is whether actor records are sampled one tick before Mario's (then the cause is a one-tick lead that starts before the race) or not. Before that: the fire Chain Chomp tail (Pianta Village 1, fixed), the Monty Mole cannon dome (Pinna Park Beach 2), the Wiggler's leg (Gelato Beach 3) and a talk that starts with no button press (Delfino Plaza 1), all in section 12. Viewer work the same day: map caching, Firefox shader compiling, the Corona Mountain smoke (section 14).
+What was being worked on last (2026-11-08): replacing the sim's remaining stand-ins with the decomp's code, one batch each. Three ports were ready as patches in `/tmp/claude-0/fx/` (they may be lost with the workspace; each is small, see below): the Aminoko's wall check (`25_aminoko.patch`: SMS_GetMarioWlPlane in TAmiNoko::attackToMario), the sand bird's gpCamera->isDemoCamera() (`26_sandcam.patch`, mapobj/mamma.ts), TResetFruit::perform (`27_resetfruit.patch`, mapobj/fruit.ts, stage 7). The other stand-ins found by searching the sim for TODO / stand-in / approximated are listed in section 12 under "Stand-ins to replace". Just before that, Gelato Beach 5 (`b/trace_1DD461CB_80000011.msgt`) was brought to full sync (fix log, 2026-11-08).
 
 ## 1. What this project is
 
@@ -255,17 +254,17 @@ Common JP callers: 0x800c2458/24ac/2504 TTrembleModelEffect::tremble (Mario's ca
 - The drift check (`checkMoved`): for a trace, the game moved in frame q iff a Mario record exists for one of q-4..q-1; the run's closing ticks (after `traceLastMove`) aren't checked.
 - Object order inside a perform list decides RNG order; check it against the trace's callers.
 
-## 11. Current state (2026-11-07)
+## 11. Current state (2026-11-08)
 
-First drift per trace, 141 batch traces (runs75):
+First drift per trace, 141 batch traces (runs77):
 
 | Desync | Runs |
 |---|---|
 | under 5 s | 0 |
 | 5–15 s | 8 |
 | 15–30 s | 26 |
-| 30 s+ | 14 |
-| never | 93 |
+| 30 s+ | 13 |
+| never | 94 |
 
 The big port of 2026-11-06 (one commit, see the fix log) added most of the decomp's remaining classes. Name scans (`missing.py`) went from 397 methods with no counterpart to about 343; the rest are mostly drawing, saving and particle code and functions present under other names.
 
@@ -296,7 +295,7 @@ The big port of 2026-11-06 (one commit, see the fix log) added most of the decom
 - Gelato Beach 3 b/1DD461CB_…007 (first drift 1572): falling Mario is pushed about 42 units by ボスハナチャンの足 (the Wiggler's leg, keepDistance) in both, 0.63 apart. The RNG is in step; the Wiggler isn't in the actor records, so look for a decomp difference in TBossHanachan's body / leg path. Two harmless one-tick status lags before it (366 the intro warp, 1278 THROWN_DOWN) line up again a tick later.
 - Delfino Plaza 1 c/A7E1056F_…071 (first drift 1845): Mario stands in WAIT at (3045, 300, 1912) for half a minute and at 1842 the game sets MARIO_FLAG_NPC_TALKING with no button pressed, no director change and no NPC within 700 in the sim, so the sim lets him run. Find what starts a talk on its own there (an NPC that walks up and speaks, or an event).
 
-- Gelato Beach 5 b/1DD461CB_…011 (first drift 6492, the race): Piantissimo stops at the goal one tick later in the sim (the game's record 6144 is the sim's position after 6142; the sim moves once more and TGoalFlag::touchActor stops him at the 6144 hit check). Mario's collision counts put this trace's hit checks on the sim's ticks, so look at what else can stop him a tick early (the flag's or his radii, the touch order). The forced talk at the finish (montemanrace.sb: isNearActors(マリオ, 300, モンテマン) then __forceStartTalkExceptNpc) follows from his final position. Checked and matching the decomp (2026-11-07): TGoalFlag::touchActor, TEMario::receiveMessage / perform (position copy after the EM perform), TEnemyMario::reachGoal / perform / playerControl / checkController (consider, then considerAfter plays the replay) / canControl, TMario::checkPlayerAction, TMarioInputReplay (MarioRecord.cpp), the hit radii (the record's 800 / 150 / 60 / 40; entry radius 1151.137 in the game, 1151.086 in the sim, from calcEntryRadius' frsqrte), the perform order (Piantissimo before Mario, the script after both), and the script's start (the talk ends and startMonteman runs at 2174 in both). If actor records use Mario's timing (label L = after tick L), the game's Piantissimo is one tick behind the sim's for the whole stage, his waiting turn included, and both stop at the 6144 hit check: then the cause is a one-tick lead that starts before the race.
+- Stand-ins to replace (2026-11-08, from a search of the sim for TODO / stand-in / approximated; port each from the decomp and batch it alone): enemies/aminoko.ts (Mario's wall plane), mapobj/mamma.ts (isDemoCamera; the sand's withering), mapobj/fruit.ts (TResetFruit::perform; the watermelon's water), mapobj/hide.ts (TResetFruit::makeObjLiving), player/special.ts (the camera yaw unk258 for a simulated Mario), enemies/tinkoopa.ts (TMario::calcBaseMtxTorocco, the minecart), stagechange.ts (wipe lengths, flags set along the way), enemies/bosspakkun.ts (checkMarioRiding), enemies/bathtub.ts (its scaled position), mapevent.ts (the hotel camera's frames, the mirror slope's joint 2), enemies/gatekeeper.ts (the Ricco / Gelato variants), enemies/kumokun.ts (SMS_IsMarioFencing / Roofing), and talk.ts:748 (a Shine get doesn't end the stage: the viewer's choice, ask the user). Not code but recording data: TSpcInterp mLocked, occlusion, the crane speeds, the spin fill-in, Yoshi's tongue.
 
 ## 13. Refuted (don't retry without new evidence)
 
@@ -308,6 +307,7 @@ The big port of 2026-11-06 (one commit, see the fix log) added most of the decom
 
 ## 14. Fix log (newest first)
 
+- 2026-11-08 TSpcInterp mLocked from the recordings per scene and script (eventwatcher.ts SEEN_UNLOCKED; World.sceneName, set by Stage). Moonshine writes actor records at the frame's start (ghost_trace.cpp: the frame hook's roster(), before the frame's ticks) and Mario's each tick at his perform's start, so both use the harness's "after tick L" labels: a Delfino coin matched its records at label t, Il Piantissimo at t-1, so he really ran a tick ahead. The cause: in mamma4 montemanrace.sb's interpreter starts with mLocked 0 (heap garbage), so the 0x20-step budget runs out after the talk ends and startMonteman comes a tick later; unlocked, he matches all 958 records and the run never drifts. Noki Bay 5 (mare4) runs the same script locked (unlocking it there broke c/A7E1056F_…02C at 2776, runs76), which is why the key is scene and script. runs77 vs runs75: 1 better (b/1DD461CB_…011 6492 -> never), 0 worse.
 - 2026-11-07 checkStickRotate's fill-in from the recorded status (player/move.ts) applies only to the recorded Mario (this === world.mario): the trace's status is the player's, so Il Piantissimo and Shadow Mario (TEnemyMario, the same function) keep the cleared flags. Before, when the player started a spin the sim spun Piantissimo in the same tick (Gelato Beach 5, mamma4, the race: LEFT_ROTATE_JUMP at 2565), and he left his replayed course. Now he follows actor 264's records exactly to the goal. runs75 vs runs74: 140 the same, 1 worse (b/1DD461CB_…011 6496 -> 6492, its maxErr hundreds of units -> 7.75; committed on the user's say). Also found: actor records labelled L hold the sim's state after tick L-1 (one record a frame).
 - 2026-11-06 TFireWanwanTailHit::bindBody moves its holder (enemies/firewanwan.ts, fireWanwan.cpp): the tail adds its last node's velocity x mTailEndPowRate (y 0) to its position and calls mHolder->moveRequest at the tail's x, z and the holder's y, then setTrans. The port called the tail's own moveRequest, whose translation() (identity33 + setTrans) wiped the rotation SMS_CalcToDirMatrix had just given the taking matrix, so pulling Mario (TMario::pulling: face angle from getTakingMtx) faced -32768 and wasn't dragged. Pianta Village 1 (monte0). runs74 vs runs73: 2 better (a/2A1D8909_…025 1612 -> 2040, b/A7E1056F_…041 1564 -> 1904), 0 worse.
 - 2026-11-06 The static objects' particles are drawn and the model-less ones are quiet (sms_scene.ts static table from MapStaticObject.cpp's TActorData: falls, fountain, MareFalls, the SoundObj* sounds, BiancoAirWall, riccoSea and mareSeaPollutionS34567 have neither model nor particle). TMapStaticObj::perform emits its particle (type 1) every CALC_ANIM at its position, TopOfCorona's at mEffectCoronaScale 1.8: renderer.staticParticles lists them, V1Data.sceneJpa exports the files from the stage archive into JPA_RES (`scene:<file>`), and viewer.html staticFx keeps one held emitter each (jpaHoldRun). Corona Mountain's smoke (mapObj/ms_coronasmoke.jpa, 0x146) is in nearly every stage; Bianco boss's light (map/map/ms_wmlin_light.jpa, 0x151) in biancoBoss. Not yet checked by eye.

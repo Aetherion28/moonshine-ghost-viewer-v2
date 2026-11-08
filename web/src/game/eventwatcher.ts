@@ -125,6 +125,15 @@ class Handles {
 
 // ---------------------------------------------------------------- the event watchers and their group
 /** TEventWatcher: one script */
+/**
+ * Scene and script pairs whose TSpcInterp a recording shows starting with mLocked 0 (the 0x20-step
+ * budget counts from the first update). The word is heap garbage, so it depends on the stage's
+ * allocations, not the script: Noki Bay 5 (mare4) runs the same montemanrace.sb locked.
+ * mamma4 (Gelato Beach 5, b/1DD461CB_80000011): its startMonteman comes a tick after the talk ends,
+ * which only the counted budget gives; with it Il Piantissimo matches all 958 of his actor records.
+ */
+const SEEN_UNLOCKED = new Set(['mamma4:/scene/map/sp/montemanrace.sb']);
+
 export class EventWatcher extends NameRef {
     interp: SpcInterp | null = null;
     file = '';
@@ -135,6 +144,8 @@ export class EventWatcher extends NameRef {
         const b = new SpcBinary(data);
         b.init((bin) => initUserBuiltin(bin));
         const it = new SpcInterp(b, this, 0x20, 0x20, 0x20, 0x20);
+        // mLocked is heap garbage (spc.ts); where a recording shows it was 0, the script starts unlocked
+        if (SEEN_UNLOCKED.has(`${this.world.sceneName}:${file}`)) it.mLocked = 0;
         (it as EvInterp).ev = this;
         this.interp = it;
     }
