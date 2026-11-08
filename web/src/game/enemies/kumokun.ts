@@ -12,7 +12,7 @@
 // plane 30 ticks, then dies: kumo_flyingdown1).
 //
 // Not here: its animation sounds (initAnmSound / setCurAnmSound, the fence table), the smoke
-// when flying (MS_KIL_SMOKE). MarioProxy has no fencing / roofing state or wall / roof planes:
+// when flying (MS_KIL_SMOKE). A ghost's MarioProxy has no fencing / roofing state or wall / roof planes (the simulated Mario has):
 // SMS_IsMarioFencing / SMS_IsMarioRoofing are taken as false (so punches do nothing, and only
 // a floor spider sees Mario: on his ground plane).
 
@@ -269,9 +269,10 @@ export class Kumokun extends SmallEnemy {
         this.spine!.setNext(KumokunNerves.freeze);
     }
     behaveHitPunch() {
-        // (!SMS_IsMarioFencing() || isSameNormal(SMS_GetMarioWlPlane(), unk198)) && (!SMS_IsMarioRoofing() || ...): neither here
-        const fencing = false, roofing = false;
-        if (!fencing && !roofing) return false;
+        // (!SMS_IsMarioFencing() || isSameNormal(SMS_GetMarioWlPlane(), unk198)) && (!SMS_IsMarioRoofing() || isSameNormal(SMS_GetMarioRfPlane(), unk198))
+        const m: any = this.world.mario;
+        const fencing = !!(m.isFencing && m.isFencing()), roofing = !!(m.isRoofing && m.isRoofing());
+        if ((!fencing || Kumokun.isSameNormal(m.mWallPlane ?? null, this.unk198)) && (!roofing || Kumokun.isSameNormal(m.mRoofPlane ?? null, this.unk198))) return false;
         this.spine!.reset();
         this.spine!.setNext(KumokunNerves.preFly);
         return true;
@@ -388,7 +389,9 @@ export class Kumokun extends SmallEnemy {
     }
     isOnSamePlaneWithMario() {
         if (!this.unk198) return false;
-        // (fencing / roofing: never, see the top)
+        const m: any = this.world.mario;
+        if (this.isOnWall() && m.isFencing && m.isFencing() && Kumokun.isSameNormal(m.mWallPlane ?? null, this.unk198)) return true;
+        if (this.isOnRoof() && m.isRoofing && m.isRoofing() && Kumokun.isSameNormal(m.mRoofPlane ?? null, this.unk198)) return true;
         return this.isOnFloor() && Kumokun.isSameNormal(this.world.mario.groundPlane, this.unk198);
     }
     isOnFloor() { return 0.7 < this.getPlaneNormal().y; }
