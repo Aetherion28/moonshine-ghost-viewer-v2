@@ -295,7 +295,7 @@ The big port of 2026-11-06 (one commit, see the fix log) added most of the decom
 - Gelato Beach 3 b/1DD461CB_…007 (first drift 1572): falling Mario is pushed about 42 units by ボスハナチャンの足 (the Wiggler's leg, keepDistance) in both, 0.63 apart. The RNG is in step; the Wiggler isn't in the actor records, so look for a decomp difference in TBossHanachan's body / leg path. Two harmless one-tick status lags before it (366 the intro warp, 1278 THROWN_DOWN) line up again a tick later.
 - Delfino Plaza 1 c/A7E1056F_…071 (first drift 1845): solved but not committed: Mario sprays the gatekeeper (squat 1323–1527), it wakes and its appear camera (ゲートキーパー（ビアンコ）出現カメラ, 600 ticks) freezes him (MARIO_FLAG_NPC_TALKING is the director's demo mode). The demo port is in Refuted until the water hits are right (Bianco Hills 1 wakes early).
 
-- Stand-ins to replace (2026-11-08, from a search of the sim for TODO / stand-in / approximated; port each from the decomp and batch it alone): mapobj/mamma.ts (the sand's withering), mapobj/fruit.ts (the watermelon's water), mapobj/hide.ts (TResetFruit::makeObjLiving), enemies/tinkoopa.ts (TMario::calcBaseMtxTorocco, the minecart), stagechange.ts (wipe lengths, flags set along the way), enemies/bosspakkun.ts (checkMarioRiding), enemies/bathtub.ts (its scaled position), mapevent.ts (the hotel camera's frames, the mirror slope's joint 2), enemies/gatekeeper.ts (the Ricco / Gelato variants), and talk.ts:748 (a Shine get doesn't end the stage: the viewer's choice, ask the user). Not code but recording data: TSpcInterp mLocked, occlusion, the crane speeds, the spin fill-in, Yoshi's tongue.
+- Stand-ins to replace (2026-11-08, from a search of the sim for TODO / stand-in / approximated; port each from the decomp and batch it alone): mapobj/mamma.ts (the sand's withering), mapobj/fruit.ts (the watermelon's water), mapobj/hide.ts (TResetFruit::makeObjLiving), enemies/tinkoopa.ts (TMario::calcBaseMtxTorocco, the minecart), stagechange.ts (wipe lengths, flags set along the way), enemies/bathtub.ts (its scaled position), mapevent.ts (the hotel camera's frames, the mirror slope's joint 2), enemies/gatekeeper.ts (the Ricco / Gelato variants), and talk.ts:748 (a Shine get doesn't end the stage: the viewer's choice, ask the user). Not code but recording data: TSpcInterp mLocked, occlusion, the crane speeds, the spin fill-in, Yoshi's tongue.
 
 ## 13. Refuted (don't retry without new evidence)
 
@@ -308,6 +308,7 @@ The big port of 2026-11-06 (one commit, see the fix log) added most of the decom
 
 ## 14. Fix log (newest first)
 
+- 2026-11-08 TBossPakkun::checkMarioRiding as the decomp (enemies/bosspakkun.ts: marioTouchGround4cm, status flag 0x200 without 0x200000). runs84 vs runs82: all 141 the same.
 - 2026-11-08 A simulated Mario's camera yaw (player/special.ts): TEnemyMario reads the player's camera (unk258), as the decomp. runs82 vs runs81: all 141 the same.
 - 2026-11-08 TKumokun::behaveHitPunch and isOnSamePlaneWithMario as the decomp (enemies/kumokun.ts: SMS_IsMarioFencing / Roofing, mWallPlane, mRoofPlane). runs81 vs runs80: all 141 the same.
 - 2026-11-08 TResetFruit::perform as the decomp (mapobj/fruit.ts): on map 7, held or moving clears LIVE_FLAG_UNK200; living outside the area cube and off its start position goes back to waiting to appear. runs80 vs runs79: all 141 the same.

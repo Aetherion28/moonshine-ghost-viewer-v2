@@ -7,8 +7,7 @@
 // navel (a ground pound there hurts him), in episode 8 also throws tornadoes, takes off, flies
 // the "bosspakkun" graph and hovers spitting goop balls until he's sprayed and falls.
 // His joints (TBossPakkunMtxCalc) blend from one BCK to the next, his belly swells with the water
-// in it and his head turns toward Mario. Approximation: checkMarioRiding's status bits are read
-// from the ghost (landed on his body).
+// in it and his head turns toward Mario.
 
 import { V } from '../version.js';
 import { marioTouchGround4cm } from '../mapobj/lib.js';
@@ -427,10 +426,14 @@ export class BossPakkun extends SpineEnemy {
     }
     /** SMS_GetMarioGrPlane is his body, he touched down on it (status UNK200 and not UNK200000): once per landing. */
     checkMarioRiding() {
-        const m = this.world.mario, g = m.groundPlane;
-        const on = !!g && g.actor === this && !m.isJumping();
-        if (this.unk190 === 0) { if (on) { this.unk190 = 1; return true; } }
-        else if (!on) this.unk190 = 0;
+        const m: any = this.world.mario, g = m.groundPlane;
+        const on = !!g && g.actor === this && marioTouchGround4cm(this.world);
+        if (this.unk190 === 0) {
+            // MARIO_STATUS_FLAG_UNK200 set, MARIO_STATUS_FLAG_UNK200000 clear
+            // (a ghost's MarioProxy has no status: not jumping, as before)
+            const ok = typeof m.mStatus === 'number' ? ((m.mStatus & 0x200) !== 0 && (m.mStatus & 0x200000) === 0) : !m.isJumping();
+            if (on && ok) { this.unk190 = 1; return true; }
+        } else if (!on) this.unk190 = 0;
         return false;
     }
     startBGM() { if (this.unk1CC === 0) this.unk1CC = 1; }
