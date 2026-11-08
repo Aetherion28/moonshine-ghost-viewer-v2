@@ -17,8 +17,8 @@ import { SE } from '../soundids.js';
 export abstract class MarioSpecial extends MarioSwim {
     mWireBounceVel = 0; mWireBounceVelPrev = 0; mWireSag = 0;
 
-    /** gpCamera->unk258 (the camera's yaw). Approximated: a simulated Mario has no camera of his own. */
-    cameraYaw() { return this.mFaceAngle.y; }
+    /** gpCamera->unk258 (the camera's yaw): the one camera, the player's (Shadow Mario and Il Piantissimo read it too); his face without one */
+    cameraYaw(): number { const p: any = this.world.mario; return p && p !== this && typeof p.cameraYaw === 'function' ? p.cameraYaw() : this.mFaceAngle.y; }
 
     // ---------------------------------------------------------------- bars (poles, trees, the fluff)
     /** the most a bar lets him climb (bananas 500; the goal flag by map) */
