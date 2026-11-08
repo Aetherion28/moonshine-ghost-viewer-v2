@@ -100,7 +100,7 @@ function playerStateAt(w: any, t: number): PlayerRecord | null {
     return L[lo];
 }
 
-interface Seg { key: string; q0: number; qIn: number; area: number; episode: number; intro: boolean; }
+interface Seg { key: string; q0: number; qIn: number; area: number; episode: number; intro: boolean; s0?: number; demo?: number; close?: number; }
 interface Nozzle { max: number; dec: number; num: number; numMin: number; pow: number; powMin: number; suck: number; emitters: number; deform: boolean; acc: number; }
 
 export class GameHud {
@@ -125,7 +125,7 @@ export class GameHud {
     private con: Console | null = null; private str: ConsoleStr | null = null;
     private conF = -1; private strF = -1;
     private st: { evI: number; world: any; coins: number; red: number; blue: number; shines: number; water: number; nozzle: number; air: number; prevPos: number[] | null; still: number } | null = null;
-    private closeF = 0; private goF = 0;
+    private closeF = 0; private goF = 0; private demoF = 0;
     private drawn = false;
 
     constructor() {
@@ -256,9 +256,12 @@ export class GameHud {
 
     /** the segment the time is in: its stage's start, its first input (Mario's control: TMarDirector state 4), and whether it opened with a demo */
     private segAt(d: any, api: HudApi, t: number): Seg | null {
+        if (!d.segments) return null;
         const s = api.ghostSampleAt(d, t);
-        if (!s || !d.segments) return null;
-        const segI = d.segIndex[s.i], seg = d.segments[segI];
+        // (no sample yet: a trace's stage starts ahead of Mario's first record)
+        let segI = s ? d.segIndex[s.i] : -1;
+        if (!s) for (let k = 0; k < d.segments.length; k++) if (d.segments[k].startQf - (d.header.startQf || 0) <= t) segI = k;
+        const seg = d.segments[segI];
         if (!seg) return null;
         const q0 = seg.startQf - d.header.startQf;
         const I = d.inputs;
@@ -269,6 +272,26 @@ export class GameHud {
             if (lo < I.count) qIn = I.qf[lo];
         }
         const total = (INTRO_FRAMES.close + INTRO_FRAMES.hold + INTRO_FRAMES.open) * QF_PER_FRAME;
+        // a trace's director records give the opening itself: STATE_UNK1 entered (the demo and a named
+        // stage's names), STATE_UNK3 (the bars' close and hold done) and STATE_UNK4 (Mario's control)
+        const D = d.trace && d.trace.director, base = d.header.startQf || 0;
+        if (D && D.count) {
+            const end = segI + 1 < d.segments.length ? d.segments[segI + 1].startQf - base : Infinity;
+            const prevEnd = segI > 0 ? d.segments[segI - 1].endQf - base : -Infinity;
+            let demo = -1, s3 = -1, go = -1;
+            for (let k = 0; k < D.count; k++) {
+                const q = D.qf[k] - base;
+                if (q <= prevEnd || q >= end) continue;
+                if (D.state[k] === 1 && demo < 0) demo = q;
+                else if (D.state[k] === 3 && demo >= 0 && s3 < 0) s3 = q;
+                else if (D.state[k] === 4 && go < 0) { go = q; break; }
+            }
+            if (go >= 0) {
+                const intro = demo >= 0 && s3 >= 0, s0 = Math.min(q0, intro ? demo : q0);
+                return { key: `${d.header && d.header.created}|${segI}|${q0}`, q0, qIn: go, area: seg.route.area, episode: seg.route.episode, intro, s0,
+                    demo: intro ? demo : undefined, close: intro ? s3 - (INTRO_FRAMES.close + INTRO_FRAMES.hold) * QF_PER_FRAME : undefined };
+            }
+        }
         return { key: `${d.header && d.header.created}|${segI}|${q0}`, q0, qIn, area: seg.route.area, episode: seg.route.episode, intro: qIn - q0 >= total + 8 };
     }
     /** the opening's phases at time t, for the camera: the demo camera holds until the screen is covered */
@@ -285,8 +308,10 @@ export class GameHud {
         const named = NAMED_STAGES.has(seg.area);
         if (seg.intro && named) this.setNames(seg);
         const F = INTRO_FRAMES;
-        this.goF = Math.floor((seg.qIn - seg.q0) / QF_PER_FRAME);
-        this.closeF = this.goF - (F.close + F.hold + F.open);
+        const s0 = seg.s0 !== undefined ? seg.s0 : seg.q0;
+        this.goF = Math.floor((seg.qIn - s0) / QF_PER_FRAME);
+        this.closeF = seg.close !== undefined ? Math.floor((seg.close - s0) / QF_PER_FRAME) : this.goF - (F.close + F.hold + F.open);
+        this.demoF = seg.demo !== undefined ? Math.floor((seg.demo - s0) / QF_PER_FRAME) : 0;
         this.st = { evI: 0, world: null, coins: 0, red: 0, blue: 0, shines: 0, water: 1, nozzle: 0, air: 9 - 1e-5, prevPos: null, still: 0 };
     }
     /** TConsoleStr::load: the stage's name and the episode's from the BMGs */
@@ -420,7 +445,7 @@ export class GameHud {
         if (!this.seg || this.seg.key !== seg.key) this.newState(seg);
         const stage = this.simStage(f.sim, seg);
         // TConsoleStr from the stage's start: the names, the wipes, GO!
-        const sf = Math.floor((f.t - seg.q0) / QF_PER_FRAME);
+        const sf = Math.floor((f.t - (seg.s0 !== undefined ? seg.s0 : seg.q0)) / QF_PER_FRAME);
         const cf = Math.floor((f.t - seg.qIn) / QF_PER_FRAME);
         // (back in time, or the simulated stage, catching up, told of a pickup the HUD had already
         // gone past: start the segment over)
@@ -429,7 +454,7 @@ export class GameHud {
         while (this.strF < sf && this.strF < this.goF + 400) {
             const k = ++this.strF;
             if (seg.intro) {
-                if (k === 0 && named) str.startAppearScenario();
+                if (k === this.demoF && named) str.startAppearScenario();
                 if (k === this.closeF) { if (named && str.unk2BC !== S.UNK1) { str.unk2BC = S.UNK1; } str.startCloseWipe(!named); }
                 if (k === this.goF) str.startAppearGo();
             }
