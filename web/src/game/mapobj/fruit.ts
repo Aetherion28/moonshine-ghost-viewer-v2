@@ -433,7 +433,17 @@ export class ResetFruit extends MapObjBall {
                 break;
         }
     }
-    // TODO: Delfino Plaza's (map 7) area-cube reset (TResetFruit::perform): not here
+    /** TResetFruit::perform: on stage 7 (getCurrentStage) a still, living fruit outside Mario's area cube and off its start goes back to wait to appear */
+    perform(cue: number) {
+        if (this.world.map === 7) {
+            if (this.isState(GS.HOLDING) || this.vel.x !== 0 || this.vel.y !== 0 || this.vel.z !== 0) {
+                if (this.checkLiveFlag(LF.UNK200)) this.offLiveFlag(LF.UNK200);
+            } else if (!this.world.inAreaCube(this.pos) && this.isState(RFS.LIVING)) {
+                if (this.pos.x !== this.initialPos.x || this.pos.z !== this.initialPos.z) { this.makeObjWaitingToAppear(); return; }
+            }
+        }
+        super.perform(cue);
+    }
     killByTimer(t: number) { this.stateTimer = t; this.onMapObjFlag(MOF.DISAPPEARING); this.state = RFS.LIVING; }
     makeObjAppeared() {
         if (this.checkMapObjFlag(MOF.UNK4000000)) this.makeObjDefault();
