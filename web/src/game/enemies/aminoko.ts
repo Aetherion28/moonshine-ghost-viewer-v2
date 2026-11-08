@@ -115,8 +115,12 @@ export class AmiNoko extends WalkerEnemy {
             // SMS_GetMarioRfPlane / GrPlane are never null (the illegal plane at worst)
             case PLANE_GROUND: if (m.pos.y < this.pos.y) check = false; break;
             case PLANE_ROOF: if (5 + m.pos.y > this.pos.y) check = false; break;
-            // SMS_GetMarioWlPlane: the wall Mario touches (TODO: not in MarioProxy: taken as none)
-            case PLANE_WALL: break;
+            // SMS_GetMarioWlPlane (gpMarioOriginal->mWallPlane): no shock through a wall facing away from its fence
+            case PLANE_WALL: {
+                const wl = (m as any).mWallPlane as BGCheckData | null | undefined, n = this.unk194.n;
+                if (wl && fr(fr(fr(wl.n[0] * n[0]) + fr(wl.n[1] * n[1])) + fr(wl.n[2] * n[2])) < 0) check = false;
+                break;
+            }
         }
         if (check && m.receiveMessage(this, MSG.ELECTRIC_SHOCK)) {
             if (this.spine!.current !== AmiNokoNerves.freeze) this.spine!.pushNerve(AmiNokoNerves.freeze);
