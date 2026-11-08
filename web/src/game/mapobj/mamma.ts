@@ -691,8 +691,10 @@ export class SandBird extends JointCoin {
         w.sound(SE.EN_SANDBIRD_CRY, this.pos);
         w.sound(SE.ENV_SANDBIRD_WIND);
         // (the sand dust particles on its coins and dust joints: ms_sunadori_a / _b)
-        // TODO: gpCamera->isDemoCamera(): taken as the director's demo mode
-        if (!w.demoMode && !this.unk150) {
+        // gpCamera->isDemoCamera() (with no simulated camera, the director's demo mode)
+        const C: any = (w.mario as any).simCamera;
+        const demoCam = C && typeof C.isDemoCamera === 'function' ? C.isDemoCamera() : w.demoMode;
+        if (!demoCam && !this.unk150) {
             const a = marioGroundPlane(w).actor as any;
             if (a && a.isActorType && a.isActorType(AT.SAND_BIRD_BLOCK)) {
                 // (startAppearBalloon(0xE002F): the help balloon)
