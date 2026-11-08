@@ -33,7 +33,8 @@ export class HideObjBase extends MapObjBase {
             } else o = this.hidden;
             this.throwObjToFrontFromPoint(o, p, this.appearSpeed, this.appearYSpeed);
             if (MapObjBase.isCoin(o)) { (o as Coin).container = this; (o as Coin).unk14C = this.unk148; }
-            // TODO: TResetFruit::makeObjLiving (fruit isn't ported)
+            // (TResetFruit::makeObjLiving; called by its method name, as fruit.ts imports this file)
+            if (MapObjBase.isFruit(o)) (o as any).makeObjLiving();
         }
         this.emitEffect();
         this.allowReveal = false;
