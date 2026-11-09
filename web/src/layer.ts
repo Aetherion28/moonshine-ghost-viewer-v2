@@ -252,26 +252,25 @@ class MarioMirror {
             // W = MarioWorld[b] * inv(MarioRest[b]) * fit * Rest[j] (rests from an unanimated calc)
             const rest = (d: J3DModelData) => { const t = new J3DModelInstanceSimple(d); mat4.identity(t.modelMatrix); t.calcAnim(); return t.shapeInstanceState.jointToWorldMatrixArray.map((x) => mat4.clone(x)); };
             const mRest0 = rest(this.mario.body.modelData);
-            const mRest = mRest0.map((x) => mat4.invert(mat4.create(), x));
+            let mRest = mRest0.map((x) => mat4.invert(mat4.create(), x));
+            // (Mario's rest as the viewer's skinned Mario has it: his bones' inverse binds)
+            const fromBinds = () => {
+                const R = this.rig as any; if (!R || !R.root || !R.bones) return false;
+                let sk: any = null; R.root.traverse((o: any) => { if (!sk && o.isSkinnedMesh && o.skeleton) sk = o.skeleton; });
+                if (!sk) return false;
+                const inv = new Map<any, any>(); sk.bones.forEach((b: any, i: number) => inv.set(b, sk.boneInverses[i]));
+                mRest = R.bones.map((b: any, i: number) => inv.has(b) ? mat4.clone(inv.get(b).elements as any) : mRest[i]);
+                return true;
+            };
+            let bound = false;
             const pRest = rest(sd.data).map((x) => mat4.mul(mat4.create(), sd.fit, x));
             const map = spec.retarget, tmp = mat4.create();
-            // (his joints moved onto Mario's: the first of his joints on each of Mario's sits where Mario's
-            // does, the others keep their offset from it, so his limbs are Mario's length, not lanky)
-            const first = new Map<number, number>();
-            map.forEach((b, j) => { if (j < pRest.length && !first.has(b)) first.set(b, j); });
-            const base = pRest.map((x) => [x[12], x[13], x[14]]);
-            map.forEach((b, j) => {
-                if (j >= pRest.length || !mRest0[b]) return;
-                const f = first.get(b)!, M = mRest0[b];
-                pRest[j][12] = M[12] + base[j][0] - base[f][0];
-                pRest[j][13] = M[13] + base[j][1] - base[f][1];
-                pRest[j][14] = M[14] + base[j][2] - base[f][2];
-            });
             const calc = m.calcAnim.bind(m);
             m.calcAnim = () => {
                 calc();
                 const B = this.rig && this.rig.bones;
                 if (!B) return;
+                if (!bound) bound = fromBinds();
                 const W = m.shapeInstanceState.jointToWorldMatrixArray;
                 for (let j = 0; j < W.length && j < map.length; j++) {
                     const b = B[map[j]];
@@ -395,7 +394,7 @@ export class GameLayer {
             // (scaled so its height is Mario's, 150, its lowest point on the ground: y spans read from the models)
             const lo = spec.lo ?? 0, hi = spec.hi ?? 150;
             const fit = mat4.create();
-            if (!spec.rig && hi > lo) { const k = 150 / (hi - lo); mat4.scale(fit, fit, [k, k, k]); mat4.translate(fit, fit, [0, -lo, 0]); }
+            if ((!spec.rig || spec.retarget) && hi > lo) { const k = 150 / (hi - lo); mat4.scale(fit, fit, [k, k, k]); mat4.translate(fit, fit, [0, -lo, 0]); }
             if (this.renderer !== r) { data.destroy(this.device); return; }
             const btkF = spec.btk ? file(spec.btk) : null;
             let btk: any = null; try { btk = btkF ? BTK.parse(btkF.buffer) : null; } catch { }
