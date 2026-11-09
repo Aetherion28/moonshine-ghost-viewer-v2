@@ -62,12 +62,12 @@ export class Cpu {
         const end = this.count + limit;
         while (this.pc !== RETURN_SENTINEL) {
             if (this.count >= end) throw new Error(`instruction limit at 0x${this.pc.toString(16)}`);
-            const h = this.hooks.get(this.pc);
-            if (h) { h(this); this.pc = this.lr; continue; }
             this.step();
         }
     }
     step() {
+        const h = this.hooks.get(this.pc);
+        if (h) { this.count++; h(this); this.pc = this.lr >>> 0; return; }
         const pc = this.pc, ins = this.mem.r32(pc);
         this.pc = (pc + 4) >>> 0;
         this.count++;
@@ -96,7 +96,7 @@ export class Cpu {
                 if (this.bcCond(bo, bi)) { if (ins & 1) this.lr = (pc + 4) >>> 0; this.pc = (ins & 2 ? bd : pc + bd) >>> 0; }
                 return;
             }
-            case 17: throw new Unimpl('sc');
+            case 17: return this.exception(0xC00, (pc + 4) >>> 0);   // sc
             case 18: { const li = (ins & 0x03FFFFFC) << 6 >> 6; if (ins & 1) this.lr = (pc + 4) >>> 0; this.pc = (ins & 2 ? li : pc + li) >>> 0; return; }
             case 19: return this.op19(ins, pc);
             case 20: { const sh = rB, mb = (ins >>> 6) & 31, me = (ins >>> 1) & 31, mk = mask(mb, me); g[rA] = ((rotl(g[rD], sh) & mk) | (g[rA] & ~mk)) >>> 0; if (ins & 1) this.setCR0(g[rA]); return; }   // rlwimi
@@ -281,6 +281,12 @@ export class Cpu {
         throw new Unimpl(`op31 xo ${xo}`);
     }
     reserve = 0;
+    /** takes an exception: SRR0 = where to return, SRR1 = MSR, to the vector (MSR[IP] clear: 0x00000000 base) */
+    exception(vector: number, ret: number) {
+        this.srr0 = ret >>> 0; this.srr1 = this.msr & 0x87C0FFFF;
+        this.msr &= ~0x04EF36;   // EE, PR, FP, ME stays, FE0/FE1, SE, BE, IR, DR, RI cleared
+        this.pc = (0x80000000 | vector) >>> 0;
+    }
     private ov(v: number) { this.xerOV = v; if (v) this.xerSO = 1; }
     mfspr(n: number) {
         switch (n) {

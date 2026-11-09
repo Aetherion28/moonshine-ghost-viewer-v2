@@ -12,6 +12,12 @@ v3 only reads the newest trace format (the user, 2026-11-09).
 3. **Play a trace**: the director's frame loop driven by the trace's pads; Mario's record compared tick by tick with the game's memory (`TMario` at `gpMarioOriginal`). What the GPU feeds back (occlusion, the bath water's height) comes from the trace's feedback records, as in v2.
 4. **Viewer**: the game's object state (positions, models' matrices) read out of the interpreter's memory each frame and drawn with the existing renderer.
 
+## Where boot stands (2026-11-09)
+
+`tests/boot.ts` runs the DOL from its entry with `ppc/machine.ts` (time base, decrementer, the 60 Hz retrace) and `ppc/hw.ts` (PI interrupts, ARAM DMA, EXI, VI; the GX FIFO discarded) plus the HLE hooks in `ppc/hle.ts` (the DSP handshake, cache maintenance).
+In 60 million instructions it goes through `__start`, OSInit, all the static constructors, `main`, `TApplication::initialize` (the heaps, ARAM), into the thread scheduler, taking VI retrace interrupts (`__VIRetraceHandler`).
+Next: see what the threads wait for (DVD reads: HLE the DVD file API on the user's extracted disc), then the controller (PAD from the trace), then the first stage load.
+
 ## Tests
 
 - `tests/leaf.ts`: calls the DOL's MSL `sinf`, `cosf`, `atan2f` (60,000 inputs) and the SDK's paired-single `PSMTXConcat` / `PSMTXMultVec` (45,000 values) and compares them bit for bit with v2's ports (which were checked against the DOL): 0 differences.

@@ -25,7 +25,7 @@ export class Memory {
             const o = addr & 0x0FFFFFFF;
             if (o + size <= MEM1_SIZE) return [this.dv, o];
         } else if (seg === 0xC || seg === 0xD) {
-            if ((addr & 0xFF000000) === 0xCC000000) return null;
+            if ((addr >>> 24) === 0xCC) return null;
             const o = addr & 0x0FFFFFFF;
             if (o + size <= MEM1_SIZE) return [this.dv, o];
         } else if (seg === 0xE) {
