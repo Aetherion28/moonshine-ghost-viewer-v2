@@ -1,7 +1,7 @@
 #!/bin/bash
 # tdiff.sh trace a b : sim vs rec per tick
 cd /tmp/claude-0/ct
-TICK=$2-$3 timeout 300 node --max-old-space-size=2500 pm_fb.mjs auto $1 $(( $3 + 1 )) 2>&1 | grep "^  tick" > /tmp/claude-0/s_t.txt
+TICK=$2-$3 timeout 300 node --max-old-space-size=2500 ${PMB:-pm_fb.mjs} auto $1 $(( $3 + 1 )) 2>&1 | grep "^  tick" > /tmp/claude-0/s_t.txt
 node gv.mjs $1 $2 $3 > /tmp/claude-0/r_t.txt
 python3 - <<'PY'
 S={};R={}

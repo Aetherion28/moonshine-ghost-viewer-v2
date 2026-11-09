@@ -26,8 +26,8 @@
 // TODO: ball.bmd is taken as a unit sphere and the texel at its centre; the GPU's rasterisation of its
 // polygons (and the exact depth conversion) differs a little.
 
-import { fr, V3, Quat, sinf, cosf } from './math.js';
-import { fmadd, invSqrtJ } from './player/fmath.js';
+import { fr, V3, Quat, sinf, cosf, mslAtan2f } from './math.js';
+import { fmadd, fmsub, fnmsub, invSqrtJ } from './player/fmath.js';
 import { jgSqrt, vDot } from './vecops.js';
 import { takeFeedback, feedbackFloat, FeedbackConsumer } from './feedback.js';
 import { World, Stream, NameRef, CUE_MOVE, HitActor, MSG, HF, HC, readParams, PSchema } from './engine.js';
@@ -35,6 +35,7 @@ import { AT } from './actortypes.js';
 import { register } from './scene.js';
 import { quatRotate } from './enemies/animal.js';
 import type { Bathtub, BathtubData } from './mapobj/bathtub.js';
+import { bathLocal } from './mapobj/bathtub.js';
 
 const PI = 3.1415927;
 
@@ -65,14 +66,25 @@ export class RandomFast {
 // ---------------------------------------------------------------- TBathtubData helpers (Map/BathWaterManager.hpp)
 const at = (D: BathtubData, r: number, c: number) => D.unk18[r * 4 + c];
 const dot = (a: V3, b: V3) => fr(fr(fr(a.x * b.x) + fr(a.y * b.y)) + fr(a.z * b.z));
-/** getGravityDir */
+/** getGravityDir (JP 0x801FA680): up rotated toward unk0C by amount of their angle; the cross, dots and the quaternion's
+ *  rotation of up fused as the DOL, MSL atan2f / sinf / cosf */
 function getGravityDir(D: BathtubData, amount: number) {
-    if (!D.unk65) {
-        const up = new V3(0, 1, 0);
-        const q = new Quat().setRotateFromTo(D.unk0C, up, amount);
-        return quatRotate(q, up).fround();
+    if (D.unk65) return new V3(0, 1, 0);
+    const ax = D.unk0C.x, ay = D.unk0C.y, az = D.unk0C.z, bx = 0, by = 1, bz = 0;
+    const cy = fmsub(az, bx, fr(ax * bz)), cx = fmsub(ay, bz, fr(az * by)), cz = fmsub(ax, by, fr(ay * bx));
+    const len = jgSqrt(fmadd(cz, cz, fmadd(cx, cx, fr(cy * cy))));
+    let qx = 0, qy = 0, qz = 0, qw = 1;
+    if (!(len <= 3.814697265625e-6)) {
+        const half = fr(amount * fr(0.5 * mslAtan2f(len, fmadd(az, bz, fmadd(ax, bx, fr(ay * by))))));
+        const sn = fr(sinf(half) / len);
+        qx = fr(cx * sn); qy = fr(cy * sn); qz = fr(cz * sn); qw = cosf(half);
     }
-    return new V3(0, 1, 0);
+    const vx = bx, vy = by, vz = bz;
+    const tx = fmadd(qw, vx, fmsub(qy, vz, fr(qz * vy))), ty = fmadd(qw, vy, fmadd(-qx, vz, fr(qz * vx)));
+    const tz = fmadd(qw, vz, fmsub(qx, vy, fr(qy * vx))), tw = fnmsub(qz, vz, fmsub(-qx, vx, fr(qy * vy)));
+    return new V3(fmadd(tw, -qx, fnmsub(tz, -qy, fmadd(tx, qw, fr(ty * -qz)))),
+        fmadd(tw, -qy, fmadd(tz, -qx, fmadd(tx, qz, fr(ty * qw)))),
+        fmadd(tw, -qz, fmadd(tz, qw, fmsub(tx, -qy, fr(ty * -qx)))));
 }
 /** getPos: the i-th of j points round the bowl, a spiral from the rim (i = 0) to the bottom */
 function getPos(D: BathtubData, i: number, j: number, h: number) {
@@ -274,7 +286,7 @@ export class BathWater extends HitActor {
         }
 
         let threshold = fr(D.mPos.y - D.unk3C);
-        if (D.unk65) threshold = fr(D.mPos.y - fr(8 * D.unk3C));
+        if (D.unk65) threshold = fnmsub(8, D.unk3C, D.mPos.y);   // (JP 0x801F8E9C: fnmsubs)
         let respawnIdx = 0;
         for (let i = 0; i < end2; i++) {
             const d = drops[i];
@@ -419,7 +431,8 @@ export class BathWaterManager extends NameRef {
         super.loadAfter();
         this.unk28 = [new FlatRenderer(), new MeshRenderer(this.unk18)];
         this.unk30 = this.unk28[1];
-        this.world.conductor.others.push(this);
+        // (in scene.bin's インダイレクトシーン group, which PerformList Movement runs after the event group)
+        this.world.indirectScene.push(this);
     }
     /** initializeIfYet_: once the tub is set up, both sets put round its bowl and run 200 steps */
     initializeIfYet_() {
@@ -459,20 +472,17 @@ export class BathWaterManager extends NameRef {
     /** throwMario: Mario thrown onto the rim (4150 out, 120 up, if he's within 4500 of the centre), else straight up at speed */
     throwMario(speed: number) {
         const D = this.unk24!.getBathtubData(), m = this.world.mario as any;
-        const diff = V3.sub(m.pos, D.mPos);
-        const xDir = new V3(at(D, 0, 0), at(D, 1, 0), at(D, 2, 0));
-        const yDir = new V3(at(D, 0, 1), at(D, 1, 1), at(D, 2, 1));
-        const zDir = new V3(at(D, 0, 2), at(D, 1, 2), at(D, 2, 2));
-        const horiz = new V3(dot(diff, xDir), 0, dot(diff, zDir));
-        void yDir;
+        // JP 0x801FA8BC: Mario in the tub's frame (unk18 is the rotation transposed), flattened, set to 4150 and back out, fused
+        const horiz = bathLocal(D.unk18, D.mPos, m.pos);
+        horiz.y = 0;
         let vel: V3;
         if (horiz.length() < 4500) {
-            const l = horiz.length();
-            if (l > 0) horiz.scale(fr(4150 / l));   // setLength
-            const R = D.unk18;
-            const w = new V3(fr(fr(fr(R[0] * horiz.x) + fr(R[1] * horiz.y)) + fr(R[2] * horiz.z)), fr(fr(fr(R[4] * horiz.x) + fr(R[5] * horiz.y)) + fr(R[6] * horiz.z)),
-                fr(fr(fr(R[8] * horiz.x) + fr(R[9] * horiz.y)) + fr(R[10] * horiz.z)));
-            w.add(D.mPos); w.y = fr(w.y + 120);
+            const T = D.unk18, lsq = horiz.squared();
+            if (lsq <= 3.814697265625e-6) horiz.zero();
+            else { const k = fr(4150 * invSqrtJ(lsq)); horiz.x = fr(horiz.x * k); horiz.y = fr(horiz.y * k); horiz.z = fr(horiz.z * k); }
+            const w = new V3(fmadd(T[8], horiz.z, fmadd(T[0], horiz.x, D.mPos.x)), fmadd(T[9], horiz.z, fmadd(T[1], horiz.x, D.mPos.y)),
+                fmadd(T[10], horiz.z, fmadd(T[2], horiz.x, D.mPos.z)));
+            w.y = fr(w.y + 120);
             const g = m.mJumpParams ? m.mJumpParams.mGravity : 0.8;   // SMS_GetMarioGravity
             vel = calcJumpVelocityY(w, m.pos, 100, g, -75);
         } else vel = new V3(0, speed, 0);
@@ -498,7 +508,7 @@ export class BathWaterManager extends NameRef {
             if ((this.unk1C & 7) === 4 && D.unk64) {
                 const radius = this.unk14[1].dropRadius, rnd1 = this.unk10.get_float(-1, 1);
                 const p = calcOverflowPos(D, radius, rnd1);
-                if (p) this.unk20[1].addDrop(p, this.unk10.get_float01());
+                if (p) this.unk20[1].addDrop(p, this.unk10.get_float(0, 10));
             }
             // (MSD_SE_BS_KOOPA_FLOOD at unk20[0].unk78, volume unk84: not here)
         }
@@ -507,18 +517,28 @@ export class BathWaterManager extends NameRef {
     }
 }
 
-/** fakeCalcPos (fabricated name, inlined in perform): the overflow ball's start, on the tub's low side, rnd1 across it */
+/** TVec3::setLength (JGeometry): zero at or under the epsilon, else scaled by len * inv_sqrt */
+function setLengthJ(v: V3, len: number) {
+    const l = vDot(v, v);   // (JP 0x80121F50: y, x, z fused)
+    if (l <= 3.814697265625e-6) { v.zero(); return v; }
+    const k = fr(len * invSqrtJ(l));
+    v.x = fr(v.x * k); v.y = fr(v.y * k); v.z = fr(v.z * k);
+    return v;
+}
+/** fakeCalcPos (fabricated name, inlined in perform, JP 0x801F9758..0x801F99C8): the overflow ball's start,
+ *  on the tub's low side (its matrix's row 1 flattened), rnd1 across it */
 function calcOverflowPos(D: BathtubData, radius: number, rnd1: number): V3 | null {
-    const axis = new V3(at(D, 0, 1), 0, at(D, 2, 1));
-    if (axis.x * axis.x + axis.y * axis.y + axis.z * axis.z <= 3.8146973e-6) return null;   // isZero
-    const nAxis = axis.clone().normalize();
-    const cross = new V3().cross(nAxis, new V3(0, 1, 0)).fround().normalize();
+    const axis = new V3(at(D, 1, 0), 0, at(D, 1, 2));
+    if (fr(fr(fr(axis.x * axis.x) + fr(axis.y * axis.y)) + fr(axis.z * axis.z)) <= 3.814697265625e-6) return null;   // isZero
+    setLengthJ(axis, 1);
+    // axis x up (0, 1, 0)
+    const cross = new V3(fmadd(axis.y, 0, -fr(axis.z * 1)), fmadd(axis.z, 0, -fr(axis.x * 0)), fmadd(axis.x, 1, -fr(axis.y * 0)));
+    setLengthJ(cross, 1);
     const perturb = fr(0.18 * rnd1);
-    nAxis.x = fr(nAxis.x + fr(cross.x * perturb)); nAxis.y = fr(nAxis.y + fr(cross.y * perturb)); nAxis.z = fr(nAxis.z + fr(cross.z * perturb));
-    const h = fr(0.9 * fr(D.unk3C - radius)), l = nAxis.length();
-    if (l > 0) nAxis.scale(fr(h / l));   // setLength
+    axis.x = fmadd(cross.x, perturb, axis.x); axis.y = fmadd(cross.y, perturb, axis.y); axis.z = fmadd(cross.z, perturb, axis.z);
+    setLengthJ(axis, fr(0.9 * fr(D.unk3C - radius)));
     const c = D.getThing();
-    return new V3(fr(fr(radius * 0 + nAxis.x) + c.x), fr(fr(radius + nAxis.y) + c.y), fr(fr(radius * 0 + nAxis.z) + c.z));
+    return new V3(fr(fmadd(0, radius, axis.x) + c.x), fr(fmadd(1, radius, axis.y) + c.y), fr(fmadd(0, radius, axis.z) + c.z));
 }
 
 register('BathWater', (w) => new BathWaterManager(w));

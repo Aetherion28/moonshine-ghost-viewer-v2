@@ -39,6 +39,21 @@ function invSqrtf3(x: number) {
 }
 /** MSL acosf (JP 0x80086DD0): pi/2 - atanf(x * _inv_sqrtf(1 - x*x)) */
 const acosfMsl = (x: number) => fr(1.5707963705062866 - mslAtanf(fr(x * invSqrtf3(fnmsub(x, x, 1)))));
+/** TBathtubData::unk18 is the tub's rotation transposed (calcBathtubData, JP 0x801D2450): T[r][c] = root[c][r].
+ *  bathLocal: T times p - mPos (the tub's frame), each row T[r][1] dy, then T[r][0] dx, then T[r][2] dz, fused */
+export function bathLocal(T: Mtx | Float64Array | number[], o: V3, p: V3) {
+    const dx = fr(p.x - o.x), dy = fr(p.y - o.y), dz = fr(p.z - o.z);
+    const row = (r: number) => fmadd(T[r * 4 + 2], dz, fmadd(T[r * 4], dx, fr(T[r * 4 + 1] * dy)));
+    return new V3(row(0), row(1), row(2));
+}
+/** TQuat4<f32>::rotate (inlined, as in getGravityDir and calcBathtubData): q v q*, fused as the DOL */
+export function quatRotateJ(qx: number, qy: number, qz: number, qw: number, vx: number, vy: number, vz: number) {
+    const tx = fmadd(qw, vx, fmsub(qy, vz, fr(qz * vy))), ty = fmadd(qw, vy, fmadd(-qx, vz, fr(qz * vx)));
+    const tz = fmadd(qw, vz, fmsub(qx, vy, fr(qy * vx))), tw = fnmsub(qz, vz, fmsub(-qx, vx, fr(qy * vy)));
+    return new V3(fmadd(tw, -qx, fnmsub(tz, -qy, fmadd(tx, qw, fr(ty * -qz)))),
+        fmadd(tw, -qy, fmadd(tz, -qx, fmadd(tx, qz, fr(ty * qw)))),
+        fmadd(tw, -qz, fmadd(tz, qw, fmsub(tx, -qy, fr(ty * -qx)))));
+}
 import { World, Stream, HitActor, LiveActor, TakeActor, LF, MSG, ANM_BCK, ANM_FRAME_RATE, readParams, PSchema } from '../engine.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
@@ -184,7 +199,7 @@ export class Bathtub extends MapObjBase {
         D.mPos.set(this.initialPos);
         D.unk18 = mtx();
         D.unk3C = 3000; D.unk40 = 3600;
-        D.unk44 = fr(D.unk3C * fr(Math.sin(fr(0.27925268))));
+        D.unk44 = fr(D.unk3C * sinf(fr(0.27925268)));   // (JP 0x801D0928: MSL sinf)
         D.unk4C = D.unk50 = D.unk54 = 0;
         D.unk58.zero();
         D.unk48 = 100;
@@ -331,24 +346,30 @@ export class Bathtub extends MapObjBase {
         else this.removeCollisions_();
     }
     calcBathtubData() {
+        // JP 0x801D2450: unk18 is the root's rotation transposed; the tilt and the tumble's lean fused as the DOL
         const m = this.getRootJointMtx(), D = this.mBathtubData, P = this.unk16C;
         const R = D.unk18;
-        for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) R[r * 4 + c] = m[r * 4 + c];
+        for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) R[r * 4 + c] = m[c * 4 + r];
         D.mPos.set(m[3], m[7], m[11]);
         const upY = R[5];
-        // calcBathtubData: TUtil<f32>::sqrt (frsqrte + one Newton step), not Math.sqrt.
-        const tilt = jgSqrt(fr(1 - fr(upY * upY)));
+        const tilt = jgSqrt(fnmsub(upY, upY, 1));
         const depth = P.watermark >= tilt ? P.watermark : tilt;
         D.unk44 = fr(D.unk3C * depth);
         D.unk48 = P.outerHeight;
-        D.unk0C.set(R[1], R[5], R[9]);
+        D.unk0C.set(R[4], R[5], R[6]);
         D.unk58.zero();
         const k = this.koopa();
         if ((k && k.effectsTumble()) || this.unk24C > 0) {
-            const axis = new V3().cross(new V3(0, 1, 0), D.unk0C).fround().normalize();
-            if (!isZero(axis)) {
-                const q = new Quat().setRotateAxis(axis, fr(fr(P.maxAngle * fr(2 * PI)) / 360));
-                quatRotate(q, D.unk0C, D.unk0C).fround();
+            const ax = D.unk0C.x, ay = D.unk0C.y, az = D.unk0C.z;
+            // (0, 1, 0) x unk0C, normalized
+            let cy = fmsub(0, ax, fr(0 * az)), cx = fmsub(1, az, fr(0 * ay)), cz = fnmsub(1, ax, fr(0 * ay));
+            const l = fmadd(cz, cz, fmadd(cx, cx, fr(cy * cy)));
+            if (l <= 3.814697265625e-6) { cx = cy = cz = 0; }
+            else { const kk = fr(1 * invSqrtJ(l)); cx = fr(cx * kk); cy = fr(cy * kk); cz = fr(cz * kk); }
+            if (!(fmadd(cz, cz, fmadd(cx, cx, fr(cy * cy))) <= 3.814697265625e-6)) {
+                const half = fr(0.5 * fr(fr(P.maxAngle * fr(2 * PI)) / 360));
+                const sn = sinf(half);
+                D.unk0C.set(quatRotateJ(fr(cx * sn), fr(cy * sn), fr(cz * sn), cosf(half), ax, ay, az));
                 D.unk58.set(0, P.shake, 0);
             }
         } else D.unk0C.set(0, 1, 0);
@@ -358,25 +379,32 @@ export class Bathtub extends MapObjBase {
     }
     /** setupCollisions_: the two floor slices under Mario put in (the others out); the grip on his side gets its collision. */
     setupCollisions_() {
-        const D = this.mBathtubData, mp = this.world.mario.pos;
-        const local = mult33(D.unk18, V3.sub(mp, D.mPos));
-        if (mp.y < 300 || local.x * local.x + local.z * local.z < 0.01) {
+        // JP 0x801D1FBC: Mario in the tub's frame fused (y, x, z), MSL atan2f / sinf / cosf, the slice matrix multiplied out inline
+        const D = this.mBathtubData, mp = this.world.mario.pos, M = D.unk18;
+        const L = bathLocal(M, D.mPos, mp), lx = L.x, lz = L.z;
+        if (mp.y < 300 || fmadd(lx, lx, fr(lz * lz)) < 0.01) {
             this.removeCollisions_();
             for (let i = 0; i < 5; ++i) this.unk168[i].unk24B = 0;
             return;
         }
-        let angle = fr(Math.atan2(local.x, local.z));
+        let angle = mslAtan2f(lx, lz);
         if (angle < 0) angle = fr(angle + fr(2 * PI));
         let segment = fr(angle * fr(30 / fr(2 * PI)));
         if (segment < 0) segment = fr(segment + 30);
         const first = (Math.trunc(fr(fr(segment + 0.5) - 1)) + 30) % 30;
         let i: number;
+        const B = this.baseTR;
         for (i = 0; i < 2; ++i) {
             const index = (i + first) % 30;
             const a = fr(fr(fr((index + 1) * fr(2 * PI)) / 30) - PI);
-            const s = fr(Math.sin(a)), c = fr(Math.cos(a));
-            const rot = mtx(); rot[0] = c; rot[2] = s; rot[8] = -s; rot[10] = c;
-            const m = MTXConcat(this.baseTR, rot, mtx());
+            const sn = sinf(a), c = cosf(a);
+            // R = [c 0 s 0; 0 1 0 0; -s 0 c 0]; each C[r][j] = B[r][2] R[2][j] + (B[r][0] R[0][j] + B[r][1] R[1][j])
+            const R = [c, 0, sn, 0, 0, 1, 0, 0, -sn, 0, c, 0];
+            const m = mtx();
+            for (let r = 0; r < 3; r++) {
+                for (let j = 0; j < 4; j++) m[r * 4 + j] = fmadd(B[r * 4 + 2], R[8 + j], fmadd(B[r * 4], R[j], fr(B[r * 4 + 1] * R[4 + j])));
+                m[r * 4 + 3] = fr(B[r * 4 + 3] + m[r * 4 + 3]);
+            }
             this.unk164![index].moveMtx(m);
             this.unk164![index].setUp();
         }
@@ -406,7 +434,7 @@ export class Bathtub extends MapObjBase {
         const mp = this.world.mario.pos.clone();
         if (this.getNearGrip(mp, 18) === null) return false;
         const D = this.mBathtubData;
-        const local = mult33(D.unk18, V3.sub(mp, D.mPos));
+        const local = bathLocal(D.unk18, D.mPos, mp);
         local.y = 0;
         const dist = fr(local.length());
         if (dist < 4200) return false;

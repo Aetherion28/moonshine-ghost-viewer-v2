@@ -530,6 +530,8 @@ export class World {
     col!: MapCollision;
     files!: Files;
     byName = new Map<string, NameRef>();
+    /** scene.bin's インダイレクトシーン group (PerformList Movement runs it after the event group): the bath water */
+    indirectScene: NameRef[] = [];
     conductor = new Conductor(this);
     hitCheck = new ObjHitCheck(this);
     groups: (HitActor[] | null)[] = [];

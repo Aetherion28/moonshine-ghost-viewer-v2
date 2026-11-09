@@ -280,6 +280,8 @@ export class Stage {
             if (w.water) w.water.move();
             // (sky, mirror model) the event group: the stage's scripts
             if (w.eventGroup) w.eventGroup.perform(CUE_MOVE);
+            // (シルエット設定, then the インダイレクトシーン group: the bath water)
+            for (const o of w.indirectScene) o.testPerform(CUE_MOVE);
             // PerformList Console (Group 2D: the talk window), then TMarDirector::movement (movement_game)
             if (w.talk) w.talk.tick(last, !!D && D.state === 4);
             if (this.pinWorld) this.pinWorld(this.qf);
