@@ -154,6 +154,20 @@ function pinShineDemo(inst: J3DModelInstanceSimple, o: any) {
     };
 }
 
+/**
+ * Cosmetic stand-ins for Mario (the viewer's "Mario's model" option): drawn where Mario is drawn,
+ * nothing else changes (the replay keeps Mario's own body and hit sizes). scene: the stage archive
+ * the model comes from; rig: posed on Mario's joints (Il Piantissimo's model has Mario's 29, and the
+ * game plays Mario's BCKs on it); else the whole model on Mario's root, scaled to Mario's height (150).
+ */
+export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number; three?: boolean }> = {
+    piantissimo: { scene: 'mamma4', bmd: 'map/map/pad/monteman_model.bmd', rig: true },
+    boardnpc: { scene: 'ricco5', bmd: 'boardnpc/boardnpc.bmd', lo: -18, hi: 180 },
+    pianta: { scene: 'dolpic0', bmd: 'montema/moma_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
+    boardnpcRig: { scene: 'ricco5', bmd: '', three: true },
+    cataquack: { scene: 'mamma0', bmd: 'poihana/default.bmd', wait: 'poihana/poihana_wait.bck', walk: 'poihana/poihana_walk.bck', lo: 0, hi: 191 },
+};
+type SkinData = { data: J3DModelData; wait: any; walk: any; fit: mat4 };
 class MarioMirror {
     public mario: MarioModel;
     public yoshi: YoshiModel | null = null;
@@ -176,7 +190,29 @@ class MarioMirror {
             r.modelInstances.push(this.yoshi.body);
         }
     }
-    get models() { return [...this.mario.all, ...(this.yoshi ? [this.yoshi.body] : [])]; }
+    get models() { return [...this.mario.all, ...(this.yoshi ? [this.yoshi.body] : []), ...(this.skin ? [this.skin] : [])]; }
+    public skin: J3DModelInstanceSimple | null = null;
+    private skinName = '';
+    private skinWalk = false;
+    private lastPos: number[] | null = null;
+    /** the stand-in model for this Mario (MARIO_SKINS), or none */
+    setSkin(r: SunshineRenderer, name: string, sd: SkinData | null) {
+        if (name === this.skinName && (!!this.skin === !!sd)) return;
+        if (this.skin) { const old = this.skin; r.modelInstances = r.modelInstances.filter((x) => x !== old); this.skin = null; }
+        this.skinName = name;
+        if (!sd) return;
+        const m = new J3DModelInstanceSimple(sd.data);
+        m.passMask = SMSPass.MAIN;
+        (m as any).isPlayer = true;
+        setAmbient([m], r.playerAmbient);
+        const spec = MARIO_SKINS[name];
+        if (spec.rig) pinJoints(m, () => this.rig && this.rig.bones);
+        else if (sd.wait) m.bindANK1(sd.wait);
+        (m as any).skinFit = sd.fit; (m as any).skinData = sd;
+        this.skinWalk = false;
+        this.skin = m;
+        r.modelInstances.push(m);
+    }
 
     /** Mario as the viewer posed him (rig: MarioRig.attach's, with fluddBones), and his Yoshi. */
     sync(rig: any, yoshiNode: any) {
@@ -211,6 +247,22 @@ class MarioMirror {
             part(M.fludd, rig.parts.fludd_body);
             for (const [n, m] of Object.entries(M.nozzles)) part(m, rig.parts['nozzle_' + n]);
         }
+        if (on && this.skinName && this.skinName !== 'mario') M.setVisible(false);
+        if (this.skin) {
+            const S = this.skin, on2 = on;
+            if (on2) {
+                S.visible = true;
+                mat4.copy(S.modelMatrix, rig.root.matrixWorld.elements as any);
+                if (!MARIO_SKINS[this.skinName].rig) {
+                    mat4.mul(S.modelMatrix, S.modelMatrix, (S as any).skinFit);
+                    // (the Cataquack walks while Mario moves, else waits)
+                    const sd = (S as any).skinData as SkinData, e = rig.root.matrixWorld.elements, p = [e[12], e[13], e[14]];
+                    const moving = !!this.lastPos && Math.hypot(p[0] - this.lastPos[0], p[2] - this.lastPos[2]) > 0.5;
+                    this.lastPos = p;
+                    if (sd.walk && moving !== this.skinWalk) { this.skinWalk = moving; S.bindANK1(moving ? sd.walk : sd.wait); }
+                }
+            } else S.visible = false;
+        }
         if (this.yoshi) {
             const Y = yoshiNode, yv = !!Y && worldVisible(Y.root);
             this.yoshi.body.visible = yv;
@@ -236,6 +288,34 @@ export class GameLayer {
     private mirrors: Mirror[] = [];
     private byObj = new Map<any, Mirror[]>();
     private boundGroup: any = null;
+    /** Mario's look in the view: 'mario' or a MARIO_SKINS key (cosmetic only) */
+    public skin = 'mario';
+    private skins = new Map<string, SkinData | null>();
+    private skinsLoading = new Set<string>();
+    /** a stand-in's model data once loaded (null until then, or when the disc lacks it) */
+    private skinData(name: string): SkinData | null {
+        if (this.skins.has(name)) return this.skins.get(name)!;
+        const spec = MARIO_SKINS[name], fs = this.fs, r = this.renderer;
+        if (!spec || spec.three || !fs || !r || this.skinsLoading.has(name)) return null;
+        this.skinsLoading.add(name);
+        const path = `data/scene/${spec.scene}.szs`;
+        (async () => {
+            if (!fs.has(path)) { this.skins.set(name, null); return; }
+            const arc = parseArchive(await fs.read(path), Yaz0.decompressSW);
+            const file = (p: string) => arc.findFile(p);
+            const f = file(spec.bmd);
+            if (!f) { this.skins.set(name, null); return; }
+            const b = BMD.parse(f.buffer);
+            const data = new J3DModelData(this.device, r.renderHelper.renderInstManager.gfxRenderCache, b);
+            const bck = (p?: string) => { const x = p ? file(p) : null; try { return x ? BCK.parse(x.buffer) : null; } catch { return null; } };
+            // (scaled so its height is Mario's, 150, its lowest point on the ground: y spans read from the models)
+            const lo = spec.lo ?? 0, hi = spec.hi ?? 150;
+            const fit = mat4.create();
+            if (!spec.rig && hi > lo) { const k = 150 / (hi - lo); mat4.scale(fit, fit, [k, k, k]); mat4.translate(fit, fit, [0, -lo, 0]); }
+            this.skins.set(name, { data, wait: bck(spec.wait), walk: bck(spec.walk), fit });
+        })().catch((e) => { console.warn('[skin]', name, e); this.skins.set(name, null); });
+        return null;
+    }
     /** Drawing (else the viewer draws everything itself again). */
     public live = false;
     private proxiedMario = new Set<any>();
@@ -1423,10 +1503,11 @@ export class GameLayer {
             if (!mo.rig) continue;
             let mm = this.marios.get(mo.key);
             if (!mm) { mm = new MarioMirror(this, r); this.marios.set(mo.key, mm); }
+            mm.setSkin(r, this.skin, this.skin !== 'mario' ? this.skinData(this.skin) : null);
             mm.sync(mo.rig, mo.yoshi);
             if (mo.rig.surfGesso) this.surfRig = mo.rig;
             seen.add(mo.key);
-            const proxy = (root: any) => root && root.traverse((x: any) => { if (x.isMesh) for (const m of [].concat(x.material) as any[]) { if (m.colorWrite) m.colorWrite = false; this.proxiedMario.add(m); } });
+            const proxy = (root: any) => root && root.traverse((x: any) => { if (x.isMesh && !x.userData.noProxy) for (const m of [].concat(x.material) as any[]) { if (m.colorWrite) m.colorWrite = false; this.proxiedMario.add(m); } });
             proxy(mo.rig.root);
             if (mo.yoshi) proxy(mo.yoshi.root);
         }

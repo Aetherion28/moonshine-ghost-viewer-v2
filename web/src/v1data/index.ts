@@ -3,6 +3,7 @@
 // converters (tools/) and kept in memory. The stage list (names, routes, scenes) is bundled
 // metadata; everything drawn or simulated comes from the disc.
 import { Bytes, openArc } from './bin.js';
+import * as bmd from './bmd.js';
 import { setImageEncoder } from './glb.js';
 import { encodePng } from './png.js';
 import { pngDataUri } from './png.js';
@@ -10,7 +11,7 @@ import { buildStage } from './stage.js';
 import { packCollision } from './collision.js';
 import { buildArea, AreaObjects } from './objects.js';
 import { setParamsArchive } from './objparts.js';
-import { buildMario, buildYoshi, buildWaterTex, buildShineGet } from './models.js';
+import { buildMario, buildOnMarioRig, buildYoshi, buildWaterTex, buildShineGet } from './models.js';
 import { exportJpa, EFFECTS, BW_EFFECTS, BG_EFFECTS } from './jpa.js';
 import STAGES from './tables/stages.json';
 import { storeKey, storeGet, storePut } from './store.js';
@@ -101,6 +102,12 @@ export class V1Data {
             return a.scenes.get(m[1]);
         }
         if (path === 'models/mario.glb.b64.txt' || path === 'models/mario.glb') return ab((await this.mario()).glb);
+        if (path === 'models/boardnpc_rig.glb') {
+            const [m, s] = await Promise.all([this.arc('data/mario.szs'), this.sceneArc('ricco5')]);
+            const f = s && s.get('boardnpc/boardnpc.bmd');
+            if (!m || !f) throw new Error('no Blooper-surfing Pianta on this disc');
+            return ab(await buildOnMarioRig(m, bmd.parse(f), 'boardnpc'));
+        }
         if (path === 'models/mario_bck.json') return (await this.mario()).bck;
         if (path === 'models/yoshi.glb.b64.txt' || path === 'models/yoshi.glb') { const a = await this.arc('data/yoshi.szs'); if (!a) throw new Error('no yoshi.szs'); return ab(await buildYoshi(a)); }
         throw new Error(`not a v1 data file: ${path}`);
