@@ -19,6 +19,8 @@ import * as Yaz0 from '../noclip/Common/Compression/Yaz0.js';
 import { J3DModelData, J3DModelMaterialData, MaterialInstance, MaterialData } from '../noclip/Common/JSYSTEM/J3D/J3DGraphBase.js';
 import * as GX from '../noclip/gx/gx_enum.js';
 import { J3DModelInstanceSimple } from '../noclip/Common/JSYSTEM/J3D/J3DGraphSimple.js';
+import { gfxDeviceNeedsFlipY } from '../noclip/gfx/helpers/GfxDeviceHelpers.js';
+import { EFB_HEIGHT, EFB_WIDTH } from '../noclip/gx/gx_material.js';
 import { BCK, BMD, BMT, BRK, BTK, BPK, BTP } from '../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
 import { AntialiasingMode } from '../noclip/gfx/helpers/RenderGraphHelpers.js';
 import { createSwapChainForWebGL2, GfxPlatformWebGL2Config } from '../noclip/gfx/platform/GfxPlatformWebGL2.js';
@@ -160,14 +162,15 @@ function pinShineDemo(inst: J3DModelInstanceSimple, o: any) {
  * the model comes from; rig: posed on Mario's joints (Il Piantissimo's model has Mario's 29, and the
  * game plays Mario's BCKs on it); else the whole model on Mario's root, scaled to Mario's height (150).
  */
-export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number; npc?: number; look?: { c0: number[]; c1: number[]; parts: number }; fludd?: boolean; retarget?: number[] }> = {
+export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number; npc?: number; look?: { c0: number[]; c1: number[]; parts: number }; fludd?: boolean; retarget?: number[]; btk?: string; screen?: string }> = {
+    shadow: { scene: 'bianco6', bmd: 'kagemario/default.bmd', rig: true, btk: 'kagemario/kagemario_scroll.btk', screen: 'H_kagemario_dummy' },
     piantissimo: { scene: 'mamma4', bmd: 'map/map/pad/monteman_model.bmd', rig: true, fludd: true },
     bigdaddy: { scene: 'rico_ex0', bmd: 'montemb/momb_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256, npc: 2, look: { c0: [2, 2, 0], c1: [0, 2, 255], parts: 3 }, fludd: true, rig: true,
         // (his joints on Mario's: body chest, koshi / mino waist, arms, legs, kubi and up head; the viewer's own mapping)
         retarget: [14, 2, 2, 16, 17, 18, 22, 23, 24, 3, 4, 6, 8, 9, 11, 26, 26, 26, 26, 26] },
     cataquack: { scene: 'mamma0', bmd: 'poihana/default.bmd', wait: 'poihana/poihana_wait.bck', walk: 'poihana/poihana_walk.bck', lo: 0, hi: 191 },
 };
-type SkinData = { data: J3DModelData; wait: any; walk: any; fit: mat4; arc: any };
+type SkinData = { data: J3DModelData; wait: any; walk: any; fit: mat4; arc: any; btk: any };
 class MarioMirror {
     public mario: MarioModel;
     public yoshi: YoshiModel | null = null;
@@ -209,6 +212,17 @@ class MarioMirror {
         // (as an NPC of its kind looks with colour index 0, no goop, and the real textures in place of the placeholders)
         const cache = r.renderHelper.renderInstManager.gfxRenderCache;
         swapTextures(r.renderHelper.device, cache, sd.arc, [m]);
+        // (Shadow Mario, TEMario::init: kagemario_scroll's BTK, and gpScreenTexture->replace on
+        // H_kagemario_dummy: the screen behind him, drawn after the opaque scene like the sea's indirect)
+        if (sd.btk) m.bindTTK1(sd.btk);
+        if (spec.screen) {
+            const ss = m.tex1Data.tex1.samplers;
+            for (let i = 0; i < ss.length; i++) if (ss[i].name === spec.screen) {
+                const tm = m.materialInstanceState.textureMappings[i];
+                tm.lateBinding = 'opaque-scene-texture'; tm.width = EFB_WIDTH; tm.height = EFB_HEIGHT; tm.flipY = gfxDeviceNeedsFlipY(r.renderHelper.device);
+                m.passMask = SMSPass.INDIRECT;
+            }
+        }
         const parts: J3DModelInstanceSimple[] = [];
         if (spec.npc !== undefined) {
             // (the NPC's own look from its scene.bin entry: colour indices and parts, TBaseNPC::setIndividualDifference_)
@@ -368,7 +382,9 @@ export class GameLayer {
             const fit = mat4.create();
             if (!spec.rig && hi > lo) { const k = 150 / (hi - lo); mat4.scale(fit, fit, [k, k, k]); mat4.translate(fit, fit, [0, -lo, 0]); }
             if (this.renderer !== r) { data.destroy(this.device); return; }
-            this.skins.set(name, { data, wait: bck(spec.wait), walk: bck(spec.walk), fit, arc });
+            const btkF = spec.btk ? file(spec.btk) : null;
+            let btk: any = null; try { btk = btkF ? BTK.parse(btkF.buffer) : null; } catch { }
+            this.skins.set(name, { data, wait: bck(spec.wait), walk: bck(spec.walk), fit, arc, btk });
         })().catch((e) => { console.warn('[skin]', name, e); this.skins.set(name, null); });
         return null;
     }
