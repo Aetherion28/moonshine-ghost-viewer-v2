@@ -27,6 +27,18 @@
 import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, Quat, matan, MsMtxSetRotRPH, JMASSin, JMASCos, s16 } from '../math.js';
 import { jgSqrt } from '../vecops.js';
+import { fmadd, fmsub, fnmsub, invSqrtJ, frsqrte } from '../player/fmath.js';
+import { sinf, cosf, mslAtanf, mslAtan2f } from '../math.js';
+const EPS = 3.814697265625e-06, DEG2RAD_F = 0.01745329238474369;
+/** MSL _inv_sqrtf (JP 0x80086D60): three Newton steps */
+function invSqrtf3(x: number) {
+    if (x <= 0) return x === 0 ? Infinity : NaN;
+    let e = fr(frsqrte(x));
+    for (let i = 0; i < 3; i++) e = fr(fr(0.5 * e) * fnmsub(x, fr(e * e), 3));
+    return e;
+}
+/** MSL acosf (JP 0x80086DD0): pi/2 - atanf(x * _inv_sqrtf(1 - x*x)) */
+const acosfMsl = (x: number) => fr(1.5707963705062866 - mslAtanf(fr(x * invSqrtf3(fnmsub(x, x, 1)))));
 import { World, Stream, HitActor, LiveActor, TakeActor, LF, MSG, ANM_BCK, ANM_FRAME_RATE, readParams, PSchema } from '../engine.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
@@ -414,7 +426,16 @@ export class Bathtub extends MapObjBase {
         if (this.unk29A !== 0) {
             MsMtxSetRotRPH(this.baseTR, 0, this.rot.y, 0);
             this.baseTR[3] = this.pos.x; this.baseTR[7] = this.pos.y; this.baseTR[11] = this.pos.z;
-        } else this.unk1D8.toMtx(this.baseTR, this.pos);
+        } else {
+            // JP 0x801D196C: the quaternion's matrix in f32, unfused
+            const { x, y, z, w } = this.unk1D8, m = this.baseTR;
+            const y2 = fr(2 * y), z2 = fr(2 * z), x2 = fr(2 * x), w2 = fr(2 * w);
+            const yy = fr(y2 * y), zz = fr(z2 * z), xy = fr(x2 * y), xx = fr(x2 * x), wz = fr(w2 * z), xz = fr(x2 * z), wy = fr(w2 * y);
+            const yz = fr(y2 * z), wx = fr(w2 * x), oxx = fr(1 - xx);
+            m[0] = fr(fr(1 - yy) - zz); m[1] = fr(xy - wz); m[2] = fr(xz + wy); m[3] = this.pos.x;
+            m[4] = fr(xy + wz); m[5] = fr(oxx - zz); m[6] = fr(yz - wx); m[7] = this.pos.y;
+            m[8] = fr(xz - wy); m[9] = fr(yz + wx); m[10] = fr(oxx - yy); m[11] = this.pos.z;
+        }
         this.anmMtx0 = null;
         this.joints = null;
     }
@@ -448,29 +469,63 @@ export class Bathtub extends MapObjBase {
         }
         return best < maxDiff ? this.unk150[index] : null;
     }
-    /** updatePosture_: the spring back to upright (once released no more), the turn, the tilt limit. */
+    /** updatePosture_: the spring back to upright (once released no more), the turn, the tilt limit.
+     *  JP 0x801D0C50, in its fused order (the up vector, crosses, dots, quaternion products), MSL acosf / atan2f. */
     updatePosture_() {
-        const y = new V3(0, 1, 0), P = this.unk16C;
+        const P = this.unk16C, q = this.unk1D8, v = this.unk1E8;
+        // Y = (0, 1, 0); up = q's y axis: (2xy - 2wz, (1 - 2x²) - 2z², 2yz + 2wx)
+        const upOf = () => {
+            const x = q.x, y = q.y, z = q.z, w = q.w;
+            return [fmsub(2, fr(x * y), fr(2 * fr(w * z))), fnmsub(2, fr(z * z), fnmsub(2, fr(x * x), 1)), fmadd(2, fr(y * z), fr(2 * fr(w * x)))];
+        };
+        /** q = a ⊗ q (a's w included even when 0) */
+        const mulInto = (ax: number, ay: number, az: number, aw: number) => {
+            const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+            return [fnmsub(az, qy, fmadd(ay, qz, fmadd(ax, qw, fr(aw * qx)))), fnmsub(ax, qz, fmadd(az, qx, fmadd(ay, qw, fr(aw * qy)))),
+                fnmsub(ay, qx, fmadd(ax, qy, fmadd(az, qw, fr(aw * qz)))), fnmsub(az, qz, fnmsub(ay, qy, fmsub(aw, qw, fr(ax * qx))))];
+        };
         if (this.unk250 === 0) {
             let rate: number;
             if (this.unk258 === 0) rate = 1;
             else { this.unk258--; rate = fr(1 - fr(this.unk258 / this.unk25C)); }
-            const up = quatYDir(this.unk1D8);
-            const axis = new V3().cross(y, up).fround().normalize();
-            axis.scale(fr(P.rebound * fr(rate * -fr(Math.acos(y.dot(up))))));
-            const d = P.angleVelDamp, v = this.unk1E8;
-            v.set(fr(axis.x + v.x * d), fr(axis.y + v.y * d), fr(axis.z + v.z * d));
+            const [ux, uy, uz] = upOf();
+            // Y x up
+            let cx = fmsub(1, uz, fr(0 * uy)), cy = fmsub(0, ux, fr(0 * uz)), cz = fmsub(0, uy, fr(1 * ux));
+            const lsq = fmadd(cz, cz, fmadd(cx, cx, fr(cy * cy)));
+            if (lsq <= EPS) { cx = cy = cz = 0; }
+            else { const k = fr(1 * invSqrtJ(lsq)); cx = fr(cx * k); cy = fr(cy * k); cz = fr(cz * k); }
+            const k = fr(P.rebound * fr(rate * -acosfMsl(fmadd(0, uz, fmadd(0, ux, fr(1 * uy))))));
+            cx = fr(cx * k); cy = fr(cy * k); cz = fr(cz * k);
+            const d = P.angleVelDamp;
+            v.set(fmadd(v.x, d, cx), fmadd(v.y, d, cy), fmadd(v.z, d, cz));
         } else this.unk250--;
-        QuatRotate(this.unk1D8, this.unk1E8);
-        const up = quatYDir(this.unk1D8);
-        const angle = fr(Math.acos(y.dot(up)));
-        const maxAngle = fr(P.maxAngle * (Math.PI / fr(180)));
-        const excess = fr(angle - maxAngle);
-        if (excess > 0) {
-            const limit = new Quat().setRotateFromTo(up, y, fr(excess / angle));
-            this.unk1D8.mul(limit, this.unk1D8);
+        // QuatRotate: q += (v / 2, 0) ⊗ q, then normalized (TVec4 dot: y, x, z, w)
+        {
+            const r = mulInto(fr(v.x * 0.5), fr(v.y * 0.5), fr(v.z * 0.5), 0);
+            q.x = fr(q.x + r[0]); q.y = fr(q.y + r[1]); q.z = fr(q.z + r[2]); q.w = fr(q.w + r[3]);
+            const l = fmadd(q.w, q.w, fmadd(q.z, q.z, fmadd(q.x, q.x, fr(q.y * q.y))));
+            if (l <= EPS) { q.x = q.y = q.z = q.w = 0; }
+            else { const k = fr(1 * invSqrtJ(l)); q.x = fr(q.x * k); q.y = fr(q.y * k); q.z = fr(q.z * k); q.w = fr(q.w * k); }
         }
-        this.unk1D8.normalize();
+        const [ux, uy, uz] = upOf();
+        const angle = acosfMsl(fmadd(0, uz, fmadd(0, ux, fr(1 * uy))));
+        const excess = fr(angle - fr(P.maxAngle * DEG2RAD_F));
+        if (excess > 0) {
+            // up x Y, then the rotation by excess / angle of their angle (atan2f(|c|, up.Y))
+            const cy = fmsub(uz, 0, fr(ux * 0)), cx = fmsub(uy, 0, fr(uz * 1)), cz = fmsub(ux, 1, fr(uy * 0));
+            const len = jgSqrt(fmadd(cz, cz, fmadd(cx, cx, fr(cy * cy))));
+            let lx = 0, ly = 0, lz = 0, lw = 1;
+            if (!(len <= EPS)) {
+                const half = fr(fr(excess / angle) * fr(0.5 * mslAtan2f(len, fmadd(uz, 0, fmadd(ux, 0, fr(uy * 1))))));
+                const sn = fr(sinf(half) / len);
+                lx = fr(cx * sn); ly = fr(cy * sn); lz = fr(cz * sn); lw = cosf(half);
+            }
+            const r = mulInto(lx, ly, lz, lw);
+            q.x = r[0]; q.y = r[1]; q.z = r[2]; q.w = r[3];
+        }
+        const l = fr(fr(q.w * q.w) + fr(fr(q.z * q.z) + fr(fr(q.x * q.x) + fr(q.y * q.y))));
+        if (l <= EPS) { q.x = q.y = q.z = q.w = 0; }
+        else { const k = fr(1 * invSqrtJ(l)); q.x = fr(q.x * k); q.y = fr(q.y * k); q.z = fr(q.z * k); q.w = fr(q.w * k); }
     }
     isKillerLaunchable() {
         if (this.unk29A !== 0) return false;
