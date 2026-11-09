@@ -29,12 +29,14 @@
 // shakes the stake out and is never dragged to the bath: see the report.
 
 import { MsSqrtfHW } from '../math.js';
-import { marioTouchGround4cm } from '../mapobj/lib.js';
+import { marioTouchGround4cm, MsMtxSetRotX } from '../mapobj/lib.js';
 import { fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsMtxSetXYZRPH, JMASSin, JMASCos } from '../math.js';
 import { World, NameRef, HitActor, TakeActor, LiveActor, SpineEnemy, EnemyManager, LiveManager, LF, HF, HC, MSG, nerve, Spine, Stream, Params, PSchema, SPINE_PARAMS,
     ANM_BCK, ANM_BTP, ANM_BRK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, PathNode, GraphWeb } from '../engine.js';
 import { AT } from '../actortypes.js';
-import { Skeleton, parseBCK, jointMatricesBlend } from '../skeleton.js';
+import { Skeleton, parseBCK, jointMatricesBlendExact } from '../skeleton.js';
+import { concat } from '../j3dcalc.js';
+
 import { ObjCollisionManager } from '../mapobj/objcol.js';
 import { mapObjGlobals } from '../mapobj/base.js';
 import type { ItemManager } from '../mapobj/item.js';
@@ -458,6 +460,7 @@ export class BossWanwan extends SpineEnemy {
     joints: mat4[] | null = null;
     /** each joint's matrix in its parent's, as the calc leaves them (the viewer draws these) */
     locals: mat4[] = [];
+    rows: number[][] = [];
     get PB(): any { return this.getSaveParam(); }
     constructor(w: World, name = 'ボスワンワン') {
         super(w, name);
@@ -522,18 +525,12 @@ export class BossWanwan extends SpineEnemy {
         const old = mc.oldIdx >= 0 ? { anm: bck(mc.oldIdx), frame: mc.oldFrame } : null;
         const B = this.baseTR;
         const air = this.isAirborne();
-        const rx = mtx();
-        {
-            const s = MsSin(this.unk168), c = MsCos(this.unk168);
-            rx[5] = c; rx[6] = -s; rx[9] = s; rx[10] = c;
-        }
-        const rot = mat4.fromValues(rx[0], rx[4], rx[8], 0, rx[1], rx[5], rx[9], 0, rx[2], rx[6], rx[10], 0, 0, 0, 0, 1);
-        this.joints = jointMatricesBlend(sk, nw, old, mc.ratio, false, B, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], this.locals, (j, m) => {
-            // (airborne, the root joint drops the animation's translation)
-            if (j === 0 && air) { m[12] = B[3]; m[13] = B[7]; m[14] = B[11]; }
-            // (the ball rolled by unk168: MTXConcat(anmMtx, RotX))
-            if (j === 1) mat4.mul(m, m, rot);
-        }, null, air ? (j) => j === 0 : null);
+        const rx: number[] = new Array(12);
+        MsMtxSetRotX(rx as any, this.unk168);
+        this.joints = jointMatricesBlendExact(sk, nw, old, mc.ratio, !(sk.loadFlags & 1), B, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], (j, cur, m) => {
+            // (the ball rolled by unk168: MTXConcat(anmMtx, RotX), then MTXCopy into J3DSys::mCurrentMtx)
+            if (j === 1) { concat(m, rx, m); for (let n = 0; n < 12; n++) cur[n] = m[n]; }
+        }, null, this.rows, this.locals, air ? (j) => j === 0 : null);
     }
     receiveMessage(sender: HitActor, msg: number): boolean {
         if (sender.isActorType(AT.MARIO)) return false;

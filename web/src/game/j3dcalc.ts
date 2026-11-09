@@ -185,7 +185,7 @@ interface State { cur: number[]; S: [number, number, number]; }
  * mCurrentMtx after the joint's anm matrix is stored (its children see it).
  */
 export function calcJoints(sk: ExactSkeleton, init: CalcMode, base: ArrayLike<number>, scale: [number, number, number],
-    jointCalc: (j: number) => { mode: CalcMode; nw: ExactAnm | null; old: ExactAnm | null; ratio: number; blend: boolean },
+    jointCalc: (j: number) => { mode: CalcMode; nw: ExactAnm | null; old: ExactAnm | null; ratio: number; blend: boolean; zeroT?: boolean },
     cb?: ((j: number, cur: number[]) => void) | null, out: number[][] = []): number[][] {
     const st: State[] = [];
     const rootCur = new Array<number>(12);
@@ -204,6 +204,7 @@ export function calcJoints(sk: ExactSkeleton, init: CalcMode, base: ArrayLike<nu
         const transformOf = (a: ExactAnm | null, dst: TI) => a && a.anm && j < a.anm.joints ? keyTransform(a.anm, a.frame, j, dst) : copyTI(sk.restTI[j], dst);
         if (!c.blend) {
             const t = transformOf(c.nw, ti);
+            if (c.zeroT) { t.tx = 0; t.ty = 0; t.tz = 0; }
             if (c.mode === 'softimage') {
                 trMtx(t.rx, t.ry, t.rz, fmul(t.tx, S[0]), fmul(t.ty, S[1]), fmul(t.tz, S[2]), local);
                 concat(cur, local, cur);

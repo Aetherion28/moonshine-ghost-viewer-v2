@@ -110,7 +110,8 @@ export function jointMatricesExact(sk: Skeleton, anm: ANK1 | null, frame: number
 /** jointMatricesBlend, the game's way: M3UMtxCalcSIAnmBlendQuat (Softimage, or Basic when basic) */
 export function jointMatricesBlendExact(sk: Skeleton, nw: BlendAnm | null, old: BlendAnm | null, ratio: number, basic: boolean, base: Mtx, scale: [number, number, number],
     out: mat4[] = [], post?: ((j: number, cur: number[], anmMtx: number[]) => void) | null,
-    upper?: { joint: number; anm: BlendAnm | null } | null, rows: number[][] = [], locals: mat4[] | null = null): mat4[] {
+    upper?: { joint: number; anm: BlendAnm | null } | null, rows: number[][] = [], locals: mat4[] | null = null,
+    newNoTrans?: ((j: number) => boolean) | null): mat4[] {
     const mode: CalcMode = basic ? 'basic' : 'softimage';
     const curs: number[][] = [];
     const N = nw && nw.anm ? exA(nw) : null, O = old && old.anm ? exA(old) : null;
@@ -119,6 +120,7 @@ export function jointMatricesBlendExact(sk: Skeleton, nw: BlendAnm | null, old: 
     calcJoints(sk, initMode(sk), base, scale, (j) => {
         if (upper) { const p = sk.parent[j]; inUpper[j] = j === upper.joint || (p >= 0 && !!inUpper[p]); }
         if (upper && inUpper[j]) return { mode, nw: U, old: null, ratio: 0, blend: false };
+        if (newNoTrans && newNoTrans(j)) return { mode, nw: N, old: null, ratio: 0, blend: false, zeroT: true };
         if ((!N && !O) || (!N && ratio === 0) || (!O && ratio === 1)) return { mode, nw: null, old: null, ratio, blend: false };
         if (ratio === 0 || !O) return { mode, nw: N, old: null, ratio, blend: false };
         if (ratio === 1 || !N) return { mode, nw: O, old: null, ratio, blend: false };
