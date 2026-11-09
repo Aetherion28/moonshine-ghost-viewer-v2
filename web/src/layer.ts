@@ -168,6 +168,8 @@ export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boo
     bigdaddy: { scene: 'rico_ex0', bmd: 'montemb/momb_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256, npc: 2, look: { c0: [2, 2, 0], c1: [0, 2, 255], parts: 3 }, fludd: true, rig: true,
         // (his joints on Mario's: body chest, koshi / mino waist, arms, legs, kubi and up head; the viewer's own mapping)
         retarget: [14, 2, 2, 16, 17, 18, 22, 23, 24, 3, 4, 6, 8, 9, 11, 26, 26, 26, 26, 26] },
+    bowser: { scene: 'coronaBoss', bmd: 'koopa/koopa_model.bmd', wait: 'koopa/koopa_wait.bck', lo: -123, hi: 2624, fludd: true },
+    bowserjr: { scene: 'coronaBoss', bmd: 'koopajr/koopajr_model.bmd', wait: 'koopajr/koopajr_wait.bck', lo: 0, hi: 140, fludd: true },
     cataquack: { scene: 'mamma0', bmd: 'poihana/default.bmd', wait: 'poihana/poihana_wait.bck', walk: 'poihana/poihana_walk.bck', lo: 0, hi: 191 },
 };
 type SkinData = { data: J3DModelData; wait: any; walk: any; fit: mat4; arc: any; btk: any };
