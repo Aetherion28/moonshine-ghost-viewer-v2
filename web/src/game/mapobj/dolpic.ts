@@ -53,7 +53,8 @@ export class MonumentShine extends MapObjBase {
     constructor(w: World, name = 'モニュメントシャイン') { super(w, name); }
     initMapObj() {
         super.initMapObj();
-        if (this.world.flags.getBool(MSF.SHINE_SHINE_GATE)) { this.unk138a = 0; this.unk13C = 0; this.unk149 = 1; }
+        // Respawn One-Time Shines: JP 0x801BFA48 beq -> b, the not-got path
+        if (!this.world.respawnShines && this.world.flags.getBool(MSF.SHINE_SHINE_GATE)) { this.unk138a = 0; this.unk13C = 0; this.unk149 = 1; }
         else { this.unk138a = 100; this.unk13C = 1000; this.unk149 = 0; }
         this.offHitFilter(HF.NO_COLLISION);
     }
@@ -136,7 +137,8 @@ export class BellDolpic extends MapObjBase {
     initMapObj() {
         super.initMapObj();
         const w = this.world;
-        if ((this.unk13C === 0 && w.flags.getBool(MSF.SHINE_RIGHT_BELL)) || (this.unk13C === 1 && w.flags.getBool(MSF.SHINE_LEFT_BELL))) { this.unk138a = 0; this.unk154 = 0; }
+        // Respawn One-Time Shines: JP 0x801BF378 bne -> b 0x801BF3C8, the not-got path
+        if (!w.respawnShines && ((this.unk13C === 0 && w.flags.getBool(MSF.SHINE_RIGHT_BELL)) || (this.unk13C === 1 && w.flags.getBool(MSF.SHINE_LEFT_BELL)))) { this.unk138a = 0; this.unk154 = 0; }
         else { this.unk138a = 100; this.unk154 = 1000; }
         this.offHitFilter(HF.NO_COLLISION);
     }

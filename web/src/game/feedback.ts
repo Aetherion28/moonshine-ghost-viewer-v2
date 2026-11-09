@@ -131,7 +131,7 @@ export function traceActorsByTick(A: { count: number; qf: Int32Array; key: Uint1
 // mapobj/ricco.ts); sessionCtx.at(field) gives the field's value in the snapshot in effect at this tick.
 
 /** GhostSimulation::Field (ghost_simulation.hxx): the snapshot's byte for a setting */
-export const enum SessionField { RICCO_FRUIT_MACHINE = 35 }
+export const enum SessionField { RESPAWN_SHINES = 13, RICCO_FRUIT_MACHINE = 35 }
 
 /** The current stage's recorded settings, set by the runner around a stage's frames; null: none. */
 export const sessionCtx: { at: ((field: SessionField) => number | null) | null } = { at: null };
@@ -139,6 +139,14 @@ export const sessionCtx: { at: ((field: SessionField) => number | null) | null }
 /** A setting's recorded value at this tick (null without a trace). */
 export function sessionSetting(field: SessionField): number | null {
     return sessionCtx.at ? sessionCtx.at(field) : null;
+}
+
+/** A setting as the stage loaded: the last session record at or before the stage's start (q0), else the first (null: none). */
+export function traceSessionAtStart(S: { qf: number[]; bytes: Uint8Array[] } | undefined, q0: number, field: SessionField): number | null {
+    if (!S || !S.qf.length) return null;
+    let b = S.bytes[0];
+    for (let i = 0; i < S.qf.length && S.qf[i] <= q0; i++) b = S.bytes[i];
+    return field < b.length ? b[field] : null;
 }
 
 /** at(field): the field in the last session record that came at or before this tick (the label q0 + the stage's qf - 1) */

@@ -556,6 +556,8 @@ export class World {
     particleFiles = new Map<number, string>();
     /** TFlagManager's Shine flag of this secret stage's Shine (SMS_getShineIDofExStage): got before the run */
     exShineGot = false;
+    /** Moonshine's Respawn One-Time Shines (features.cpp): the bells' and the Shine gate's initMapObj take the Shine-not-got path */
+    respawnShines = false;
     /** a trace's actors alive at their first record, by exact position (IntroTiming.traceAlive); null without a trace */
     traceAlive: Map<string, boolean> | null = null;
     /** what the trace's first record of the actor at p says: alive, dead, or undefined (no record there) */

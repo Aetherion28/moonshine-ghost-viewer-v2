@@ -13,7 +13,7 @@ import { MarioSample, MarioTrack } from './mario.js';
 import { LiveActor, NameRef, World, calcKeyCode, LF, shineIDofExStage } from './engine.js';
 import { rngCtx, srand, fr } from './math.js';
 import { CraneRotY } from './mapobj/ricco.js';
-import { TraceFeeds } from './feedback.js';
+import { TraceFeeds, traceSessionAtStart, SessionField } from './feedback.js';
 import { npcSinkSetup, npcSinkCounterOf } from './npc/base.js';
 import type { MarioView } from '../ghost/mstr.js';
 import type { TraceActors } from '../ghost/mstrghost.js';
@@ -471,6 +471,9 @@ export function traceShadowMarioEvent(g: any, segment: number, area: number, epi
     return f.getFlag(MSF.SHADOW_MARIO_EVENT);
 }
 
+/** the Shine IDs (0..119) a recorded flag image has got */
+export function traceShineIds(f: FlagManager): number[] { const out: number[] = []; for (let i = 0; i < 120; i++) if (f.getShineFlag(i)) out.push(i); return out; }
+
 export function traceStageCarry(g: any, segment: number): { flags: FlagManager; prevArea: number } | null {
     const ss = segment === 0 && g && g.trace && g.trace.stageStart;
     if (!ss || !ss.flagImage) return null;
@@ -768,6 +771,8 @@ export class SimRunner {
                 if (pe) intro.pauseExits = pe;
                 // Moonshine's Fast text, as the trace's session record has it (none recorded: on, as the sim's default)
                 if (typeof g.header.fastText === 'boolean') intro.fastText = g.header.fastText;
+                // Moonshine's Respawn One-Time Shines as the stage loaded (features.cpp patches the bells' and the Shine gate's initMapObj)
+                if (g.trace && traceSessionAtStart(g.trace.session, q0, SessionField.RESPAWN_SHINES) === 1) intro.respawnShines = true;
                 // Delfino Plaza's own opening demo (DEMO_FLAG_CAMERA_DEMO_ON_START): Mario comes in late, the
                 // first sample 7 ticks after setMario (stagechange.ts LiveDirector), as a live run records it
                 if (seg.route.area === 1 && td !== null) intro.plazaDemo = true;   // (a trace: its director went through the demo, which ended at td)
@@ -791,6 +796,7 @@ export class SimRunner {
                     // a secret course's Shine already got (its red coin switch is out, he keeps FLUDD): the recorded flags say so
                     const exId = shineIDofExStage(area);
                     if (exId !== 0xFF) intro.exShineGot = c.flags.getShineFlag(exId);
+                    intro.traceShines = traceShineIds(c.flags);
                     const first = g.trace.ticks.find((t: any) => t.mario && t.mario.status >>> 0 !== 0x133F) as { mario: MarioView } | undefined;   // (past the stage's load pose: setMario's first)
                     if (area === 1 && first) {
                         intro.marioPosIdx = decideMarioPosIdx(traceStageCarry(g, segI)!.flags, area, c.prevArea).posIdx;

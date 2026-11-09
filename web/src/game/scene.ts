@@ -80,6 +80,12 @@ export class Stage {
         if (carried) w.flags = carried;
         w.exShineGot = carried ? shineIDofExStage(map) !== 0xFF && w.flags.getShineFlag(shineIDofExStage(map)) : !!(intro && intro.exShineGot);
         w.flags.setupStage(map, stage, w.exShineGot, shineIDofExStage(map), !carried);
+        // a trace's save as recorded: exactly its Shines and its count, in place of the ones flags.ts inferred
+        if (intro && intro.traceShines) {
+            for (let i = 0; i < 120; i++) w.flags.setFlag(MSF.SHINE_BASE + i, intro.traceShines.includes(i) ? 1 : 0);
+            w.flags.setFlag(MSF.SHINE_COUNT, intro.traceShines.length);
+        }
+        w.respawnShines = !!(intro && intro.respawnShines);
         w.marioPosIdx = intro && intro.marioPosIdx ? intro.marioPosIdx : 0;
         w.traceAlive = intro && intro.traceAlive ? intro.traceAlive : null;
         w.traceHitFilter = intro && intro.traceHitFilter ? intro.traceHitFilter : null;

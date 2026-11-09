@@ -2016,6 +2016,8 @@ export interface IntroTiming {
     firstSample?: number;
     /** a secret stage's Shine was got before the run (the ghost saw FLUDD on Mario): its red coin switch is there and he keeps FLUDD */
     exShineGot?: boolean;
+    /** a trace's first stage: the Shines its stage-start flag image has got (the save as recorded) */
+    traceShines?: number[];
     /** live play from the viewer's sleeping Mario: setMario lays him down asleep (sleepingStart) at this
      * phase (0..1) of sleep_wait instead of the stage's start; null: the stage's own start */
     sleepPhase?: number | null;
@@ -2044,6 +2046,8 @@ export interface IntroTiming {
     pauseExits?: Map<number, number>;
     /** Moonshine's Fast text was on (the trace's session record); unset: the talk director's default */
     fastText?: boolean;
+    /** Moonshine's Respawn One-Time Shines was on as the stage loaded (the trace's session record) */
+    respawnShines?: boolean;
 }
 
 /**
