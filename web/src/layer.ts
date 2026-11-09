@@ -160,16 +160,16 @@ function pinShineDemo(inst: J3DModelInstanceSimple, o: any) {
  * the model comes from; rig: posed on Mario's joints (Il Piantissimo's model has Mario's 29, and the
  * game plays Mario's BCKs on it); else the whole model on Mario's root, scaled to Mario's height (150).
  */
-export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number }> = {
+export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number; npc?: number }> = {
     piantissimo: { scene: 'mamma4', bmd: 'map/map/pad/monteman_model.bmd', rig: true },
-    piantaM: { scene: 'ricco5', bmd: 'montem/mom_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
-    piantaA: { scene: 'ricco5', bmd: 'montema/moma_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
-    piantaB: { scene: 'ricco5', bmd: 'montemb/momb_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
-    piantaC: { scene: 'ricco5', bmd: 'montemc/momc_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
-    piantaD: { scene: 'ricco5', bmd: 'montemd/momd_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
+    piantaM: { scene: 'ricco5', npc: 0, bmd: 'montem/mom_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
+    piantaA: { scene: 'ricco5', npc: 1, bmd: 'montema/moma_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
+    piantaB: { scene: 'ricco5', npc: 2, bmd: 'montemb/momb_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
+    piantaC: { scene: 'ricco5', npc: 3, bmd: 'montemc/momc_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
+    piantaD: { scene: 'ricco5', npc: 4, bmd: 'montemd/momd_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
     cataquack: { scene: 'mamma0', bmd: 'poihana/default.bmd', wait: 'poihana/poihana_wait.bck', walk: 'poihana/poihana_walk.bck', lo: 0, hi: 191 },
 };
-type SkinData = { data: J3DModelData; wait: any; walk: any; fit: mat4 };
+type SkinData = { data: J3DModelData; wait: any; walk: any; fit: mat4; arc: any };
 class MarioMirror {
     public mario: MarioModel;
     public yoshi: YoshiModel | null = null;
@@ -199,7 +199,7 @@ class MarioMirror {
     private lastPos: number[] | null = null;
     /** the stand-in model for this Mario (MARIO_SKINS), or none */
     setSkin(r: SunshineRenderer, name: string, sd: SkinData | null) {
-        if (name === this.skinName && (!!this.skin === !!sd)) return;
+        if (name === this.skinName && (!!this.skin === !!sd) && (!this.skin || this.skin.modelData.realized)) return;
         if (this.skin) { const old = this.skin; r.modelInstances = r.modelInstances.filter((x) => x !== old); this.skin = null; }
         this.skinName = name;
         if (!sd) return;
@@ -208,6 +208,10 @@ class MarioMirror {
         (m as any).isPlayer = true;
         setAmbient([m], r.playerAmbient);
         const spec = MARIO_SKINS[name];
+        // (as an NPC of its kind looks with colour index 0, no goop, and the real textures in place of the placeholders)
+        const cache = r.renderHelper.renderInstManager.gfxRenderCache;
+        swapTextures(r.renderHelper.device, cache, sd.arc, [m]);
+        if (spec.npc !== undefined) { npcDress(m, spec.npc, { c0: [0, 0, 0], c1: [0, 0, 0], parts: 0 }); npcGoop(m, spec.npc, [255, 255, 255, 0]); }
         if (spec.rig) pinJoints(m, () => this.rig && this.rig.bones);
         else if (sd.wait) m.bindANK1(sd.wait);
         (m as any).skinFit = sd.fit; (m as any).skinData = sd;
@@ -294,9 +298,12 @@ export class GameLayer {
     public skin = 'mario';
     private skins = new Map<string, SkinData | null>();
     private skinsLoading = new Set<string>();
+    private skinsFor: SunshineRenderer | null = null;
     /** a stand-in's model data once loaded (null until then, or when the disc lacks it) */
     private skinData(name: string): SkinData | null {
-        if (this.skins.has(name)) return this.skins.get(name)!;
+        // (a stage change destroys the renderer and the model data it drew: load again for the new one)
+        if (this.skinsFor !== this.renderer) { this.skins.clear(); this.skinsLoading.clear(); this.skinsFor = this.renderer; }
+        if (this.skins.has(name)) { const d = this.skins.get(name)!; if (!d || d.data.realized) return d; this.skins.delete(name); this.skinsLoading.delete(name); }
         const spec = MARIO_SKINS[name], fs = this.fs, r = this.renderer;
         if (!spec || !fs || !r || this.skinsLoading.has(name)) return null;
         this.skinsLoading.add(name);
@@ -314,7 +321,8 @@ export class GameLayer {
             const lo = spec.lo ?? 0, hi = spec.hi ?? 150;
             const fit = mat4.create();
             if (!spec.rig && hi > lo) { const k = 150 / (hi - lo); mat4.scale(fit, fit, [k, k, k]); mat4.translate(fit, fit, [0, -lo, 0]); }
-            this.skins.set(name, { data, wait: bck(spec.wait), walk: bck(spec.walk), fit });
+            if (this.renderer !== r) { data.destroy(this.device); return; }
+            this.skins.set(name, { data, wait: bck(spec.wait), walk: bck(spec.walk), fit, arc });
         })().catch((e) => { console.warn('[skin]', name, e); this.skins.set(name, null); });
         return null;
     }
