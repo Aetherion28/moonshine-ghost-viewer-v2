@@ -492,9 +492,9 @@ export class MapObjBase extends LiveActor {
         // a BCK playing, the root joint where its animation has it, not at rest)
         if (cue & CUE_CALC_ANIM) this.modelCalcRoot();
     }
-    /** getModel()->calc()'s getAnmMtx(0) (kept only where MOF.UNK8's collision reads it) */
+    /** getModel()->calc()'s getAnmMtx(0) (kept where getRootJointMtx returns it: MOF.UNK8 or a Y offset) */
     modelCalcRoot() {
-        if (!this.checkMapObjFlag(MOF.UNK8)) return;
+        if (!this.checkMapObjFlag(MOF.UNK8) && this.yOffset === 0) return;
         this.anmRoot = null;
         this.anmRoot = this.animatedRoot() || Float64Array.from(this.rootMtx());
     }
