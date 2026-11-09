@@ -29,7 +29,7 @@ import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { mat4 } from 'gl-matrix';
-import { Skeleton, parseBCK, jointMatricesBlend } from '../skeleton.js';
+import { Skeleton, parseBCK, jointMatricesBlendExact } from '../skeleton.js';
 import { psVecNormalize, psVecMag, force25 } from '../camera/lib.js';
 import { SplinePath } from '../spline.js';
 import { MsMtxSetRotX, MsMtxSetRotY, MsMtxSetRotZ, MTXConcat } from '../mapobj/lib.js';
@@ -856,6 +856,7 @@ export class BossGesso extends SpineEnemy {
     mc = { newIdx: -1, oldIdx: -1, oldFrame: 0, ratio: 0 };
     joints: mat4[] | null = null;
     locals: mat4[] = [];
+    rows: number[][] = [];
     get BP(): any { return this.getSaveParam(); }
     get tevColor0() { return null; }
     constructor(w: World, name = 'ボスゲッソー') {
@@ -901,22 +902,22 @@ export class BossGesso extends SpineEnemy {
         const mc = this.mc, fc = a.getFrameCtrl(ANM_BCK);
         const nw = mc.newIdx >= 0 ? { anm: bck(mc.newIdx), frame: fc ? fc.frame : 0 } : null;
         const old = mc.oldIdx >= 0 ? { anm: bck(mc.oldIdx), frame: mc.oldFrame } : null;
-        let beakScale = 1;
-        this.joints = jointMatricesBlend(sk, nw, old, mc.ratio, true, this.baseTR, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], this.locals, (j, m) => {
+        this.joints = jointMatricesBlendExact(sk, nw, old, mc.ratio, true, this.baseTR, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], (j, cur, m) => {
             if (j !== 26) return;
             const b = this.mBeak;
             if (b && b.isTaken()) {
-                m[12] = b.pos.x; m[13] = fr(b.pos.y + 50); m[14] = b.pos.z;
+                m[3] = b.pos.x; m[7] = fr(b.pos.y + 50); m[11] = b.pos.z;
                 const d = V3.sub(b.pos, this.pos).fround();
                 let k = psVecMag(d);
                 k = k > 0 ? fr(300 / k) : 1;
                 if (k > 1) k = 1;
-                beakScale = k;   // (its X and Z columns: the joint only, after its children took it)
+                for (let i = 0; i < 12; i++) cur[i] = m[i];
+                for (const i of [0, 4, 8, 2, 6, 10]) m[i] = fr(m[i] * k);
             } else if (this.mAttackMode === ASTATE_GUARD) {
-                m[0] = fr(m[0] * fr(0.02)); m[1] = fr(m[1] * fr(0.02)); m[2] = fr(m[2] * fr(0.02));
+                for (const i of [0, 4, 8]) m[i] = fr(m[i] * fr(0.02));
+                for (let i = 0; i < 12; i++) cur[i] = m[i];
             }
-        });
-        if (beakScale !== 1 && this.joints[26]) { const m = this.joints[26]; for (const i of [0, 1, 2, 8, 9, 10]) m[i] = fr(m[i] * beakScale); }
+        }, null, this.rows, this.locals);
     }
     /** rumblePad: with Mario on the ground, within 3000 of p: SMSRumbleMgr->start(8, &unk1A4), unk1A4 = (3000 - dist) / 1000 (at most 1), times 0.4 / 0.7 / 1 by kind */
     rumblePad(k: number, p: V3) {

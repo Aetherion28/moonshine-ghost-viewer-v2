@@ -43,7 +43,7 @@ import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import { holdKey } from '../sound.js';
 import { mat4 } from 'gl-matrix';
-import { Skeleton, parseBCK, jointMatricesBlend } from '../skeleton.js';
+import { Skeleton, parseBCK, jointMatricesBlendExact } from '../skeleton.js';
 import { jNormalize } from './jgeom.js';
 import { throwMario } from './koopa.js';
 import type { WaterHitActor } from '../water.js';
@@ -193,6 +193,7 @@ export class BossManta extends SpineEnemy {
     unk188 = 0; mGeneration = 0; unk190 = 0; unk194 = 0; unk198 = 0; unk19C = 0; unk1A0 = 0; unk1A4 = 0;
     /** the motion blend: the BCK it blends toward (setBckOldMotionBlendAnmPtr), the old frame (keepCurAnm), the ratio */
     mc = { oldIdx: -1, oldFrame: 0, ratio: 0 };
+    rows: number[][] = [];
     joints: mat4[] | null = null;
     /** each joint's matrix in its parent's (the viewer draws these) */
     locals: mat4[] = [];
@@ -378,7 +379,7 @@ export class BossManta extends SpineEnemy {
         const nw = cur >= 0 ? { anm: bck(cur), frame: fc ? fc.frame : 0 } : null;
         // TODO: TMotionBlendCtrl::execSimpleMotionBlend also takes its step (unk4) off the ratio before the calc; not known here
         const old = this.mc.oldIdx >= 0 && this.mc.ratio > 0 ? { anm: bck(this.mc.oldIdx), frame: this.mc.oldFrame } : null;
-        this.joints = jointMatricesBlend(sk, nw, old, old ? this.mc.ratio : 0, false, this.baseTR, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], this.locals);
+        this.joints = jointMatricesBlendExact(sk, nw, old, old ? this.mc.ratio : 0, !(sk.loadFlags & 1), this.baseTR, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], null, null, this.rows, this.locals);
     }
     isDamageable() {
         if (this.unk1A0 > 0) return false;

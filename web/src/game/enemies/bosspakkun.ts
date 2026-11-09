@@ -10,7 +10,7 @@
 // in it and his head turns toward Mario.
 
 import { V } from '../version.js';
-import { marioTouchGround4cm } from '../mapobj/lib.js';
+import { marioTouchGround4cm, MsMtxSetRotX } from '../mapobj/lib.js';
 import { fr, V3, JMASSin, JMASCos, s16, rand, JMAHermiteInterpolation, MsSin, MsCos, MsGetRotFromZaxisY, MsAngleDiff, MsWrap } from '../math.js';
 import { World, SpineEnemy, EnemyManager, LF, HF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, MActor, readParams, SPINE_PARAMS, PSchema, CUE_MOVE, CUE_CALC_ANIM, NameRef, ANM_BRK, ANM_BTK, ANM_FRAME_RATE, MoveCollision, PathNode, LiveActor } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -22,7 +22,8 @@ import type { ItemManager } from '../mapobj/item.js';
 import { register } from '../scene.js';
 import { emitInfo, EmitInfo } from '../water.js';
 import { mat4 } from 'gl-matrix';
-import { Skeleton, parseBCK, jointMatricesBlend } from '../skeleton.js';
+import { Skeleton, parseBCK, jointMatricesBlendExact } from '../skeleton.js';
+import { concat } from '../j3dcalc.js';
 
 const BOSS_PARAMS = {
     ...SPINE_PARAMS,
@@ -368,6 +369,7 @@ export class BossPakkun extends SpineEnemy {
     mc = { newIdx: -1, oldIdx: -1, oldFrame: 0, ratio: 0 };
     /** each joint's matrix in its parent's, as the calc left it (the viewer draws these) */
     locals: mat4[] = [];
+    rows: number[][] = [];
     private calcJoints() {
         const a = this.mactor;
         if (!a) return;
@@ -378,27 +380,29 @@ export class BossPakkun extends SpineEnemy {
         const mc = this.mc, fc = a.getFrameCtrl(ANM_BCK);
         const nw = mc.newIdx >= 0 ? { anm: bck(mc.newIdx), frame: fc ? fc.frame : 0 } : null;
         const old = mc.oldIdx >= 0 ? { anm: bck(mc.oldIdx), frame: mc.oldFrame } : null;
-        this.joints = jointMatricesBlend(sk, nw, old, mc.ratio, true, this.baseTR, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], this.locals, (j, m) => {
-            this.calcBellyScale(j, m);
-            this.calcHeadDir(j, m);
-        });
+        this.joints = jointMatricesBlendExact(sk, nw, old, mc.ratio, true, this.baseTR, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], (j, cur, m) => {
+            this.calcBellyScale(j, cur, m);
+            this.calcHeadDir(j, cur, m);
+        }, null, this.rows, this.locals);
     }
     /** TBossPakkunMtxCalc::calcBellyScale: the belly (joints 4 and 36) swells with the water mark */
-    private calcBellyScale(j: number, m: mat4) {
+    private calcBellyScale(j: number, cur: number[], m: number[]) {
         if (j !== 4 && j !== 36) return;
         let t: number;
         if (this.unk17C !== 0) t = fr(this.unk1B8 / 50);
         else { const lim = this.P.mSLWaterMarkLimit; t = fr(Math.min(this.unk178, lim) / lim); }
         const b = JMAHermiteInterpolation(t, 0, 0, 10, 1, 1, 0);
         const [g, s0] = j === 36 ? [[1.4, 1.4, 1.6], [1, 0.8, 0.8]] : [[1.3, 1.7, 1.7], [1, 0.9, 0.9]];
-        mat4.scale(m, m, [0, 1, 2].map((k) => fr(b * fr(fr(g[k]) - fr(s0[k])) + fr(s0[k]))) as [number, number, number]);
+        const k = [0, 1, 2].map((i) => fr(b * fr(fr(g[i]) - fr(s0[i])) + fr(s0[i])));
+        concat(m, [k[0], 0, 0, 0, 0, k[1], 0, 0, 0, 0, k[2], 0], m);
+        for (let i = 0; i < 12; i++) cur[i] = m[i];
     }
-    /** TBossPakkunMtxCalc::calcHeadDir: the head (joint 18) turns toward Mario while he waits, 1° a calc, at most mSLHeadHomingLimit */
-    private calcHeadDir(j: number, m: mat4) {
+    /** TBossPakkunMtxCalc::calcHeadDir: joint 18 turns toward Mario by unk184 (MTXConcat on the anm matrix and on J3DSys::mCurrentMtx) */
+    private calcHeadDir(j: number, cur: number[], m: number[]) {
         if (j !== 18) return;
         const mario = this.world.mario.pos;
-        const toMario = new V3(fr(mario.x - m[12]), fr(mario.y - m[13]), fr(mario.z - m[14]));
-        const axis = new V3(m[4], 0, m[6]);
+        const toMario = new V3(fr(mario.x - m[3]), fr(mario.y - m[7]), fr(mario.z - m[11]));
+        const axis = new V3(m[1], 0, m[9]);
         let hr = this.unk184;
         const headAngle = MsGetRotFromZaxisY(axis);
         const desired = this.mactor!.checkCurBckFromIndex(25) ? MsWrap(fr(hr + MsGetRotFromZaxisY(toMario)), 0, 360) : headAngle;
@@ -407,8 +411,10 @@ export class BossPakkun extends SpineEnemy {
         const turn = MsAngleDiff(ld, hr);
         hr = fr(hr + (turn > 0 ? Math.min(turn, 1) : Math.max(turn, -1)));
         this.unk184 = hr;
-        const sn = MsSin(hr), c = MsCos(hr);
-        mat4.mul(m, m, mat4.fromValues(1, 0, 0, 0, 0, c, sn, 0, 0, -sn, c, 0, 0, 0, 0, 1));
+        const r: number[] = new Array(12);
+        MsMtxSetRotX(r as any, hr);
+        concat(m, r, m);
+        concat(cur, r, cur);
     }
     /** getJointTransByIndex */
     getJointTrans(i: number): V3 {
