@@ -26,8 +26,9 @@
 // TODO: ball.bmd is taken as a unit sphere and the texel at its centre; the GPU's rasterisation of its
 // polygons (and the exact depth conversion) differs a little.
 
-import { fr, V3, Quat } from './math.js';
-import { jgSqrt } from './vecops.js';
+import { fr, V3, Quat, sinf, cosf } from './math.js';
+import { fmadd, invSqrtJ } from './player/fmath.js';
+import { jgSqrt, vDot } from './vecops.js';
 import { takeFeedback, feedbackFloat, FeedbackConsumer } from './feedback.js';
 import { World, Stream, NameRef, CUE_MOVE, HitActor, MSG, HF, HC, readParams, PSchema } from './engine.js';
 import { AT } from './actortypes.js';
@@ -75,14 +76,15 @@ function getGravityDir(D: BathtubData, amount: number) {
 }
 /** getPos: the i-th of j points round the bowl, a spiral from the rim (i = 0) to the bottom */
 function getPos(D: BathtubData, i: number, j: number, h: number) {
+    // JP 0x801F9C10: MSL sinf / cosf, each add one fmadds
     const angle = fr(i * fr(PI / 10)), t = fr(i / j), amp = fr(t * fr(D.unk3C - h));
     const r = D.mPos.clone();
-    const s = fr(amp * fr(Math.sin(angle)));
-    r.x = fr(r.x + fr(at(D, 0, 0) * s)); r.y = fr(r.y + fr(at(D, 0, 1) * s)); r.z = fr(r.z + fr(at(D, 0, 2) * s));
-    const c = fr(amp * fr(Math.cos(angle)));
-    r.x = fr(r.x + fr(at(D, 2, 0) * c)); r.y = fr(r.y + fr(at(D, 2, 1) * c)); r.z = fr(r.z + fr(at(D, 2, 2) * c));
+    const s = fr(amp * sinf(angle));
+    r.x = fmadd(at(D, 0, 0), s, r.x); r.y = fmadd(at(D, 0, 1), s, r.y); r.z = fmadd(at(D, 0, 2), s, r.z);
+    const c = fr(amp * cosf(angle));
+    r.x = fmadd(at(D, 2, 0), c, r.x); r.y = fmadd(at(D, 2, 1), c, r.y); r.z = fmadd(at(D, 2, 2), c, r.z);
     const y = fr(fr(1 - t) * -fr(D.unk44 - h));
-    r.x = fr(r.x + fr(at(D, 1, 0) * y)); r.y = fr(r.y + fr(at(D, 1, 1) * y)); r.z = fr(r.z + fr(at(D, 1, 2) * y));
+    r.x = fmadd(at(D, 1, 0), y, r.x); r.y = fmadd(at(D, 1, 1), y, r.y); r.z = fmadd(at(D, 1, 2), y, r.z);
     return r;
 }
 // JGeometry::TUtil<f32>::sqrt (frsqrte + one Newton step, then x * that), not Math.sqrt.
@@ -106,10 +108,11 @@ export class Drop {
     doThing(damp: number) { this.unk0.add(this.unk18.i).add(this.unk18.f); this.unkC.scale(damp).add(this.unk30.i).add(this.unk30.f); }
     /** calcBathtub: pushed out of the bowl's wall / floor, or over its outer rim; gravity; the ones inside counted */
     calcBathtub(D: BathtubData, radius: number, grav1: V3, grav2: V3, acc: { count: number; accum: V3 }) {
-        const m = new V3(at(D, 0, 1), at(D, 1, 1), at(D, 2, 1));
+        // JP 0x801F9E8C: m is the matrix's row 1 (0x24..0x2C; the decomp has column 1); the dots are fused (y, x, z)
+        const m = new V3(at(D, 1, 0), at(D, 1, 1), at(D, 1, 2));
         const delta = V3.sub(this.unk0, D.mPos);
         const outerR = fr(D.unk40 + radius), innerR = fr(D.unk3C - radius);
-        const distSq = fr(delta.squared()), proj = dot(m, delta);
+        const distSq = vDot(delta, delta), proj = vDot(m, delta);
         if (distSq <= fr(outerR * outerR)) {
             if (proj < 0) {
                 if (distSq >= fr(innerR * innerR)) {
@@ -117,7 +120,7 @@ export class Drop {
                     const dist = jgSqrt(distSq), pen = fr(dist - innerR), inv = fr(-1 / dist);
                     const n = delta.clone().scale(inv);
                     this.unk18.extend(n.clone().scale(pen));
-                    let c = -dot(n, this.unkC);
+                    let c = -vDot(n, this.unkC);
                     if (c < 0) c = 0;
                     this.unk30.extend(n.clone().scale(c).add(D.unk58));
                 } else {
@@ -132,9 +135,9 @@ export class Drop {
         } else {
             if (proj > 0 && proj < fr(radius + D.unk48) && distSq > fr(innerR * innerR) && distSq < fr(outerR * outerR)) {
                 this.unk18.extend(m.clone().scale(fr(fr(radius + D.unk48) - proj)));
-                const r = m.clone().scale(fr(1.5 * -dot(m, this.unkC)));
-                const thing = delta.clone(), l = thing.length();
-                if (l > 0) thing.scale(fr(fr(0.01 * radius) / l));   // setLength
+                const r = m.clone().scale(fr(1.5 * -vDot(m, this.unkC)));
+                const thing = delta.clone();   // setLength: lsq <= epsilon zeroes it, else scale by length * inv_sqrt(lsq)
+                if (distSq <= 3.81469727e-06) thing.zero(); else thing.scale(fr(fr(0.01 * radius) * invSqrtJ(distSq)));
                 r.add(thing);
                 this.unk30.extend(r);
                 this.unk30.extend(grav2);
