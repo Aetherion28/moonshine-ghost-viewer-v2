@@ -93,6 +93,7 @@ The viewer also draws what the game draws, so a ported object that the viewer ca
 11. Commit messages end with the attribution lines your session's system reminder gives (Co-Authored-By, Claude-Session). Use yours, not ones copied from old commits.
 12. Sirena (Manta Storm, scene sirena0): don't work on its drifts. Refactoring code it uses is fine.
 13. The user is short on usage: work quickly, avoid probes that don't decide anything, and don't spawn helpers unless the user asks.
+15. **Nothing more will be recorded in the traces** (the user, 2026-11-09). Don't ask Moonshine for new record fields; work from what traces already hold, the decomp, the DOL and (for ground truth) Dolphin.
 14. Say episodes, not scene numbers: scene files count from 0, so the `ricco5` scene is Ricco Harbor episode 6.
 
 ## 3. Build and deploy
