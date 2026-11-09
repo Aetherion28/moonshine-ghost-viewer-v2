@@ -36,7 +36,7 @@ import { DIR } from '../player/player.js';
 import { World, HitActor, LiveActor, SpineEnemy, EnemyManager, LiveManager, LF, HF, HC, MSG, nerve, Spine, Stream, Params, PSchema,
     ANM_BCK, ANM_BTP, ANM_BTK, ANM_BRK, ANM_FRAME_RATE, FC_ONCE, CUE_MOVE, CUE_CALC_ANIM, PathNode, FrameCtrl, MoveCollision } from '../engine.js';
 import { AT } from '../actortypes.js';
-import { Skeleton, parseBCK, jointMatricesBlend } from '../skeleton.js';
+import { Skeleton, parseBCK, jointMatricesBlendExact } from '../skeleton.js';
 import { mapObjGlobals } from '../mapobj/base.js';
 import { marioGroundPlane, marioTouchGround4cm } from '../mapobj/lib.js';
 import { ratioF } from '../camera/lib.js';
@@ -216,6 +216,7 @@ export abstract class BHPartsBase extends LiveActor {
     unk110: NpcInbetween;
     /** the BCK before the current one and its frame (MActor's TMotionBlendCtrl), and the frame the old one is drawn at */
     oldBck = -1; oldBckFrame = 0; oldAnmFrame = 0;
+    rows: number[][] = [];
     joints: mat4[] | null = null; locals: mat4[] = [];
     constructor(public owner: BossHanachan, type: number, modelIndex: number, name: string) {
         super(owner.world, name);
@@ -251,7 +252,7 @@ export abstract class BHPartsBase extends LiveActor {
         const nw = cur >= 0 ? { anm: bck(cur), frame: fc ? fc.frame : 0 } : null;
         const r = this.unk110.ratio;
         const old = r > 0 && this.oldBck >= 0 ? { anm: bck(this.oldBck), frame: this.oldAnmFrame } : null;
-        this.joints = jointMatricesBlend(sk, nw, old, old ? r : 0, false, this.baseTR, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], this.locals);
+        this.joints = jointMatricesBlendExact(sk, nw, old, old ? r : 0, !(sk.loadFlags & 1), this.baseTR, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], null, null, this.rows, this.locals);
     }
     /** TNpcInbetween::execMotionBlend (the old BCK's frame: one frame on from the current when the ratio is forced) */
     execMotionBlend() {

@@ -46,7 +46,7 @@ import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { mat4 } from 'gl-matrix';
-import { Skeleton, parseBCK, jointMatricesBlend } from '../skeleton.js';
+import { Skeleton, parseBCK, jointMatricesBlend, jointMatricesBlendExact } from '../skeleton.js';
 import { psVecNormalize } from '../camera/lib.js';
 import { MTXConcat } from '../mapobj/lib.js';
 import { mapObjGlobals } from '../mapobj/base.js';
@@ -694,6 +694,7 @@ export class BossEel extends SpineEnemy {
     moguCameraActive = false;
     collisionEnabled = true;
     /** the motion blend (initBckNormalMotionBlend): the BCK it blends from, its frame then */
+    rows: number[][] = [];
     mc = { newIdx: -1, oldIdx: -1, oldFrame: 0 };
     joints: mat4[] | null = null;
     /** each joint's matrix in its parent's, as the calc leaves them (the viewer draws these) */
@@ -769,7 +770,7 @@ export class BossEel extends SpineEnemy {
         const mc = this.mc, fc = a.getFrameCtrl(ANM_BCK);
         const nw = mc.newIdx >= 0 ? { anm: bck(mc.newIdx), frame: fc ? fc.frame : 0 } : null;
         const old = mc.oldIdx >= 0 ? { anm: bck(mc.oldIdx), frame: mc.oldFrame } : null;
-        this.joints = jointMatricesBlend(sk, nw, old, this.bckBlendRatio, false, this.baseTR, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], this.locals);
+        this.joints = jointMatricesBlendExact(sk, nw, old, this.bckBlendRatio, !(sk.loadFlags & 1), this.baseTR, [this.scale.x, this.scale.y, this.scale.z], this.joints || [], null, null, this.rows, this.locals);
     }
     setBckAnm(i: number) {
         const a = this.mactor!, fc0 = a.getFrameCtrl(ANM_BCK);
