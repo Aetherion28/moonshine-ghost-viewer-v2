@@ -256,17 +256,17 @@ Common JP callers: 0x800c2458/24ac/2504 TTrembleModelEffect::tremble (Mario's ca
 - Object order inside a perform list decides RNG order; check it against the trace's callers.
 - Moonshine patches the game's code for some settings (pr69 src/features.cpp: FBEGIN / FWORD / FHALFHI lines with the JP / US / PAL addresses). When the game does something the decomp can't explain, map the function's address against features.cpp and check the setting in the trace's session record (all session fields: include/susamune/ghost_simulation.hxx).
 
-## 11. Current state (2026-11-08)
+## 11. Current state (2026-11-09)
 
-First drift per trace, 141 batch traces (runs77):
+First drift per trace, 141 batch traces (runs93):
 
 | Desync | Runs |
 |---|---|
 | under 5 s | 0 |
-| 5–15 s | 8 |
-| 15–30 s | 26 |
-| 30 s+ | 13 |
-| never | 94 |
+| 5–15 s | 7 |
+| 15–30 s | 22 |
+| 30 s+ | 15 |
+| never | 97 |
 
 The big port of 2026-11-06 (one commit, see the fix log) added most of the decomp's remaining classes. Name scans (`missing.py`) went from 397 methods with no counterpart to about 343; the rest are mostly drawing, saving and particle code and functions present under other names.
 
@@ -322,7 +322,7 @@ The big port of 2026-11-06 (one commit, see the fix log) added most of the decom
 
 ## 14. Fix log (newest first)
 
-- 2026-11-09 The stage takes the trace's stage-start flag image's Shines exactly (its Shines and count, scene.ts, intro.traceShines from runner.ts / pm.ts), and Moonshine's Respawn One-Time Shines (session field 13, on in these traces) is honoured: features.cpp patches JP 0x801BF378 (TBellDolpic::initMapObj, bne -> b to the not-got path), 0x801BFA48 (TMonumentShine::initMapObj, beq -> b) and 0x801D72E8 (TWaterHitPictureHideObj::loadAfter, beq -> b; the sim has no got-Shine path there yet), so a got bell doesn't ring on its first control (the game's dolpic10 traces have no ring rand call, 0x801BF284). World.respawnShines from the session record in effect at the stage start (feedback.ts traceSessionAtStart). The image is taken before ILing::beforeStageSetup's overlay (ghost_stage_context.cpp: GhostTrace::stageSetup comes before director->setup), so an IL entry's overlay isn't in it; these runs didn't need it. Delfino Plaza c/A7E1056F_…066 1832 -> never; …068, …069, …06A, …06C, …06D stay in sync; …078 (2880), …07F (2344) and Ricco b/41726535_…040 (3368) unchanged. No full batch (the user's say).
+- 2026-11-09 The stage takes the trace's stage-start flag image's Shines exactly (its Shines and count, scene.ts, intro.traceShines from runner.ts / pm.ts), and Moonshine's Respawn One-Time Shines (session field 13, on in these traces) is honoured: features.cpp patches JP 0x801BF378 (TBellDolpic::initMapObj, bne -> b to the not-got path), 0x801BFA48 (TMonumentShine::initMapObj, beq -> b) and 0x801D72E8 (TWaterHitPictureHideObj::loadAfter, beq -> b; the sim has no got-Shine path there yet), so a got bell doesn't ring on its first control (the game's dolpic10 traces have no ring rand call, 0x801BF284). World.respawnShines from the session record in effect at the stage start (feedback.ts traceSessionAtStart). The image is taken before ILing::beforeStageSetup's overlay (ghost_stage_context.cpp: GhostTrace::stageSetup comes before director->setup), so an IL entry's overlay isn't in it; these runs didn't need it. Delfino Plaza c/A7E1056F_…066 1832 -> never; …068, …069, …06A, …06C, …06D stay in sync; …078 (2880), …07F (2344) and Ricco b/41726535_…040 (3368) unchanged. runs93 vs runs90 (the last full batch; it also covers the bath-water commits since): 1 better (…066 1832 -> never), 0 worse.
 - 2026-11-09 The bath water and the tub, all from the DOL (no full batch, on the user's say). TBathtubData::unk18 is the tub's rotation **transposed** (calcBathtubData JP 0x801D2450 stores root[c][r] at 0x188 + (r*3 + c)*4); the port copied it untransposed, so its readers were half right. Now stored as the DOL and every reader matches its DOL offsets: getPos, calcBathtub (row 1), the overflow's axis (row 1, JP 0x801F9758), throwMario (JP 0x801FA8BC), allowsTumble / setupCollisions (`bathLocal`, fused y, x, z). Also: calcBathtubData's tilt (fnmsubs) and tumble lean (`quatRotateJ`, the DOL's fused q v q*); getGravityDir (JP 0x801FA680); setupCollisions_ (JP 0x801D1FBC: MSL atan2f / sinf / cosf, the slice matrix multiplied out inline); the overflow ball's upward speed is get_float(0, 10), not 0..1 (it never spawns in coronaBoss anyway: bathwater_overflow.prm has numDrops 0); load's unk44 with MSL sinf; the drop-out threshold fused under unk65. TBathWaterManager is in scene.bin's インダイレクトシーン group, which PerformList Movement (/data/PerformLists.bin) runs after the event group, so it now performs there (World.indirectScene, scene.ts), not in the conductor. coronaBoss a/2A1D8909_…028 stays at 1712.
 - 2026-11-09 Harness: tdiff.sh honours PMB (it always ran the old pm_fb.mjs: the "2 ulp at tick 182" was that stale bundle; with the current one Mario is exact until 1709); snd.ts prints whole sound records (they hold the sound's position).
 - 2026-11-09 TBathtub::updatePosture_ (JP 0x801D0C50: the up vector, crosses, dots and quaternion products fused as the DOL; MSL acosf = pi/2 - atanf(x * _inv_sqrtf(1 - x*x)), _inv_sqrtf three Newton steps; atan2f; maxAngle times the f32 pi/180) and calcRootMatrix's quaternion matrix in f32 (JP 0x801D196C; the port's Quat.toMtx left doubles in baseTR). coronaBoss a/2A1D8909_…028 unchanged (1712): its first error is 2 ulp in Mario's z at tick 182 while he walks on the tilting tub, still unexplained (next: the tub's moving collision, ObjCollision moveMtx, and checkRideMovement). No full batch.
