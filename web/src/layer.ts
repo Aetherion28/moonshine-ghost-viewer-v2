@@ -163,7 +163,7 @@ function pinShineDemo(inst: J3DModelInstanceSimple, o: any) {
  * game plays Mario's BCKs on it); else the whole model on Mario's root, scaled to Mario's height (150).
  */
 export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number; npc?: number; look?: { c0: number[]; c1: number[]; parts: number }; fludd?: boolean; retarget?: number[]; btk?: string; screen?: string }> = {
-    shadow: { scene: 'bianco6', bmd: 'kagemario/default.bmd', rig: true, btk: 'kagemario/kagemario_scroll.btk', screen: 'H_kagemario_dummy' },
+    shadow: { scene: 'bianco6', bmd: 'kagemario/default.bmd', rig: true, btk: 'kagemario/kagemario_scroll.btk', screen: 'H_kagemario_dummy', fludd: true },
     piantissimo: { scene: 'mamma4', bmd: 'map/map/pad/monteman_model.bmd', rig: true, fludd: true },
     bigdaddy: { scene: 'rico_ex0', bmd: 'montemb/momb_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256, npc: 2, look: { c0: [2, 2, 0], c1: [0, 2, 255], parts: 3 }, fludd: true, rig: true,
         // (his joints on Mario's: body chest, koshi / mino waist, arms, legs, kubi and up head; the viewer's own mapping)
