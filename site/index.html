@@ -507,7 +507,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="The box of Mario's position, speed, animation and FLUDD in the view's corner"><input type="checkbox" id="optInfo"> Show info box</label>
       <label title="Frames drawn per second, and in live play the game frames run per second (the game runs at 30)"><input type="checkbox" id="optFps" checked> Show frame rate</label>
       <label title="The coloured circle at each ghost's feet that tells ghosts apart"><input type="checkbox" id="optRing" checked> Show ghost circles</label>
-      <label title="Only how Mario looks: the replay still uses Mario's own body and hit sizes. The other models come from your disc">Mario's model <select id="optSkin"><option value="mario">Mario</option><option value="piantissimo">Il Piantissimo</option><option value="boardnpc">Blooper-surfing Pianta (stiff)</option><option value="boardnpcRig">Blooper-surfing Pianta (on Mario's joints)</option><option value="pianta">Pianta villager</option><option value="cataquack">Cataquack</option></select></label>
+      <label title="Only how Mario looks: the replay still uses Mario's own body and hit sizes. The other models come from your disc">Mario's model <select id="optSkin"><option value="mario">Mario</option><option value="piantissimo">Il Piantissimo</option><option value="piantaM">Pianta (Ricco 6) 1</option><option value="piantaA">Pianta (Ricco 6) 2</option><option value="piantaB">Pianta (Ricco 6) 3</option><option value="piantaC">Pianta (Ricco 6) 4</option><option value="piantaD">Pianta (Ricco 6) 5</option><option value="cataquack">Cataquack</option></select></label>
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
       <div class="discLine">Disc: <span class="discInfo" id="discInfo">none loaded</span> <span class="discInfo" id="padInfo" hidden></span> <span class="discInfo" id="padRec" hidden></span></div>
       <label title="The game's HUD from the disc (life meter, coins, Shines, blue and red coins, FLUDD's tank) and the stage's opening words"><input type="checkbox" id="optHud" checked disabled> Show HUD</label>
@@ -561,14 +561,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1794198154972"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1794198154972"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1794198154972"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1794198154972"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1794198154972"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1794198154972"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1794198154972"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1794198154972"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1794198347915"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1794198347915"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1794198347915"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1794198347915"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1794198347915"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1794198347915"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1794198347915"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1794198347915"><\/script>');
 </script>
 <script>
 (() => {
@@ -6504,35 +6504,6 @@ document.write('<script src="' + V2 + 'hud.js?v=1794198154972"><\/script>');
     return jets.map((off) => [[noz[12] + side[0] * off, noz[13], noz[14] + side[2] * off], dir]);
   }
 
-  // "Mario's model": the Blooper-surfing Pianta on Mario's joints (models/boardnpc_rig.glb, v1data
-  // buildOnMarioRig), its meshes bound to each ghost's own Mario bones; the layer hides Mario.
-  let skinRigModel = null, skinRigLoading = false;
-  function addRiggedSkin(body) {
-    const sel = $('optSkin');
-    if (!sel || sel.value !== 'boardnpcRig') return;
-    if (!skinRigModel) {
-      if (!skinRigLoading && v1data) {
-        skinRigLoading = true;
-        fetchBinary('models/boardnpc_rig.glb').then((buf) => new Promise((res, rej) => new THREE.GLTFLoader().parse(buf, '', (g) => res(rawTextures(g)), rej)))
-          .then((g) => { skinRigModel = g.scene; gxLight(skinRigModel); ghosts.forEach((gh) => setMarkerBody(gh.marker)); update(); })
-          .catch((e) => { console.warn('[skin] rig', e); });
-      }
-      return;
-    }
-    const byName = {};
-    body.traverse((o) => { if (o.isBone && o.name) byName[o.name] = byName[o.name] || o; });
-    const clone = THREE.SkeletonUtils.clone(skinRigModel), meshes = [];
-    clone.traverse((o) => { if (o.isSkinnedMesh) meshes.push(o); });
-    for (const m of meshes) {
-      const bones = m.skeleton.bones.map((b) => byName[b.name] || b);
-      m.bind(new THREE.Skeleton(bones, m.skeleton.boneInverses), m.bindMatrix);
-      m.frustumCulled = false;
-      m.userData.noProxy = true;
-      m.material = [].concat(m.material).map((x) => { const c = x.clone(); c.side = THREE.DoubleSide; return c; });
-      if (m.material.length === 1) m.material = m.material[0];
-      body.add(m);
-    }
-  }
   function setMarkerBody(group) {
     const old = group.getObjectByName('body');
     if (old) group.remove(old);
@@ -6542,7 +6513,6 @@ document.write('<script src="' + V2 + 'hud.js?v=1794198154972"><\/script>');
       body.traverse((o) => { if (o.isMesh) o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone(); });   // own light set per ghost
       group.userData.rig = MarioRig.attach(body);
       fluddBones(group.userData.rig, body);
-      addRiggedSkin(body);
     } else {
       body = new THREE.Group();
       const mat = new THREE.MeshLambertMaterial({ color: group.userData.color, transparent: true, opacity: 0.85 });
@@ -8520,7 +8490,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1794198154972';
+  const BUILD_STAMP = '1794198347915';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)

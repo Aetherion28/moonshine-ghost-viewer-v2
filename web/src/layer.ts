@@ -160,11 +160,13 @@ function pinShineDemo(inst: J3DModelInstanceSimple, o: any) {
  * the model comes from; rig: posed on Mario's joints (Il Piantissimo's model has Mario's 29, and the
  * game plays Mario's BCKs on it); else the whole model on Mario's root, scaled to Mario's height (150).
  */
-export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number; three?: boolean }> = {
+export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number }> = {
     piantissimo: { scene: 'mamma4', bmd: 'map/map/pad/monteman_model.bmd', rig: true },
-    boardnpc: { scene: 'ricco5', bmd: 'boardnpc/boardnpc.bmd', lo: -18, hi: 180 },
-    pianta: { scene: 'dolpic0', bmd: 'montema/moma_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
-    boardnpcRig: { scene: 'ricco5', bmd: '', three: true },
+    piantaM: { scene: 'ricco5', bmd: 'montem/mom_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
+    piantaA: { scene: 'ricco5', bmd: 'montema/moma_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
+    piantaB: { scene: 'ricco5', bmd: 'montemb/momb_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
+    piantaC: { scene: 'ricco5', bmd: 'montemc/momc_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
+    piantaD: { scene: 'ricco5', bmd: 'montemd/momd_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
     cataquack: { scene: 'mamma0', bmd: 'poihana/default.bmd', wait: 'poihana/poihana_wait.bck', walk: 'poihana/poihana_walk.bck', lo: 0, hi: 191 },
 };
 type SkinData = { data: J3DModelData; wait: any; walk: any; fit: mat4 };
@@ -296,7 +298,7 @@ export class GameLayer {
     private skinData(name: string): SkinData | null {
         if (this.skins.has(name)) return this.skins.get(name)!;
         const spec = MARIO_SKINS[name], fs = this.fs, r = this.renderer;
-        if (!spec || spec.three || !fs || !r || this.skinsLoading.has(name)) return null;
+        if (!spec || !fs || !r || this.skinsLoading.has(name)) return null;
         this.skinsLoading.add(name);
         const path = `data/scene/${spec.scene}.szs`;
         (async () => {
@@ -1507,7 +1509,7 @@ export class GameLayer {
             mm.sync(mo.rig, mo.yoshi);
             if (mo.rig.surfGesso) this.surfRig = mo.rig;
             seen.add(mo.key);
-            const proxy = (root: any) => root && root.traverse((x: any) => { if (x.isMesh && !x.userData.noProxy) for (const m of [].concat(x.material) as any[]) { if (m.colorWrite) m.colorWrite = false; this.proxiedMario.add(m); } });
+            const proxy = (root: any) => root && root.traverse((x: any) => { if (x.isMesh) for (const m of [].concat(x.material) as any[]) { if (m.colorWrite) m.colorWrite = false; this.proxiedMario.add(m); } });
             proxy(mo.rig.root);
             if (mo.yoshi) proxy(mo.yoshi.root);
         }
