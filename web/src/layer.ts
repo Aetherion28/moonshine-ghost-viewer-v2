@@ -160,9 +160,11 @@ function pinShineDemo(inst: J3DModelInstanceSimple, o: any) {
  * the model comes from; rig: posed on Mario's joints (Il Piantissimo's model has Mario's 29, and the
  * game plays Mario's BCKs on it); else the whole model on Mario's root, scaled to Mario's height (150).
  */
-export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number; npc?: number; look?: { c0: number[]; c1: number[]; parts: number }; fludd?: boolean }> = {
+export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number; npc?: number; look?: { c0: number[]; c1: number[]; parts: number }; fludd?: boolean; retarget?: number[] }> = {
     piantissimo: { scene: 'mamma4', bmd: 'map/map/pad/monteman_model.bmd', rig: true, fludd: true },
-    bigdaddy: { scene: 'rico_ex0', bmd: 'montemb/momb_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256, npc: 2, look: { c0: [2, 2, 0], c1: [0, 2, 255], parts: 3 }, fludd: true },
+    bigdaddy: { scene: 'rico_ex0', bmd: 'montemb/momb_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256, npc: 2, look: { c0: [2, 2, 0], c1: [0, 2, 255], parts: 3 }, fludd: true, rig: true,
+        // (his joints on Mario's: body chest, koshi / mino waist, arms, legs, kubi and up head; the viewer's own mapping)
+        retarget: [14, 2, 2, 16, 17, 18, 22, 23, 24, 3, 4, 6, 8, 9, 11, 26, 26, 26, 26, 26] },
     cataquack: { scene: 'mamma0', bmd: 'poihana/default.bmd', wait: 'poihana/poihana_wait.bck', walk: 'poihana/poihana_walk.bck', lo: 0, hi: 191 },
 };
 type SkinData = { data: J3DModelData; wait: any; walk: any; fit: mat4; arc: any };
@@ -229,7 +231,27 @@ class MarioMirror {
                 parts.push(pi);
             }
         }
-        if (spec.rig) pinJoints(m, () => this.rig && this.rig.bones);
+        if (spec.retarget) {
+            // Mario's pose moved onto this model: each joint j follows Mario's joint b as
+            // W = MarioWorld[b] * inv(MarioRest[b]) * fit * Rest[j] (rests from an unanimated calc)
+            const rest = (d: J3DModelData) => { const t = new J3DModelInstanceSimple(d); mat4.identity(t.modelMatrix); t.calcAnim(); return t.shapeInstanceState.jointToWorldMatrixArray.map((x) => mat4.clone(x)); };
+            const mRest = rest(this.mario.body.modelData).map((x) => mat4.invert(mat4.create(), x));
+            const pRest = rest(sd.data).map((x) => mat4.mul(mat4.create(), sd.fit, x));
+            const map = spec.retarget, tmp = mat4.create();
+            const calc = m.calcAnim.bind(m);
+            m.calcAnim = () => {
+                calc();
+                const B = this.rig && this.rig.bones;
+                if (!B) return;
+                const W = m.shapeInstanceState.jointToWorldMatrixArray;
+                for (let j = 0; j < W.length && j < map.length; j++) {
+                    const b = B[map[j]];
+                    if (!b || !mRest[map[j]]) continue;
+                    mat4.mul(tmp, b.matrixWorld.elements as any, mRest[map[j]]);
+                    mat4.mul(W[j], tmp, pRest[j]);
+                }
+            };
+        } else if (spec.rig) pinJoints(m, () => this.rig && this.rig.bones);
         else if (sd.wait) m.bindANK1(sd.wait);
         (m as any).skinFit = sd.fit; (m as any).skinData = sd;
         this.skinWalk = false;
