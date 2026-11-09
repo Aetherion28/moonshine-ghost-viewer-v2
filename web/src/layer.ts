@@ -160,13 +160,9 @@ function pinShineDemo(inst: J3DModelInstanceSimple, o: any) {
  * the model comes from; rig: posed on Mario's joints (Il Piantissimo's model has Mario's 29, and the
  * game plays Mario's BCKs on it); else the whole model on Mario's root, scaled to Mario's height (150).
  */
-export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number; npc?: number }> = {
-    piantissimo: { scene: 'mamma4', bmd: 'map/map/pad/monteman_model.bmd', rig: true },
-    piantaM: { scene: 'ricco5', npc: 0, bmd: 'montem/mom_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
-    piantaA: { scene: 'ricco5', npc: 1, bmd: 'montema/moma_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
-    piantaB: { scene: 'ricco5', npc: 2, bmd: 'montemb/momb_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
-    piantaC: { scene: 'ricco5', npc: 3, bmd: 'montemc/momc_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
-    piantaD: { scene: 'ricco5', npc: 4, bmd: 'montemd/momd_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256 },
+export const MARIO_SKINS: Record<string, { scene: string; bmd: string; rig?: boolean; wait?: string; walk?: string; lo?: number; hi?: number; npc?: number; look?: { c0: number[]; c1: number[]; parts: number }; fludd?: boolean }> = {
+    piantissimo: { scene: 'mamma4', bmd: 'map/map/pad/monteman_model.bmd', rig: true, fludd: true },
+    bigdaddy: { scene: 'rico_ex0', bmd: 'montemb/momb_model.bmd', wait: 'montemcommon/mom_wait.bck', walk: 'montemcommon/mom_walk.bck', lo: 0, hi: 256, npc: 2, look: { c0: [2, 2, 0], c1: [0, 2, 255], parts: 3 }, fludd: true },
     cataquack: { scene: 'mamma0', bmd: 'poihana/default.bmd', wait: 'poihana/poihana_wait.bck', walk: 'poihana/poihana_walk.bck', lo: 0, hi: 191 },
 };
 type SkinData = { data: J3DModelData; wait: any; walk: any; fit: mat4; arc: any };
@@ -192,7 +188,7 @@ class MarioMirror {
             r.modelInstances.push(this.yoshi.body);
         }
     }
-    get models() { return [...this.mario.all, ...(this.yoshi ? [this.yoshi.body] : []), ...(this.skin ? [this.skin] : [])]; }
+    get models() { return [...this.mario.all, ...(this.yoshi ? [this.yoshi.body] : []), ...(this.skin ? [this.skin, ...this.skinParts] : [])]; }
     public skin: J3DModelInstanceSimple | null = null;
     private skinName = '';
     private skinWalk = false;
@@ -200,7 +196,7 @@ class MarioMirror {
     /** the stand-in model for this Mario (MARIO_SKINS), or none */
     setSkin(r: SunshineRenderer, name: string, sd: SkinData | null) {
         if (name === this.skinName && (!!this.skin === !!sd) && (!this.skin || this.skin.modelData.realized)) return;
-        if (this.skin) { const old = this.skin; r.modelInstances = r.modelInstances.filter((x) => x !== old); this.skin = null; }
+        if (this.skin) { const drop = new Set<any>([this.skin, ...this.skinParts]); r.modelInstances = r.modelInstances.filter((x) => !drop.has(x)); this.skin = null; this.skinParts = []; }
         this.skinName = name;
         if (!sd) return;
         const m = new J3DModelInstanceSimple(sd.data);
@@ -211,14 +207,37 @@ class MarioMirror {
         // (as an NPC of its kind looks with colour index 0, no goop, and the real textures in place of the placeholders)
         const cache = r.renderHelper.renderInstManager.gfxRenderCache;
         swapTextures(r.renderHelper.device, cache, sd.arc, [m]);
-        if (spec.npc !== undefined) { npcDress(m, spec.npc, { c0: [0, 0, 0], c1: [0, 0, 0], parts: 0 }); npcGoop(m, spec.npc, [255, 255, 255, 0]); }
+        const parts: J3DModelInstanceSimple[] = [];
+        if (spec.npc !== undefined) {
+            // (the NPC's own look from its scene.bin entry: colour indices and parts, TBaseNPC::setIndividualDifference_)
+            const dress = npcDress(m, spec.npc, spec.look || { c0: [0, 0, 0], c1: [0, 0, 0], parts: 0 });
+            npcGoop(m, spec.npc, [255, 255, 255, 0]);
+            const files: any[] = [];
+            const walk = (d: any) => { if (!d) return; for (const f of d.files || []) files.push(f); for (const c of d.subdirs || []) walk(c); };
+            walk((sd.arc as any).root);
+            for (const p of dress) {
+                const f = files.find((x) => (x.name || '').toLowerCase() === p.file.toLowerCase());
+                const j = m.modelData.bmd.jnt1.joints.findIndex((x) => x.name === p.joint);
+                if (!f || j < 0) continue;
+                const pi = new J3DModelInstanceSimple(new J3DModelData(r.renderHelper.device, cache, BMD.parse(f.buffer)));
+                pi.passMask = SMSPass.MAIN; (pi as any).isPlayer = true;
+                setAmbient([pi], r.playerAmbient);
+                swapTextures(r.renderHelper.device, cache, sd.arc, [pi]);
+                npcPartColours(pi, p.colors, p.idx);
+                const calc = pi.calcAnim.bind(pi);
+                pi.calcAnim = () => { const W = m.shapeInstanceState.jointToWorldMatrixArray[j]; if (W) mat4.copy(pi.modelMatrix, W); calc(); };
+                parts.push(pi);
+            }
+        }
         if (spec.rig) pinJoints(m, () => this.rig && this.rig.bones);
         else if (sd.wait) m.bindANK1(sd.wait);
         (m as any).skinFit = sd.fit; (m as any).skinData = sd;
         this.skinWalk = false;
         this.skin = m;
-        r.modelInstances.push(m);
+        this.skinParts = parts;
+        r.modelInstances.push(m, ...parts);
     }
+    private skinParts: J3DModelInstanceSimple[] = [];
 
     /** Mario as the viewer posed him (rig: MarioRig.attach's, with fluddBones), and his Yoshi. */
     sync(rig: any, yoshiNode: any) {
@@ -253,7 +272,11 @@ class MarioMirror {
             part(M.fludd, rig.parts.fludd_body);
             for (const [n, m] of Object.entries(M.nozzles)) part(m, rig.parts['nozzle_' + n]);
         }
-        if (on && this.skinName && this.skinName !== 'mario') M.setVisible(false);
+        if (on && this.skinName && this.skinName !== 'mario') {
+            // (FLUDD stays on the ones that wear it, on Mario's chest as the viewer poses him)
+            const keep = MARIO_SKINS[this.skinName] && MARIO_SKINS[this.skinName].fludd ? new Set<any>([M.fludd, ...Object.values(M.nozzles)]) : new Set<any>();
+            for (const x of M.all) if (!keep.has(x)) x.visible = false;
+        }
         if (this.skin) {
             const S = this.skin, on2 = on;
             if (on2) {
@@ -265,9 +288,10 @@ class MarioMirror {
                     const sd = (S as any).skinData as SkinData, e = rig.root.matrixWorld.elements, p = [e[12], e[13], e[14]];
                     const moving = !!this.lastPos && Math.hypot(p[0] - this.lastPos[0], p[2] - this.lastPos[2]) > 0.5;
                     this.lastPos = p;
+                    for (const p of this.skinParts) p.visible = true;
                     if (sd.walk && moving !== this.skinWalk) { this.skinWalk = moving; S.bindANK1(moving ? sd.walk : sd.wait); }
                 }
-            } else S.visible = false;
+            } else { S.visible = false; for (const p of this.skinParts) p.visible = false; }
         }
         if (this.yoshi) {
             const Y = yoshiNode, yv = !!Y && worldVisible(Y.root);
