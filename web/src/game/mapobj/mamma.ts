@@ -28,7 +28,7 @@
 // kept (their BCKs set) but not drawn by the viewer.
 
 import { V } from '../version.js';
-import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH, sinf, cosf, HALF_PI_F } from '../math.js';
+import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH, sinf, cosf, HALF_PI_F, matan } from '../math.js';
 import { MsSqrtf } from '../player/fmath.js';
 import { fmadd as FMA, fmsub as FMS } from '../player/fmath.js';
 import { World, HitActor, LiveActor, Actor, Stream, MActor, AnmData, LF, HF, MSG, CUE_CALC_ANIM, ANM_FRAME_RATE, ANM_BPK, ANM_BTK, ANM_BRK } from '../engine.js';
@@ -328,8 +328,16 @@ export class SandCastle extends SandBombBase {
     }
     waitBeforeExplode() {
         super.waitBeforeExplode();
-        // (SandCastleCallBack: the target arrow at the castle, the camera warped)
-        this.world.startDemoCamera('mamma1_sandcastle', null);
+        // SandCastleCallBack: at the demo's end (after endDemoCamera) the camera is warped to its usual
+        // distance on the demo's last view's yaw (the target arrow at the castle is drawing only)
+        const w = this.world;
+        w.startDemoCamera('mamma1_sandcastle', null, -1, (phase) => {
+            if (phase !== 1) return;
+            const C: any = (w.mario as any).simCamera;
+            if (!C || !C.warpPosAndAtRatio) return;
+            const p = C.unk124, at = C.unk148;
+            C.warpPosAndAtRatio(C.cur.ratio, matan(fr(p.z - at.z), fr(p.x - at.x)));
+        });
         this.unk15C = 1;
     }
     calcRootMatrix() { if (!this.isState(SAND.WITHERING)) super.calcRootMatrix(); }
