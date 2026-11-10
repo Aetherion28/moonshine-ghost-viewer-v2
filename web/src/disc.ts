@@ -20,6 +20,8 @@ export interface GameFS {
     readRange?(path: string, off: number, len: number): Promise<ArrayBuffer>;
     /** a file's size */
     size?(path: string): number;
+    /** what the user picked, as it was (v3 reads the game's program and the disc's own tables from it) */
+    source?: { iso: Blob } | { folder: { path: string; file: File }[] };
 }
 
 const GC_MAGIC = 0xC2339F3D;
@@ -27,7 +29,8 @@ const GC_MAGIC = 0xC2339F3D;
 class DiscImage implements GameFS {
     private files = new Map<string, { off: number, len: number }>();
     public revision = 0;
-    constructor(private blob: Blob, public id: string, public label: string) { }
+    public source: { iso: Blob };
+    constructor(private blob: Blob, public id: string, public label: string) { this.source = { iso: blob }; }
 
     static async open(blob: Blob, name: string): Promise<DiscImage> {
         const head = new DataView(await blob.slice(0, 0x440).arrayBuffer());
@@ -80,11 +83,13 @@ class ExtractedFolder implements GameFS {
     private files = new Map<string, File>();
     public id = '';
     public revision = 0;
+    public source: { folder: { path: string; file: File }[] } = { folder: [] };
     constructor(public label: string) { }
 
     static async open(list: File[]): Promise<ExtractedFolder> {
         const root = (list[0] as any).webkitRelativePath?.split('/')[0] || 'folder';
         const f = new ExtractedFolder(root);
+        f.source = { folder: list.map((file) => ({ path: (file as any).webkitRelativePath || file.name, file })) };
         for (const file of list) {
             const rel: string = (file as any).webkitRelativePath || file.name;
             // Dolphin extracts to <name>/files/... and <name>/sys/...; take paths from files/, or

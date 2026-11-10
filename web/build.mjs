@@ -42,6 +42,8 @@ const audio = [
   { ...opts, entryPoints: [path.join(here, 'src/audio/worklet.ts')], outfile: path.join(here, '../site/audio-worklet.js'), format: 'esm', metafile: false },
   // the game's HUD (hud.js)
   { ...opts, entryPoints: [path.join(here, 'src/hud/index.ts')], outfile: path.join(here, '../site/hud.js'), metafile: false },
+  // v3's replay check, a worker (v3worker.js): the game's own code from the user's disc against a trace
+  { ...opts, entryPoints: [path.join(here, 'v3/web/worker.ts')], outfile: path.join(here, '../site/v3worker.js'), metafile: false },
 ];
 if (process.argv.includes('--watch')) { await (await esbuild.context(opts)).watch(); for (const a of audio) await (await esbuild.context(a)).watch(); }
 else {
