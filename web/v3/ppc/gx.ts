@@ -55,6 +55,13 @@ export class Gx {
 
     /** rasterise the primitives that come (else they are skipped) */
     raster = false;
+    /**
+     * Where in a pixel the interpolated values (texture coordinates, colours, depth) are taken, in pixels from its
+     * left and top edges. Not the middle: the recordings fix x between 0.646 and 0.687 and y between 0.438 and 0.484
+     * (README, "the goop"); these are the middle of that. Dolphin's software renderer has 0.495 for both.
+     */
+    sampleX = Math.fround(2 / 3);
+    sampleY = Math.fround(11 / 24);
     /** the embedded frame buffer: RGBA, 8 bits each */
     efb = new Uint8Array(EFB_W * EFB_H * 4);
     /** the pixel engine's counter of 2 x 2 pixel groups that reached the blender (GXReadPixMetric multiplies by 4) */
@@ -364,8 +371,7 @@ export class Gx {
         // slopes: each interpolated value as a plane over the screen, from vertex 0
         const fx1 = v0.x, fy1 = v0.y, dx31 = fr(v2.x - fx1), dx12 = fr(fx1 - v1.x), dy12 = fr(fy1 - v1.y), dy31 = fr(v2.y - fy1);
         const vx0 = (X1 + 0xF) >> 4, vy0 = (Y1 + 0xF) >> 4;
-        // (the sample point: a little less than half a pixel in)
-        const offX = fr(fr(vx0 - fx1) + ADJUST), offY = fr(fr(vy0 - fy1) + ADJUST);
+        const offX = fr(fr(vx0 - fx1) + this.sampleX), offY = fr(fr(vy0 - fy1) + this.sampleY);
         const w0 = fr(1 / v0.w), w1 = fr(1 / v1.w), w2 = fr(1 / v2.w);
         const cden = fr(fr(-dx12 * dy31) - fr(dx31 * -dy12));
         const S = this.slopes;
@@ -627,7 +633,7 @@ export class Gx {
     private copy(ctl: number) {
         const bp = this.bp, ram = this.ram, efb = this.efb;
         const sx = bp[0x49] & 0x3FF, sy = (bp[0x49] >>> 10) & 0x3FF, sw = (bp[0x4A] & 0x3FF) + 1, sh = ((bp[0x4A] >>> 10) & 0x3FF) + 1;
-        if (this.trace) this.trace(`copy ctl ${ctl.toString(16)} src ${sx},${sy} ${sw}x${sh} to ${((bp[0x4B] << 5) >>> 0).toString(16)} quads ${this.blendQuads}`);
+        if (this.trace) this.trace(`copy ctl ${ctl.toString(16)} src ${sx},${sy} ${sw}x${sh} to ${((bp[0x4B] << 5) >>> 0).toString(16)} quads ${this.blendQuads} filter ${bp[0x53].toString(16)} ${bp[0x54].toString(16)} samples ${bp[1].toString(16)}`);
         if (!(ctl & 0x4000)) {
             this.copies++;
             const f = (ctl >>> 3) & 15, fmt = (f >> 1) + (f & 1) * 8, dst = (bp[0x4B] << 5) & 0x03FFFFFF, half = (ctl >>> 9) & 1;
@@ -669,8 +675,6 @@ export class Gx {
 }
 
 // ---------------------------------------------------------------- helpers
-/** where in a pixel values are sampled: Dolphin's software renderer's "a little less than 0.5" */
-const ADJUST = Math.fround(0.495);
 const F32 = new Float32Array(1), F32W = new Uint32Array(F32.buffer);
 const r32 = (b: Uint8Array, p: number) => ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0;
 /** the constant fractions a stage can select: 8/8 ... 1/8 */

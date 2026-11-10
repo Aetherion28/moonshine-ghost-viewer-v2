@@ -13,7 +13,7 @@ v2 is no longer developed (the user, 2026-11-09).
 - `ppc/fpu.ts`: the float rules, as Dolphin has them from hardware tests. Single ops round once; fused ops are exact (error-free transformations, then one rounding); a single multiply's frC keeps 25 bits; single results go to ps0 and ps1; with FPSCR[NI] set (the OS sets it) results below the smallest normal become zero; `lfs` / `stfs` convert bits as the hardware does; the `fres` / `frsqrte` tables.
 - `ppc/mem.ts`: 24 MB of RAM, the locked cache, memory-mapped I/O, the DOL loader.
 - `ppc/hw.ts`: the hardware the OS talks to, at register level: PI (interrupts), VI (the retrace, the beam position), DI (disc reads from `ppc/disc.ts`), DSP / ARAM (DMA), SI, EXI (no memory card), AI, and the GPU's command and pixel engines: the write-gather pipe's bytes go to memory at the FIFO's write pointer 32 at a time (so display lists the game builds through the pipe exist), the GPU reads behind it and stops at the FIFO's breakpoint when the game sets one (it does, around every draw-sync token, so that it can read the pixel counters before the GPU goes on).
-- `ppc/gx.ts`: the GPU, as far as the game's logic depends on it. The command stream and the display lists it calls are parsed all the time, so the GPU's registers are always what the game last set and the tokens are found exactly. Nothing is drawn for the screen, but the game draws its goop maps on the GPU and reads them back, so while the replay marks a goop pass the primitives are rasterised in software into a frame buffer (fixed-point edges, texture sampling, the texture environment, blending, the depth test), the frame buffer copy writes the map back into memory, and the pixel counter counts. The arithmetic follows Dolphin's software renderer as remembered; it is not yet the console's (see below).
+- `ppc/gx.ts`: the GPU, as far as the game's logic depends on it. The command stream and the display lists it calls are parsed all the time, so the GPU's registers are always what the game last set and the tokens are found exactly. Nothing is drawn for the screen, but the game draws its goop maps on the GPU and reads them back, so while the replay marks a goop pass the primitives are rasterised in software into a frame buffer (fixed-point edges, texture sampling, the texture environment, blending, the depth test), the frame buffer copy writes the map back into memory, and the pixel counter counts. The arithmetic is Dolphin's software renderer's (compared with its source: edges, slopes, the texture filter, the texture environment, the blender), except where in a pixel the values are taken, which the recordings fixed ("The goop's sample point" below).
 - `ppc/disc.ts`: a virtual disc built from the user's extracted files, with a file system table made the way the disc's is.
 - `ppc/machine.ts`: time. The clock is the instruction count (one instruction = one cycle at 486 MHz); events (the video field, the decrementer, disc reads completing) are scheduled against it; the OS's idle loop skips to the next event.
 - `ppc/jit.ts`: speed. Straight runs of the game's code (to the first unconditional branch) are compiled to WebAssembly, each a function, with a small WebAssembly dispatcher that calls them one after another. RAM, the registers and the block tables share one WebAssembly memory with the interpreter, which stays the definition: a block does exactly what the interpreter would (the tests compare the whole machine's state after a billion instructions), and anything rare, anything that touches hardware and the fused multiply-adds go through the interpreter's own methods. A block only runs when all of it fits before the next event, so the clock stays exact.
@@ -47,7 +47,9 @@ Whole recordings in step to their end: Ricco Harbor 3 (`a/2A1D8909_80000002`), D
 Still in step when the test's time limit cut them: Delfino Plaza (`…2F`, dolpic9), and Pinna Park 1 (`…0B`) through three stages (pinnaParco0, pinnaParco6, the Mecha-Bowser fight) with each stage's seed, flags, NPC phase and heap equal to the recording's at its start.
 
 What stops the others:
-- **the goop**: the game draws the goop map on the GPU (each layer's map through a fading texture environment, stamps blended over it, a model with vertex alpha under the gatekeeper, all copied back to the texture the collision code reads, pixels counted with `GXReadPixMetric`). `ppc/gx.ts` now does those draws: Bianco Hills 1 went from tick 2,347 to tick 2,427, where Mario stops being dirty one tick earlier than on the console: one texel at the edge of his footprint stamps (a 64 x 64 stamp drawn 4 x 4, so each pixel is one bilinear sample) is goop there and not here. So the texture sampling at that reduction isn't the console's yet. Open: where in a pixel the console samples, its bilinear weights, and what its pixel counter counts (here: groups of 2 x 2 pixels with a pixel through the alpha test, plus one a triangle, which is what the game's own correction of 4 a polygon suggests). `tests/goopdbg.ts` prints the map under Mario and every pixel drawn at a place;
+- **the goop**: the game draws the goop map on the GPU (each layer's map through a fading texture environment, stamps blended over it, a model with vertex alpha under the gatekeeper, all copied back to the texture the collision code reads, pixels counted with `GXReadPixMetric`). `ppc/gx.ts` does those draws.
+  Bianco Hills 1 is in step to tick 2,952 (2,347 before the GPU model, 2,427 with Dolphin's sample point) and Bianco Hills 5 to tick 2,933 (2,551); Ricco Harbor 1 stops at tick 2,713 on something else.
+  See "The goop's sample point" below for what the recordings fixed and what is open (now: the model stamps under the gatekeeper);
 - **Moonshine features without source**: the pattern selector (Pianta Village 1 at tick 127: a Chain Chomplet picks its graph node), and by the session records the Ricco crane and fruit controls, Petey's route. The PR76 Dolphin package's JP patch rebuilds into the whole Moonshine DOL (retail text with 35 patched words, the mod's code at 0x80426020 and 0x804A6020): the hooks' code can be read there (the pattern selector is the function at 0x8044BA74);
 - **DPad Functions** (Gelato Beach 1 at tick 2,669: Moonshine writes Mario's status; a TAS-tagged run);
 - **the bath water's height** in traces older than its recording (Bowser, observations 3).
@@ -66,6 +68,30 @@ Open questions:
 - the other settings Moonshine doesn't record (the appearance choices load other models too);
 - IL entries with a flag overlay (Moonshine sets or clears Shine flags between `loadResource` and `setupObjects`, and the stage-start image is taken before): the entry isn't recorded, so it has to be chosen by evidence as Shiny Shines is;
 - only GMSJ01 revision 0 is set up (the addresses in `game/replay.ts` and the HLE names from the decomp's `symbols.txt`).
+
+## The goop's sample point (how the GPU model is fitted to the recordings)
+
+Dolphin's software renderer isn't bit-exact with the console where the goop needs it: a clean stamp's edge has alpha 1 to 10 of 255 and falls on a texel hundreds of times, so which texel of the stamp a pixel samples decides whether a goop texel is under the game's limit (30) at a given frame.
+The recordings say what the console had: the game tests goop texels at random places every tick (`TPollutionLayer::action`, two `rand()` calls a test), and Mario's dirty flag is a test of nine texels.
+So a replay that stops on a goop test names a texel and the console's verdict on it.
+
+The method (tools in `tools/goopfit/`, logs from `tests/goopdbg.ts`):
+1. the stopped replay's last goop tests (`POLL=1`) give the texel and whether the console had goop there;
+2. every pixel drawn at that texel (`WATCH=x,y`, valid as long as the replay was in step: the draw commands are then the console's) gives its whole history: each stamp's quad, texture and height window;
+3. `pixel.py` recomputes the texel from that history under any rule for sampling and blending, in milliseconds; `constraints.py` holds the texels found so far (A to I) and scores a rule against all of them.
+
+What that fixed (2026-11-10, Bianco Hills 1):
+- **The blender truncates**, as Dolphin has it: `(src * sf + dst * df) >> 8` with a factor of 255 counted as 256. Rounding (+128, or an exact division by 255) leaves texels above the limit that the console had under it (D: 64 stamps of alpha 7 take 253 under 30 on the console; with rounding, and even in exact arithmetic, they don't). A constant between (+10 to +30) satisfied the first seven texels and is refuted by the eighth (H).
+- **Where in a pixel the texture coordinate is taken** is not the middle, and not the same in x and y: with the truncating blender all of A to H hold only for x in 0.646 to 0.687 and y in 0.438 to 0.484 of a pixel (the offline grid, and replays at the corners: x 0.625 stops at tick 2,427, x 0.6875 at 2,595 or 2,792, y 0.5 at 1,944). `Gx.sampleX` / `sampleY` are the middle, 2/3 and 11/24. Dolphin's 0.495 for both stops at tick 2,427.
+  Dolphin's hardware test (`hwtests` gxtest/rasterization.cpp) puts the x where a primitive's left edge stops covering a pixel at 7/12; nothing tested y. The values here are what the recordings allow, not a known rule of the hardware: a rule that explains them (and their difference from 7/12) is still to find.
+  An offset in texels instead of pixels fits the same texels only in a one-value-wide strip, so the pixel offset is the simpler reading; the stamps so far are 4, 18 and 24 pixels wide.
+- The bilinear filter is Dolphin's (7-bit weights, the sum truncated): rounding it breaks A and E.
+- A frame's test sees the map of the last frame drawn before it: `action` runs before Mario in a tick, so a test in the tick after a frame's last sees that frame.
+
+Open:
+- **I** (tick 2,952): a texel under the gatekeeper's puddle model is 33 here and at most 30 on the console. Its value comes from the model's triangles (about a pixel each, vertex alpha): the coverage rule (here Dolphin's: positions in 1/16 pixel, the test 9/16 in) and the colour's interpolation are next. `pixel.py` keeps a model stamp's alpha as logged, so it can't test rules for those yet.
+- What the pixel counter counts is still the guess of before (2 x 2 groups with a pixel through the alpha test, plus one a triangle).
+- Only Bianco Hills 1 gave texels so far; Bianco Hills 5 confirms the sample point (tick 2,551 to 2,933) without having been used for it.
 
 ## In the browser
 
@@ -93,5 +119,6 @@ Build each with `npx esbuild v3/tests/<name>.ts --bundle --platform=node --forma
 - `tests/verify.ts <disc image or extracted folder> <trace.msgt>`: the browser's check from Node, on a disc as the browser gets it. The bundle needs nothing else, so it can run where the disc is.
 - `tests/browser.mjs <site folder> <disc image> <trace.msgt>`: the same in headless Chromium through the built viewer.
 - Every test that takes the workspace's extract takes `DISC=<disc image or extracted folder>` instead (`tests/jpdisc.ts`); then `FSTPAD` isn't needed.
+- `tests/goopdbg.ts <trace.msgt> <from tick> <to tick>`: the goop under Mario per tick and what the GPU model draws (its header lists the switches: `WATCH`, `POLL`, `REGION`, `DUMP`, `GX_SX` / `GX_SY`).
 - `tests/tracedump.ts <trace.msgt> [from] [to]`: a trace's summary, or its events in a range.
 - `tests/survey.mjs <replay bundle> <list of traces> [workers] [seconds a trace]`: plays many traces and prints a line each: how far it matched and what stopped it.
