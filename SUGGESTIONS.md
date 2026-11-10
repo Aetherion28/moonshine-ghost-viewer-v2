@@ -19,3 +19,20 @@ Agents: add suggestions here instead of raising them in chat, newest first, with
 - 2026-11-04 — Record the crane-speed setting (and any other option that changes game behaviour) in the trace, e.g. as a run flag or in the stage-start record.
   The viewer currently works the Ricco cranes' speeds out from their recorded angles (traceCraneSpeeds), because the setting isn't in the trace.
 - 2026-11-04 — Record the movement-state of each Ricco crane at stage start (its speed), so a trace that starts mid-swing or has no crane records still replays.
+
+## For Moonshine's replay on the console: a memory dump (asked for on 2026-11-10)
+
+What it is for: the game replaying a trace on a real Wii is the one place where the game's true memory exists. v3 runs the same code and claims the same memory; a dump from the console at chosen ticks proves or disproves that byte by byte, and shows the first difference wherever a replay here stops (the goop maps, the water drops, the Mantas, memory the game never set).
+This is not a new record in the traces: it happens only while a recording is played back on the console, into a file of its own.
+
+1. **The request**: a file on the card, for example `Moonshine data/dump/request.txt`, one line a dump:
+   `tick address length` (hex; the tick is the record header's `movementTick`), or `tick ALL` for the whole of MEM1.
+   Plain addresses are enough: v3 knows where everything is at every tick and writes the request.
+2. **When**: at the point a tick's Mario record is taken (the start of his perform), so a dump at tick L lines up with the trace's records labelled L.
+   Tick 0 (before the first movement tick) should be possible: with `ALL` it gives the console's memory as the stage starts, leftovers included.
+3. **The answer**: one file a playback, for example `Moonshine data/dump/<the trace's name>.dump`: for each line of the request a header (`sourceFrame`, `movementTick`, address, length) and the bytes, in the request's order.
+   Playback may stall while it writes; nothing in a playback depends on real time.
+4. **Limits to state**: how many bytes a playback may dump (a few `ALL` dumps of 24 MB would already answer most questions), and what happens when the card is full (stop dumping, keep playing, say so in the file's last header).
+5. **If a check fails** (the playback's own desync check): dump `ALL` once at that tick, even when the request doesn't ask. That one file usually names the cause.
+6. **Later, for unattended use**: a way to start a playback without the menus, from a file the launcher reads (the game's region, the trace to play, the request), leaving to the Wii menu when the playback ends.
+   With Priiloader starting wiiprobe (web/v3/tools/hwprobe), the console could then run a list of playbacks and hand the dumps to the PC by itself: wiiprobe can read the card and send files.
