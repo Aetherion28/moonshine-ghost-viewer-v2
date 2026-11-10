@@ -23,6 +23,9 @@ export interface GameAddrs {
     padButton: number; padMStick: number; padSStick: number;
     /** after changeState's call to MSound::checkWaveOnAram (the stage's exit waits for it) */
     exitWaveRet: number;
+    /** the goop's draws: TPollutionCounterLayer::countTexDegree (a layer's map, to be copied back), and
+     *  TPollutionCounterObj::countObjDegree [address, size] (the objects' goop counted) */
+    goopLayerDraw: number; goopObjDraw: [number, number];
 }
 /** GMSJ01 revision 0 */
 export const JP10: GameAddrs = {
@@ -34,6 +37,7 @@ export const JP10: GameAddrs = {
     fbCamera: 0x80359CA4, fbSilhouette: 0x800C2D0C, fbWater: 0x801FABF0, fastTextCall: 0x8021530C,
     padButton: 0x80400D80, padMStick: 0x80400E40, padSStick: 0x80400E80,
     exitWaveRet: 0x800ECAB4,
+    goopLayerDraw: 0x801ECF38, goopObjDraw: [0x801EE5B0, 0x2D4],
 };
 // offsets in the game's objects
 const APP = { director: 4, state: 8, prev: 0xA, cur: 0xE, next: 0x12, movie: 0x18, pads: 0x20, heap: 0x40 };
@@ -130,6 +134,12 @@ export class Replay {
             if (((c.gpr[3] & 0xFF) ? 1 : 0) !== leave) { c.gpr[3] = leave; if (!this.exitAligned++) this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: the stage's exit aligned to the recording's (the sound's wave data ${leave ? 'had not' : 'had already'} loaded here)`); }
             return false;
         });
+        // The goop maps are drawn on the GPU and read back (ppc/gx.ts): what the game draws in these two functions is
+        // rasterised (a layer's pass ends with the frame buffer's copy into its map; the objects' count with the function).
+        cpu.hook(A.goopLayerDraw, () => { m.hw.gx.mark(m.hw.streamPos(), true, true); return false; });
+        cpu.hook(A.goopObjDraw[0], () => { m.hw.gx.mark(m.hw.streamPos(), true); return false; });
+        for (let a = A.goopObjDraw[0]; a < A.goopObjDraw[0] + A.goopObjDraw[1]; a += 4) if (m.mem.r32(a) === 0x4E800020) cpu.hook(a, () => { m.hw.gx.mark(m.hw.streamPos(), false); return false; });
+        m.hw.gxUnsupported = (what) => this.issue('gpu', `the goop's drawing needs ${what}, which the GPU model here doesn't do`);
         cpu.hook(A.fbCamera, (c) => { const v = this.literal(A.fbCamera + 4); if (v !== null) c.gpr[0] = v; return false; });
         cpu.hook(A.fbSilhouette, (c) => { const v = this.literal(A.fbSilhouette + 4); if (v !== null) c.gpr[0] = v; return false; });
         // (the bath water's height is recorded only by newer Moonshines: observation bit 2)

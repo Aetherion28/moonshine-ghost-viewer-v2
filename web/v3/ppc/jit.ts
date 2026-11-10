@@ -17,19 +17,21 @@ import { MEM1_SIZE, CODE_SPAN, BMAP, BLEN, STATE, WASM_BYTES } from './mem.js';
 export const GPR = STATE, PS0 = STATE + 0x80, PS1 = STATE + 0x180;
 export const COUNT = STATE + 0x280, LIMIT = STATE + 0x288, B0 = STATE + 0x290;
 export const REGS = STATE + 0x2A0, GQRS = STATE + 0x2E0;
+/** the write-gather pipe: the bytes waiting for a burst of 32 (hw.ts), and how many */
+export const PIPE_LEN = STATE + 0x300, PIPE = STATE + 0x340;
 export const R_PC = 0, R_LR = 1, R_CTR = 2, R_CR = 3, R_MSR = 4, R_XERCA = 5, R_XERSO = 6, R_INTR = 7, R_BRK = 8, R_FPSCR = 9;
 const PC = REGS + 4 * R_PC, LR = REGS + 4 * R_LR, CTR = REGS + 4 * R_CTR, CR = REGS + 4 * R_CR, MSR = REGS + 4 * R_MSR,
     XERCA = REGS + 4 * R_XERCA, XERSO = REGS + 4 * R_XERSO, INTR = REGS + 4 * R_INTR, BRK = REGS + 4 * R_BRK, FPSCR = REGS + 4 * R_FPSCR;
 
 /** the functions a block imports, in this order */
-export const IMPORTS = ['fb', 'pure', 'op59', 'op63', 'op4', 'fpx', 'lfsSlow', 'stfsSlow', 'resS', 'resD', 'resL', 'lfsLane'] as const;
-const F_FB = 0, F_PURE = 1, F_OP59 = 2, F_OP63 = 3, F_OP4 = 4, F_FPX = 5, F_LFS = 6, F_STFS = 7, F_RESS = 8, F_RESD = 9, F_RESL = 10, F_LFSLANE = 11;
+export const IMPORTS = ['fb', 'pure', 'op59', 'op63', 'op4', 'fpx', 'lfsSlow', 'stfsSlow', 'resS', 'resD', 'resL', 'lfsLane', 'pipeFull'] as const;
+const F_FB = 0, F_PURE = 1, F_OP59 = 2, F_OP63 = 3, F_OP4 = 4, F_FPX = 5, F_LFS = 6, F_STFS = 7, F_RESS = 8, F_RESD = 9, F_RESL = 10, F_LFSLANE = 11, F_PIPE = 12;
 // (their types: indexes into TYPES)
-const IMPORT_TYPES = [1, 2, 3, 3, 3, 2, 2, 4, 5, 5, 7, 8];
+const IMPORT_TYPES = [1, 2, 3, 3, 3, 2, 2, 4, 5, 5, 7, 8, 9];
 const I32 = 0x7F, I64 = 0x7E, F64 = 0x7C;
 const TYPES: [number[], number[]][] = [
     [[], []], [[I32, I32, I32, I32], [I32]], [[I32, I32], []], [[I32], []], [[I32], [I32]], [[I32, F64, I32, I32, I32], []], [[], [I32]],
-    [[I32, I32, F64, I32, I32, I32], []], [[I32, I32, I32], []],
+    [[I32, I32, F64, I32, I32, I32], []], [[I32, I32, I32], []], [[I32, I32], [I32]],
 ];
 
 const MAXLEN = 64;
@@ -127,16 +129,27 @@ export interface BlockCode {
 
 /** One module of several blocks: its exports b0, b1, ... are the blocks' functions. */
 export function blocksModule(blocks: BlockCode[]): Uint8Array {
-    const imports = vec([memImport(), ...IMPORTS.map((n, i) => [...str('e'), ...str(n), 0x00, IMPORT_TYPES[i]])]);
-    const out: number[] = [...HEADER, ...typeSection(), ...section(2, imports), ...section(3, vec(blocks.map(() => [0]))),
-        ...section(7, vec(blocks.map((_b, i) => [...str('b' + i), 0x00, ...new Asm().u(IMPORTS.length + i).b])))];
-    // (the code section is the bulk: appended without spreading the blocks' bodies again)
-    const code = new Asm().u(blocks.length).b;
-    for (const b of blocks) { new Asm().u(b.body.length).b.forEach((x) => code.push(x)); for (const x of b.body) code.push(x); }
-    out.push(10); new Asm().u(code.length).b.forEach((x) => out.push(x));
-    for (const x of code) out.push(x);
-    return Uint8Array.from(out);
+    if (!MODULE_HEAD) {
+        const imports = vec([memImport(), ...IMPORTS.map((n, i) => [...str('e'), ...str(n), 0x00, IMPORT_TYPES[i]])]);
+        MODULE_HEAD = Uint8Array.from([...HEADER, ...typeSection(), ...section(2, imports)]);
+    }
+    const funcs = section(3, vec(blocks.map(() => [0])));
+    const exports = section(7, vec(blocks.map((_b, i) => [...str('b' + i), 0x00, ...new Asm().u(IMPORTS.length + i).b])));
+    let codeLen = uleb(blocks.length).length;
+    for (const b of blocks) codeLen += uleb(b.body.length).length + b.body.length;
+    const sizeLeb = uleb(codeLen);
+    const out = new Uint8Array(MODULE_HEAD.length + funcs.length + exports.length + 1 + sizeLeb.length + codeLen);
+    let p = 0;
+    out.set(MODULE_HEAD, p); p += MODULE_HEAD.length;
+    out.set(funcs, p); p += funcs.length;
+    out.set(exports, p); p += exports.length;
+    out[p++] = 10; out.set(sizeLeb, p); p += sizeLeb.length;
+    const n = uleb(blocks.length); out.set(n, p); p += n.length;
+    for (const b of blocks) { const l = uleb(b.body.length); out.set(l, p); p += l.length; out.set(b.body, p); p += b.body.length; }
+    return out;
 }
+let MODULE_HEAD: Uint8Array | null = null;
+const uleb = (v: number) => new Asm().u(v).b;
 
 export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => boolean): BlockCode | null {
     pc0 >>>= 0;
@@ -210,8 +223,26 @@ export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => 
     const eax = (rA: number, rB: number) => () => { if (rA) { ldG(rA); ldG(rB).op(ADD); } else ldG(rB); };
     const eaxU = (rA: number, rB: number) => () => { ldG(rA); ldG(rB).op(ADD); };
     /** a memory instruction: fast() when the address (left in A, its RAM offset in O) is in RAM, else the interpreter */
-    const memop = (ins: number, addr: () => void, lim: number, fast: () => void) => {
-        addr(); a.tee(A).c(0x80000000 | 0).op(XOR).tee(O).c(lim).op(LT_U).if_(); fast(); a.else_(); viaInterp(ins); a.end();
+    const memop = (ins: number, addr: () => void, lim: number, fast: () => void, pipe?: () => void) => {
+        addr(); a.tee(A).c(0x80000000 | 0).op(XOR).tee(O).c(lim).op(LT_U).if_(); fast(); a.else_();
+        if (pipe) { a.get(A).c(0xCC008000 | 0).op(EQ).if_(); pipe(); a.else_(); viaInterp(ins); a.end(); } else viaInterp(ins);
+        a.end();
+    };
+    /** A store to the write-gather pipe: the bytes are appended (big-endian); a full pipe goes through the hardware model. */
+    const toPipe = (size: number, value: () => unknown, rAupd = -1) => () => {
+        const put = (v: () => unknown, off: number) => {
+            if (size === 1) { a.get(Y); v(); a.op(0x3A, 0).u(PIPE + off); }
+            else if (size === 2) { v(); a.set(V); a.get(Y).get(V).c(0xFF).op(AND).c(8).op(SHL).get(V).c(8).op(SHR_U).c(0xFF).op(AND).op(OR).op(0x3B, 0).u(PIPE + off); }
+            else { v(); a.set(V); a.get(Y); bswapV(); a.op(0x36, 0).u(PIPE + off); }
+        };
+        value(); a.set(X);   // (before Y is taken: the value may use the scratch locals)
+        a.k32(PIPE_LEN).set(Y);
+        put(() => a.get(X), 0);
+        a.s32(PIPE_LEN, () => a.get(Y).c(size).op(ADD));
+        if (rAupd >= 0) upd(rAupd);
+        a.get(Y).c(32 - size).op(0x4F /* ge_u */).if_();
+        a.c(k + 1).c(N).call(F_PIPE).if_(); a.s32(PC, () => a.c(pc + 4)); a.ret(); a.end();
+        a.end();
     };
     const bswapV = () => a.get(V).c(8).op(ROTL).c(0x00FF00FF).op(AND).get(V).c(8).op(ROTR).c(0xFF00FF00 | 0).op(AND).op(OR);
     /** the big-endian word at O + off */
@@ -333,11 +364,11 @@ export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => 
             case 311: return memop(ins, eaxU(ra, rb), MEM1_SIZE - 1, () => { stG(d, () => be16()); upd(ra); });
             case 343: return memop(ins, eax(ra, rb), MEM1_SIZE - 1, () => stG(d, () => { be16(); a.op(0xC1); }));
             case 375: return memop(ins, eaxU(ra, rb), MEM1_SIZE - 1, () => { stG(d, () => { be16(); a.op(0xC1); }); upd(ra); });
-            case 151: return memop(ins, eax(ra, rb), MEM1_SIZE - 3, () => st32(() => ldG(d)));
+            case 151: return memop(ins, eax(ra, rb), MEM1_SIZE - 3, () => st32(() => ldG(d)), toPipe(4, () => ldG(d)));
             case 183: return memop(ins, eaxU(ra, rb), MEM1_SIZE - 3, () => { st32(() => ldG(d)); upd(ra); });
-            case 215: return memop(ins, eax(ra, rb), MEM1_SIZE, () => { a.get(O); ldG(d).op(0x3A, 0, 0); });
+            case 215: return memop(ins, eax(ra, rb), MEM1_SIZE, () => { a.get(O); ldG(d).op(0x3A, 0, 0); }, toPipe(1, () => ldG(d)));
             case 247: return memop(ins, eaxU(ra, rb), MEM1_SIZE, () => { a.get(O); ldG(d).op(0x3A, 0, 0); upd(ra); });
-            case 407: return memop(ins, eax(ra, rb), MEM1_SIZE - 1, () => st16(() => ldG(d)));
+            case 407: return memop(ins, eax(ra, rb), MEM1_SIZE - 1, () => st16(() => ldG(d)), toPipe(2, () => ldG(d)));
             case 439: return memop(ins, eaxU(ra, rb), MEM1_SIZE - 1, () => { st16(() => ldG(d)); upd(ra); });
             case 535: case 567:   // lfsx, lfsux
                 fpCheck();
@@ -347,7 +378,7 @@ export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => 
                 return memop(ins, xo === 631 ? eaxU(ra, rb) : eax(ra, rb), MEM1_SIZE - 7, () => { a.s32(ps0(d) + 4, () => be32()); a.s32(ps0(d), () => be32(4)); if (xo === 631) upd(ra); });
             case 663: case 695:   // stfsx, stfsux
                 fpCheck();
-                return memop(ins, xo === 695 ? eaxU(ra, rb) : eax(ra, rb), MEM1_SIZE - 3, () => { st32(() => stfsBits(d)); if (xo === 695) upd(ra); });
+                return memop(ins, xo === 695 ? eaxU(ra, rb) : eax(ra, rb), MEM1_SIZE - 3, () => { st32(() => stfsBits(d)); if (xo === 695) upd(ra); }, toPipe(4, () => stfsBits(d), xo === 695 ? ra : -1));
             case 727: case 759:   // stfdx, stfdux
                 fpCheck();
                 return memop(ins, xo === 759 ? eaxU(ra, rb) : eax(ra, rb), MEM1_SIZE - 7, () => { st32(() => a.k32(ps0(d) + 4)); st32(() => a.k32(ps0(d)), 4); if (xo === 759) upd(ra); });
@@ -402,15 +433,15 @@ export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => 
             case 33: return memop(ins, eaU(rA, simm), MEM1_SIZE - 3, () => { stG(rD, () => be32()); upd(rA); });
             case 34: return memop(ins, ea(rA, simm), MEM1_SIZE, () => stG(rD, () => a.get(O).op(0x2D, 0, 0)));
             case 35: return memop(ins, eaU(rA, simm), MEM1_SIZE, () => { stG(rD, () => a.get(O).op(0x2D, 0, 0)); upd(rA); });
-            case 36: return memop(ins, ea(rA, simm), MEM1_SIZE - 3, () => st32(() => ldG(rD)));
-            case 37: return memop(ins, eaU(rA, simm), MEM1_SIZE - 3, () => { st32(() => ldG(rD)); upd(rA); });
-            case 38: return memop(ins, ea(rA, simm), MEM1_SIZE, () => { a.get(O); ldG(rD).op(0x3A, 0, 0); });
+            case 36: return memop(ins, ea(rA, simm), MEM1_SIZE - 3, () => st32(() => ldG(rD)), toPipe(4, () => ldG(rD)));
+            case 37: return memop(ins, eaU(rA, simm), MEM1_SIZE - 3, () => { st32(() => ldG(rD)); upd(rA); }, toPipe(4, () => ldG(rD), rA));
+            case 38: return memop(ins, ea(rA, simm), MEM1_SIZE, () => { a.get(O); ldG(rD).op(0x3A, 0, 0); }, toPipe(1, () => ldG(rD)));
             case 39: return memop(ins, eaU(rA, simm), MEM1_SIZE, () => { a.get(O); ldG(rD).op(0x3A, 0, 0); upd(rA); });
             case 40: return memop(ins, ea(rA, simm), MEM1_SIZE - 1, () => stG(rD, () => be16()));
             case 41: return memop(ins, eaU(rA, simm), MEM1_SIZE - 1, () => { stG(rD, () => be16()); upd(rA); });
             case 42: return memop(ins, ea(rA, simm), MEM1_SIZE - 1, () => stG(rD, () => { be16(); a.op(0xC1); }));
             case 43: return memop(ins, eaU(rA, simm), MEM1_SIZE - 1, () => { stG(rD, () => { be16(); a.op(0xC1); }); upd(rA); });
-            case 44: return memop(ins, ea(rA, simm), MEM1_SIZE - 1, () => st16(() => ldG(rD)));
+            case 44: return memop(ins, ea(rA, simm), MEM1_SIZE - 1, () => st16(() => ldG(rD)), toPipe(2, () => ldG(rD)));
             case 45: return memop(ins, eaU(rA, simm), MEM1_SIZE - 1, () => { st16(() => ldG(rD)); upd(rA); });
             case 46: return memop(ins, ea(rA, simm), MEM1_SIZE - 4 * (32 - rD) + 1, () => { for (let r = rD, i = 0; r < 32; r++, i += 4) stG(r, () => be32(i)); });
             case 47: return memop(ins, ea(rA, simm), MEM1_SIZE - 4 * (32 - rD) + 1, () => { for (let r = rD, i = 0; r < 32; r++, i += 4) st32(() => ldG(r), i); });
@@ -484,7 +515,7 @@ export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => 
         }
         if (op === 52 || op === 53) {
             fpCheck();
-            return memop(ins, op === 53 ? eaU(rA, simm) : ea(rA, simm), MEM1_SIZE - 3, () => { st32(() => stfsBits(rD)); if (op === 53) upd(rA); });
+            return memop(ins, op === 53 ? eaU(rA, simm) : ea(rA, simm), MEM1_SIZE - 3, () => { st32(() => stfsBits(rD)); if (op === 53) upd(rA); }, toPipe(4, () => stfsBits(rD), op === 53 ? rA : -1));
         }
         if (op === 54 || op === 55) {
             fpCheck();

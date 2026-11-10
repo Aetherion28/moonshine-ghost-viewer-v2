@@ -1,7 +1,9 @@
 // v3: the little of the GameCube's hardware that the game needs to boot and run its frames, at register
 // level. The registers at 0xCC00xxxx read back what was written unless a device says otherwise:
-//   CP / PE   the GPU's command and pixel engines: always idle; the FIFO's bytes are counted and dropped
-//             (the viewer draws); draw-done and draw-sync tokens are raised by HLE (hle.ts)
+//   CP / PE   the GPU's command and pixel engines. The write-gather pipe's bytes go to memory at the FIFO's
+//             write pointer 32 at a time; the GPU (gx.ts) reads behind it, at once, stopping at the FIFO's
+//             breakpoint when the game sets one (it does, to read the pixel counters before the GPU goes
+//             on); draw-sync tokens and draw-done interrupt a little after the GPU reaches them
 //   VI        the beam position from the time, and its display interrupts at the retrace
 //   PI        interrupt cause and mask, the FIFO's write pointer
 //   DSP       the ARAM (16 MB) and its DMA, done at once; no DSP program runs
@@ -11,6 +13,8 @@
 import type { Mmio } from './mem.js';
 import type { Machine } from './machine.js';
 import type { VirtualDisc } from './disc.js';
+import { Gx } from './gx.js';
+import { PIPE, PIPE_LEN } from './jit.js';
 
 export const ARAM_SIZE = 0x1000000;
 
@@ -30,8 +34,15 @@ export class Hardware implements Mmio {
     disc: VirtualDisc | null = null;
     /** a read of the embedded frame buffer (the Z or colour at a pixel): the trace's feedback records answer these */
     efbPeek: (addr: number, size: number) => number = () => 0;
-    /** bytes the game wrote to the GX FIFO (dropped) */
-    fifoBytes = 0;
+    /** bytes that went through the write-gather pipe; of them, to the GPU's FIFO */
+    fifoBytes = 0; gpBytes = 0;
+    gx: Gx;
+    /** the write-gather pipe: the bytes since the last burst of 32 (in the WebAssembly memory: compiled code appends to it) */
+    private pipe: Uint8Array; private pipeLen: Uint32Array;
+    /** the GPU's read pointer in its FIFO (a physical address) */
+    private gpRp = 0;
+    /** what the GPU model can't do, as it meets it */
+    gxUnsupported: (what: string) => void = () => { };
     /** instructions per field, lines per frame (NTSC interlaced: 525) */
     field = FIELD_NTSC; lines = 525;
     private fieldStart = 0; private fieldNo = 0;
@@ -41,7 +52,16 @@ export class Hardware implements Mmio {
     log: ((s: string) => void) | null = null;
     diReads = 0; diBytes = 0;
 
-    constructor(public m: Machine) { }
+    constructor(public m: Machine) {
+        const buf = m.mem.wasm.buffer;
+        this.pipe = new Uint8Array(buf, PIPE, 64); this.pipeLen = new Uint32Array(buf, PIPE_LEN, 1);
+        this.gx = new Gx(m.mem.ram, {
+            token: (value, withInterrupt) => { if (withInterrupt) this.m.after(this.gpuDelay, () => this.peToken(value)); else this.w16(0x100E, value); },
+            finish: () => { this.m.after(this.gpuDelay, () => this.peFinish()); },
+            unsupported: (what) => this.gxUnsupported(what),
+        });
+        m.cpu.onPipeFull = () => this.pipeFull();
+    }
 
     // ---------------------------------------------------------------- interrupts
     private setCause(bit: number, on: boolean) {
@@ -62,13 +82,24 @@ export class Hardware implements Mmio {
         const a = addr & 0xFFFF;
         if (a >= 0x8000) return 0;   // the FIFO is write-only
         switch (a & 0xFF00) {
-            case 0x0000:   // CP
-                if (a === 0x00) return 0x000C;   // status: the GPU is idle (read idle, command idle)
-                if (a === 0x30 || a === 0x32) return 0;   // FIFO read-write distance: all consumed
-                if (a === 0x38) return this.r16(0x34); if (a === 0x3A) return this.r16(0x36);   // the read pointer follows the write pointer
+            case 0x0000: {   // CP
+                // status: read idle and command idle unless the GPU has more to read and may; at its breakpoint
+                if (a === 0x00) { const [more, atBp] = this.gpState(); return (more && !atBp ? 0 : 0x0C) | (atBp ? 0x10 : 0); }
+                const linked = (this.r16(0x02) & 0x10) !== 0, wp = linked ? this.r32(0x3014) & 0x03FFFFE0 : ((this.r16(0x36) << 16) | this.r16(0x34)) & 0x03FFFFE0;
+                if (a === 0x30 || a === 0x32) {   // the distance from the read pointer to the write pointer
+                    let d = wp - this.gpRp;
+                    if (d < 0) d += (((this.r16(0x26) << 16) | this.r16(0x24)) & 0x03FFFFE0) - (((this.r16(0x22) << 16) | this.r16(0x20)) & 0x03FFFFE0) + 32;
+                    return a === 0x30 ? d & 0xFFFF : d >>> 16;
+                }
+                if (a === 0x34) return wp & 0xFFFF; if (a === 0x36) return wp >>> 16;
+                if (a === 0x38) return this.gpRp & 0xFFFF; if (a === 0x3A) return this.gpRp >>> 16;
                 break;
+            }
             case 0x1000:   // PE
                 if (a === 0x100A) return this.r16(a) & 3;   // the interrupt bits are write-only (a 1 acknowledges): they read 0
+                // the pixel counters (GXReadPixMetric): groups of four pixels into the blender; the depth test's aren't kept
+                if (a === 0x1028) return this.gx.blendQuads & 0xFFFF; if (a === 0x102A) return (this.gx.blendQuads >>> 16) & 0xFFFF;
+                if (a >= 0x1018 && a < 0x1030) return 0;
                 break;
             case 0x2000:   // VI
                 if (a === 0x202C) return this.beam()[0];
@@ -93,6 +124,12 @@ export class Hardware implements Mmio {
         const a = addr & 0xFFFF;
         if (a >= 0x8000) { this.fifo(size, v); return; }
         switch (a & 0xFF00) {
+            case 0x0000:   // CP
+                this.store(a, size, v);
+                if (a === 0x38 || a === 0x3A) this.gpRp = ((this.r16(0x3A) << 16) | this.r16(0x38)) & 0x03FFFFE0;
+                // (the control register, the breakpoint: the GPU may go on, or must stop)
+                if (a === 0x02 || a === 0x3C || a === 0x3E || a === 0x38 || a === 0x3A) this.gpRun();
+                return;
             case 0x1000:   // PE
                 if (a === 0x100A) {   // interrupt status: the enables stay, a 1 clears the token (4) / finish (8) interrupt
                     const cur = this.r16(a), nv = ((cur & ~(v & 0xC)) & 0xC) | (v & 3);
@@ -106,7 +143,7 @@ export class Hardware implements Mmio {
             case 0x3000:   // PI
                 if (a === 0x3000) { this.setCause(v & (PI_ERROR | PI_RSW | PI_DEBUG), false); return; }
                 if (a === 0x3004) { this.piMask = v >>> 0; this.setCause(0, false); return; }
-                if (a === 0x3014) { this.w32(a, v & ~0x04000000); this.fifoPartial = 0; return; }   // the FIFO's write pointer
+                if (a === 0x3014) { this.w32(a, v & ~0x04000000); this.pipeLen[0] = 0; return; }   // the FIFO's write pointer (the pipe starts empty)
                 break;
             case 0x5000:   // DSP
                 if (a === 0x500A) {
@@ -136,28 +173,58 @@ export class Hardware implements Mmio {
     }
 
     // ---------------------------------------------------------------- GX FIFO
-    private fifoPartial = 0;
-    private fifoLast = -1;
-    /** instructions from a draw-done / draw-sync command being written to the GPU's interrupt for it */
+    /** instructions from the GPU reaching a draw-done / draw-sync command to its interrupt */
     gpuDelay = 3_000;
-    /** Bytes written through the write-gather pipe advance the FIFO's write pointer by 32 at a time. Nothing is
-     *  drawn; of the stream only the commands the game waits on are noticed, by their shape (a BP register load:
-     *  the byte 0x61, then the word): 0x45 the frame is done, 0x48 a draw-sync token with its interrupt. */
+    /** A write to the write-gather pipe (0xCC008000). */
     private fifo(n: number, v: number) {
-        if (n === 4 && this.fifoLast === 0x61) {
-            const reg = v >>> 24;
-            if (reg === 0x45 && (v & 2)) this.m.after(this.gpuDelay, () => this.peFinish());
-            else if (reg === 0x48) { const token = v & 0xFFFF; this.m.after(this.gpuDelay, () => this.peToken(token)); }
-        }
-        this.fifoLast = n === 1 ? v : -1;
-        this.fifoBytes += n;
-        this.fifoPartial += n;
-        if (this.fifoPartial >= 32) {
+        const b = this.pipe, p = this.pipeLen[0];
+        if (n === 4) { b[p] = v >>> 24; b[p + 1] = v >>> 16; b[p + 2] = v >>> 8; b[p + 3] = v; } else if (n === 2) { b[p] = v >>> 8; b[p + 1] = v; } else b[p] = v;
+        this.pipeLen[0] = p + n;
+        if (p + n >= 32) this.pipeFull();
+    }
+    /** The pipe holds 32 bytes: they go to memory at the FIFO's write pointer, and the GPU reads on if this is its FIFO. */
+    pipeFull() {
+        const b = this.pipe, ram = this.m.mem.ram;
+        let p = this.pipeLen[0];
+        const linked = (this.r16(0x02) & 0x10) !== 0;
+        while (p >= 32) {
             let wp = this.r32(0x3014) & 0x03FFFFE0;
             const end = this.r32(0x3010) & 0x03FFFFE0, base = this.r32(0x300C) & 0x03FFFFE0;
-            while (this.fifoPartial >= 32) { this.fifoPartial -= 32; wp = wp === end ? base : wp + 32; }
+            if (wp + 32 <= ram.length) ram.set(b.subarray(0, 32), wp);
+            wp = wp === end ? base : wp + 32;
             this.w32(0x3014, wp);
+            b.copyWithin(0, 32, p); p -= 32;
+            this.fifoBytes += 32; if (linked) this.gpBytes += 32;
         }
+        this.pipeLen[0] = p;
+        if (linked) this.gpRun();
+    }
+    /** the position in the GPU's command stream of the next byte the game writes (the replay marks spans of it) */
+    streamPos() { return this.gpBytes + this.pipeLen[0]; }
+    /** [the GPU has bytes to read, it is stopped at the breakpoint] */
+    private gpState(): [boolean, boolean] {
+        const ctrl = this.r16(0x02);
+        if (!(ctrl & 0x10)) return [false, false];
+        const wp = this.r32(0x3014) & 0x03FFFFE0, bpAt = ((this.r16(0x3E) << 16) | this.r16(0x3C)) & 0x03FFFFE0;
+        return [this.gpRp !== wp, (ctrl & 2) !== 0 && this.gpRp === bpAt];
+    }
+    /** The GPU reads its FIFO up to the write pointer, or to the breakpoint. */
+    private gpRun() {
+        const ctrl = this.r16(0x02);
+        if ((ctrl & 0x11) === 0x11) {   // reading enabled, and the CPU's FIFO is the GPU's
+            const wp = this.r32(0x3014) & 0x03FFFFE0, ram = this.m.mem.ram;
+            const base = ((this.r16(0x22) << 16) | this.r16(0x20)) & 0x03FFFFE0, end = ((this.r16(0x26) << 16) | this.r16(0x24)) & 0x03FFFFE0;
+            const bpOn = (ctrl & 2) !== 0, bpAt = ((this.r16(0x3E) << 16) | this.r16(0x3C)) & 0x03FFFFE0;
+            let rp = this.gpRp;
+            while (rp !== wp && !(bpOn && rp === bpAt)) {
+                if (rp + 32 <= ram.length) this.gx.feed(ram, rp, 32);
+                rp = rp === end ? base : rp + 32;
+            }
+            this.gpRp = rp;
+        }
+        // the breakpoint's interrupt, while the GPU stands at it and it is enabled
+        const [, atBp] = this.gpState();
+        this.setCause(PI_CP, atBp && (ctrl & 0x20) !== 0);
     }
     /** GXSetDrawSync's token reaching the pixel engine: its interrupt, if enabled */
     peToken(token: number) {

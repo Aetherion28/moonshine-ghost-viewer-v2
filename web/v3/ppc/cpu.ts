@@ -53,6 +53,8 @@ export class Cpu {
     private decBase = 0xFFFFFFFF; private decCount0 = 0;
     /** called when the game writes DEC (the machine reschedules the decrementer exception) */
     onDecWrite: (() => void) | null = null;
+    /** the write-gather pipe holds 32 bytes (compiled code appends to it itself: jit.ts) */
+    onPipeFull: (() => void) | null = null;
     /** the external interrupt line (PI), and a decrementer exception waiting for MSR[EE] */
     extIrq = false; decPending = false;
     private get intr() { return this.s[R_INTR] !== 0; } private set intr(v: boolean) { this.s[R_INTR] = v ? 1 : 0; }
@@ -136,6 +138,8 @@ export class Cpu {
             resD: (d: number, v: number, a: number, b: number, c: number) => this.resD(d, v, a, b, c),
             resL: (d: number, lane: number, v: number, a: number, b: number, c: number) => this.resL(d, lane, v, a, b, c),
             lfsLane: (bits: number, d: number, lane: number) => singleToDoubleBits(bits, lane ? w1 : w0, d * 2),
+            // the write-gather pipe is full, at the block's instruction k1: 1 when the block must be left
+            pipeFull: (k1: number, n: number) => { this.count = this.b0 + k1; this.onPipeFull!(); return this.xq(n) ? 1 : 0; },
         } };
         this.wrun = new WebAssembly.Instance(new WebAssembly.Module(dispatcherModule()), this.imports).exports.run as () => number;
     }
