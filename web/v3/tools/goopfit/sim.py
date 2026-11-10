@@ -42,6 +42,17 @@ def stamp_alpha(tex,q,R,pos=(0,0)):
     if 'par4' in R:                       # (experiments) each pixel of a 2 x 2 group its own point: {(x & 1, y & 1): (dx, dy)}
         xo=(pos[0]+C)%2; yo=(pos[1]+Rw)%2; dx=np.zeros(C.shape); dy=np.zeros(C.shape)
         for (a,b),(px,py) in R['par4'].items(): m=(xo==a)&(yo==b); dx=np.where(m,px,dx); dy=np.where(m,py,dy)
+    if 'par16' in R:                      # (experiments) by the stamp's own corner too: {(x1 & 1, y1 & 1, col & 1, row & 1): (dx, dy)}
+        ox=pos[0]%2; oy=pos[1]%2; dx=np.zeros(C.shape); dy=np.zeros(C.shape)
+        for rx in (0,1):
+            for ry in (0,1):
+                m=(C%2==rx)&(Rw%2==ry); px,py=R['par16'][(ox,oy,rx,ry)]; dx=np.where(m,px,dx); dy=np.where(m,py,dy)
+    if 'par32' in R:                      # (experiments) ... and by the quad's triangle: {(x1 & 1, y1 & 1, col & 1, row & 1, 1 under the diagonal): (dx, dy)}
+        ox=pos[0]%2; oy=pos[1]%2; dx=np.zeros(C.shape); dy=np.zeros(C.shape)
+        for rx in (0,1):
+            for ry in (0,1):
+                for t in (0,1):
+                    m=(C%2==rx)&(Rw%2==ry)&((C<Rw)==bool(t)); px,py=R['par32'][(ox,oy,rx,ry,t)]; dx=np.where(m,px,dx); dy=np.where(m,py,dy)
     if 'dx2' in R or 'dy2' in R:          # (experiments) the quad's second triangle (under its diagonal) sampled elsewhere
         t2=C<Rw; dx=np.where(t2,R.get('dx2',dx),dx); dy=np.where(t2,R.get('dy2',dy),dy)
     if 'dxa' in R or 'dya' in R:          # (experiments) the quad cut along its other diagonal: the upper left triangle sampled elsewhere
@@ -52,6 +63,20 @@ def stamp_alpha(tex,q,R,pos=(0,0)):
     if 'dxr' in R: u=np.where(C*2>=w,R['mx']*(C+R['dxr'])*ku+R['tu'],u)       # (experiments) the right half's own offset
     if 'shv' in R: v=v+R['shv']*(C+0.5-w/2)*ku        # (experiments) a shear: v by the column, u by the row (in texels a texel)
     if 'shu' in R: u=u+R['shu']*(Rw+0.5-h/2)*kv
+    if 'tri' in R:                        # (experiments) a quad's two triangles each with its own plane: the corner off the
+        # diagonal taken as if it sat (ax, ay) pixels inside the quad; {'ll': (ax, ay), 'ur': (ax, ay)}
+        x=C+dx; y=Rw+dy; ur=C>=Rw
+        def plane(p0,p1,p2):              # (x, y, value) three times -> value = a x + b y + c
+            M=np.array([[p0[0],p0[1],1.0],[p1[0],p1[1],1.0],[p2[0],p2[1],1.0]]); return lambda val: np.linalg.solve(M,np.array(val,dtype=float))
+        lx,ly=R['tri'].get('ll',(0,0)); rx,ry=R['tri'].get('ur',(0,0))
+        PL=plane((0,0),(w,h),(lx,h-ly)); PU=plane((0,0),(w,h),(w-rx,ry))
+        ul=PL((0,tw,0)); vl=PL((0,th,th)); uu=PU((0,tw,tw)); vu=PU((0,th,0))
+        u=np.where(ur,uu[0]*x+uu[1]*y+uu[2],ul[0]*x+ul[1]*y+ul[2])+R['tu']; v=np.where(ur,vu[0]*x+vu[1]*y+vu[2],vl[0]*x+vl[1]*y+vl[2])+R['tv']
+    if 'abs' in R:                        # (experiments) the coordinate's step a pixel kept with F fractional bits (cut), its error
+        # growing with the screen position from an anchor: {'F': bits, 'ax': x, 'ay': y, 'sx': +-1, 'sy': +-1, 'rnd': 'floor'}
+        A=R['abs']; f=2.0**A['F']; rd={'floor':math.floor,'round':lambda z: math.floor(z+0.5),'ceil':math.ceil}[A.get('rnd','floor')]
+        eu=rd(ku*f)/f-ku; ev=rd(kv*f)/f-kv
+        u=u+A.get('sx',1)*eu*(pos[0]+C+dx-A.get('ax',0)); v=v+A.get('sy',1)*ev*(pos[1]+Rw+dy-A.get('ay',0))
     if 'uv' in R: u,v=R['uv'](u,v,C,Rw,w,h,tw,th)     # (experiments) any other rule
     if R['q']=='trunc': su=np.trunc(u*128).astype(np.int64); sv=np.trunc(v*128).astype(np.int64)
     else: su=np.floor(u*128+0.5).astype(np.int64); sv=np.floor(v*128+0.5).astype(np.int64)
@@ -80,6 +105,8 @@ def stamp_alpha(tex,q,R,pos=(0,0)):
         a=top+z((bot-top)*fv)
     for (t,size,col,row),val in R.get('ovr',{}).items():       # (experiments) single pixels of a stamp set by hand
         if t==tex and size==w: a[row,col]=val
+    for (t,size,col,row,cx,cy),val in R.get('ovr4',{}).items():   # (experiments) ... for the pixel of one place in a 2 x 2 group; a number, or '+1' / '-1'
+        if t==tex and size==w and (pos[0]+col)%2==cx and (pos[1]+row)%2==cy: a[row,col]=max(0,a[row,col]+int(val)) if isinstance(val,str) else val
     return a
 
 def blend(c,d,a,R):
@@ -136,7 +163,7 @@ class Sim:
             hm=np.frombuffer(base64.b64decode(l['hmap']),dtype=np.uint8).reshape(l['h'],l['w']).astype(np.int64)
             self.L[l['i']]=dict(map=m,hmap=hm,thr=l['thr'],delta=l['delta'],cthr=l['cthr'],w=l['w'],h=l['h'])
         self.pending=[]; self.inframe=False; self.unknown=set(); self.tab={}
-        self.phm=math.lcm(*[m for (_,m) in R['byphase']]) if R.get('byphase') else (2 if ('par' in R or 'par4' in R) else 0)
+        self.phm=math.lcm(*[m for (_,m) in R['byphase']]) if R.get('byphase') else (2 if ('par' in R or 'par4' in R or 'ovr4' in R or 'par16' in R or 'par32' in R) else 0)
     def event(self,e):
         k=e['k']
         if k=='q':
@@ -168,7 +195,7 @@ class Sim:
             elif k=='s':
                 x1,y1,x2,y2=[int(v) for v in e['q']]
                 if e['tex'] not in TEXN: self.unknown.add(('stamp texture',hex(e['tex']))); continue
-                ph=(x1%self.phm,y1%self.phm) if self.phm else (0,0)
+                ph=(x1,y1) if 'abs' in R else (x1%self.phm,y1%self.phm) if self.phm else (0,0)
                 key=(e['tex'],x2-x1,y2-y1,ph); a=self.tab.get(key)
                 if a is None: a=self.tab[key]=stamp_alpha(e['tex'],(0,0,x2-x1,y2-y1),R,ph)
                 # clip to the map
@@ -188,7 +215,7 @@ class Sim:
 
 # Where a replay stopped, the game's own verdict of that tick isn't the console's: what the console had instead
 # (worked out from which rand() call was the odd one), by capture: {tick: [(layer, x, z, goop there on the console)]}
-FAILED={'cap_b1':{4532:[(0,199,114,False)]},'cap_b5':{3457:[(0,292,294,True)]}}   # (captures of Bianco Hills 1 to tick 4,533 and Bianco Hills 5 to 3,457)
+FAILED={'cap_b1':{4532:[(0,199,114,False)]},'cap_b5':{3457:[(0,292,294,True)]},'cap_pv1':{1688:[(0,116,444,True)]}}   # (captures of Bianco Hills 1 to tick 4,533 and Bianco Hills 5 to 3,457)
 
 def evaluate(init,ev,R,upto=None,verbose=False,failed=None):
     """(tests that disagree, the first's tick, tests checked)"""
@@ -202,6 +229,8 @@ def evaluate(init,ev,R,upto=None,verbose=False,failed=None):
             val=int(L['map'][e['z'],e['x']]) if inside else -1
             mine=bool(e['hok'] and val>L['thr']); theirs=bool(e['hok'] and e['val']>L['thr'])
             if e['ctx']=='A':
+                # (the fifth try of an action is no evidence: polluted or not, the same number of rand() calls follows)
+                if e['n']>=4 and not (failed and e['t'] in failed): continue
                 if failed and e['t'] in failed:
                     o=[f for f in failed[e['t']] if f[0]==e['layer'] and f[1]==e['x'] and f[2]==e['z']]
                     if not o: continue
