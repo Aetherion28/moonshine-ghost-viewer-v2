@@ -5,7 +5,7 @@
 // Run: npx esbuild v3/tests/unit.ts --bundle --platform=node --format=esm --outfile=/tmp/v3unit.mjs && node /tmp/v3unit.mjs
 import { Memory } from '../ppc/mem.ts';
 import { Cpu } from '../ppc/cpu.ts';
-import { fmaD, fmaS, fres, frsqrte, force25, doubleToSingleBits, singleToDoubleBits, f32Bits } from '../ppc/fpu.ts';
+import { fmaD, fmaS, fres, frsqrte, force25, trunc25, doubleToSingleBits, singleToDoubleBits, f32Bits } from '../ppc/fpu.ts';
 import { fres as fresV2, frsqrte as frsqrteV2 } from '../../src/game/player/fmath.ts';
 
 let seed = 0x1234567;
@@ -178,6 +178,10 @@ for (let t = 0; t < 300000; t++) {
     expect('force25 exact', force25(1.5), 1.5);
     expect('force25 rounds up', force25(1 + 2 ** -25), 1 + 2 ** -24);
     expect('force25 rounds down', force25(1 + 2 ** -26), 1);
+    expect('trunc25 cuts', trunc25(1 + 2 ** -17 + 2 ** -23 + 2 ** -25 + 2 ** -26), 1 + 2 ** -17 + 2 ** -23);
+    expect('trunc25 keeps 25 bits', trunc25(1 + 2 ** -24 + 2 ** -25), 1 + 2 ** -24);
+    expect('force25 with the low word\'s top bit', force25(1 + 2 ** -21 + 2 ** -25), 1 + 2 ** -21 + 2 ** -24);
+    expect('force25 carries into the high word', force25(1 + 2 ** -20 - 2 ** -25), 1 + 2 ** -20);   // (the low word 0xF8000000)
 }
 console.log('fres / frsqrte / conversions: failures', fails - f0);
 console.log(fails ? `FAILED: ${fails}` : `all ${checks} checks passed`);

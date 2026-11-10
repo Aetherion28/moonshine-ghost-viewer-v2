@@ -5,7 +5,7 @@
 // describe it (fpu.ts). FPRs are raw bits: fctiw's results and NaN payloads survive moves and stores.
 
 import { Memory, MEM1_SIZE, LC_BASE } from './mem.js';
-import { fr, fmaD, fmaS, force25, fres, frsqrte, singleToDoubleBits, doubleToSingleBits, MIN_NORMAL_F32, MIN_NORMAL_F64 } from './fpu.js';
+import { fr, fmaD, fmaS, force25, fres, frsqrte, singleToDoubleBits, doubleToSingleBits, MIN_NORMAL_F32, MIN_NORMAL_F64, trunc25 } from './fpu.js';
 
 /** call() returns when the PC reaches this (unmapped) address */
 export const RETURN_SENTINEL = 0xFFFFFFF0;
@@ -559,13 +559,13 @@ export class Cpu {
                 case 20: this.resL(d, 0, a0 - b0, a, b, -1); this.resL(d, 1, a1 - b1, A1, B1, -1); break;   // ps_sub
                 case 18: this.resL(d, 0, a0 / b0, a, b, -1); this.resL(d, 1, a1 / b1, A1, B1, -1); break;   // ps_div
                 case 25: this.resL(d, 0, a0 * force25(c0), a, -1, c); this.resL(d, 1, a1 * force25(c1), A1, -1, C1); break;   // ps_mul
-                case 12: this.resL(d, 0, a0 * force25(c0), a, -1, c); this.resL(d, 1, a1 * force25(c0), A1, -1, c); break;   // ps_muls0
+                case 12: this.resL(d, 0, a0 * force25(c0), a, -1, c); this.resL(d, 1, a1 * trunc25(c0), A1, -1, c); break;   // ps_muls0
                 case 13: this.resL(d, 0, a0 * force25(c1), a, -1, C1); this.resL(d, 1, a1 * force25(c1), A1, -1, C1); break;   // ps_muls1
                 case 29: { const x = this.madds(a0, c0, b0), y = this.madds(a1, c1, b1); this.resL(d, 0, x, a, b, c); this.resL(d, 1, y, A1, B1, C1); break; }   // ps_madd
                 case 28: { const x = this.madds(a0, c0, -b0), y = this.madds(a1, c1, -b1); this.resL(d, 0, x, a, b, c); this.resL(d, 1, y, A1, B1, C1); break; }   // ps_msub
                 case 31: { const x = this.madds(a0, c0, b0), y = this.madds(a1, c1, b1); this.resL(d, 0, x === x ? -x : x, a, b, c); this.resL(d, 1, y === y ? -y : y, A1, B1, C1); break; }   // ps_nmadd
                 case 30: { const x = this.madds(a0, c0, -b0), y = this.madds(a1, c1, -b1); this.resL(d, 0, x === x ? -x : x, a, b, c); this.resL(d, 1, y === y ? -y : y, A1, B1, C1); break; }   // ps_nmsub
-                case 14: { const x = this.madds(a0, c0, b0), y = this.madds(a1, c0, b1); this.resL(d, 0, x, a, b, c); this.resL(d, 1, y, A1, B1, c); break; }   // ps_madds0
+                case 14: { const x = this.madds(a0, c0, b0), y = this.madds(a1, trunc25(c0), b1); this.resL(d, 0, x, a, b, c); this.resL(d, 1, y, A1, B1, c); break; }   // ps_madds0
                 case 15: { const x = this.madds(a0, c1, b0), y = this.madds(a1, c1, b1); this.resL(d, 0, x, a, b, C1); this.resL(d, 1, y, A1, B1, C1); break; }   // ps_madds1
                 case 10: this.resL(d, 0, a0 + b1, a, B1, -1); this.resL(d, 1, c1, C1, -1, -1); break;   // ps_sum0
                 case 11: this.resL(d, 1, a0 + b1, a, B1, -1); this.resL(d, 0, c0, c, -1, -1); break;   // ps_sum1

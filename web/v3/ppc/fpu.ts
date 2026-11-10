@@ -70,8 +70,24 @@ export function force25(d: number) {
     f64[0] = d;
     const lo = w64[0];
     if (!(lo & 0x0FFFFFFF)) return d;   // (a single's low 29 bits are zero: unchanged)
-    const n = (lo & 0xF8000000) + (lo & 0x08000000);
+    const n = ((lo & 0xF8000000) >>> 0) + (lo & 0x08000000);
     if (n > 0xFFFFFFFF) { w64[0] = 0; w64[1]++; } else w64[0] = n;
+    return f64[0];
+}
+
+/**
+ * The multiplier the second lane takes from frC's first lane (ps_muls0, ps_madds0): cut to 25 bits, not
+ * rounded. Dolphin rounds it as the first lane's. A console recording says otherwise (Bianco Hills episode 1,
+ * a/trace_41726535_80000003: MsVECNormalize multiplies y by a frsqrte estimate, 0x3FF000082C000000, at movement
+ * tick 596, and Mario's head matrix then needs y * 0x3FF0000820000000; four ticks earlier a 24-bit multiplier
+ * gives a wrong element of another of his matrices (+0x260), so the cut is at 25 bits). With it the recording stays bit-identical for 2,347
+ * ticks; with the rounded multiplier, 598.
+ */
+export function trunc25(d: number) {
+    f64[0] = d;
+    const lo = w64[0];
+    if (!(lo & 0x0FFFFFFF)) return d;
+    w64[0] = (lo & 0xF0000000) >>> 0;
     return f64[0];
 }
 

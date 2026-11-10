@@ -46,8 +46,11 @@ export class Machine {
     }
 
     // ---------------------------------------------------------------- boot
-    /** Loads the DOL and sets memory and registers up as the console's boot ROM and the disc's apploader leave them. */
-    load(dol: Uint8Array, disc: VirtualDisc) {
+    /**
+     * Loads the DOL and sets memory and registers up as the console's boot ROM and the disc's apploader leave them.
+     * The file system table sits at the top of memory and the arena ends below it.
+     */
+    load(dol: Uint8Array, disc: VirtualDisc, fstPad = 0) {
         const { entry } = loadDol(this.mem, dol);
         const m = this.mem;
         this.hw.disc = disc;
@@ -58,7 +61,8 @@ export class Machine {
         m.w32(0x80000028, 0x01800000);   // physical memory
         m.w32(0x8000002C, 3);   // console type: retail
         // the file system table at the top of memory, the arena below it
-        const fst = disc.fst, fstAddr = (0x81800000 - fst.length) & ~0x1F;
+        // (fstPad: the console's own table was that much bigger, and its arena ends that much lower)
+        const fst = disc.fst, fstAddr = (0x81800000 - fst.length - fstPad) & ~0x1F;
         m.ram.set(fst, fstAddr & 0x01FFFFFF);
         m.w32(0x80000030, 0); m.w32(0x80000034, fstAddr);
         m.w32(0x80000038, fstAddr); m.w32(0x8000003C, fst.length);

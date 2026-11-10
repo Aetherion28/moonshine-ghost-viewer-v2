@@ -185,7 +185,7 @@ export function readMstr(buf: ArrayBuffer, visit?: (r: MstrRecord) => void): Mst
 /** One reconstructed native object prefix: its address, its bytes, which literal offsets were seen. */
 export interface BlobState { pointer: number; data: Uint8Array; seen: Set<number>; }
 
-function applyBlob(payload: Uint8Array, bv: DataView, version: number, states: Map<number, BlobState>, kind: number) {
+export function applyBlob(payload: Uint8Array, bv: DataView, version: number, states: Map<number, BlobState>, kind: number) {
     const fail = (m: string): never => { throw new MstrError(m); };
     if (payload.length < 16) fail('Truncated native byte block');
     const pointer = bv.getUint32(0), offset = bv.getUint32(4), total = bv.getUint32(8), field = bv.getUint32(12);
@@ -217,7 +217,7 @@ function applyBlob(payload: Uint8Array, bv: DataView, version: number, states: M
     }
 }
 
-function applyInputDelta(input: Uint8Array, body: Uint8Array, bv: DataView) {
+export function applyInputDelta(input: Uint8Array, body: Uint8Array, bv: DataView) {
     const fail = (m: string): never => { throw new MstrError(m); };
     const masks = [bv.getUint32(4), bv.getUint32(8), bv.getUint32(12)];
     if (masks[2] >>> 11) fail('Controller mask exceeds extent');
