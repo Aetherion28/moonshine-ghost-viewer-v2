@@ -1,6 +1,10 @@
 // (debugging) plays a trace and prints, between two ticks, the goop under Mario and what the GPU model draws.
 // Run: node v3goopdbg.mjs <trace> <from tick> <to tick>
-import { readFileSync } from 'node:fs';
+// Env: WATCH=x,y (every pixel drawn at one place of the frame buffer, from <from> on), PX=<regex> (the pixels of
+// the 3-stage draws that match), TEXEL=layer,x,z (a texel per tick), REGION=layer,x,z,n (an n x n block of the
+// map and of the height map at <from>), POLL=1 (every goop test of the game: layer, texel, value, and each
+// layer's action), DUMP=<file> (all layers' maps at <to>), EARLY=layer,x,z, ALL=1 (don't stop on issues).
+import { readFileSync, writeFileSync } from 'node:fs';
 import { readTrace } from '../game/trace.ts';
 import { Replay, JP10 } from '../game/replay.ts';
 import { symbols } from './syms.ts';
@@ -26,6 +30,9 @@ const layers = () => {
     return out;
 };
 const idx = (x: number, z: number, l2w: number) => (z & 3) * 8 + ((x >> 3) + ((z >> 2) << (l2w - 3))) * 0x20 + (x & 7);
+if (process.env.POLL) m.cpu.hook(0x801F09EC, (c) => { if (R.ticks >= from - 1) { const pos = c.gpr[3], x = c.gpr[4] | 0, z = c.gpr[5] | 0, l = layers().find((q) => q.L + 0x5C === pos); console.log(`   isSame tick ${R.ticks + 1} layer ${l?.i} texel ${x},${z} = ${l && x >= 0 && z >= 0 && x < l.w && z < l.h ? mem.r8(l.map + idx(x, z, l.l2w)) + ' height ' + mem.r8(l.hmap + idx(x, z, l.l2w)) : 'out'} lr ${c.lr.toString(16)}`); } return false; });
+if (process.env.POLL) m.cpu.hook(0x801EBAE4, (c) => { if (R.ticks >= from - 1) { const l = layers().find((q) => q.L === c.gpr[3]); console.log(`   action layer ${l?.i} tick ${R.ticks}`); } return false; });
+const dump = () => { const fs = process.env.DUMP; if (!fs) return; const out: number[] = []; for (const l of layers()) for (let z = 0; z < l.h; z++) for (let x = 0; x < l.w; x++) out.push(mem.r8(l.map + idx(x, z, l.l2w))); writeFileSync(fs, Uint8Array.from(out)); };
 const timer = setInterval(() => { }, 1000);
 const hookTick = () => {
     const t = R.ticks;
@@ -37,6 +44,7 @@ const hookTick = () => {
         gx.trace = (s) => { cur = s.replace(/ \|.*/, '').slice(0, 150); if (/^copy/.test(s)) console.log(`  gx@${R.ticks}: ${s}`); };
         gx.pixelTrace = (p) => { if (p.startsWith(`px ${wx},${wy} `)) console.log(`  gx@${R.ticks}: ${cur}\n      ${p}`); };
     } else if (t === from) { gx.trace = (s) => { console.log(`  gx@${R.ticks}: ${s}`); gx.pixelTrace = process.env.PX && /stages 3/.test(s) && new RegExp(process.env.PX).test(s) ? (p) => console.log('      ' + p) : null; }; console.log(layers().map((l) => `layer ${l.i}: type ${l.type} flags ${l.flags.toString(16)} ${l.w}x${l.h} x ${l.minX}..${l.maxX} z ${l.minZ}..${l.maxZ} inv ${l.inv} voff ${l.voff} thr ${l.thr} delta ${l.delta} cthr ${l.cthr} counter ${l.counter}`).join('\n')); }
+    if (t === to) dump();
     if (t < from || t > to) return;
     const mario = mem.r32(JP10.gpMarioOriginal), x = f32(mario + 0x10), y = f32(mario + 0x14), z = f32(mario + 0x18);
     const rec = T.ticks[t - 1]?.mario, rd = rec ? new DataView(rec.buffer, rec.byteOffset) : null;
@@ -48,6 +56,7 @@ const hookTick = () => {
         line += `\n   layer ${l.i} texel ${tx},${tz} height ${mem.r8(l.hmap + idx(tx, tz, l.l2w))} depth(y) ${Math.trunc((y - l.voff) * 0.025)} counter ${l.counter}\n     ${row(-2)}\n     ${row(-1)}\n     ${row(0)}\n     ${row(1)}\n     ${row(2)}`;
     }
     if (process.env.TEXEL) { const [li, tx, tz] = process.env.TEXEL.split(',').map(Number), l = layers()[li]; if (l) line += ` | texel ${tx},${tz} = ${mem.r8(l.map + idx(tx, tz, l.l2w))} height ${mem.r8(l.hmap + idx(tx, tz, l.l2w))}`; }
+    if (process.env.REGION && t === from) { const [li, x0, z0, n] = process.env.REGION.split(',').map(Number), l = layers()[li]; for (let z = z0; z < z0 + n; z++) { let r = String(z).padStart(4) + ': ', h = '   '; for (let x = x0; x < x0 + n; x++) { r += mem.r8(l.map + idx(x, z, l.l2w)).toString(16).padStart(2, '0') + ' '; h += mem.r8(l.hmap + idx(x, z, l.l2w)).toString(16).padStart(2, '0') + ' '; } line += '\n' + r + h; } }
     console.log(line);
 };
 m.cpu.hook(JP10.marioPerform + 4, () => { hookTick(); return false; });

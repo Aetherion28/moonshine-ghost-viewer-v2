@@ -1,4 +1,5 @@
-// v3 in the browser: the user's disc as the machine's drive. Runs in a worker (FileReaderSync).
+// v3: the user's disc as the machine's drive. In the browser it runs in a worker (FileReaderSync over the
+// user's files); the Node tests give it files through `Bytes` (tests/verify.ts).
 //   - a disc image (.iso / .gcm): the image's own boot.bin and file system table, reads served from the image
 //     at its own offsets (ImageDisc);
 //   - an extracted folder (Dolphin's "Extract Entire Disc": files/ and sys/): with sys/boot.bin and sys/fst.bin
@@ -15,11 +16,15 @@ export interface OpenedDisc {
     make(): VirtualDisc;
 }
 
+/** a file's bytes, read on demand (a read past the end returns what there is) */
+export interface Bytes { size: number; read(off: number, len: number): Uint8Array }
+export type DiscBytes = { iso: Bytes } | { folder: { path: string; file: Bytes }[] };
 declare const FileReaderSync: { new(): { readAsArrayBuffer(b: Blob): ArrayBuffer } };
-const readBlob = (b: Blob, off: number, len: number) => new Uint8Array(new FileReaderSync().readAsArrayBuffer(b.slice(off, off + len)));
+export const blobBytes = (b: Blob): Bytes => ({ size: b.size, read: (off, len) => new Uint8Array(new FileReaderSync().readAsArrayBuffer(b.slice(off, off + len))) });
+const readBlob = (b: Bytes, off: number, len: number) => b.read(off, len);
 const WHOLE = 16 << 20;   // files up to this size are read whole on their first read and kept
 
-interface Entry { path: string; offset: number; size: number; blob: Blob | null; at: number; data: Uint8Array | null }
+interface Entry { path: string; offset: number; size: number; blob: Bytes | null; at: number; data: Uint8Array | null }
 
 /** A file system table's files, in disc-offset order. */
 export function parseFst(fst: Uint8Array): { path: string; offset: number; size: number }[] {
@@ -43,7 +48,7 @@ export class ImageDisc {
     onOpen: ((path: string) => void) | null = null;
     private opened = new Set<Entry>();
     /** raw: the image itself, for reads outside every file (null: an extracted folder, which has nothing there) */
-    constructor(public header: Uint8Array, public fst: Uint8Array, private files: Entry[], private raw: Blob | null) { this.pal = header[3] === 0x50; }
+    constructor(public header: Uint8Array, public fst: Uint8Array, private files: Entry[], private raw: Bytes | null) { this.pal = header[3] === 0x50; }
 
     read(off: number, len: number, out: Uint8Array, at: number) {
         let done = 0;
@@ -80,17 +85,35 @@ function dolSize(head: Uint8Array) {
 }
 const idOf = (h: Uint8Array) => String.fromCharCode(...h.subarray(0, 6));
 
+/** Why a file that isn't a plain disc image can't be read, when its kind is known. */
+function notPlain(h: Uint8Array): string | null {
+    const tag = String.fromCharCode(...h.subarray(0, 4)), v = new DataView(h.buffer, h.byteOffset, h.byteLength);
+    if (tag === 'RVZ\x01' || tag === 'WIA\x01') return 'it is a compressed image (RVZ / WIA)';
+    if (tag === 'CISO') return 'it is a compact image (CISO)';
+    if (tag === 'WBFS') return 'it is a WBFS image';
+    if (h.length >= 4 && v.getUint32(0, true) === 0xB10BC001) return 'it is a compressed image (GCZ)';
+    if (h.length >= 0x204 && String.fromCharCode(...h.subarray(0x200, 0x204)) === 'NKIT') return 'it is an NKit image, which leaves parts of the disc out';
+    return null;
+}
+
 export function openDiscSource(src: DiscSource): OpenedDisc {
+    return openDisc('iso' in src ? { iso: blobBytes(src.iso) } : { folder: src.folder.map((f) => ({ path: f.path, file: blobBytes(f.file) })) });
+}
+
+export function openDisc(src: DiscBytes): OpenedDisc {
     if ('iso' in src) {
-        const img = src.iso, header = readBlob(img, 0, 0x440), hv = new DataView(header.buffer);
+        const img = src.iso, header = readBlob(img, 0, 0x440), hv = new DataView(header.buffer, header.byteOffset, header.byteLength);
+        const why = notPlain(header);
+        if (why) throw new Error(`the file isn't a plain disc image: ${why}. In Dolphin, right-click the game, Convert File, and choose ISO`);
         if (header.length < 0x440 || hv.getUint32(0x1C) !== 0xC2339F3D) throw new Error("the file isn't a GameCube disc image");
+        if (hv.getUint32(0x420) + 0x100 > img.size || hv.getUint32(0x424) + hv.getUint32(0x428) > img.size) throw new Error('the disc image is cut short (its program or file table lies past the end of the file)');
         const dolOff = hv.getUint32(0x420), fst = readBlob(img, hv.getUint32(0x424), hv.getUint32(0x428));
         const dol = readBlob(img, dolOff, dolSize(readBlob(img, dolOff, 0x100)));
         const files: Entry[] = parseFst(fst).map((f) => ({ ...f, blob: img, at: f.offset, data: null }));
         return { gameId: idOf(header), revision: header[7], dol, kind: 'image', make: () => new ImageDisc(header, fst, files, img) as unknown as VirtualDisc };
     }
     // an extracted folder: <root>/files/... and <root>/sys/{main.dol, boot.bin, fst.bin}
-    const disc = new Map<string, { path: string; file: Blob }>(), sys = new Map<string, Blob>();
+    const disc = new Map<string, { path: string; file: Bytes }>(), sys = new Map<string, Bytes>();
     for (const f of src.folder) {
         const parts = f.path.split('/').filter(Boolean), at = parts.indexOf('files'), name = parts[parts.length - 1].toLowerCase();
         if (at >= 0 && at < parts.length - 1) { const p = parts.slice(at + 1).join('/'); disc.set(p.toLowerCase(), { path: p, file: f.file }); }
