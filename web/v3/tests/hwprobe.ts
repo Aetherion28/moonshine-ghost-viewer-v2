@@ -6,6 +6,7 @@
 //      node v3hwprobe.mjs check <script.gxps>                    the script through ppc/gx.ts (what it expects of a console)
 //      node v3hwprobe.mjs compare <script.gxps> <answer.gxpo>    a console's answer against ppc/gx.ts, case by case
 //      node v3hwprobe.mjs model <script.gxps> <out.gxpo>         ppc/gx.ts's own answer, as a console would save it
+//      node v3hwprobe.mjs feed <script.gxps> <out.bin>           the bytes the script sends to the GPU (for tools/hwprobe/hosttest)
 import { readFileSync, writeFileSync } from 'node:fs';
 import { serialize, deserialize } from 'node:v8';
 import { Gx } from '../ppc/gx.ts';
@@ -161,13 +162,13 @@ function emit(S: Script, A: Arena, P: Pass, label: string, sub: Map<number, Uint
 interface Arena { at: Map<string, number>; has: Map<string, Uint8Array>; top: number; scratch: number }
 
 /** the script through ppc/gx.ts: every dump and counter read, in order */
-function simulate(ops: Op[], arena: number, seed = 0): Uint8Array[] {
+function simulate(ops: Op[], arena: number, seed = 0, fed: number[] | null = null): Uint8Array[] {
     const BASE = 0x01000000, ram = new Uint8Array(BASE + arena + 64), warned: string[] = [];
     const gx = new Gx(ram, { token() { }, finish() { }, unsupported(w) { if (!warned.includes(w)) { warned.push(w); console.log('! ppc/gx.ts: ' + w); } } });
     gx.raster = true;
     if (process.env.TRACE) gx.trace = (t) => { if (new RegExp(process.env.TRACE!).test(t)) console.log(t); };
     if (seed) { let s = seed; for (let i = 0; i < gx.efb.length; i++) { s = (s * 1103515245 + 12345) >>> 0; gx.efb[i] = s >>> 24; } }
-    const out: Uint8Array[] = [], feed = (b: number[] | Uint8Array) => gx.feed(b instanceof Uint8Array ? b : Uint8Array.from(b), 0, b.length);
+    const out: Uint8Array[] = [], feed = (b: number[] | Uint8Array) => { if (fed) for (let i = 0; i < b.length; i++) fed.push(b[i]); gx.feed(b instanceof Uint8Array ? b : Uint8Array.from(b), 0, b.length); };
     for (const o of ops) {
         switch (o.op) {
             case OP.MEM: ram.set(o.data!, BASE + o.a); break;
@@ -370,6 +371,13 @@ if (mode === 'capture') {
     writeFileSync(outPath + '.cases.json', JSON.stringify(cases));
     console.log(`${cases.length} cases, arena ${Sc.arena}, script ${bytes.length} bytes`);
     process.exit(0);
+} else if (mode === 'feed') {
+    // the bytes the script sends to the GPU, addresses counted from 0x01000000 (to compare with tools/hwprobe/hosttest's fifo.bin)
+    const sc = readScript(new Uint8Array(readFileSync(process.argv[3]))), fed: number[] = [];
+    simulate(sc.ops, sc.arena, 0, fed);
+    writeFileSync(process.argv[4], Uint8Array.from(fed));
+    console.log(`${fed.length} bytes`);
+    process.exit(0);
 } else if (mode === 'model') {
     // what ppc/gx.ts draws, as an answer file (the records tools/hwprobe writes on a console)
     const sc = readScript(new Uint8Array(readFileSync(process.argv[3]))), got = simulate(sc.ops, sc.arena);
@@ -403,6 +411,7 @@ if (mode === 'capture') {
         const kind = r32(o, p), b = r32(o, p + 8), len = r32(o, p + 12), data = o.subarray(p + 16, p + 16 + len);
         if (kind === 100) console.log(`console: Hollywood ${hex(r32(data, 0))}, CPU ${hex(r32(data, 4))}, arena at ${hex(r32(data, 8))}`);
         else if (kind === 101) console.log(`the console ran ${r32(o, p + 4)} operations and saved ${b} blocks`);
+        else if (kind === 102) console.log(`the console stopped the script: ${Buffer.from(data).toString('latin1')}`);
         else if (kind === OP.DUMP || kind === OP.READ16) got.push(data.slice());
         else if (kind === OP.MEMRLE) got.push(rleDecode(data, b));
         p += 16 + ((len + 3) & ~3);

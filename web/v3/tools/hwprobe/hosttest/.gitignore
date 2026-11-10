@@ -1,0 +1,4 @@
+hostprobe
+main.o
+sdcard/
+fifo.bin

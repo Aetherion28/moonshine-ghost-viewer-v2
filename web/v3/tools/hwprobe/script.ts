@@ -2,9 +2,11 @@
 //   header: 'GXPS', version 1, the arena's size in bytes, 0
 //   operations: op, a, b, the payload's length, the payload (padded to 4 bytes)
 // The arena is one block of the console's RAM (8 MB), 32-byte aligned; places in it are offsets.
-// The answer: 'GXPO', 1, the program's version, 0; then records (kind, a, b, length, data padded to 4 bytes):
-// 100 the console (Hollywood's revision, the CPU's, the arena's address), DUMP / MEMRLE a saved block (packed if
-// smaller), READ16 registers, 102 why the script stopped, 101 the end (operations run, blocks saved).
+// The answer: 'GXPO', 1, the program's version, its build; then records (kind, a, b, length, data padded to 4 bytes):
+// 100 the console (Hollywood's revision, the CPU's, the arena's address, the code buffer's), DUMP / MEMRLE a saved
+// block (packed if smaller), READ16 / READ32 registers, PEEK memory, CALL a result, 103 progress (a case's name, or
+// "call": sent at once, so a job that never ends shows where it was), 104 a fault in a job's code (exception, pc,
+// msr, lr, cr, ctr, xer, dar, dsisr, r0-r31), 102 why the script stopped, 101 the end (operations run, blocks saved).
 export const OP = {
     END: 0,
     /** payload -> arena + a (then flushed out of the CPU's cache) */
@@ -25,8 +27,18 @@ export const OP = {
     NOTE: 8,
     /** as MEM, the payload packed (rleEncode); b: the unpacked length */
     MEMRLE: 9,
-    /** the program leaves once the script is done */
+    /** the program leaves once the script is done: a 1 to the Wii menu, 2 the console restarts */
     QUIT: 10,
+    /** b bytes of ordinary memory at address a -> the answer */
+    PEEK: 11,
+    /** b 32-bit hardware registers from address a -> the answer */
+    READ32: 12,
+    /** payload -> the code buffer + a */
+    CODE: 13,
+    /** call the code at buffer + a with the argument b (u32 entry(const Services *, u32)); its result -> the answer */
+    CALL: 14,
+    /** from here on: operations of an extension a job's code left in the program */
+    EXTENSION: 32,
 } as const;
 
 /** Runs of a byte packed: a control byte c, then c + 1 bytes as they are (c < 128) or one byte to repeat c - 126 times. */
@@ -76,6 +88,11 @@ export class Script {
     sync() { this.flush(); this.ops.push({ op: OP.SYNC, a: 0, b: 0 }); }
     dump(at: number, n: number) { this.flush(); this.ops.push({ op: OP.DUMP, a: at, b: n }); }
     read16(addr: number, n: number) { this.flush(); this.ops.push({ op: OP.READ16, a: addr >>> 0, b: n }); }
+    code(at: number, data: Uint8Array) { this.flush(); for (let o = 0; o < data.length; o += 0x10000) this.ops.push({ op: OP.CODE, a: at + o, b: 0, data: data.slice(o, o + 0x10000) }); }
+    call(at: number, arg: number) { this.flush(); this.ops.push({ op: OP.CALL, a: at, b: arg >>> 0 }); }
+    peek(addr: number, n: number) { this.flush(); this.ops.push({ op: OP.PEEK, a: addr >>> 0, b: n }); }
+    read32(addr: number, n: number) { this.flush(); this.ops.push({ op: OP.READ32, a: addr >>> 0, b: n }); }
+    quit(how: 1 | 2) { this.flush(); this.ops.push({ op: OP.QUIT, a: how, b: 0 }); }
     note(text: string) { this.flush(); this.ops.push({ op: OP.NOTE, a: 0, b: 0, data: new TextEncoder().encode(text) }); }
     bytes(): Uint8Array {
         this.flush();
