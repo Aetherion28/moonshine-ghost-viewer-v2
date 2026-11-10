@@ -26,6 +26,8 @@ export interface GameAddrs {
     /** the goop's draws: TPollutionCounterLayer::countTexDegree (a layer's map, to be copied back), and
      *  TPollutionCounterObj::countObjDegree [address, size] (the objects' goop counted) */
     goopLayerDraw: number; goopObjDraw: [number, number];
+    /** TMario::pulling, and the grab objects whose taking matrix their constructor leaves unset: [vtable, the matrix's offset] */
+    marioPulling: number; unsetTakingMtx: [number, number][];
 }
 /** GMSJ01 revision 0 */
 export const JP10: GameAddrs = {
@@ -38,6 +40,7 @@ export const JP10: GameAddrs = {
     padButton: 0x80400D80, padMStick: 0x80400E40, padSStick: 0x80400E80,
     exitWaveRet: 0x800ECAB4,
     goopLayerDraw: 0x801ECF38, goopObjDraw: [0x801EE5B0, 0x2D4],
+    marioPulling: 0x8013DD68, unsetTakingMtx: [[0x803E083C, 0x80], [0x803D75E4, 0x74]],   // TBGTakeHit (a tentacle), TBGBeakHit
 };
 // offsets in the game's objects
 const APP = { director: 4, state: 8, prev: 0xA, cur: 0xE, next: 0x12, movie: 0x18, pads: 0x20, heap: 0x40 };
@@ -50,6 +53,8 @@ const PAD_STATE: [number, number][] = [[0x18, 0x50], [0xA8, 0x44]];
 // the words Moonshine zeroes while its own interface owns the pad (suppressRetailPad)
 const PAD_SUPPRESS = [0x18, 0x1C, 0x20, 0x30, 0xD0, 0xD4, 0xD8];
 const MARIO_PAD = 0x4FC, MARIO_WORK = 0x108;   // TMario::mGamePad, its TMarioControllerWork
+const TAKE_HELD = 0x6C, MARIO_STATUS = 0x7C, MARIO_FACE_ANGLE_Y = 0x96;   // TTakeActor::mHeldObject, TMario::mStatus, mFaceAngle.y
+const STATUS_PULLING = 0x560, STATUS_OIL_PULLING = 0x40561;
 const MARIO_FLAGS = 0x118;   // TMario::mFlags; bit 0 is MARIO_FLAG_OCCLUDED, written from the GPU's draw-sync callback
 
 export interface Issue { kind: string; frame: number; tick: number; text: string }
@@ -92,7 +97,7 @@ export class Replay {
     countAtStage = 0; countAtPlay = 0;
     private iFlow = 0; private iCall = 0; private lastCall = -1;
     private strict = false;
-    private curFrame: TraceFrame | null = null; private curTick = 0;
+    private curFrame: TraceFrame | null = null; private curTick = 0; private curTickIndex = -1;
     private observations = 0; private noWater = false;
     private padAdopted = false; private adopted = new Set<string>();
     private frozenState = -1; private suppressed: number[] | null = null; private suppressedPad = 0;
@@ -126,6 +131,7 @@ export class Replay {
         cpu.hook(A.directRet, (c) => { this.afterDirect(c); return false; });
         cpu.hook(A.marioPerform, (c) => { if ((c.gpr[4] & 1) && this.phase === 'stage' && c.gpr[3] === m.mem.r32(A.gpMarioOriginal)) this.atTick(c.gpr[3], c.gpr[4]); return false; });
         cpu.hook(A.randRet, (c) => { if (this.phase === 'stage') this.atRand(c.lr); return false; });
+        cpu.hook(A.marioPulling, (c) => { if (this.phase === 'stage') this.unsetTakingMtx(c.gpr[3]); return false; });
         // A stage ends when the screen has faded out and the sound's wave data has come off the disc: how long the
         // disc takes is the console's, so the answer is the recording's (did it leave after this frame?).
         cpu.hook(A.exitWaveRet, (c) => {
@@ -356,7 +362,7 @@ export class Replay {
         if (i >= T.n || T.kind[i] !== Ev.TICK) { this.issue('flow', `the game runs a movement tick where the trace has ${i >= T.n ? 'ended' : EV_NAMES[T.kind[i]]}`); return; }
         const t: TraceTick = T.ticks[T.a[i]];
         this.iFlow = this.nextFlowFrom(i + 1);
-        this.ticks++; this.curTick = t.tick;
+        this.ticks++; this.curTick = t.tick; this.curTickIndex = T.a[i];
         this.checkCalls(t.ev, `tick ${t.tick}`);
         if (this.phase !== 'stage') return;
         const dv = new DataView(t.input.buffer, t.input.byteOffset, IN.size);
@@ -392,6 +398,34 @@ export class Replay {
             this.compareBlob('mario', 'Mario', mario, t.marioPtr, t.mario);
         }
         if (t.camera && this.phase === 'stage') this.compareBlob('camera', 'the camera', mem.r32(this.A.gpCamera), t.cameraPtr, t.camera);
+    }
+    /**
+     * Uninitialised memory outside the recorded objects. The Blooper's grab objects (a tentacle's TBGTakeHit, the
+     * beak's TBGBeakHit) write their taking matrix in their own perform and their constructors don't set it, but
+     * TMario::pulling reads it in the tick Mario grabs, before that perform: his face angle is matan(-m[2][2],
+     * -m[0][2]) of whatever the heap had. Here the heap had zeros (angle 0); the console's leftovers show in the
+     * next record's face angle, so the two numbers that pulling reads are set to give that angle.
+     */
+    private unsetTakingMtx(mario: number) {
+        const mem = this.m.mem, held = mem.r32(mario + TAKE_HELD);
+        if (!held) return;
+        const vt = mem.r32(held), known = this.A.unsetTakingMtx.find((k) => k[0] === vt);
+        if (!known) return;
+        const mtx = held + known[1];
+        for (let k = 0; k < 48; k += 4) if (mem.r32(mtx + k) !== 0) return;
+        const next = this.T.ticks[this.curTickIndex + 1];
+        if (!next || !next.mario) return;
+        const rec = new DataView(next.mario.buffer, next.mario.byteOffset, next.mario.byteLength);
+        const status = rec.getUint32(MARIO_STATUS);
+        if (status !== STATUS_PULLING && status !== STATUS_OIL_PULLING) return;
+        const angle = rec.getInt16(MARIO_FACE_ANGLE_Y);
+        // matan(z, x) is the angle of (x, z) from +z: x = -m[0][2], z = -m[2][2]
+        const q = angle & 0x3FFF ? null : [[0, -1], [-1, 0], [0, 1], [1, 0]][(angle >> 14) & 3];
+        const th = angle * Math.PI / 32768, m02 = q ? q[0] : -Math.sin(th), m22 = q ? q[1] : -Math.cos(th);
+        const f = new DataView(new ArrayBuffer(4));
+        f.setFloat32(0, m02); mem.w32(mtx + 0x08, f.getUint32(0));
+        f.setFloat32(0, m22); mem.w32(mtx + 0x28, f.getUint32(0));
+        this.log(`tick ${this.curTick}: Mario grabs an object whose taking matrix is uninitialised memory (zeros here); its direction is taken from the next record's face angle (0x${(angle & 0xFFFF).toString(16)})`);
     }
     /**
      * An object of the game against its record. At its first record, memory the game hasn't written yet (zero
