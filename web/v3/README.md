@@ -30,28 +30,39 @@ The decomp is used only for addresses (its `symbols.txt`): what to hook and wher
 
 Taken from the recording, because the game itself can't know them:
 - the pad object's state from before the recording (the last stick angle, the previous buttons), at the first pad record;
-- bytes of Mario and of the camera the game hasn't written by their first record (uninitialised heap memory: zero on this freshly booted machine, leftovers on the console);
-- Mario's occlusion bit (written from the GPU's draw-sync callback) at each tick, and the three GPU reads Moonshine records (occlusion at the camera and at the silhouette, the bath water's height);
-- the size of the disc's file system table (it sets the arena's top): the replay boots, compares the stage heap's size with the recorded one, and boots again with the table padded by the difference.
+- the pad object wherever the recording's differs from what the game computes from the raw pad: Moonshine takes buttons away from the game for its own binds (counted as "pad corrections");
+- uninitialised memory. The stage heap is not cleared between stages, so on the console it holds the previous stage's leftovers. Here the first stage's heap starts as zeros, and bytes of Mario, the camera and his controller work that are still zero at their first record are taken from it (the replay lists them). Later stages of the same recording need nothing: their leftovers are the previous stage's in both;
+- Mario's occlusion bit (written from the GPU's draw-sync callback, at a time of its own) in `mFlag` and `mPrevFlag` at each tick, and the GPU reads Moonshine records (occlusion at the camera and at the silhouette; the bath water's height only in newer traces, observation bit 2);
+- the timing of the disc: how many frames a stage loads for, and the frame a stage ends on (the exit waits for the sound's wave data to come off the disc);
+- the size of the disc's file system table (it sets the arena's top): the replay boots, compares the stage heap's size with the recorded one, and boots again with the table padded by the difference (480 bytes for the traces at hand);
+- one Moonshine setting the trace doesn't record, **Shiny Shines**: it makes a collected Shine share the item manager's model instead of loading the blue one, so everything allocated after it sits lower. When Mario's address at his first record differs from the recording's, the replay boots again with it on.
 
 ## Where it stands (2026-11-09)
 
-Bianco Hills episode 1 (`a/trace_41726535_80000003`, recorded on a Wii):
-- the stage load matches: all 3,909 `rand()` calls in step, Mario at the console's address (0x814459EC), the stage heap the same size;
-- 2,347 movement ticks (627 of 1,792 frames, about 10 s of play) with Mario's and the camera's records bit-identical, 754,667 `rand()` calls and 3,885 GPU reads in step;
-- then `TPollutionLayer::action` rolls where the recording doesn't: **the goop map**. The game draws it on the GPU (stamps into the frame buffer, copied back to a texture the collision code reads, and pixel counts read back with `GXReadPixMetric`), and v3 discards the GX FIFO, so the goop is never cleaned. Next: a software model of those draws (nearest-filtered, integer-aligned quads, simple TEV and blending), fed from the FIFO.
+A recording counts as in step while every `rand()` call (caller and seed), every frame's seed and director state, and Mario's and the camera's records at every movement tick are bit-identical with it.
 
-What the trace taught about the hardware (each is a rule the replay breaks without):
-- a single multiply's frC keeps 25 bits, rounded (Dolphin's rule): without it the replay breaks at tick 253;
-- **in `ps_muls0` and `ps_madds0` the second lane's multiplier (frC's first lane) is cut to 25 bits, not rounded**: Dolphin rounds it. With Dolphin's rule the replay breaks at tick 598 (one ulp in a row of Mario's head matrix, from `MsVECNormalize`); with a 24-bit multiplier, at tick 592. See `trunc25` in `ppc/fpu.ts`. So Dolphin is not a bit-exact reference for console recordings.
+Whole recordings in step to their end: Ricco Harbor 3 (`a/2A1D8909_80000002`), Delfino Plaza (`…2D`, dolpic7), Bianco Hills 7 (`…34`), a Corona secret (`…15`, coro_ex1), a Noki secret (`…30`, mare_ex0).
+Still in step when the test's time limit cut them: Delfino Plaza (`…2F`, dolpic9), and Pinna Park 1 (`…0B`) through three stages (pinnaParco0, pinnaParco6, the Mecha-Bowser fight) with each stage's seed, flags, NPC phase and heap equal to the recording's at its start.
+
+What stops the others:
+- **the goop** (Bianco Hills 1 at tick 2,347, Sirena 6 at tick 785): the game draws the goop map on the GPU (stamps into the frame buffer, copied back to a texture the collision code reads, pixel counts read back with `GXReadPixMetric`), and v3 discards the GX FIFO, so goop is never cleaned. Needs a software model of those draws, fed from the FIFO: the layer pass is nearest-filtered and integer-aligned, the stamps are scaled textures with compare stages and alpha blending, the object count rasterises real triangles;
+- **Moonshine features without source**: the pattern selector (Pianta Village 1 at tick 127: a Chain Chomplet picks its graph node), and by the session records the Ricco crane and fruit controls, Petey's route. The PR76 Dolphin package's JP patch rebuilds into the whole Moonshine DOL (retail text with 35 patched words, the mod's code at 0x80426020 and 0x804A6020): the hooks' code can be read there (the pattern selector is the function at 0x8044BA74);
+- **DPad Functions** (Gelato Beach 1 at tick 2,669: Moonshine writes Mario's status; a TAS-tagged run);
+- **the bath water's height** in traces older than its recording (Bowser, observations 3).
+
+What the traces taught (each is a rule the replay breaks without):
+- a single multiply's frC keeps 25 bits, rounded (Dolphin's rule): without it Bianco Hills 1 breaks at tick 253;
+- **in `ps_muls0` and `ps_madds0` the second lane's multiplier (frC's first lane) is cut to 25 bits, not rounded**: Dolphin rounds it. With Dolphin's rule the replay breaks at tick 598 (one ulp in a row of Mario's head matrix, from `MsVECNormalize`); with a 24-bit multiplier, at tick 592. See `trunc25` in `ppc/fpu.ts`. The traces are from a Wii (Moonshine's recorder exists only there), so Dolphin is not a bit-exact reference for them;
+- the NPC pollution phase is a function-local static with a guard byte after it: on a freshly booted machine the first NPC zeroes the phase unless the guard is set too;
+- `CLBPalFrame(30)` is 15 on this console (the phase wraps there).
 
 Speed: a frame of play is about 5 million instructions, so real time needs about 350 million a second; the interpreter does 40 to 60 million in Node. A replay is computed ahead of its playback for now; a faster core (blocks compiled to JS) comes after correctness.
 
 Open questions:
-- stages with goop need the GPU model above; `GXReadPixMetric` too (how much goop is left);
-- Moonshine's features without source (the PR76 Dolphin package's JP patch carries the mod's compiled code: read them from there);
-- uninitialised memory outside the recorded objects is zero here and leftovers on the console (the stage heap isn't cleared between stages);
+- uninitialised memory outside the recorded objects is zero here and leftovers on the console;
 - what a non-single value becomes when `ps_merge` moves it into the second lane (kept bit for bit here);
+- the other settings Moonshine doesn't record (the appearance choices load other models too);
+- IL entries with a flag overlay (Moonshine sets or clears Shine flags between `loadResource` and `setupObjects`, and the stage-start image is taken before): the entry isn't recorded, so it has to be chosen by evidence as Shiny Shines is;
 - only GMSJ01 revision 0 is set up (the addresses in `game/replay.ts` and the HLE names from the decomp's `symbols.txt`).
 
 ## Tests
@@ -63,3 +74,4 @@ Build each with `npx esbuild v3/tests/<name>.ts --bundle --platform=node --forma
 - `tests/boot.ts [millions of instructions]`: boots the game. Env: `START=area,episode`, `THREADS=1` (every OS thread with its call stack at the end), `PROFILE=1`, `FILES=1`, `QUIET=1`.
 - `tests/replay.ts <trace.msgt> [millions of instructions]`: plays a trace and reports how far it matches (`ALL=1`: don't stop at the first issue; `QUIET=1`: without the game's console).
 - `tests/tracedump.ts <trace.msgt> [from] [to]`: a trace's summary, or its events in a range.
+- `tests/survey.mjs <replay bundle> <list of traces> [workers] [seconds a trace]`: plays many traces and prints a line each: how far it matched and what stopped it.

@@ -46,8 +46,12 @@ const PATCHES: { field: number; rows: Row[] }[] = [
     { field: F.EFFECTIVE_FAST_TEXT, rows: [[0x80215290, 0x80153DA0, 0x80148D20, 0x38000000], [0x80214610, 0x8015317C, 0x80147F98, 0x38005000], [0x800E4888, 0x80291340, 0x802890CC, 0x60000000]] },
     { field: F.DISABLE_Z_MENU, rows: [[0x800EB020, 0x80297A64, 0x8028F8FC, 0x4800000C]] },
 ];
-// the settings Moonshine's session record doesn't carry (Mute BGM, Shine Outfit, Shiny Shines, the appearance
-// choices, Replace Episode Names) only change sound and looks, and are left off.
+// The settings Moonshine's session record doesn't carry (Mute BGM, Shine Outfit, Shiny Shines, the appearance
+// choices, Replace Episode Names) only change sound and looks. But a look is a model, and a model is heap:
+// Shiny Shines (every Shine drawn yellow: TShine skips its "already collected?" test) makes a collected Shine
+// share the item manager's model instead of loading the blue one, and everything allocated after it sits lower.
+// So it is an option here, chosen by the evidence: Mario's address in his first record (see Replay).
+const SHINY_SHINES: Row = [0x80194E24, 0x801BCE3C, 0x801B4CF4, 0x4800004C];
 
 const R3 = (jp: number, us: number, pal: number) => [jp, us, pal] as [number, number, number];
 /** kAsmHooks: a site that branches into a cave of PowerPC code, whose last word branches back to site + 4 */
@@ -134,9 +138,13 @@ export class Moonshine {
     private restore(addr: number) { if (this.on.delete(addr)) this.m.mem.w32(addr, this.orig.get(addr)!); }
     private branch(from: number, to: number) { return (0x48000000 | ((to - from) & 0x03FFFFFC)) >>> 0; }
 
+    /** Shiny Shines (not in the session record): on or off for the whole replay */
+    shinyShines = false;
+
     /** featuresApply: makes the game's code what the settings in `session` (a session record) make it. */
     apply(session: Uint8Array) {
         this.session = session;
+        if (this.shinyShines) this.write(SHINY_SHINES[this.region], this.pick(SHINY_SHINES[3])); else this.restore(SHINY_SHINES[this.region]);
         for (const p of PATCHES) for (const r of p.rows) {
             const addr = r[this.region];
             if (session[p.field]) this.write(addr, this.pick(r[3]), r[4]); else this.restore(addr);

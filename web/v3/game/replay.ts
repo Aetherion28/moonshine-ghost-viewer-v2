@@ -58,6 +58,8 @@ export interface ReplayOptions {
     maxIssues?: number;
     /** bytes the console's file system table was bigger than this disc's (see `heapDelta`) */
     fstPad?: number;
+    /** Moonshine's Shiny Shines setting (not recorded: see `layoutDelta`) */
+    shinyShines?: boolean;
 }
 
 const hex = (x: number) => (x >>> 0).toString(16).padStart(8, '0');
@@ -74,6 +76,12 @@ export class Replay {
     /** frames and ticks at which the pad object had to be set to the recording's (Moonshine had changed it) */
     padCorrections = 0; exitAligned = 0;
     private session: Uint8Array = new Uint8Array(64);
+    /**
+     * Mario's address here minus the recording's, at his first record (0: the stage's heap is laid out as the
+     * console's). Not 0: something the trace doesn't record loaded other models; Shiny Shines is the known one.
+     */
+    layoutDelta = 0;
+    fstPadUsed = 0;
     /** the stage heap's size here minus the recording's (0: the same arena) */
     heapDelta = 0;
     /** instructions at the stage's start and at its first frame after setup */
@@ -91,11 +99,13 @@ export class Replay {
     constructor(dol: Uint8Array, disc: VirtualDisc, private T: Trace, private A: GameAddrs, sym: Sym, opt: ReplayOptions = {}) {
         const m = this.m, cpu = m.cpu;
         this.log = opt.log ?? (() => { });
-        this.stopOn = new Set(opt.stopOn ?? ['heap', 'rand', 'mario', 'camera', 'flow', 'stage', 'unrecorded']); this.maxIssues = opt.maxIssues ?? 50;
-        m.load(dol, disc, opt.fstPad ?? 0);
+        this.stopOn = new Set(opt.stopOn ?? ['heap', 'layout', 'rand', 'mario', 'camera', 'flow', 'stage', 'unrecorded']); this.maxIssues = opt.maxIssues ?? 50;
+        this.fstPadUsed = opt.fstPad ?? 0;
+        m.load(dol, disc, this.fstPadUsed);
         const missing = installHle(m, sym, { report: opt.report });
         if (missing.length) this.log('hle: not found: ' + missing.join(', '));
         this.moonshine = new Moonshine(m, A.region, A);
+        this.moonshine.shinyShines = !!opt.shinyShines;
         this.moonshine.install();
         disc.onOpen = (path) => {
             const mm = /scene\/([A-Za-z0-9_]+)\.szs$/i.exec(path);
@@ -358,6 +368,11 @@ export class Replay {
                     break;
                 }
             }
+        }
+        if (t.mario && this.ticks === 1 && this.stages === 1 && mario !== t.marioPtr) {
+            this.layoutDelta = mario - t.marioPtr;
+            this.issue('layout', `Mario is at ${hex(mario)}, the recording's at ${hex(t.marioPtr)}: the stage's heap is laid out differently`);
+            if (this.phase !== 'stage') return;
         }
         if (t.mario) {
             // the occlusion bit comes from the GPU (the draw-sync callback, at a time of its own): take the
