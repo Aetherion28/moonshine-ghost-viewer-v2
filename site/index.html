@@ -512,6 +512,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <div class="discLine">Disc: <span class="discInfo" id="discInfo">none loaded</span> <span class="discInfo" id="padInfo" hidden></span> <span class="discInfo" id="padRec" hidden></span></div>
       <label title="The game's HUD from the disc (life meter, coins, Shines, blue and red coins, FLUDD's tank) and the stage's opening words"><input type="checkbox" id="optHud" checked disabled> Show HUD</label>
       <label title="With a replay (.msgt). Play recording: the game's own code plays Mario from his controller inputs, and every tick he is put where the trace recorded him, so the stage reacts to exactly what happened. Simulate: the game's code alone, from the inputs (where it drifts from the trace is shown here). Recorded positions: Mario follows his recorded positions and animation. A .smsghost always plays its recorded positions and animation."><select id="optReplayMode" disabled><option value="record" selected>Play recording</option><option value="sim">Simulate</option><option value="positions">Recorded positions</option></select> <span class="discInfo" id="replayInfo"></span></label>
+      <label id="v3VerifyRow" hidden title="With a replay (.msgt, the newest format) and the Japanese 1.0 disc: the game's own program from your disc is run in this browser on the recorded controller inputs, and every recorded random-number call, frame and record of Mario is compared with what the game does. It takes about as long as the recording, or a few times that."><button type="button" id="v3Verify" class="linkBtn">Verify with the game's code</button> <span class="discInfo" id="v3VerifyInfo"></span></label>
       <label title="When the input replay drifts more than a unit from the ghost, Mario follows the ghost's own position and animation until the ghost next stands on the ground, then the inputs take over again from there."><input type="checkbox" id="optSnap" checked> Snap Mario back to the ghost</label>
       <label title="Read the game from an extracted game folder instead of a disc image"><button type="button" id="pickFolder" class="linkBtn">Use an extracted game folder…</button></label>
       <label id="gcAdapterRow" title="Nintendo's GameCube controller adapter (WUP-028, for Wii U / Switch) read directly over USB, as Dolphin does: its four ports show up as controllers. No driver needed (it is read as a HID device); one set up for Dolphin with Zadig works too."><button type="button" id="gcAdapterBtn" class="linkBtn">Connect a GameCube adapter (WUP-028)…</button> <span class="discInfo" id="gcAdapterInfo"></span></label>
@@ -585,14 +586,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1794260010463"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1794260010463"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1794260010463"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1794260010463"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1794260010463"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1794260010463"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1794260010463"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1794260010463"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1794286541119"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1794286541119"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1794286541119"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1794286541119"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1794286541119"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1794286541119"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1794286541119"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1794286541119"><\/script>');
 </script>
 <script>
 (() => {
@@ -7884,7 +7885,7 @@ void main() {
     try { data = (window.GameTrace && window.GameTrace.isMstr(buffer)) ? window.GameTrace.parseMstrGhost(buffer, fileName) : parseSmsGhost(buffer); }
     catch (err) { showNotice(`${fileName}: ${err.message}`); return null; }
     const color = GHOST_COLORS[ghosts.length % GHOST_COLORS.length];
-    const g = { data, fileName, color, visible: true, isSample, marker: makeMarker(color), path: makePath(data, color),
+    const g = { data, fileName, color, visible: true, isSample, traceBuffer: data.trace ? buffer : null, marker: makeMarker(color), path: makePath(data, color),
       secondary: buildSecondaryTimeline(data), selected: buildSelectedTimeline(data), water: makeWaterFx(), puddles: makeWetSpots() };
     scene.add(g.marker, g.path, g.puddles);
     waterScene.add(g.water);
@@ -7933,6 +7934,7 @@ void main() {
   const GHOST_LATEST = 8;   // newest Moonshine ghost format
   function renderGhostList() {
     updateTasTag();
+    try { v3VerifyShow(); } catch (e) { /* before the disc code is set up */ }
     if (typeof splitUi === 'function') try { splitUi(); } catch (e) { /* before the split view is set up */ }
     const list = $('ghostList');
     list.textContent = '';
@@ -8514,7 +8516,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1794260010463';
+  const BUILD_STAMP = '1794286541119';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
@@ -10087,6 +10089,26 @@ void main() {
     fillWaterTex();
     makeSgLetters();
   }
+  // ---------------------------------------------------------------- v3: a replay checked in the game's own code
+  // (v3worker.js, web/v3/web/worker.ts: the program from the user's disc run on the recorded inputs)
+  let v3Disc = null, v3Worker = null;
+  const v3Trace = () => ghosts.find((g) => g.visible && g.traceBuffer) || ghosts.find((g) => g.traceBuffer);
+  function v3VerifyShow() { $('v3VerifyRow').hidden = !(v3Worker || (v3Disc && v3Trace() && window.Worker)); }
+  function v3VerifyEnd(text) { if (v3Worker) v3Worker.terminate(); v3Worker = null; $('v3Verify').textContent = "Verify with the game's code"; setText($('v3VerifyInfo'), text); v3VerifyShow(); }
+  $('v3Verify').onclick = () => {
+    if (v3Worker) { v3VerifyEnd('· cancelled'); return; }
+    const g = v3Trace(); if (!g || !v3Disc) return;
+    const name = g.fileName.replace(/\.msgt$/i, '');
+    v3Worker = new Worker('v3worker.js?v=' + BUILD_STAMP);
+    $('v3Verify').textContent = 'Cancel'; setText($('v3VerifyInfo'), '· starting…');
+    v3Worker.onerror = (e) => v3VerifyEnd('· ' + (e.message || 'the check could not start'));
+    v3Worker.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === 'progress') setText($('v3VerifyInfo'), `· ${name}: ${m.phase}${m.attempt > 1 ? ` (start ${m.attempt})` : ''}` + (m.frames ? ` · frame ${m.frames} of ${m.totalFrames}` : '') + ` · ${Math.round(m.seconds)} s`);
+      else if (m.type === 'done') { window.__v3Report = m.report; console.log('[v3]', m.report.summary, m.report); v3VerifyEnd(`· ${name}: ${m.report.summary} (${Math.round(m.report.seconds)} s)`); }
+    };
+    v3Worker.postMessage({ type: 'start', trace: g.traceBuffer, disc: v3Disc });
+  };
   async function useDisc(fs) {
     try {
       $('discInfo').textContent = 'Reading the disc…';
@@ -10100,6 +10122,7 @@ void main() {
       layerSlots.forEach((s) => { if (s.layer && s.layer.sim) applyReplayMode(s.layer.sim); });
       $('pickDisc').textContent = 'Game disc ✓';
       $('discInfo').textContent = discLabel + ' · reading the stages…';
+      v3Disc = fs.source || null; v3VerifyShow();
       v1data = new V1Data(fs);
       await v1data.init();
       applyV1Globals(await v1data.globals());
