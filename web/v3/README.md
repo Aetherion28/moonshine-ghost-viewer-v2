@@ -145,6 +145,8 @@ Build each with `npx esbuild v3/tests/<name>.ts --bundle --platform=node --forma
 - Every test that takes the workspace's extract takes `DISC=<disc image or extracted folder>` instead (`tests/jpdisc.ts`); then `FSTPAD` isn't needed.
 - `tests/goopdbg.ts <trace.msgt> <from tick> <to tick>`: the goop under Mario per tick and what the GPU model draws (its header lists the switches: `WATCH`, `POLL`, `REGION`, `DUMP`, `GX_SP`).
 - `tests/tracedump.ts <trace.msgt> [from] [to]`: a trace's summary, or its events in a range.
+- `tests/survey.mjs <replay bundle> <list of traces> [workers] [seconds a trace]`: plays many traces and prints a line each: how far it matched and what stopped it.
+
 ## Asking a real console (`tools/hwprobe/`, 2026-11-10; not yet run on a console)
 
 Where a recording can't say what the hardware does, a Wii can be asked. `tools/hwprobe/` is a Wii program (`source/main.c`, built with devkitPPC and libogc 3.2; `make DEVKITPRO=...`) that takes jobs from a small server on a PC of the same home network (`server.py`, standard library only), runs them and sends back the answers. The console connects out to the PC named in `apps/wiiprobe/server.txt` on its SD card and takes jobs only from a server that proves it has the key in that file. Jobs are files dropped in the server's `jobs/` folder; answers appear in `answers/`.
@@ -161,5 +163,3 @@ Checked without a console (`hosttest/`): the same `main.c` built for big-endian 
 The goop's questions are `tests/hwprobe.ts`: `capture` records goop passes of a replay as the GPU got them (registers, textures, commands up to the copy; `Gx.rec`), `script` turns them into a job: passes as they were, and cases of the script's own: stamps of every size from 2 to 24 pixels with the corner on an even or odd column and row, in three arrangements, with ramp and saw-tooth textures from which the texture coordinate at each pixel can be read to 1/64 texel, the real stamp textures on a flat map, stamps of 64 pixels with flat squares on maps of every value (the blender's table), and bigger stamps. `check` / `model` run the job through `ppc/gx.ts` (the passes as they were give back the replay's own maps); `compare` sets a console's answer against it; `tools/hwprobe/analyse.py` reads the sample points out of an answer (on `ppc/gx.ts`'s own answer it finds 0.65625 and 0.59375, the model's).
 
 What else it is for, once it runs: the CPU (every floating-point and paired-single instruction on random operands against `ppc/fpu.ts`, the estimate tables, the quantised loads and stores, undefined corners), the rest of the GPU as it is modelled (depth, the copy filters, other texture formats, the pixel counters), and whole frames of the game redrawn on the console, should the viewer ever draw with this model.
-
-- `tests/survey.mjs <replay bundle> <list of traces> [workers] [seconds a trace]`: plays many traces and prints a line each: how far it matched and what stopped it.
