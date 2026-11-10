@@ -133,9 +133,15 @@ export class Moonshine {
     private write(addr: number, word: number, mask = 0xFFFFFFFF) {
         const mem = this.m.mem;
         if (!this.orig.has(addr)) this.orig.set(addr, mem.r32(addr));
-        mem.w32(addr, ((this.orig.get(addr)! & ~mask) | (word & mask)) >>> 0); this.on.add(addr);
+        this.poke(addr, ((this.orig.get(addr)! & ~mask) | (word & mask)) >>> 0); this.on.add(addr);
     }
-    private restore(addr: number) { if (this.on.delete(addr)) this.m.mem.w32(addr, this.orig.get(addr)!); }
+    private restore(addr: number) { if (this.on.delete(addr)) this.poke(addr, this.orig.get(addr)!); }
+    /** an instruction word written: the CPU's compiled blocks over it are dropped */
+    private poke(addr: number, word: number) {
+        const mem = this.m.mem;
+        if (mem.r32(addr) === word >>> 0) return;
+        mem.w32(addr, word); this.m.cpu.invalidateCode(addr, 4);
+    }
     private branch(from: number, to: number) { return (0x48000000 | ((to - from) & 0x03FFFFFC)) >>> 0; }
 
     /** Shiny Shines (not in the session record): on or off for the whole replay */
@@ -160,7 +166,7 @@ export class Moonshine {
             if (cave === undefined) {
                 if (!this.caveAt) throw new Error('Moonshine: the arena is not set up yet');
                 cave = this.caveAt; this.caves.set(i, cave);
-                h.cave.forEach((w, k) => this.m.mem.w32(cave! + k * 4, k === h.cave.length - 1 ? this.branch(cave! + k * 4, site + 4) : this.pick(w)));
+                h.cave.forEach((w, k) => this.poke(cave! + k * 4, k === h.cave.length - 1 ? this.branch(cave! + k * 4, site + 4) : this.pick(w)));
                 this.caveAt += h.cave.length * 4;
             }
             this.write(site, this.branch(site, cave));

@@ -15,10 +15,11 @@ const T = readTrace(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as
 if (T.gameId !== 'GMSJ01' || T.discRevision !== 0) { console.log(`the trace is from ${T.gameId} revision ${T.discRevision}: only GMSJ01 revision 0 is set up here`); process.exit(2); }
 const who = (text: string) => text.replace(/\b(80[0-9a-f]{6})\b/g, (m) => { const w = S.who(parseInt(m, 16)); return w === '?' ? m : `${m} ${w}`; });
 const stopOn = process.env.ALL ? ['heap', 'layout'] : undefined;
-const make = (fstPad: number, shinyShines = false) => new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), {
+const make = (fstPad: number, shinyShines = false) => tune(new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), {
     log: (s) => console.log(who(s)), report: process.env.QUIET ? undefined : (t) => process.stdout.write('[game] ' + t),
     stopOn, maxIssues: process.env.ALL ? 200 : 50, fstPad, shinyShines,
-});
+}));
+const tune = (r: Replay) => { if (process.env.JIT === '0') r.m.cpu.jit = false; if (process.env.JITVERIFY) r.m.cpu.jitVerify = true; return r; };
 const budget = +(process.argv[3] || 4000) * 1e6;
 const t0 = performance.now();
 let err: unknown = null, res = 'error', shiny = false;

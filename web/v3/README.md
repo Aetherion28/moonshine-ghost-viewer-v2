@@ -15,6 +15,7 @@ v2 is no longer developed (the user, 2026-11-09).
 - `ppc/hw.ts`: the hardware the OS talks to, at register level: PI (interrupts), VI (the retrace, the beam position), DI (disc reads from `ppc/disc.ts`), DSP / ARAM (DMA), SI, EXI (no memory card), AI, PE (draw-done and draw-sync tokens, found in the GX FIFO's stream; everything else written to the FIFO is discarded: drawing stays the viewer's).
 - `ppc/disc.ts`: a virtual disc built from the user's extracted files, with a file system table made the way the disc's is.
 - `ppc/machine.ts`: time. The clock is the instruction count (one instruction = one cycle at 486 MHz); events (the video field, the decrementer, disc reads completing) are scheduled against it; the OS's idle loop skips to the next event.
+- `ppc/jit.ts`: speed. Straight runs of the game's code (to the first unconditional branch) are compiled to WebAssembly, each a function, with a small WebAssembly dispatcher that calls them one after another. RAM, the registers and the block tables share one WebAssembly memory with the interpreter, which stays the definition: a block does exactly what the interpreter would (the tests compare the whole machine's state after a billion instructions), and anything rare, anything that touches hardware and the fused multiply-adds go through the interpreter's own methods. A block only runs when all of it fits before the next event, so the clock stays exact.
 - `ppc/hle.ts`: the few SDK functions replaced: the DSP's boot and its command mails (no DSP program runs, audio is off), cache maintenance, `OSReport` (the game's console), `OSPanic`.
 
 The decomp is used only for addresses (its `symbols.txt`): what to hook and where state lives.
@@ -56,7 +57,7 @@ What the traces taught (each is a rule the replay breaks without):
 - the NPC pollution phase is a function-local static with a guard byte after it: on a freshly booted machine the first NPC zeroes the phase unless the guard is set too;
 - `CLBPalFrame(30)` is 15 on this console (the phase wraps there).
 
-Speed: a frame of play is about 5 million instructions, so real time needs about 350 million a second; the interpreter does 40 to 60 million in Node. A replay is computed ahead of its playback for now; a faster core (blocks compiled to JS) comes after correctness.
+Speed: a frame of play is 3 to 6 million instructions, so real time needs 90 to 180 million a second. The interpreter alone does about 40 million in Node; with the blocks compiled to WebAssembly (`ppc/jit.ts`) the game runs at about 100 million (Bianco Hills 1's first 2,347 ticks, boot included, in 38 s instead of 93 s). A first try compiled the blocks to JavaScript functions: no faster than the interpreter, because V8 takes minutes to optimise twenty thousand small functions. A replay is still computed ahead of its playback.
 
 Open questions:
 - uninitialised memory outside the recorded objects is zero here and leftovers on the console;
@@ -71,7 +72,7 @@ Build each with `npx esbuild v3/tests/<name>.ts --bundle --platform=node --forma
 
 - `tests/unit.ts`: the integer instructions against a BigInt model, the fused multiply-add against exact rational arithmetic (including provoked halfway cases), `fres` / `frsqrte` and the float conversions against v2's ports, the 25-bit multiplier rules. 23 million checks.
 - `tests/leaf.ts`: functions of the DOL run in the interpreter and compared with independent implementations: MSL `sinf` / `cosf` / `atan2f`, the SDK's paired-single `PSMTXConcat` / `PSMTXMultVec`, `rand`, `calcKeyCode`, and `decodeSZS` on a whole archive. 130,000 checks.
-- `tests/boot.ts [millions of instructions]`: boots the game. Env: `START=area,episode`, `THREADS=1` (every OS thread with its call stack at the end), `PROFILE=1`, `FILES=1`, `QUIET=1`.
+- `tests/boot.ts [millions of instructions]`: boots the game and prints a hash of the machine's state at the end. Env: `START=area,episode`, `THREADS=1` (every OS thread with its call stack at the end), `PROFILE=1`, `FILES=1`, `QUIET=1`; `JIT=0` (the interpreter alone: the hash must be the same), `JITVERIFY=1` (each block checked against memory as it is entered), `MARK=n` (the speed after n million instructions), `MIPSLOG=1`.
 - `tests/replay.ts <trace.msgt> [millions of instructions]`: plays a trace and reports how far it matches (`ALL=1`: don't stop at the first issue; `QUIET=1`: without the game's console).
 - `tests/tracedump.ts <trace.msgt> [from] [to]`: a trace's summary, or its events in a range.
 - `tests/survey.mjs <replay bundle> <list of traces> [workers] [seconds a trace]`: plays many traces and prints a line each: how far it matched and what stopped it.

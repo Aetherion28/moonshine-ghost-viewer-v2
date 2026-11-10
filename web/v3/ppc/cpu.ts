@@ -4,7 +4,8 @@
 // and the special registers it touches. Floating point follows the hardware as Dolphin's tests
 // describe it (fpu.ts). FPRs are raw bits: fctiw's results and NaN payloads survive moves and stores.
 
-import { Memory, MEM1_SIZE, LC_BASE } from './mem.js';
+import { Memory, MEM1_SIZE, LC_BASE, CODE_SPAN, BMAP, BLEN, MAX_BLOCKS } from './mem.js';
+import { compileBlock, blocksModule, dispatcherModule, type BlockCode, GPR, PS0, PS1, COUNT, REGS, GQRS, R_PC, R_LR, R_CTR, R_CR, R_MSR, R_XERCA, R_XERSO, R_INTR, R_BRK, R_FPSCR } from './jit.js';
 import { fr, fmaD, fmaS, force25, fres, frsqrte, singleToDoubleBits, doubleToSingleBits, MIN_NORMAL_F32, MIN_NORMAL_F64, trunc25 } from './fpu.js';
 
 /** call() returns when the PC reaches this (unmapped) address */
@@ -24,49 +25,147 @@ const SPR_XER = 1, SPR_LR = 8, SPR_CTR = 9, SPR_DEC = 22, SPR_SRR0 = 26, SPR_SRR
     SPR_TBL_W = 284, SPR_TBU_W = 285, SPR_PVR = 287, SPR_GQR0 = 912, SPR_HID2 = 920, SPR_DMAU = 922, SPR_DMAL = 923;
 
 export class Cpu {
-    gpr = new Uint32Array(32);
+    // The registers live in the WebAssembly memory RAM is in (mem.ts), where the compiled blocks (jit.ts) work on them too.
+    gpr: Uint32Array;
     // FPRs as raw doubles: ps0[i] / ps1[i] the values, ps0w / ps1w their [lo, hi] words (2 i, 2 i + 1)
-    private fbuf = new ArrayBuffer(32 * 8 * 2);
-    ps0 = new Float64Array(this.fbuf, 0, 32); ps1 = new Float64Array(this.fbuf, 256, 32);
-    ps0w = new Uint32Array(this.fbuf, 0, 64); ps1w = new Uint32Array(this.fbuf, 256, 64);
-    pc = 0; lr = 0; ctr = 0;
-    cr = 0;
-    xerSO = 0; xerOV = 0; xerCA = 0; xerBC = 0;
-    fpscr = 0;
+    ps0: Float64Array; ps1: Float64Array; ps0w: Uint32Array; ps1w: Uint32Array;
+    private s: Uint32Array;
+    private t: Float64Array;
+    get pc() { return this.s[R_PC]; } set pc(v: number) { this.s[R_PC] = v; }
+    get lr() { return this.s[R_LR]; } set lr(v: number) { this.s[R_LR] = v; }
+    get ctr() { return this.s[R_CTR]; } set ctr(v: number) { this.s[R_CTR] = v; }
+    get cr() { return this.s[R_CR]; } set cr(v: number) { this.s[R_CR] = v; }
+    get msr() { return this.s[R_MSR]; } set msr(v: number) { this.s[R_MSR] = v; }
+    get xerCA() { return this.s[R_XERCA]; } set xerCA(v: number) { this.s[R_XERCA] = v; }
+    get xerSO() { return this.s[R_XERSO]; } set xerSO(v: number) { this.s[R_XERSO] = v; }
+    get fpscr() { return this.s[R_FPSCR]; } set fpscr(v: number) { this.s[R_FPSCR] = v; }
+    xerOV = 0; xerBC = 0;
     /** FPSCR[NI]: results below the smallest normal number are flushed to zero */
     private ni = false;
-    gqr = new Uint32Array(8);
-    msr = 0; srr0 = 0; srr1 = 0;
+    gqr: Uint32Array;
+    srr0 = 0; srr1 = 0;
     spr = new Uint32Array(1024);
     reserve = 0;
 
     /** instructions executed: the machine's clock */
-    count = 0;
+    get count() { return this.t[0]; } set count(v: number) { this.t[0] = v; }
     private tbBase = 0; private tbCount0 = 0;
     private decBase = 0xFFFFFFFF; private decCount0 = 0;
     /** called when the game writes DEC (the machine reschedules the decrementer exception) */
     onDecWrite: (() => void) | null = null;
     /** the external interrupt line (PI), and a decrementer exception waiting for MSR[EE] */
     extIrq = false; decPending = false;
-    private intr = false;
+    private get intr() { return this.s[R_INTR] !== 0; } private set intr(v: boolean) { this.s[R_INTR] = v ? 1 : 0; }
     /** leave run() after the current instruction */
-    brk = false;
+    get brk() { return this.s[R_BRK] !== 0; } set brk(v: boolean) { this.s[R_BRK] = v ? 1 : 0; }
     /** run() stops when the count reaches this; the machine lowers it when an earlier event is scheduled */
-    limit = 0;
+    get limit() { return this.t[1]; } set limit(v: number) { this.t[1] = v; }
 
     private hookMap = new Uint16Array(MEM1_SIZE >>> 2);
     private hookFns: (Hook | null)[] = [null];
 
-    constructor(public mem: Memory) { }
+    /** compile hot straight runs to WebAssembly (jit.ts); off: every instruction through exec() */
+    jit = true;
+    /** check each block against memory as it is entered (a test for code changed without icbi) */
+    jitVerify = false;
+    /** an address is reached this many times through the interpreter before the code around it is compiled */
+    jitAfter = 2;
+    /** the count at the running block's start, kept by the dispatcher and the blocks */
+    get b0() { return this.t[2]; } set b0(v: number) { this.t[2] = v; }
+    /** by word of the first CODE_SPAN bytes of RAM: > 0 a block's index, <= 0 minus the times the address was reached uncompiled */
+    private bmap: Int32Array;
+    private blen: Int32Array;
+    private blocks: (BlockCode | null)[] = [null];
+    private table: WebAssembly.Table | null = null;
+    private wrun: (() => number) | null = null;
+    private imports: WebAssembly.Imports | null = null;
+    blocksCompiled = 0; modulesCompiled = 0;
+
+    constructor(public mem: Memory) {
+        const buf = mem.wasm.buffer;
+        this.gpr = new Uint32Array(buf, GPR, 32);
+        this.ps0 = new Float64Array(buf, PS0, 32); this.ps1 = new Float64Array(buf, PS1, 32);
+        this.ps0w = new Uint32Array(buf, PS0, 64); this.ps1w = new Uint32Array(buf, PS1, 64);
+        this.t = new Float64Array(buf, COUNT, 3); this.s = new Uint32Array(buf, REGS, 16); this.gqr = new Uint32Array(buf, GQRS, 8);
+        this.bmap = new Int32Array(buf, BMAP, CODE_SPAN >>> 2); this.blen = new Int32Array(buf, BLEN, MAX_BLOCKS);
+    }
 
     // ---------------------------------------------------------------- hooks
     hook(addr: number, fn: Hook) {
         const o = (addr ^ 0x80000000) >>> 0;
         if (o >= MEM1_SIZE || (o & 3)) throw new Error(`hook at 0x${(addr >>> 0).toString(16)}`);
         this.hookFns.push(fn); this.hookMap[o >>> 2] = this.hookFns.length - 1;
+        this.invalidateCode();
     }
-    unhook(addr: number) { this.hookMap[((addr ^ 0x80000000) >>> 0) >>> 2] = 0; }
-    hookAt(addr: number): Hook | null { return this.hookFns[this.hookMap[((addr ^ 0x80000000) >>> 0) >>> 2]]; }
+    unhook(addr: number) { this.hookMap[((addr ^ 0x80000000) >>> 0) >>> 2] = 0; this.invalidateCode(); }
+    hookAt(addr: number): Hook | null { const o = (addr ^ 0x80000000) >>> 0; return o < MEM1_SIZE ? this.hookFns[this.hookMap[o >>> 2]] : null; }
+    /** Instructions in memory changed (or a hook did): the compiled blocks over them (or all) are dropped. */
+    invalidateCode(addr = 0, len = 0) {
+        if (this.blocks.length === 1) return;
+        if (len > 0) {
+            const lo = addr >>> 0, hi = lo + len;
+            for (let i = 1; i < this.blocks.length; i++) {
+                const b = this.blocks[i];
+                if (b && b.pc < hi && b.pc + b.n * 4 > lo) { this.bmap[((b.pc ^ 0x80000000) >>> 0) >>> 2] = 0; this.blocks[i] = null; }
+            }
+            return;
+        }
+        this.bmap.fill(0); this.blocks.length = 1;
+    }
+    /** inside a block, after an instruction left the fast path: must the block be left? */
+    xq(n: number) { return this.intr || this.brk || this.limit < this.b0 + n; }
+    private jitInit() {
+        const table = this.table = new WebAssembly.Table({ element: 'anyfunc', initial: MAX_BLOCKS });
+        const w0 = this.ps0w, w1 = this.ps1w;
+        this.imports = { e: {
+            m: this.mem.wasm, t: table,
+            // an instruction through the interpreter, as run() would: 1 when the block must be left
+            fb: (ins: number, pc: number, k1: number, n: number) => {
+                pc >>>= 0;
+                const next = (pc + 4) >>> 0;
+                this.count = this.b0 + k1; this.pc = next;
+                this.exec(ins, pc);
+                return this.pc !== next || this.xq(n) ? 1 : 0;
+            },
+            pure: (ins: number, pc: number) => this.exec(ins, pc >>> 0),
+            op59: (ins: number) => this.op59(ins), op63: (ins: number) => this.op63(ins), op4: (ins: number) => this.op4(ins),
+            fpx: (pc: number, k1: number) => { this.count = this.b0 + k1; this.exception(0x800, pc >>> 0); },
+            lfsSlow: (bits: number, d: number) => { singleToDoubleBits(bits, w0, d * 2); w1[d * 2] = w0[d * 2]; w1[d * 2 + 1] = w0[d * 2 + 1]; },
+            stfsSlow: (d: number) => doubleToSingleBits(w0[d * 2 + 1], w0[d * 2]) | 0,
+            resS: (d: number, v: number, a: number, b: number, c: number) => this.resS(d, v, a, b, c),
+            resD: (d: number, v: number, a: number, b: number, c: number) => this.resD(d, v, a, b, c),
+            resL: (d: number, lane: number, v: number, a: number, b: number, c: number) => this.resL(d, lane, v, a, b, c),
+            lfsLane: (bits: number, d: number, lane: number) => singleToDoubleBits(bits, lane ? w1 : w0, d * 2),
+        } };
+        this.wrun = new WebAssembly.Instance(new WebAssembly.Module(dispatcherModule()), this.imports).exports.run as () => number;
+    }
+    /** Compiles the block at pc, and with it the blocks control can reach from there nearby (one module for all). */
+    private compile(pc: number): number {
+        if (!this.wrun) this.jitInit();
+        const dv = this.mem.dv, bmap = this.bmap, hooked = (p: number) => this.hookAt(p) !== null;
+        const list: BlockCode[] = [], queue = [pc >>> 0], seen = new Set<number>(queue);
+        const lo = pc - 0x1000, hi = pc + 0x3000;
+        while (queue.length && list.length < 48) {
+            const p = queue.shift()!, o = (p ^ 0x80000000) >>> 0;
+            if (o >= CODE_SPAN || (p & 3) || bmap[o >>> 2] > 0 || bmap[o >>> 2] === -0x7FFFFFFF || hooked(p)) continue;
+            const b = compileBlock(dv, p, hooked);
+            if (!b) { bmap[o >>> 2] = -0x7FFFFFFF; continue; }
+            list.push(b);
+            for (const q of b.next) if (q >= lo && q < hi && !seen.has(q)) { seen.add(q); queue.push(q); }
+        }
+        if (!list.length) return 0;
+        if (this.blocks.length + list.length >= MAX_BLOCKS) this.invalidateCode();
+        const ex = new WebAssembly.Instance(new WebAssembly.Module(blocksModule(list)), this.imports!).exports;
+        this.modulesCompiled++;
+        list.forEach((b, i) => {
+            const idx = this.blocks.length;
+            this.blocks.push(b); this.table!.set(idx, ex['b' + i] as () => void);
+            this.blen[idx] = b.n; bmap[((b.pc ^ 0x80000000) >>> 0) >>> 2] = idx;
+            this.blocksCompiled++;
+        });
+        const first = bmap[((pc ^ 0x80000000) >>> 0) >>> 2];
+        return first > 0 ? first : 0;
+    }
 
     // ---------------------------------------------------------------- time
     /** the time base (bus ticks / 4) */
@@ -92,21 +191,49 @@ export class Cpu {
     }
     /** Runs until the instruction count reaches `until`, a hook or the game sets brk, or call()'s return. */
     run(until: number) {
-        const hookMap = this.hookMap, hookFns = this.hookFns, mem = this.mem, dv = mem.dv;
+        const hookMap = this.hookMap, hookFns = this.hookFns, mem = this.mem, dv = mem.dv, bmap = this.bmap, blen = this.blen;
         this.brk = false; this.limit = until;
         while (this.count < this.limit && !this.brk) {
             if (this.intr && (this.msr & MSR_EE)) this.interrupt();
-            const pc = this.pc, o = (pc ^ 0x80000000) >>> 0;
-            let ins: number;
+            let pc = this.pc, o = (pc ^ 0x80000000) >>> 0;
             if (o < MEM1_SIZE) {
                 const h = hookMap[o >>> 2];
-                if (h !== 0 && hookFns[h]!(this) !== false) { this.count++; if (this.pc === pc) this.pc = this.lr >>> 0; continue; }
-                ins = dv.getUint32(o);
-            } else if (pc === RETURN_SENTINEL) return;
-            else ins = mem.r32(pc);   // (physical addresses, with the MMU off)
-            this.pc = (pc + 4) >>> 0;
-            this.count++;
-            this.exec(ins, pc);
+                if (h !== 0) {
+                    if (hookFns[h]!(this) !== false) { this.count++; if (this.pc === pc) this.pc = this.lr >>> 0; continue; }
+                    // a probe: the instruction there runs
+                    this.pc = (pc + 4) >>> 0; this.count++;
+                    this.exec(dv.getUint32(o), pc);
+                    continue;
+                }
+                if (this.jit && o < CODE_SPAN && !(o & 3)) {
+                    let bi = bmap[o >>> 2];
+                    if (bi <= 0) {
+                        if (bi > -this.jitAfter) bmap[o >>> 2] = bi - 1;
+                        else if (bi === -this.jitAfter) bi = this.compile(pc);
+                    }
+                    if (bi > 0 && this.count + blen[bi] <= this.limit) {
+                        if (this.jitVerify) {
+                            const b = this.blocks[bi]!;
+                            for (let i = 0; i < b.n; i++) if (dv.getUint32(o + i * 4) !== b.words[i]) throw new Error(`jit: the code at 0x${(pc + i * 4).toString(16)} changed under a compiled block`);
+                            this.b0 = this.count; (this.table!.get(bi) as () => void)();
+                        } else this.wrun!();   // (blocks one after another, until something needs this loop: back to its top)
+                        continue;
+                    }
+                }
+                // interpret the straight run from here
+                for (;;) {
+                    this.pc = (pc + 4) >>> 0; this.count++;
+                    this.exec(dv.getUint32(o), pc);
+                    pc = (pc + 4) >>> 0;
+                    if (this.pc !== pc || this.count >= this.limit || this.brk || (this.intr && (this.msr & MSR_EE))) break;
+                    o = (pc ^ 0x80000000) >>> 0;
+                    if (o >= MEM1_SIZE || hookMap[o >>> 2] !== 0) break;
+                }
+                continue;
+            }
+            if (pc === RETURN_SENTINEL) return;
+            this.pc = (pc + 4) >>> 0; this.count++;
+            this.exec(mem.r32(pc), pc);   // (physical addresses, with the MMU off)
         }
     }
     private interrupt() {
@@ -138,7 +265,7 @@ export class Cpu {
     }
 
     // ---------------------------------------------------------------- decode
-    private exec(ins: number, pc: number) {
+    exec(ins: number, pc: number) {
         const g = this.gpr, m = this.mem;
         const rD = (ins >>> 21) & 31, rA = (ins >>> 16) & 31;
         switch (ins >>> 26) {
@@ -368,7 +495,8 @@ export class Cpu {
             case 595: case 659: g[d] = 0; return;   // mfsr, mfsrin
             case 210: case 242: return;   // mtsr, mtsrin
             // ---- cache and synchronisation: nothing to model, but for dcbz
-            case 598: case 854: case 982: case 86: case 54: case 470: case 278: case 246: case 306: case 566: return;   // sync, eieio, icbi, dcbf, dcbst, dcbi, dcbt, dcbtst, tlbie, tlbsync
+            case 982: this.invalidateCode(); return;   // icbi
+            case 598: case 854: case 86: case 54: case 470: case 278: case 246: case 306: case 566: return;   // sync, eieio, icbi, dcbf, dcbst, dcbi, dcbt, dcbtst, tlbie, tlbsync
             case 1014: { const e = (((a ? g[a] : 0) + g[b]) & ~31) >>> 0; for (let i = 0; i < 32; i += 4) m.w32(e + i, 0); return; }   // dcbz
             // ---- indexed floating-point loads and stores
             case 535: case 567: case 599: case 631: case 663: case 695: case 727: case 759: case 983: {
@@ -445,31 +573,31 @@ export class Cpu {
         o[d * 2] = lo; o[d * 2 + 1] = hi;
     }
     /** a double result (v) of operands a, b, c */
-    private resD(d: number, v: number, a: number, b: number, c: number) {
+    resD(d: number, v: number, a: number, b: number, c: number) {
         if (v !== v) return this.nan(d, 0, false, a, b, c);
         if (this.ni && v < MIN_NORMAL_F64 && v > -MIN_NORMAL_F64) v *= 0;
         this.ps0[d] = v;
     }
     /** a single result into both lanes: v is the value before its rounding to single */
-    private resS(d: number, v: number, a: number, b: number, c: number) {
+    resS(d: number, v: number, a: number, b: number, c: number) {
         if (v !== v) { this.nan(d, 0, true, a, b, c); this.ps1w[d * 2] = this.ps0w[d * 2]; this.ps1w[d * 2 + 1] = this.ps0w[d * 2 + 1]; return; }
         const r = this.ni && v < MIN_NORMAL_F32 && v > -MIN_NORMAL_F32 ? v * 0 : fr(v);
         this.ps0[d] = r; this.ps1[d] = r;
     }
     /** one lane of a paired-single result */
-    private resL(d: number, lane: number, v: number, a: number, b: number, c: number) {
+    resL(d: number, lane: number, v: number, a: number, b: number, c: number) {
         if (v !== v) return this.nan(d, lane, true, a, b, c);
         const r = this.ni && v < MIN_NORMAL_F32 && v > -MIN_NORMAL_F32 ? v * 0 : fr(v);
         if (lane) this.ps1[d] = r; else this.ps0[d] = r;
     }
     /** a * c + b (c with 25 bits) rounded once to single, flushed under NI: fmadds' value before any negation */
-    private madds(a: number, c: number, b: number) {
+    madds(a: number, c: number, b: number) {
         const r = fmaS(a, force25(c), b);
         return this.ni && r <= MIN_NORMAL_F32 && r >= -MIN_NORMAL_F32 ? flushS(a, force25(c), b, r) : r;
     }
 
     /** 59: single precision */
-    private op59(ins: number) {
+    op59(ins: number) {
         const d = (ins >>> 21) & 31, a = (ins >>> 16) & 31, b = (ins >>> 11) & 31, c = (ins >>> 6) & 31;
         const A = this.ps0[a], B = this.ps0[b], C = this.ps0[c];
         switch ((ins >>> 1) & 31) {
@@ -488,7 +616,7 @@ export class Cpu {
     }
 
     /** 63: double precision and FPU control */
-    private op63(ins: number) {
+    op63(ins: number) {
         const d = (ins >>> 21) & 31, a = (ins >>> 16) & 31, b = (ins >>> 11) & 31, c = (ins >>> 6) & 31;
         const w = this.ps0w;
         if (ins & 0x20) {   // the A forms
@@ -548,7 +676,7 @@ export class Cpu {
     }
 
     // ---------------------------------------------------------------- paired singles (opcode 4)
-    private op4(ins: number) {
+    op4(ins: number) {
         const d = (ins >>> 21) & 31, a = (ins >>> 16) & 31, b = (ins >>> 11) & 31, c = (ins >>> 6) & 31;
         const P0 = this.ps0, P1 = this.ps1, w0 = this.ps0w, w1 = this.ps1w, g = this.gpr;
         if ((PS_AFORM >>> ((ins >>> 1) & 31)) & 1) {

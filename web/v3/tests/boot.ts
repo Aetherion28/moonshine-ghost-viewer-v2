@@ -44,13 +44,29 @@ if (process.env.START) {
         return false;
     });
 }
+if (process.env.JIT === '0') cpu.jit = false;
+if (process.env.JITVERIFY) cpu.jitVerify = true;
+if (process.env.JITAFTER) cpu.jitAfter = +process.env.JITAFTER;
 const N = +(process.argv[2] || 100) * 1e6;
 const t0 = performance.now();
 let err: unknown = null;
-try { M.run(N); } catch (e) { err = e; }
+try {
+    // (in two parts when MARK is given: the second part's speed is the game's, past the boot)
+    const mark = +(process.env.MARK || 0) * 1e6;
+    if (mark && mark < N) { M.run(mark); const t1 = performance.now(), i1 = cpu.count - M.idleSkipped; M.run(N); console.log(`after ${mark / 1e6} M: ${((cpu.count - M.idleSkipped - i1) / 1e6 / ((performance.now() - t1) / 1000)).toFixed(1)} million instructions a second`); }
+    else if (process.env.MIPSLOG) { for (let at = 1e9; at <= N; at += 1e9) { const t1 = performance.now(), i1 = cpu.count - M.idleSkipped; M.run(at); const ms = performance.now() - t1; console.log(`to ${at / 1e9} G: ${((cpu.count - M.idleSkipped - i1) / 1e6).toFixed(0)} M in ${(ms / 1000).toFixed(1)} s = ${((cpu.count - M.idleSkipped - i1) / 1e3 / ms).toFixed(1)} MIPS, blocks ${cpu.blocksCompiled} in ${cpu.modulesCompiled} modules`); } }
+    else M.run(N);
+} catch (e) { err = e; }
 const dt = (performance.now() - t0) / 1000;
 if (err) console.log('STOP', String(err), (err as Error).stack?.split('\n').slice(1, 4).join(' | '));
 console.log(`ran to ${cpu.count} (${(cpu.count / 486e6).toFixed(2)} s of game time) in ${dt.toFixed(1)} s; idle skipped ${(M.idleSkipped / 1e6).toFixed(1)} M; fields ${M.fields}`);
+{   // the machine's state in one number (the compiled blocks must leave exactly what the interpreter does)
+    let h = 0x811C9DC5;
+    const mix = (b: Uint8Array) => { for (let i = 0; i < b.length; i++) h = Math.imul(h ^ b[i], 0x01000193); };
+    mix(mem.ram); mix(mem.lc); mix(new Uint8Array(cpu.gpr.buffer, cpu.gpr.byteOffset, 128)); mix(new Uint8Array(cpu.ps0.buffer, cpu.ps0.byteOffset, 512));
+    mix(new Uint8Array(Uint32Array.of(cpu.pc, cpu.lr, cpu.ctr, cpu.cr, cpu.xer, cpu.fpscr, cpu.msr, cpu.srr0, cpu.srr1).buffer));
+    console.log('state', (h >>> 0).toString(16), 'blocks', cpu.blocksCompiled, 'modules', cpu.modulesCompiled);
+}
 console.log('pc', cpu.pc.toString(16), S.who(cpu.pc), 'lr', cpu.lr.toString(16), S.who(cpu.lr), 'msr', cpu.msr.toString(16), 'fpscr', cpu.fpscr.toString(16));
 console.log('disc: reads', M.hw.diReads, 'bytes', M.hw.diBytes, 'files', opened.length, opened.slice(0, 40).join(' '));
 console.log('gx fifo bytes', M.hw.fifoBytes);

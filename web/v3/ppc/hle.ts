@@ -70,7 +70,10 @@ export function installHle(m: Machine, sym: Sym, opt: HleOptions = {}) {
     on('DSPSendCommands2__FPUlUlPFUs_v', (c) => { c.gpr[3] = 0; });
     on('DsetupTable__FUlUlUlUlUl', nop);
     // ---- cache maintenance: no cache is modelled (memory is always coherent)
-    for (const n of ['DCFlushRange', 'DCFlushRangeNoSync', 'DCInvalidateRange', 'DCStoreRange', 'DCStoreRangeNoSync', 'ICInvalidateRange', 'ICFlashInvalidate']) if (sym(n) !== undefined) on(n, nop);
+    for (const n of ['DCFlushRange', 'DCFlushRangeNoSync', 'DCInvalidateRange', 'DCStoreRange', 'DCStoreRangeNoSync']) if (sym(n) !== undefined) on(n, nop);
+    //      (instructions were changed: the blocks compiled from the old ones go)
+    if (sym('ICInvalidateRange') !== undefined) on('ICInvalidateRange', (c) => { c.invalidateCode(c.gpr[3], c.gpr[4]); });
+    if (sym('ICFlashInvalidate') !== undefined) on('ICFlashInvalidate', (c) => { c.invalidateCode(); });
     // ---- the console
     on('OSReport', (c) => { if (opt.report) opt.report(format(c, c.gpr[3], new VarArgs(c, 4))); });
     on('OSPanic', (c) => {

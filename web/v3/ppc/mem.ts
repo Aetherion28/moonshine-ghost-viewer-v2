@@ -6,6 +6,13 @@
 export const MEM1_SIZE = 0x01800000;
 export const LC_BASE = 0xE0000000, LC_SIZE = 0x4000;
 
+// RAM is the start of one WebAssembly memory. After it come what the compiled blocks (jit.ts) share with
+// the interpreter: the block map (for each word of the first CODE_SPAN bytes of RAM, where the DOL's code
+// and the mod's caves are: the index of the block compiled from there), the blocks' lengths, and the
+// CPU's registers.
+export const CODE_SPAN = 0x00800000, MAX_BLOCKS = 0x40000;
+export const BMAP = MEM1_SIZE, BLEN = BMAP + CODE_SPAN, STATE = BLEN + MAX_BLOCKS * 4, WASM_BYTES = STATE + 0x10000;
+
 export interface Mmio {
     read(addr: number, size: number): number;
     write(addr: number, size: number, value: number): void;
@@ -18,8 +25,9 @@ export class MemFault extends Error {
 }
 
 export class Memory {
-    readonly ram = new Uint8Array(MEM1_SIZE);
-    readonly dv = new DataView(this.ram.buffer);
+    readonly wasm = new WebAssembly.Memory({ initial: WASM_BYTES >>> 16, maximum: WASM_BYTES >>> 16 });
+    readonly ram = new Uint8Array(this.wasm.buffer, 0, MEM1_SIZE);
+    readonly dv = new DataView(this.wasm.buffer, 0, MEM1_SIZE);
     readonly lc = new Uint8Array(LC_SIZE);
     readonly lcdv = new DataView(this.lc.buffer);
     mmio: Mmio | null = null;
