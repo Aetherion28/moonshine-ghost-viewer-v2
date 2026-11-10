@@ -56,12 +56,12 @@ export class Gx {
     /** rasterise the primitives that come (else they are skipped) */
     raster = false;
     /**
-     * Where in a pixel the interpolated values (texture coordinates, colours, depth) are taken, in pixels from its
-     * left and top edges. Not the middle: the recordings fix x between 0.646 and 0.687 and y between 0.438 and 0.484
-     * (README, "the goop"); these are the middle of that. Dolphin's software renderer has 0.495 for both.
+     * Where in a pixel the texture coordinates are taken, in pixels from its left and top edges, for each pixel of a
+     * 2 x 2 group (the GPU draws in such groups): index (y & 1) * 2 + (x & 1), x then y. Not the middle, where the
+     * colours are, and not the same for the four: see README, "The goop's sample point", for what the recordings
+     * allow. Dolphin's software renderer has 0.495 for all.
      */
-    sampleX = Math.fround(2 / 3);
-    sampleY = Math.fround(11 / 24);
+    samplePoint = new Float32Array([SX_EVEN, SY_EE, SX_ODD, SY_OE, SX_EVEN, SY_EO, SX_ODD, SY_OO]);
     /** the embedded frame buffer: RGBA, 8 bits each */
     efb = new Uint8Array(EFB_W * EFB_H * 4);
     /** the pixel engine's counter of 2 x 2 pixel groups that reached the blender (GXReadPixMetric multiplies by 4) */
@@ -72,6 +72,11 @@ export class Gx {
     /** what is rasterised and copied, as it happens (debugging) */
     trace: ((s: string) => void) | null = null;
     pixelTrace: ((s: string) => void) | null = null;
+    /** (for tests) every primitive while rasterising, with its vertices on the screen; every frame buffer copy to a texture */
+    drawTrace: ((prim: number, count: number, v: { x: number; y: number; z: number; c: ArrayLike<number>; s: ArrayLike<number>; t: ArrayLike<number> }[]) => void) | null = null;
+    copyTrace: ((dst: number, x: number, y: number, w: number, h: number) => void) | null = null;
+    /** (for tests) every triangle that reaches the rasteriser */
+    triTrace: ((a: { x: number; y: number; c: ArrayLike<number> }, b: { x: number; y: number; c: ArrayLike<number> }, c: { x: number; y: number; c: ArrayLike<number> }) => void) | null = null;
     private layouts = new Map<string, Layout>();
 
     constructor(private ram: Uint8Array, private host: GxHost) { }
@@ -262,7 +267,8 @@ export class Gx {
         const v = this.vb;
         while (v.length < count) v.push(newVtx());
         for (let i = 0; i < count; i++) this.vertex(L, b, p + i * L.size, v[i]);
-        if (this.trace) this.trace(`prim ${prim.toString(16)} x${count} (${v[0].x},${v[0].y})-(${v[Math.min(2, count - 1)].x},${v[Math.min(2, count - 1)].y}) uv0 ${v[0].s[0]},${v[0].t[0]}..${v[Math.min(2, count - 1)].s[0]},${v[Math.min(2, count - 1)].t[0]} stages ${((this.bp[0] >>> 10) & 15) + 1} gens ${this.bp[0] & 15} c0 ${this.tevReg.slice(4, 8)} c1 ${this.tevReg.slice(8, 12)} blend ${this.bp[0x41].toString(16)} atest ${this.bp[0xF3].toString(16)} z ${this.bp[0x40].toString(16)} cull ${(this.bp[0] >>> 14) & 3} tex0 ${((this.bp[0x94] << 5) >>> 0).toString(16)} ${(this.bp[0x88] & 0x3FF) + 1}x${((this.bp[0x88] >>> 10) & 0x3FF) + 1} f${(this.bp[0x88] >>> 20) & 15} m${this.bp[0x80].toString(16)} quads ${this.blendQuads} | cenv ${this.bp[0xC0].toString(16)} ${this.bp[0xC2].toString(16)} ${this.bp[0xC4].toString(16)} aenv ${this.bp[0xC1].toString(16)} order ${this.bp[0x28].toString(16)} cc ${this.xfw[0x100E].toString(16)} ac ${this.xfw[0x1010].toString(16)} mat ${this.xfw[0x100C].toString(16)} col ${v[0].c.slice(0, 4)}`);
+        if (this.trace) this.trace(`prim ${prim.toString(16)} x${count} (${v[0].x},${v[0].y})-(${v[Math.min(2, count - 1)].x},${v[Math.min(2, count - 1)].y}) uv0 ${v[0].s[0]},${v[0].t[0]}..${v[Math.min(2, count - 1)].s[0]},${v[Math.min(2, count - 1)].t[0]} stages ${((this.bp[0] >>> 10) & 15) + 1} gens ${this.bp[0] & 15} c0 ${this.tevReg.slice(4, 8)} c1 ${this.tevReg.slice(8, 12)} blend ${this.bp[0x41].toString(16)} atest ${this.bp[0xF3].toString(16)} z ${this.bp[0x40].toString(16)} cull ${(this.bp[0] >>> 14) & 3} tex0 ${((this.bp[0x94] << 5) >>> 0).toString(16)} ${(this.bp[0x88] & 0x3FF) + 1}x${((this.bp[0x88] >>> 10) & 0x3FF) + 1} f${(this.bp[0x88] >>> 20) & 15} m${this.bp[0x80].toString(16)} quads ${this.blendQuads} | cenv ${this.bp[0xC0].toString(16)} ${this.bp[0xC2].toString(16)} ${this.bp[0xC4].toString(16)} aenv ${this.bp[0xC1].toString(16)} order ${this.bp[0x28].toString(16)} cc ${this.xfw[0x100E].toString(16)} ac ${this.xfw[0x1010].toString(16)} mat ${this.xfw[0x100C].toString(16)} col ${v[0].c.slice(0, 4)} ksel ${this.bp[0xF6].toString(16)} ${this.bp[0xF7].toString(16)} k ${this.konst.slice(0, 16)} reg ${this.tevReg}`);
+        if (this.drawTrace) this.drawTrace(prim, count, v);
         switch (prim) {
             case 0x80: case 0x88: for (let i = 0; i + 3 < count; i += 4) { this.triangle(v[i], v[i + 1], v[i + 2]); this.triangle(v[i], v[i + 2], v[i + 3]); } return;   // quads
             case 0x90: for (let i = 0; i + 2 < count; i += 3) this.triangle(v[i], v[i + 1], v[i + 2]); return;
@@ -354,13 +360,18 @@ export class Gx {
         if (nz < 0) this.raster3(a, b, c); else this.raster3(a, c, b);
     }
     private raster3(v0: Vtx, v1: Vtx, v2: Vtx) {
-        // 28.4 fixed-point coordinates, rounded to nearest and adjusted to the hardware's output
-        const X1 = Math.round(16 * v0.x) - 9, X2 = Math.round(16 * v1.x) - 9, X3 = Math.round(16 * v2.x) - 9;
-        const Y1 = Math.round(16 * v0.y) - 9, Y2 = Math.round(16 * v1.y) - 9, Y3 = Math.round(16 * v2.y) - 9;
+        if (this.triTrace) this.triTrace(v0, v1, v2);
+        // Screen positions in twelfths of a pixel, rounded down (the grid of the sample positions, BP 1-4); a pixel is
+        // tested at its middle, 6/12. So a left edge covers a pixel up to 7/12 into it, which is what Dolphin's
+        // hardware test measured (hwtests gxtest/rasterization.cpp), and the recordings need the colours taken
+        // there from the positions so rounded (README, "The goop's sample point").
+        const X1 = Math.floor(SUB * v0.x) - MID, X2 = Math.floor(SUB * v1.x) - MID, X3 = Math.floor(SUB * v2.x) - MID;
+        const Y1 = Math.floor(SUB * v0.y) - MID, Y2 = Math.floor(SUB * v1.y) - MID, Y3 = Math.floor(SUB * v2.y) - MID;
         const DX12 = X1 - X2, DX23 = X2 - X3, DX31 = X3 - X1, DY12 = Y1 - Y2, DY23 = Y2 - Y3, DY31 = Y3 - Y1;
-        const FDX12 = DX12 * 16, FDX23 = DX23 * 16, FDX31 = DX31 * 16, FDY12 = DY12 * 16, FDY23 = DY23 * 16, FDY31 = DY31 * 16;
-        let minx = (Math.min(X1, X2, X3) + 0xF) >> 4, maxx = (Math.max(X1, X2, X3) + 0xF) >> 4;
-        let miny = (Math.min(Y1, Y2, Y3) + 0xF) >> 4, maxy = (Math.max(Y1, Y2, Y3) + 0xF) >> 4;
+        const FDX12 = DX12 * SUB, FDX23 = DX23 * SUB, FDX31 = DX31 * SUB, FDY12 = DY12 * SUB, FDY23 = DY23 * SUB, FDY31 = DY31 * SUB;
+        const up = (v: number) => Math.floor((v + SUB - 1) / SUB);
+        let minx = up(Math.min(X1, X2, X3)), maxx = up(Math.max(X1, X2, X3));
+        let miny = up(Math.min(Y1, Y2, Y3)), maxy = up(Math.max(Y1, Y2, Y3));
         // the scissor (0x20: top and left + 342; 0x21: bottom and right + 341; 0x59: the offset, halved)
         const bp = this.bp, xoff = (bp[0x59] & 0x3FF) * 2 - 342, yoff = ((bp[0x59] >>> 10) & 0x3FF) * 2 - 342;
         const sl = Math.max(0, ((bp[0x20] >>> 12) & 0x7FF) - xoff - 342), st = Math.max(0, (bp[0x20] & 0x7FF) - yoff - 342);
@@ -368,10 +379,13 @@ export class Gx {
         minx = Math.max(minx, sl); maxx = Math.min(maxx, sr); miny = Math.max(miny, st); maxy = Math.min(maxy, sb);
         if (minx >= maxx || miny >= maxy) return;
         this.setupPixel();
-        // slopes: each interpolated value as a plane over the screen, from vertex 0
-        const fx1 = v0.x, fy1 = v0.y, dx31 = fr(v2.x - fx1), dx12 = fr(fx1 - v1.x), dy12 = fr(fy1 - v1.y), dy31 = fr(v2.y - fy1);
-        const vx0 = (X1 + 0xF) >> 4, vy0 = (Y1 + 0xF) >> 4;
-        const offX = fr(fr(vx0 - fx1) + this.sampleX), offY = fr(fr(vy0 - fy1) + this.sampleY);
+        // slopes: each interpolated value as a plane over the screen, from vertex 0 (the rounded positions)
+        const px1 = fr((X1 + MID) / SUB), py1 = fr((Y1 + MID) / SUB), px2 = fr((X2 + MID) / SUB), py2 = fr((Y2 + MID) / SUB), px3 = fr((X3 + MID) / SUB), py3 = fr((Y3 + MID) / SUB);
+        const fx1 = px1, fy1 = py1, dx31 = fr(px3 - fx1), dx12 = fr(fx1 - px2), dy12 = fr(fy1 - py2), dy31 = fr(py3 - fy1);
+        const vx0 = up(X1), vy0 = up(Y1);
+        // (texture coordinates are taken at the pixel's samplePoint; colours and depth at its middle)
+        const sp = this.samplePoint, baseX = fr(vx0 - fx1), baseY = fr(vy0 - fy1);
+        const midX = fr(fr(vx0 - fx1) + 0.5), midY = fr(fr(vy0 - fy1) + 0.5);
         const w0 = fr(1 / v0.w), w1 = fr(1 / v1.w), w2 = fr(1 / v2.w);
         const cden = fr(fr(-dx12 * dy31) - fr(dx31 * -dy12));
         const S = this.slopes;
@@ -405,7 +419,7 @@ export class Gx {
         if (DY12 < 0 || (DY12 === 0 && DX12 > 0)) C1++;
         if (DY23 < 0 || (DY23 === 0 && DX23 > 0)) C2++;
         if (DY31 < 0 || (DY31 === 0 && DX31 > 0)) C3++;
-        let CY1 = C1 + DX12 * (miny << 4) - DY12 * (minx << 4), CY2 = C2 + DX23 * (miny << 4) - DY23 * (minx << 4), CY3 = C3 + DX31 * (miny << 4) - DY31 * (minx << 4);
+        let CY1 = C1 + DX12 * (miny * SUB) - DY12 * (minx * SUB), CY2 = C2 + DX23 * (miny * SUB) - DY23 * (minx * SUB), CY3 = C3 + DX31 * (miny * SUB) - DY31 * (minx * SUB);
         const uv = this.uv, proj = this.xfw;
         // the groups of 2 x 2 pixels this triangle put through the blender
         const qw = (EFB_W >> 1) + 1, seen = this.quadSeen;
@@ -415,7 +429,8 @@ export class Gx {
             let CX1 = CY1, CX2 = CY2, CX3 = CY3;
             for (let x = minx; x < maxx; x++) {
                 if (CX1 > 0 && CX2 > 0 && CX3 > 0) {
-                    const dx = fr(offX + (x - vx0)), dy = fr(offY + (y - vy0));
+                    const q = ((y & 1) << 2) | ((x & 1) << 1);
+                    const dx = fr(fr(baseX + sp[q]) + (x - vx0)), dy = fr(fr(baseY + sp[q + 1]) + (y - vy0)), mx = fr(midX + (x - vx0)), my = fr(midY + (y - vy0));
                     const invW = fr(1 / fr(fr(S[0] + fr(S[1] * dx)) + fr(S[2] * dy)));
                     for (let g = 0; g < gens; g++) {
                         const o = 3 + g * 9;
@@ -425,9 +440,9 @@ export class Gx {
                         uv[g * 2] = Math.trunc(fr(fr(fr(fr(S[o] + fr(S[o + 1] * dx)) + fr(S[o + 2] * dy)) * pr) * 128));
                         uv[g * 2 + 1] = Math.trunc(fr(fr(fr(fr(S[o + 3] + fr(S[o + 4] * dx)) + fr(S[o + 5] * dy)) * pr) * 128));
                     }
-                    if (varying) for (let i = 0; i < 8; i++) if (this.chanUsed[i >> 2]) { const o = 80 + i * 3, v = Math.trunc(fr(fr(S[o] + fr(S[o + 1] * dx)) + fr(S[o + 2] * dy))); ras[i] = v < 0 ? 0 : v > 255 ? 255 : v; }
+                    if (varying) for (let i = 0; i < 8; i++) if (this.chanUsed[i >> 2]) { const o = 80 + i * 3, v = Math.trunc(fr(fr(S[o] + fr(S[o + 1] * mx)) + fr(S[o + 2] * my))); ras[i] = v < 0 ? 0 : v > 255 ? 255 : v; }
                     let z = 0;
-                    if (zOn) { z = Math.trunc(fr(fr(S[104] + fr(S[105] * dx)) + fr(S[106] * dy))); z = z < 0 ? 0 : z > 0xFFFFFF ? 0xFFFFFF : z; }
+                    if (zOn) { z = Math.trunc(fr(fr(S[104] + fr(S[105] * mx)) + fr(S[106] * my))); z = z < 0 ? 0 : z > 0xFFFFFF ? 0xFFFFFF : z; }
                     if (this.pixel(x, y, z, memo)) { const qi = (y >> 1) * qw + (x >> 1); if (!seen[qi]) { seen[qi] = 1; this.blendQuads++; } }
                 }
                 CX1 -= FDY12; CX2 -= FDY23; CX3 -= FDY31;
@@ -474,6 +489,7 @@ export class Gx {
         }
         this.memoMap = map; this.memoCoord = coord;
         if (bp[0] & 0x70000) this.warn('indirect textures');
+        if (bp[1] !== 0x666666 || bp[2] !== 0x666666 || bp[3] !== 0x666666 || bp[4] !== 0x666666) this.warn('sample locations that are not the middle of the pixel (anti-aliasing)');
         if (bp[0x43] & 7) this.warn('a frame buffer that is not 8 bits a colour');
     }
     private reg = new Int32Array(16);
@@ -635,6 +651,7 @@ export class Gx {
         const sx = bp[0x49] & 0x3FF, sy = (bp[0x49] >>> 10) & 0x3FF, sw = (bp[0x4A] & 0x3FF) + 1, sh = ((bp[0x4A] >>> 10) & 0x3FF) + 1;
         if (this.trace) this.trace(`copy ctl ${ctl.toString(16)} src ${sx},${sy} ${sw}x${sh} to ${((bp[0x4B] << 5) >>> 0).toString(16)} quads ${this.blendQuads} filter ${bp[0x53].toString(16)} ${bp[0x54].toString(16)} samples ${bp[1].toString(16)}`);
         if (!(ctl & 0x4000)) {
+            if (this.copyTrace) this.copyTrace((bp[0x4B] << 5) & 0x03FFFFFF, sx, sy, sw, sh);
             this.copies++;
             const f = (ctl >>> 3) & 15, fmt = (f >> 1) + (f & 1) * 8, dst = (bp[0x4B] << 5) & 0x03FFFFFF, half = (ctl >>> 9) & 1;
             if (half) this.warn('a half-size frame buffer copy');
@@ -675,6 +692,12 @@ export class Gx {
 }
 
 // ---------------------------------------------------------------- helpers
+/** the texture sample points (Gx.samplePoint): x for an even and an odd pixel column, y for the four pixels of a group */
+const SX_EVEN = 0.65625, SX_ODD = 0.59375, SY_EE = 0.46875, SY_OE = 0.625, SY_EO = 0.46875, SY_OO = 0.46875;
+/** Screen positions are kept in 1/SUB pixel and a pixel is tested MID/SUB in: the GPU's sample location registers (BP 1 to 4)
+ *  count in twelfths of a pixel, and the game sets every one to 6, the middle (GXSetCopyFilter without anti-aliasing).
+ *  The recordings agree: with Dolphin's 1/16 grid Bianco Hills 1 stops at tick 2,952, with this one it passes it. */
+const SUB = 12, MID = 6;
 const F32 = new Float32Array(1), F32W = new Uint32Array(F32.buffer);
 const r32 = (b: Uint8Array, p: number) => ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0;
 /** the constant fractions a stage can select: 8/8 ... 1/8 */

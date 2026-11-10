@@ -2,7 +2,7 @@
 // Run: node v3goopdbg.mjs <trace> <from tick> <to tick>
 // Env: WATCH=x,y (every pixel drawn at one place of the frame buffer, from <from> on), PX=<regex> (the pixels of
 // the 3-stage draws that match), TEXEL=layer,x,z (a texel per tick), REGION=layer,x,z,n (an n x n block of the
-// map and of the height map at <from>), GX_SX / GX_SY (the GPU model's sample point), POLL=1 (every goop test of the game: layer, texel, value, and each
+// map and of the height map at <from>), GX_SP (the GPU model's sample points, as in tests/replay.ts), POLL=1 (every goop test of the game: layer, texel, value, and each
 // layer's action), DUMP=<file> (all layers' maps at <to>), EARLY=layer,x,z, ALL=1 (don't stop on issues).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { readTrace } from '../game/trace.ts';
@@ -16,8 +16,7 @@ const T = readTrace(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as
 const from = +process.argv[3], to = +process.argv[4];
 const R = new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), { log: (s) => { if (/^\[/.test(s)) console.log(s); }, fstPad: +(process.env.FSTPAD ?? (process.env.DISC ? 0 : 480)), stopOn: process.env.ALL ? ['heap', 'layout'] : undefined });
 const m = R.m, mem = m.mem, gx = m.hw.gx;
-if (process.env.GX_SX) gx.sampleX = Math.fround(+process.env.GX_SX);
-if (process.env.GX_SY) gx.sampleY = Math.fround(+process.env.GX_SY);
+if (process.env.GX_SP) gx.samplePoint.set(process.env.GX_SP.split(',').map(Number));
 const f32 = (a: number) => { const d = new DataView(new ArrayBuffer(4)); d.setUint32(0, mem.r32(a)); return d.getFloat32(0); };
 let lastTick = -1;
 if (process.env.EARLY) { const [li, tx, tz] = process.env.EARLY.split(',').map(Number); let n = 0; const val = () => { const l = layers()[li]; return l ? mem.r8(l.map + idx(tx, tz, l.l2w)) : -1; }; m.cpu.hook(JP10.goopLayerDraw + 4, (c) => { if (n++ < 40) console.log(`layer draw ${c.gpr[4]} at count ${c.count} tick ${R.ticks}: texel = ${val()}`); return false; }); gx.trace = (s) => { if (n < 40 && /^copy|stages 2/.test(s)) console.log('   ' + s.slice(0, 200) + ' texel ' + val()); }; }
@@ -32,8 +31,8 @@ const layers = () => {
     return out;
 };
 const idx = (x: number, z: number, l2w: number) => (z & 3) * 8 + ((x >> 3) + ((z >> 2) << (l2w - 3))) * 0x20 + (x & 7);
-if (process.env.POLL) m.cpu.hook(0x801F09EC, (c) => { if (R.ticks >= from - 1) { const pos = c.gpr[3], x = c.gpr[4] | 0, z = c.gpr[5] | 0, l = layers().find((q) => q.L + 0x5C === pos); console.log(`   isSame tick ${R.ticks + 1} layer ${l?.i} texel ${x},${z} = ${l && x >= 0 && z >= 0 && x < l.w && z < l.h ? mem.r8(l.map + idx(x, z, l.l2w)) + ' height ' + mem.r8(l.hmap + idx(x, z, l.l2w)) : 'out'} lr ${c.lr.toString(16)}`); } return false; });
-if (process.env.POLL) m.cpu.hook(0x801EBAE4, (c) => { if (R.ticks >= from - 1) { const l = layers().find((q) => q.L === c.gpr[3]); console.log(`   action layer ${l?.i} tick ${R.ticks}`); } return false; });
+if (process.env.POLL) m.cpu.hook(0x801F09EC, (c) => { if (R.ticks >= from - 1) { const pos = c.gpr[3], x = c.gpr[4] | 0, z = c.gpr[5] | 0, l = layers().find((q) => q.L + 0x5C === pos); console.log(`   isSame tick ${R.ticks + 1} layer ${l?.i} texel ${x},${z} = ${l && x >= 0 && z >= 0 && x < l.w && z < l.h ? mem.r8(l.map + idx(x, z, l.l2w)) + ' height ' + mem.r8(l.hmap + idx(x, z, l.l2w)) : 'out'} call ${(R as any).calls + (R as any).literals}`); } return false; });
+if (process.env.POLL) m.cpu.hook(0x801EBAE4, (c) => { if (R.ticks >= from - 1) { const l = layers().find((q) => q.L === c.gpr[3]); console.log(`   action layer ${l?.i} tick ${R.ticks} call ${(R as any).calls + (R as any).literals}`); } return false; });
 const dump = () => { const fs = process.env.DUMP; if (!fs) return; const out: number[] = []; for (const l of layers()) for (let z = 0; z < l.h; z++) for (let x = 0; x < l.w; x++) out.push(mem.r8(l.map + idx(x, z, l.l2w))); writeFileSync(fs, Uint8Array.from(out)); };
 const timer = setInterval(() => { }, 1000);
 const hookTick = () => {
@@ -45,6 +44,9 @@ const hookTick = () => {
         let cur = '';
         gx.trace = (s) => { cur = s.replace(/ \|.*/, '').slice(0, 330); if (/^copy/.test(s)) console.log(`  gx@${R.ticks}: ${s}`); };
         gx.pixelTrace = (p) => { if (watched.has(p.slice(0, p.indexOf(' uv')))) console.log(`  gx@${R.ticks}: ${cur}\n      ${p}`); };
+        // (a model's triangles near a watched pixel, covered or not: tools/goopfit rasterises them under other rules)
+        const wpx = [...watched].map((q) => q.slice(3).split(',').map(Number));
+        gx.triTrace = (a, b, c) => { if (!cur.startsWith('prim 9') && !cur.startsWith('prim a')) return; for (const [x, y] of wpx) if (Math.min(a.x, b.x, c.x) < x + 2 && Math.max(a.x, b.x, c.x) > x - 1 && Math.min(a.y, b.y, c.y) < y + 2 && Math.max(a.y, b.y, c.y) > y - 1) console.log(`  gx@${R.ticks}: ${cur}\n      tri ${x},${y} ${[a, b, c].map((v) => `${v.x},${v.y},${v.c[0]},${v.c[3]}`).join(' ')}`); };
     } else if (t === from) { gx.trace = (s) => { console.log(`  gx@${R.ticks}: ${s}`); gx.pixelTrace = process.env.PX && /stages 3/.test(s) && new RegExp(process.env.PX).test(s) ? (p) => console.log('      ' + p) : null; }; console.log(layers().map((l) => `layer ${l.i}: type ${l.type} flags ${l.flags.toString(16)} ${l.w}x${l.h} x ${l.minX}..${l.maxX} z ${l.minZ}..${l.maxZ} inv ${l.inv} voff ${l.voff} thr ${l.thr} delta ${l.delta} cthr ${l.cthr} counter ${l.counter}`).join('\n')); }
     if (t === to) dump();
     if (t < from || t > to) return;

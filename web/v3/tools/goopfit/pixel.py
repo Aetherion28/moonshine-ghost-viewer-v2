@@ -4,8 +4,12 @@
 # user's disc. A rule R: dx, dy (where in a pixel the texture coordinate is taken), q (how it becomes 1/128
 # texels: trunc / round), fbits (bits of the bilinear weights), brnd (the bilinear sum's rounding), blend (a
 # number: added before the blender's shift; or 'sept' / 'sepr' / '255r' / '255f'), tu, tv (an offset in texels).
-# Model stamps (triangles with vertex alpha) keep the alpha of the log.
-import os
+# Model stamps (triangles with vertex alpha) keep the alpha of the log, or with cov in R are rasterised from the
+# triangles the log has near the pixel (tri.py: cov 'dolphin' / 'float' with cx, cy / 'fixed' with sub, off, snap;
+# ax, ay where the colour is taken (else dx, dy); crnd how it becomes a byte).
+import os,sys
+sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
+import tri
 DIR=os.environ.get('GOOPFIT','/tmp/claude-0/ct')
 import re,sys,itertools,math
 def loadtex():
@@ -20,13 +24,18 @@ TEX=loadtex()
 def load(path,px):
     L=open(path).read().split('\n'); cur=''; ev=[]
     pat=re.compile(r'\s+px %s uv (\S+),(\S+) (\S+),(\S+) src (\d+),(\d+) dst (\d+) -> (\d+)'%px)
+    tpat=re.compile(r'\s+tri %s (.*)$'%px)
     for l in L:
         if l.startswith('  gx@'): cur=l
+        mt=tpat.match(l)
+        if mt:
+            t=int(re.match(r'  gx@(\d+)',cur).group(1)); f=[float(x) for x in mt.group(1).replace(' ',',').split(',')]
+            ev.append(dict(t=t,k='T',tri=[(f[i*4],f[i*4+1],f[i*4+3]) for i in range(3)],c=255,a=0,dst=0,new=0,q=None,tex='',c0=0,c1=0,u=0,v=0)); continue
         m=pat.match(l)
         if m:
             t=int(re.match(r'  gx@(\d+)',cur).group(1)); st=re.search(r'stages (\d)',cur); bl=re.search(r'blend (\w+)',cur); b=int(bl.group(1),16) if bl else -1
             q=re.search(r'\(([-\d.]+),([-\d.]+)\)-\(([-\d.]+),([-\d.]+)\)',cur); tex=re.search(r'tex0 (\w+)',cur); c0=re.search(r'c0 (-?\d+)',cur); c1=re.search(r'c1 (-?\d+)',cur)
-            if 'prim 98' in cur: k='M'
+            if re.search(r'prim (9|a)',cur): k='M'
             elif st and st.group(1)=='2': k='L'
             elif b>=0 and (b&0x7e1)==0x4a1: k='S'
             elif b>=0 and (b&0x7e1)==0x101: k='K'
@@ -75,8 +84,14 @@ def run(ev,px,h,R,tmax=10**9,thr=50,delta=8,check=False):
         if k=='L':
             if v is None: v=e['new']
             continue
-        if v is None: continue
-        if k=='M': c,a=e['c'],e['a']
+        if v is None: v=0                        # (no layer draw seen yet: the texel was 0, which the layer's alpha test drops)
+        if k=='T':
+            if 'cov' not in R: continue          # (the log's own model stamps are used)
+            if not tri.covered(e['tri'],x,y,R): continue
+            c=255; a=tri.alpha(tri.snapped(e['tri'],R['asnap'],R.get('snap','floor')) if 'asnap' in R else e['tri'],x,y,R.get('ax',R['dx']),R.get('ay',R['dy']),R.get('crnd','trunc'))
+        elif k=='M':
+            if 'cov' in R: continue              # (recomputed from the triangles)
+            c,a=e['c'],e['a']
         else:
             win=e['c0']<h<e['c1']
             ta=sample(e['tex'],x,y,e['q'],R) if win else 0

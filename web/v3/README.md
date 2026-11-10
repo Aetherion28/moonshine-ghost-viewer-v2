@@ -39,7 +39,7 @@ Taken from the recording, because the game itself can't know them:
 - the size of the disc's file system table (it sets the arena's top): the replay boots, compares the stage heap's size with the recorded one, and boots again with the table padded by the difference (480 bytes for the traces at hand);
 - one Moonshine setting the trace doesn't record, **Shiny Shines**: it makes a collected Shine share the item manager's model instead of loading the blue one, so everything allocated after it sits lower. When Mario's address at his first record differs from the recording's, the replay boots again with it on.
 
-## Where it stands (2026-11-09)
+## Where it stands (2026-11-10)
 
 A recording counts as in step while every `rand()` call (caller and seed), every frame's seed and director state, and Mario's and the camera's records at every movement tick are bit-identical with it.
 
@@ -48,8 +48,8 @@ Still in step when the test's time limit cut them: Delfino Plaza (`…2F`, dolpi
 
 What stops the others:
 - **the goop**: the game draws the goop map on the GPU (each layer's map through a fading texture environment, stamps blended over it, a model with vertex alpha under the gatekeeper, all copied back to the texture the collision code reads, pixels counted with `GXReadPixMetric`). `ppc/gx.ts` does those draws.
-  Bianco Hills 1 is in step to tick 2,952 (2,347 before the GPU model, 2,427 with Dolphin's sample point) and Bianco Hills 5 to tick 2,933 (2,551); Ricco Harbor 1 stops at tick 2,713 on something else.
-  See "The goop's sample point" below for what the recordings fixed and what is open (now: the model stamps under the gatekeeper);
+  Bianco Hills 1 is in step to tick 4,533 (2,347 before the GPU model, 2,427 with Dolphin's sample point, 2,952 with Dolphin's 1/16-pixel grid, 4,018 with one sample point for every pixel) and Bianco Hills 5 to tick 3,457 (2,551); Ricco Harbor 1 stops at tick 2,713 on something else.
+  See "The goop's sample point" below for what the recordings fixed and what is open;
 - **Moonshine features without source**: the pattern selector (Pianta Village 1 at tick 127: a Chain Chomplet picks its graph node), and by the session records the Ricco crane and fruit controls, Petey's route. The PR76 Dolphin package's JP patch rebuilds into the whole Moonshine DOL (retail text with 35 patched words, the mod's code at 0x80426020 and 0x804A6020): the hooks' code can be read there (the pattern selector is the function at 0x8044BA74);
 - **DPad Functions** (Gelato Beach 1 at tick 2,669: Moonshine writes Mario's status; a TAS-tagged run);
 - **the bath water's height** in traces older than its recording (Bowser, observations 3).
@@ -82,14 +82,27 @@ The method (tools in `tools/goopfit/`, logs from `tests/goopdbg.ts`):
 
 What that fixed (2026-11-10, Bianco Hills 1):
 - **The blender truncates**, as Dolphin has it: `(src * sf + dst * df) >> 8` with a factor of 255 counted as 256. Rounding (+128, or an exact division by 255) leaves texels above the limit that the console had under it (D: 64 stamps of alpha 7 take 253 under 30 on the console; with rounding, and even in exact arithmetic, they don't). A constant between (+10 to +30) satisfied the first seven texels and is refuted by the eighth (H).
-- **Where in a pixel the texture coordinate is taken** is not the middle, and not the same in x and y: with the truncating blender all of A to H hold only for x in 0.646 to 0.687 and y in 0.438 to 0.484 of a pixel (the offline grid, and replays at the corners: x 0.625 stops at tick 2,427, x 0.6875 at 2,595 or 2,792, y 0.5 at 1,944). `Gx.sampleX` / `sampleY` are the middle, 2/3 and 11/24. Dolphin's 0.495 for both stops at tick 2,427.
-  Dolphin's hardware test (`hwtests` gxtest/rasterization.cpp) puts the x where a primitive's left edge stops covering a pixel at 7/12; nothing tested y. The values here are what the recordings allow, not a known rule of the hardware: a rule that explains them (and their difference from 7/12) is still to find.
-  An offset in texels instead of pixels fits the same texels only in a one-value-wide strip, so the pixel offset is the simpler reading; the stamps so far are 4, 18 and 24 pixels wide.
+- **Where in a pixel the texture coordinate is taken** is not the middle, not the same in x and y, and not the same for the four pixels of a 2 x 2 group (the GPU draws in such groups; the scissor offset register counts in them). `Gx.samplePoint` holds the four points.
+  One point for every pixel fits a single recording up to a point (x 0.646 to 0.687, y 0.438 to 0.484 took Bianco Hills 1 to tick 4,018), but three texels then contradict each other whatever the point (`tools/goopfit/field.py` shows it without a replay):
+  P (Bianco Hills 1, tick 2,426: a 4-pixel pollute stamp's pixel must be 9 or more, x at least 0.625), B (Bianco Hills 5, tick 2,933: an 18-pixel clean stamp's pixel must be 3, x at most 0.604) and N (Bianco Hills 1, tick 4,018: a 24-pixel clean stamp's pixel must be 0, y at least 0.5625 where every other pixel needs y under 0.48).
+  P is on an even column, B and N on odd ones, and N on an odd column of an even row. With a point for each of the four pixels all 20,000 tests of the two recordings agree (`sim.py`, rule `par4`): x 0.646 to 0.667 on even columns and 0.583 to 0.604 on odd ones; y 0.458 to 0.479 on odd rows, 0.458 to 0.54 on (even column, even row) and 0.583 to 0.667 on (odd column, even row).
+  The replays then confirmed it on ticks the fit had not seen: Bianco Hills 1 passed tick 4,115 (where an experiment with N's pixel set by hand had stopped) and ran to 4,533, Bianco Hills 5 from 2,933 to 3,457.
+  Dolphin's hardware test (`hwtests` gxtest/rasterization.cpp) puts the x where a primitive's left edge stops covering a pixel at 7/12, which is the odd columns' x here; nothing tested y. These are still the values the recordings allow, not a known rule of the hardware: what makes the four points (the group's own arithmetic, most likely) is still to find, and each new stopped replay narrows them.
 - The bilinear filter is Dolphin's (7-bit weights, the sum truncated): rounding it breaks A and E.
 - A frame's test sees the map of the last frame drawn before it: `action` runs before Mario in a tick, so a test in the tick after a frame's last sees that frame.
 
+- **Screen positions are kept in twelfths of a pixel, rounded down, and a pixel is tested at its middle (6/12)**; colours and depth are taken at the middle too, from the positions so rounded (`SUB`, `MID` in `ppc/gx.ts`).
+  This came from texel I (tick 2,952: a texel under the gatekeeper's puddle model, whose triangles are about a pixel each, was 33 here and at most 30 on the console) and two more like it (K, I2); with Dolphin's grid (1/16 pixel, the test 9/16 in) no rule for the colours satisfied them.
+  It isn't only a fit: the GPU's sample location registers (BP 1 to 4) count in twelfths of a pixel and the game sets every one to 6 (`GXSetCopyFilter` without anti-aliasing; pureikyubu's notes on those registers, and the value seen in the game's own stream), and a left edge then stops covering a pixel 7/12 into it, which is what Dolphin's hardware test measured.
+  The model warns if a game sets another sample location.
+- The bilinear filter with 6-bit fractions and one lerp after the other (pureikyubu's description of the texture filter) was tried too: cut towards zero it breaks 13 of the stamp pixels the recordings fixed, and no form of it explains N below.
+
+The whole-recording method (2026-11-10): `tests/goopcap.ts` writes every goop draw of a replay (stamps with their texture and height window, the model's triangles, the other quads, each copy) and every goop test with the game's verdict to a JSON-lines file; `tools/goopfit/sim.py` replays all the maps from it under any rule and checks every test (Bianco Hills 1 to tick 4,018: 11,303 tests in 0.8 s, the rule in `ppc/gx.ts` disagreeing with none but N).
+`tables.py` changes one pixel of one stamp at a time and keeps the changes the recording refutes (clean stamp, 24 pixels: 77), and `check.py` tests a sampling rule against those without a replay; `scan.py` and `search.py` scan a rule's numbers; `history.py` and `tri.py` are the single-texel tools for the model's triangles.
+
 Open:
-- **I** (tick 2,952): a texel under the gatekeeper's puddle model is 33 here and at most 30 on the console. Its value comes from the model's triangles (about a pixel each, vertex alpha): the coverage rule (here Dolphin's: positions in 1/16 pixel, the test 9/16 in) and the colour's interpolation are next. `pixel.py` keeps a model stamp's alpha as logged, so it can't test rules for those yet.
+- Bianco Hills 1, tick 4,532: texel (199,114) is 50 here (goop) and at most 30 on the console. Bianco Hills 5, tick 3,457: texel (292,294) is 25 here and goop on the console. Both are next for the four points' ranges.
+- N's own history, for the record: texel (169,148) of the first layer had three 24-pixel clean stamps over it for 22 frames, four draws a frame, each taking 1 off (alpha 1): 210 draws from 193. The console kept it at 50 or more, so one of the three didn't touch it, and only the stamp's pixel (4,18) is at its edge (four texels of value 1 here; 0 if its row is sampled 0.11 pixel lower).
 - What the pixel counter counts is still the guess of before (2 x 2 groups with a pixel through the alpha test, plus one a triangle).
 - Only Bianco Hills 1 gave texels so far; Bianco Hills 5 confirms the sample point (tick 2,551 to 2,933) without having been used for it.
 
@@ -119,6 +132,6 @@ Build each with `npx esbuild v3/tests/<name>.ts --bundle --platform=node --forma
 - `tests/verify.ts <disc image or extracted folder> <trace.msgt>`: the browser's check from Node, on a disc as the browser gets it. The bundle needs nothing else, so it can run where the disc is.
 - `tests/browser.mjs <site folder> <disc image> <trace.msgt>`: the same in headless Chromium through the built viewer.
 - Every test that takes the workspace's extract takes `DISC=<disc image or extracted folder>` instead (`tests/jpdisc.ts`); then `FSTPAD` isn't needed.
-- `tests/goopdbg.ts <trace.msgt> <from tick> <to tick>`: the goop under Mario per tick and what the GPU model draws (its header lists the switches: `WATCH`, `POLL`, `REGION`, `DUMP`, `GX_SX` / `GX_SY`).
+- `tests/goopdbg.ts <trace.msgt> <from tick> <to tick>`: the goop under Mario per tick and what the GPU model draws (its header lists the switches: `WATCH`, `POLL`, `REGION`, `DUMP`, `GX_SP`).
 - `tests/tracedump.ts <trace.msgt> [from] [to]`: a trace's summary, or its events in a range.
 - `tests/survey.mjs <replay bundle> <list of traces> [workers] [seconds a trace]`: plays many traces and prints a line each: how far it matched and what stopped it.

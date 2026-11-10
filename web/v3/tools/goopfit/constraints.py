@@ -6,9 +6,9 @@ import sys,os,itertools; sys.path.insert(0,os.path.dirname(os.path.abspath(__fil
 import pixel as ev2
 DIR=ev2.DIR
 # name, pixel, height, last frame drawn before the game's test, what the console had, log
-CON=[('A',(80,191),6,1944,'>','wmulti.log'),('C',(172,127),13,2564,'<=','wmulti.log'),('D',(172,105),13,2568,'<=','wmulti.log'),('F',(162,108),11,2612,'<=','wmulti.log'),
-     ('E1',(165,115),13,2604,'any>','wmulti.log'),('E2',(178,118),13,2604,'any>','wmulti.log'),('E3',(170,94),13,2604,'any>','wmulti.log'),
-     ('G',(166,110),13,2588,'<=','wG.log'),('H',(194,111),13,2660,'<=','wH.log'),('I',(164,83),13,2948,'<=','wI.log')]
+CON=[('A',(80,191),6,1944,'>','wall2.log'),('C',(172,127),13,2564,'<=','wall2.log'),('D',(172,105),13,2568,'<=','wall2.log'),('F',(162,108),11,2612,'<=','wall2.log'),
+     ('E1',(165,115),13,2604,'any>','wall2.log'),('E2',(178,118),13,2604,'any>','wall2.log'),('E3',(170,94),13,2604,'any>','wall2.log'),
+     ('G',(166,110),13,2588,'<=','wall2.log'),('H',(194,111),13,2660,'<=','wall2.log'),('I',(164,83),13,2948,'<=','wall2.log'),('K',(175,88),13,3232,'>','wall2.log'),('I2',(164,83),13,2952,'>','wall2.log')]
 evs={c[0]:ev2.load(DIR+'/'+c[5],'%d,%d'%c[1]) for c in CON}
 def Bcase(R):
     out=[]
@@ -24,7 +24,6 @@ def score(R):
     for c in CON:
         if c[4]=='>': ok[c[0]]=r[c[0]]>30
         elif c[4]=='<=': ok[c[0]]=r[c[0]]<=30
-    ok.pop('I',None)
     ok['E']=max(r['E1'],r['E2'],r['E3'])>30; ok['B']=b[0]>30 and b[1]<=30
     return ok,r,b
 def show(R,ok,r,b): return ''.join(k if v else k.lower() for k,v in sorted(ok.items()))+' '+' '.join(f"{k}{v}" for k,v in r.items() if k not in('E1','E3'))+f" B{b}"
