@@ -97,7 +97,7 @@ export class Replay {
     countAtStage = 0; countAtPlay = 0;
     private iFlow = 0; private iCall = 0; private lastCall = -1;
     private strict = false;
-    private curFrame: TraceFrame | null = null; private curTick = 0; private curTickIndex = -1;
+    private curFrame: TraceFrame | null = null; private curTick = 0; private curTickIndex = -1; private between = 0;
     private observations = 0; private noWater = false;
     private padAdopted = false; private adopted = new Set<string>();
     private frozenState = -1; private suppressed: number[] | null = null; private suppressedPad = 0;
@@ -126,7 +126,7 @@ export class Replay {
         cpu.hook(A.PADRead, (c) => this.padRead(c));
         cpu.hook(A.PADClamp, () => { });
         cpu.hook(A.procLoopHead, (c) => { this.atProcLoop(c.gpr[31]); return false; });
-        cpu.hook(A.setupCall, () => { this.atSetup(); return false; });
+        cpu.hook(A.setupCall, () => { this.moonshine.beforeStageSetup(); this.atSetup(); return false; });
         cpu.hook(A.directCall, (c) => this.beforeDirect(c));
         cpu.hook(A.directRet, (c) => { this.afterDirect(c); return false; });
         cpu.hook(A.marioPerform, (c) => { if ((c.gpr[4] & 1) && this.phase === 'stage' && c.gpr[3] === m.mem.r32(A.gpMarioOriginal)) this.atTick(c.gpr[3], c.gpr[4]); return false; });
@@ -190,7 +190,8 @@ export class Replay {
     /** Does the trace start another stage before its next frame? */
     private recordingLeavesNow() {
         const T = this.T;
-        for (let i = this.iFlow; i < T.n; i++) { const k = T.kind[i]; if (k === Ev.STAGE) return true; if (k === Ev.FRAME || k === Ev.PAD) return false; }
+        // (it left if the next thing is a stage's start, or a frame without a stage director: a movie, a menu)
+        for (let i = this.iFlow; i < T.n; i++) { const k = T.kind[i]; if (k === Ev.STAGE) return true; if (k === Ev.FRAME) return T.frames[T.a[i]].state === -1; if (k === Ev.PAD) return false; }
         return false;
     }
 
@@ -309,6 +310,15 @@ export class Replay {
         }
         if (i >= T.n || T.kind[i] !== Ev.FRAME) { this.log(i >= T.n ? 'the trace ended' : `the trace has ${EV_NAMES[T.kind[i]]} where a frame was expected`); this.stop(); return false; }
         const f = T.frames[T.a[i]];
+        if (f.state === -1) {
+            // a frame of another director (a movie, a menu) between two stages: it gets the recorded pad, nothing is compared
+            this.curFrame = f; this.frames++;
+            if (!this.between++) this.log(`frame ${f.frame}: the recording has frames without a stage director here (the game's director: ${hex(mem.r32(mem.r32(A.app + APP.director)))})`);
+            i = this.nextFlowFrom(i + 1);
+            if (i < T.n && T.kind[i] === Ev.PAD) { this.setPad(mem.r32(A.app + APP.pads), T.pads[T.a[i]].input, `frame ${f.frame}`); i = this.nextFlowFrom(i + 1); }
+            this.iFlow = i;
+            return false;
+        }
         const dir = mem.r32(A.app + APP.director), setupDone = mem.r8(dir + DIR.setupDone) !== 0;
         const ts = mem.r16(A.setupThread + 0x2C8), threadDone = ts === 8 || ts === 0;
         let hold = false;

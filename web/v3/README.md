@@ -28,7 +28,8 @@ The decomp is used only for addresses (its `symbols.txt`): what to hook and wher
   The first `rand()` call whose caller or seed differs names the function that diverged.
   Loading frames are aligned to the recording's (this machine's disc is faster than a console's).
 - `game/moonshine.ts`: what Moonshine, the mod that records the traces, changes in the game: the arena floor raised by 0xC2000 (so heap addresses equal the console's), `gpPollution` cleared before `setupObjects`, and the settings' instruction patches, asm hooks (their caves run as the PowerPC code they are) and choice patches from its `features.cpp`, switched by the trace's session records.
-  Not reproduced yet (no source in the snapshot): the Ricco crane and fruit controls, Petey's route and tornado, King Boo's reel, the pattern selector, the Gelato patterns, the box game, the level warps. `Moonshine.unsupported()` names the ones a session has on.
+  The controls Moonshine writes in C++ are ported from its main repository (`Dogecyanide/susamune`; the same files as `panther03/moonshine` V2.3.3) as hooks at the same sites: the pattern selector (the Chomplets' and the Chain Chomp's graph nodes), Petey's route and no-tornado patch, the Gelato fish and blue bird patterns, King Boo's reel, the box game's flags, the Ricco cranes' speed band and the fruit machine. Each keeps the retail `rand()` call wherever Moonshine keeps it.
+  Not reproduced: No Shine Get Animation, the gameplay speed, fast forward, the free camera, the level warps. `Moonshine.unsupported()` names the ones a session has on.
 
 Taken from the recording, because the game itself can't know them:
 - the pad object's state from before the recording (the last stick angle, the previous buttons), at the first pad record;
@@ -50,9 +51,10 @@ Still in step when the test's time limit cut them: Delfino Plaza (`…2F`, dolpi
 What stops the others:
 - **the goop**: the game draws the goop map on the GPU (each layer's map through a fading texture environment, stamps blended over it, a model with vertex alpha under the gatekeeper, all copied back to the texture the collision code reads, pixels counted with `GXReadPixMetric`). `ppc/gx.ts` does those draws.
   Bianco Hills 1 is in step to tick 4,533 (2,347 before the GPU model, 2,427 with Dolphin's sample point, 2,952 with Dolphin's 1/16-pixel grid, 4,018 with one sample point for every pixel) and Bianco Hills 5 to tick 3,457 (2,551); Ricco Harbor 1 is in step to tick 3,024, where its first stage ends (see the movie director below).
+  Pianta Village 1 (`a/2A1D8909_80000025`, the pattern selector on with 2, 0, 1) is in step to tick 1,688 (127 before the selector's port), where a goop test stops it too: a third stage's texel for the fit.
   See "The goop's sample point" below for what the recordings fixed and what is open;
-- **a movie between two stages**: Ricco Harbor 1's recording leaves its first stage at frame 797 and has eight frames without a stage director (the movie director, its movie skipped) before the next stage. The replay expects the next stage at once (`recordingLeavesNow`), and the movie director (its own setup thread, the THP player) hasn't been run here yet;
-- **Moonshine features without source**: the pattern selector (Pianta Village 1 at tick 127: a Chain Chomplet picks its graph node), and by the session records the Ricco crane and fruit controls, Petey's route. The PR76 Dolphin package's JP patch rebuilds into the whole Moonshine DOL (retail text with 35 patched words, the mod's code at 0x80426020 and 0x804A6020): the hooks' code can be read there (the pattern selector is the function at 0x8044BA74);
+- **a movie between two stages**: Ricco Harbor 1's recording leaves its first stage at frame 797 (in step to there: tick 3,024) and has eight frames without a stage director before the boss stage;
+- **a movie between two stages, continued**: with the frames without a stage director accepted, the replay follows Ricco Harbor 1 into the game's own movie director (the Blooper's movie) and stops where the recording starts the boss stage after eight frames: Moonshine's FMV skip ends the movie, and the movie director's own flow (its setup thread, the THP player) isn't aligned to the recording yet;
 - **DPad Functions** (Gelato Beach 1 at tick 2,669: Moonshine writes Mario's status; a TAS-tagged run);
 - **the bath water's height** in traces older than its recording (Bowser, observations 3).
 
