@@ -21,6 +21,8 @@ export interface GameAddrs {
     PADRead: number; PADClamp: number; OSGetArenaLo: number; arenaLoVar: number;
     fbCamera: number; fbSilhouette: number; fbWater: number; fastTextCall: number;
     padButton: number; padMStick: number; padSStick: number;
+    /** after changeState's call to MSound::checkWaveOnAram (the stage's exit waits for it) */
+    exitWaveRet: number;
 }
 /** GMSJ01 revision 0 */
 export const JP10: GameAddrs = {
@@ -31,6 +33,7 @@ export const JP10: GameAddrs = {
     PADRead: 0x8009BF20, PADClamp: 0x8009B1A4, OSGetArenaLo: 0x8008DCBC, arenaLoVar: 0x80408D08,
     fbCamera: 0x80359CA4, fbSilhouette: 0x800C2D0C, fbWater: 0x801FABF0, fastTextCall: 0x8021530C,
     padButton: 0x80400D80, padMStick: 0x80400E40, padSStick: 0x80400E80,
+    exitWaveRet: 0x800ECAB4,
 };
 // offsets in the game's objects
 const APP = { director: 4, state: 8, prev: 0xA, cur: 0xE, next: 0x12, movie: 0x18, pads: 0x20, heap: 0x40 };
@@ -65,7 +68,12 @@ export class Replay {
     issues: Issue[] = [];
     phase: 'boot' | 'stage' | 'done' = 'boot';
     /** counts of what matched */
-    frames = 0; ticks = 0; calls = 0; literals = 0; marioChecked = 0; extraLoadFrames = 0; shimCalls = 0;
+    stages = 1; frames = 0; ticks = 0; calls = 0; literals = 0; marioChecked = 0; extraLoadFrames = 0; shimCalls = 0;
+    /** the stage's archive (bianco0, ...) and the Moonshine settings on in it that are not reproduced */
+    stageName = ''; unsupported: string[] = [];
+    /** frames and ticks at which the pad object had to be set to the recording's (Moonshine had changed it) */
+    padCorrections = 0; exitAligned = 0;
+    private session: Uint8Array = new Uint8Array(64);
     /** the stage heap's size here minus the recording's (0: the same arena) */
     heapDelta = 0;
     /** instructions at the stage's start and at its first frame after setup */
@@ -73,6 +81,7 @@ export class Replay {
     private iFlow = 0; private iCall = 0; private lastCall = -1;
     private strict = false;
     private curFrame: TraceFrame | null = null; private curTick = 0;
+    private observations = 0; private noWater = false;
     private padAdopted = false; private adopted = new Set<string>();
     private frozenState = -1; private suppressed: number[] | null = null; private suppressedPad = 0;
     private stopOn: Set<string>; private maxIssues: number;
@@ -82,12 +91,19 @@ export class Replay {
     constructor(dol: Uint8Array, disc: VirtualDisc, private T: Trace, private A: GameAddrs, sym: Sym, opt: ReplayOptions = {}) {
         const m = this.m, cpu = m.cpu;
         this.log = opt.log ?? (() => { });
-        this.stopOn = new Set(opt.stopOn ?? ['heap', 'rand', 'mario', 'camera', 'flow']); this.maxIssues = opt.maxIssues ?? 50;
+        this.stopOn = new Set(opt.stopOn ?? ['heap', 'rand', 'mario', 'camera', 'flow', 'stage', 'unrecorded']); this.maxIssues = opt.maxIssues ?? 50;
         m.load(dol, disc, opt.fstPad ?? 0);
         const missing = installHle(m, sym, { report: opt.report });
         if (missing.length) this.log('hle: not found: ' + missing.join(', '));
         this.moonshine = new Moonshine(m, A.region, A);
         this.moonshine.install();
+        disc.onOpen = (path) => {
+            const mm = /scene\/([A-Za-z0-9_]+)\.szs$/i.exec(path);
+            if (!mm || this.phase !== 'stage' || this.stageName) return;
+            this.stageName = mm[1];
+            this.unsupported = this.moonshine.unsupported(this.session, this.stageName);
+            this.log(`stage ${this.stageName}` + (this.unsupported.length ? `; Moonshine settings on that are not reproduced here: ${this.unsupported.join(', ')}` : ''));
+        };
         cpu.hook(A.PADRead, (c) => this.padRead(c));
         cpu.hook(A.PADClamp, () => { });
         cpu.hook(A.procLoopHead, (c) => { this.atProcLoop(c.gpr[31]); return false; });
@@ -96,9 +112,21 @@ export class Replay {
         cpu.hook(A.directRet, (c) => { this.afterDirect(c); return false; });
         cpu.hook(A.marioPerform, (c) => { if ((c.gpr[4] & 1) && this.phase === 'stage' && c.gpr[3] === m.mem.r32(A.gpMarioOriginal)) this.atTick(c.gpr[3], c.gpr[4]); return false; });
         cpu.hook(A.randRet, (c) => { if (this.phase === 'stage') this.atRand(c.lr); return false; });
+        // A stage ends when the screen has faded out and the sound's wave data has come off the disc: how long the
+        // disc takes is the console's, so the answer is the recording's (did it leave after this frame?).
+        cpu.hook(A.exitWaveRet, (c) => {
+            if (this.phase !== 'stage') return false;
+            const leave = this.recordingLeavesNow() ? 1 : 0;
+            if (((c.gpr[3] & 0xFF) ? 1 : 0) !== leave) { c.gpr[3] = leave; if (!this.exitAligned++) this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: the stage's exit aligned to the recording's (the sound's wave data ${leave ? 'had not' : 'had already'} loaded here)`); }
+            return false;
+        });
         cpu.hook(A.fbCamera, (c) => { const v = this.literal(A.fbCamera + 4); if (v !== null) c.gpr[0] = v; return false; });
         cpu.hook(A.fbSilhouette, (c) => { const v = this.literal(A.fbSilhouette + 4); if (v !== null) c.gpr[0] = v; return false; });
-        cpu.hook(A.fbWater, (c) => { const v = this.literal(A.fbWater + 4); if (v !== null) { const f = f32FromBits(v); c.ps0[1] = f; c.ps1[1] = f; } return false; });
+        // (the bath water's height is recorded only by newer Moonshines: observation bit 2)
+        cpu.hook(A.fbWater, (c) => {
+            if (!(this.observations & 4)) { if (this.phase === 'stage' && !this.noWater) { this.noWater = true; this.issue('unrecorded', "the game reads the bath water's height from the GPU, and this trace doesn't record it"); } return false; }
+            const v = this.literal(A.fbWater + 4); if (v !== null) { const f = f32FromBits(v); c.ps0[1] = f; c.ps1[1] = f; } return false;
+        });
     }
 
     /** Runs until the trace ends, an issue stops it, or `budget` more instructions have run. */
@@ -133,6 +161,13 @@ export class Replay {
         }
     }
 
+    /** Does the trace start another stage before its next frame? */
+    private recordingLeavesNow() {
+        const T = this.T;
+        for (let i = this.iFlow; i < T.n; i++) { const k = T.kind[i]; if (k === Ev.STAGE) return true; if (k === Ev.FRAME || k === Ev.PAD) return false; }
+        return false;
+    }
+
     // ---------------------------------------------------------------- the stage's start
     private atProcLoop(app: number) {
         const mem = this.m.mem, T = this.T;
@@ -143,26 +178,53 @@ export class Replay {
         seq(APP.prev, w[3]); seq(APP.cur, w[4]); seq(APP.next, w[5]);
         mem.w32(app + APP.movie, w[15]);
         mem.ram.set(st.flags, mem.r32(this.A.flagMgr) & 0x01FFFFFF);
-        const session = st.session ?? new Uint8Array(64);
-        this.moonshine.apply(session);
+        this.session = st.session ?? new Uint8Array(64);
+        this.moonshine.apply(this.session);
         this.modLo = this.moonshine.base; this.modHi = this.modLo + ARENA_RESERVE;
         this.log(`the logos ended at ${(this.m.cpu.count / 486e6).toFixed(2)} s: starting scene ${hex(w[4])} (from ${hex(w[3])})`);
     }
     private atSetup() {
-        if (this.phase !== 'boot' || this.m.mem.r8(this.A.app + APP.state) !== 5) return;
-        const mem = this.m.mem, A = this.A, st = this.T.stages[0], w = st.words;
-        mem.w32(A.seed, w[6]); mem.w32(A.npcPhase, st.npcPhase);
-        // the stage heap as the recording had it: the same size means the same arena
+        const mem = this.m.mem, A = this.A, T = this.T;
         const heap = mem.r32(A.app + APP.heap), start = mem.r32(heap + 0x30), end = mem.r32(heap + 0x34), head = mem.r32(heap + 0x6C), tail = mem.r32(heap + 0x70);
-        if ((w[1] & 2) && (end - start !== w[11] || head - start !== w[9] || end - tail !== w[10])) {
-            // the arena's top depends on the disc's file table, and the recording console's disc had other files:
-            // the difference is what `fstPad` must be for the heap to be the recording's
-            this.heapDelta = (end - start) - w[11];
-            this.issue('heap', `the stage heap is ${hex(end - start)} bytes (used ${hex(head - start)} / ${hex(end - tail)}), the trace's ${hex(w[11])} (${hex(w[9])} / ${hex(w[10])})`);
-            if (this.phase === 'done') return;
+        if (this.phase === 'boot') {
+            if (mem.r8(A.app + APP.state) !== 5) return;
+            const st = T.stages[0], w = st.words;
+            // (the NPC phase is a function's static: its guard byte, right after it, says it was initialised.
+            // On a console that has run a stage with NPCs it is set; here it isn't yet, and the first NPC would zero the phase.)
+            mem.w32(A.seed, w[6]); mem.w32(A.npcPhase, st.npcPhase); mem.w8(A.npcPhase + 4, 1);
+            // the stage heap as the recording had it: the same size means the same arena
+            if ((w[1] & 2) && (end - start !== w[11] || head - start !== w[9] || end - tail !== w[10])) {
+                // the arena's top depends on the disc's file table, and the recording console's disc had other files:
+                // the difference is what `fstPad` must be for the heap to be the recording's
+                this.heapDelta = (end - start) - w[11];
+                this.issue('heap', `the stage heap is ${hex(end - start)} bytes (used ${hex(head - start)} / ${hex(end - tail)}), the trace's ${hex(w[11])} (${hex(w[9])} / ${hex(w[10])})`);
+                if (this.phase === 'done') return;
+            }
+            // The stage heap is not cleared between stages: on the console it holds the previous stage's leftovers,
+            // here the logos'. Neither is knowable, so it starts as zeros, and what the recording shows of
+            // uninitialised memory is taken from it (compareBlob).
+            mem.ram.fill(0, head & 0x01FFFFFF, tail & 0x01FFFFFF);
+            this.phase = 'stage'; this.countAtStage = this.m.cpu.count;
+            this.observations = st.observations;
+            this.iFlow = this.nextFlowFrom(st.ev + 1); this.iCall = this.nextCallFrom(st.ev + 1);
+            return;
         }
-        this.phase = 'stage'; this.countAtStage = this.m.cpu.count;
-        this.iFlow = this.nextFlowFrom(st.ev + 1); this.iCall = this.nextCallFrom(st.ev + 1);
+        if (this.phase !== 'stage') return;
+        // a later stage of the same recording: the game got here by itself, so its state should be the recorded one
+        const i = this.iFlow;
+        if (i >= T.n || T.kind[i] !== Ev.STAGE) { this.issue('flow', `the game starts a stage where the trace has ${i >= T.n ? 'ended' : EV_NAMES[T.kind[i]]}`); return; }
+        const st = T.stages[T.a[i]], w = st.words;
+        this.iFlow = this.nextFlowFrom(i + 1);
+        this.stages++; this.strict = false; this.stageName = ''; this.adopted.clear();
+        const seq = (o: number) => ((mem.r8(A.app + o) << 24) | (mem.r8(A.app + o + 1) << 16) | mem.r16(A.app + o + 2)) >>> 0;
+        if (seq(APP.cur) !== w[4]) this.issue('stage', `the game goes to scene ${hex(seq(APP.cur))}, the trace to ${hex(w[4])}`);
+        if (mem.r32(A.seed) !== w[6]) this.issue('stage', `the RNG seed at the stage's start is ${hex(mem.r32(A.seed))}, the trace's ${hex(w[6])}`);
+        if (mem.r32(A.npcPhase) !== st.npcPhase) this.issue('stage', `the NPC pollution phase is ${mem.r32(A.npcPhase)}, the trace's ${st.npcPhase}`);
+        const fm = mem.bytes(mem.r32(A.flagMgr), 0x380), diff: string[] = [];
+        for (let k = 0; k < 0x380; k++) if (fm[k] !== st.flags[k]) diff.push(`+0x${k.toString(16)} ${fm[k].toString(16)}/${st.flags[k].toString(16)}`);
+        if (diff.length) this.issue('stage', `the flag manager differs from the trace's image in ${diff.length} byte(s) (game/trace): ${diff.slice(0, 12).join(', ')}`);
+        if ((w[1] & 2) && (end - start !== w[11] || head - start !== w[9] || end - tail !== w[10])) this.issue('stage', `the stage heap is ${hex(end - start)} (used ${hex(head - start)} / ${hex(end - tail)}), the trace's ${hex(w[11])} (${hex(w[9])} / ${hex(w[10])})`);
+        this.log(`stage ${this.stages}: scene ${hex(w[4])} at frame ${this.curFrame ? this.curFrame.frame : 0}`);
     }
 
     // ---------------------------------------------------------------- the pad
@@ -195,13 +257,16 @@ export class Replay {
         if (p.mirrors) { put(A.padButton, p.mirrors, 0, 48, 'mPadButton'); put(A.padMStick, p.mirrors, 48, 16, 'mPadMStick'); put(A.padSStick, p.mirrors, 64, 16, 'mPadSStick'); }
         if (changed.length) this.log(`the pad's state from before the recording, taken from its first record: ${changed.join(', ')}`);
     }
-    private comparePad(obj: number, rec: Uint8Array, what: string) {
+    /**
+     * The pad object as the recording has it. The game computes it from the raw pad, but Moonshine takes
+     * buttons away from the game for its own binds, so where they differ the recording's is written.
+     */
+    private setPad(obj: number, rec: Uint8Array, what: string) {
         const mem = this.m.mem;
-        for (const [o, n] of PAD_SPANS) for (let i = 0; i < n; i++) if (mem.r8(obj + o + i) !== rec[IN.pad + o + i]) {
-            const w = (o + i) & ~3;
-            this.issue('pad', `${what}: the pad differs at +0x${w.toString(16)}: game ${hex(mem.r32(obj + w))}, trace ${hex(new DataView(rec.buffer, rec.byteOffset).getUint32(IN.pad + w))}`);
-            return;
-        }
+        let diff = -1;
+        for (const [o, n] of PAD_SPANS) for (let i = 0; i < n; i++) if (mem.r8(obj + o + i) !== rec[IN.pad + o + i]) { if (diff < 0) diff = (o + i) & ~3; mem.w8(obj + o + i, rec[IN.pad + o + i]); }
+        if (diff < 0) return;
+        if (this.padCorrections++ < 3) this.log(`${what}: the pad object set to the recording's (first at +0x${diff.toString(16)}: the trace has ${hex(new DataView(rec.buffer, rec.byteOffset).getUint32(IN.pad + diff))})`);
     }
 
     // ---------------------------------------------------------------- frames
@@ -231,7 +296,7 @@ export class Replay {
         this.curFrame = f; this.frames++;
         this.checkCalls(f.ev, `frame ${f.frame}`);
         if (this.phase !== 'stage') return false;
-        if (f.session) this.moonshine.apply(f.session);
+        if (f.session) { this.session = f.session; this.moonshine.apply(f.session); }
         if (this.strict) {
             const seed = mem.r32(A.seed);
             if (seed !== f.seed) this.issue('frame', `the RNG seed is ${hex(seed)}, the trace's ${hex(f.seed)}`);
@@ -248,7 +313,7 @@ export class Replay {
                 this.suppressed = PAD_SUPPRESS.map((o) => mem.r32(pad + o)); this.suppressedPad = pad;
                 for (const o of PAD_SUPPRESS) mem.w32(pad + o, 0);
             }
-            this.comparePad(pad, p.input, 'at the frame');
+            this.setPad(pad, p.input, `frame ${f.frame}`);
             if (p.frozen && setupDone) {
                 // Moonshine froze the stage: it lends the director a state that runs nothing for this call
                 const d = mem.r32(A.gpMarDirector);
@@ -277,19 +342,27 @@ export class Replay {
         const dv = new DataView(t.input.buffer, t.input.byteOffset, IN.size);
         if (dv.getUint32(IN.cue) !== cue) this.issue('tick', `the perform cue is ${hex(cue)}, the trace's ${hex(dv.getUint32(IN.cue))}`);
         const valid = dv.getUint32(IN.valid);
-        if (valid & 1) this.comparePad(mem.r32(mario + MARIO_PAD), t.input, 'at the tick');
+        if (valid & 1) this.setPad(mem.r32(mario + MARIO_PAD), t.input, `tick ${t.tick}`);
         if (valid & 2) {
-            const work = mem.r32(mario + MARIO_WORK);
-            for (let k = 4; k < 0x24; k++) if (mem.r8(work + k) !== t.input[IN.work + k]) {
-                const w = k & ~3;
-                this.issue('pad', `Mario's controller work differs at +0x${w.toString(16)}: game ${hex(mem.r32(work + w))}, trace ${hex(dv.getUint32(IN.work + w))}`);
-                break;
+            // TMarioControllerWork: its scalars (bytes 14 and 15 are padding). It is filled in by his first perform:
+            // before that it holds whatever the heap had.
+            const work = mem.r32(mario + MARIO_WORK), first = !this.adopted.has('work');
+            this.adopted.add('work');
+            for (let k = 4; k < 0x24; k++) {
+                if (k === 14 || k === 15) continue;
+                const rec = t.input[IN.work + k];
+                if (first && mem.r8(work + k) === 0) mem.w8(work + k, rec);
+                if (mem.r8(work + k) !== rec) {
+                    const w = k & ~3;
+                    this.issue('pad', `Mario's controller work differs at +0x${w.toString(16)}: game ${hex(mem.r32(work + w))}, trace ${hex(dv.getUint32(IN.work + w))}`);
+                    break;
+                }
             }
         }
         if (t.mario) {
-            // the occlusion bit comes from the GPU (the draw-sync callback): take the recording's
-            const fo = mario + MARIO_FLAGS + 3;
-            mem.w8(fo, (mem.r8(fo) & ~1) | (t.mario[MARIO_FLAGS + 3] & 1));
+            // the occlusion bit comes from the GPU (the draw-sync callback, at a time of its own): take the
+            // recording's, in mFlag and in mPrevFlag (the copy each tick makes of it)
+            for (const o of [MARIO_FLAGS + 3, MARIO_FLAGS + 7]) mem.w8(mario + o, (mem.r8(mario + o) & ~1) | (t.mario[o] & 1));
             this.marioChecked++;
             this.compareBlob('mario', 'Mario', mario, t.marioPtr, t.mario);
         }
