@@ -25,10 +25,13 @@ def answer(path):
 def i8(data,w,h):
     a=np.frombuffer(data,dtype=np.uint8).reshape((h+3)//4,(w+7)//8,4,8)
     return a.transpose(0,2,1,3).reshape(((h+3)//4)*4,((w+7)//8)*8)[:h,:w].astype(np.int64)
-def alpha(R,goop):
-    """the stamp's alpha at a texel from the map's value there (goop on a map of 0, cleaning on a map of 255)"""
+def alpha(R,goop=1):
+    """a goop stamp's alpha at a texel, from the value it left on a map of 0 (0 and 1 both leave 0)"""
     R=R.astype(np.int64)
-    return np.where(R==0,0,np.where(R>=128,R,R+1)) if goop else np.where(R>=128,255-R,254-R)
+    return np.where(R==0,0,np.where(R>=128,R,R+1))
+def clean_value(a):
+    """what a cleaning stamp of alpha a leaves on a map of 0 (its colour is its alpha): ppc/gx.ts's blender"""
+    return (a*(a+(a>>7)))>>8
 
 def load(cases_path,answer_path):
     cases=json.load(open(cases_path)); info,got=answer(answer_path)
@@ -63,21 +66,28 @@ if __name__=='__main__':
     cases,maps,info=load(sys.argv[1],sys.argv[2]); sizes=[int(a) for a in sys.argv[3:]]
     print('console:',[hex(v) for v in info] if info else None,'cases answered:',len(maps),'of',len(cases))
     for axis in (0,1):
-        print(f"--- the place in the pixel ({'x, from S' if axis==0 else 'y, from T'}) by stamp size, the corner's parity and the pixel's column/row parity: lowest .. highest over the stamps (fine saw)")
+        print(f"--- the place in the pixel ({'x, from S' if axis==0 else 'y, from T'}) by stamp size, the corner's parity and the pixel's column/row parity: lowest .. highest over the goop stamps (fine saw)")
         acc=collections.defaultdict(list)
-        for type_ in (0,1):
-            for layout in (0,1,2):
-                for (x1,y1,size),d in coords(cases,maps,type_,layout,axis).items():
-                    u=d['fine']; n=size
-                    idx=np.arange(n)
-                    pos=u*size/64.0-(idx[None,:] if axis==0 else idx[:,None])   # the place in the pixel
-                    # (leave out the border, where the texture clamps)
-                    lo=int(np.ceil(0.5*size/64+1)); 
-                    for j in range(n):
-                        for i in range(n):
-                            t=i if axis==0 else j
-                            if u[j,i]<1.0 or u[j,i]>63.0: continue
-                            acc[(size,(x1 if axis==0 else y1)&1,t&1,type_)].append(pos[j,i])
+        for layout in (0,1,2):
+            for (x1,y1,size),d in coords(cases,maps,1,layout,axis).items():
+                u=d['fine']; idx=np.arange(size)
+                pos=u*size/64.0-(idx[None,:] if axis==0 else idx[:,None])   # the place in the pixel
+                ok=(u>=1.0)&(u<=63.0)                                          # (not the border, where the texture clamps)
+                par=((x1 if axis==0 else y1)+(idx[None,:] if axis==0 else idx[:,None]))&1
+                par=np.broadcast_to(par,u.shape)
+                for p in (0,1):
+                    acc[(size,p)]+=list(pos[ok&(par==p)])
         for key in sorted(acc):
             if sizes and key[0] not in sizes: continue
-            v=np.array(acc[key]); print(f"size {key[0]:3d} corner {'odd ' if key[1] else 'even'} pixel {'odd ' if key[2] else 'even'} {'goop ' if key[3] else 'clean'}: {v.min():.4f} .. {v.max():.4f}  mean {v.mean():.4f}  ({len(v)} pixels)")
+            v=np.array(acc[key])
+            if len(v): print(f"size {key[0]:3d} screen {'odd ' if key[1] else 'even'} {'column' if axis==0 else 'row'}: {v.min():.4f} .. {v.max():.4f}  mean {v.mean():.4f}  ({len(v)} pixels)")
+    # the cleaning stamps against the goop stamps: the same texture values must come out (through the blender)
+    bad=tot=0
+    for c in cases:
+        if not c['label'].startswith('grid clean ') or ' layout ' not in c['label'] or c['label'] not in maps: continue
+        g=c['label'].replace('grid clean ','grid goop ')
+        if g not in maps: continue
+        for st in c['stamps']:
+            x1,y1,x2,y2=map(int,st['q']); a=alpha(maps[g][y1:y2,x1:x2]); want=clean_value(a); got=maps[c['label']][y1:y2,x1:x2]
+            m=a>1; tot+=int(m.sum()); bad+=int((want[m]!=got[m]).sum())
+    print(f'--- cleaning stamps against goop stamps (same texture, same place): {bad} of {tot} texels are not what the goop stamp\'s alpha gives')

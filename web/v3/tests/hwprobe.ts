@@ -3,6 +3,8 @@
 // buffer copy), to be drawn again on a real console and compared with ppc/gx.ts texel by texel.
 // Run: node v3hwprobe.mjs capture <trace> <out.passes> <ticks a-b[,c-d ...]> [most passes]    (ONLY=stamps: the passes that draw a stamp)
 //      node v3hwprobe.mjs script <out.gxps> <a.passes> [...]     the script, and <out.gxps>.cases.json (what each case is)
+//        (VERBATIM=n passes as they were, evenly spread; MUST='x,y;x,y' and those with a stamp over these texels;
+//         SYN=n passes with test textures; GRID=0 without the script's own stamp cases)
 //      node v3hwprobe.mjs check <script.gxps>                    the script through ppc/gx.ts (what it expects of a console)
 //      node v3hwprobe.mjs compare <script.gxps> <answer.gxpo>    a console's answer against ppc/gx.ts, case by case
 //      node v3hwprobe.mjs model <script.gxps> <out.gxpo>         ppc/gx.ts's own answer, as a console would save it
@@ -300,9 +302,12 @@ if (mode === 'capture') {
     for (const file of process.argv.slice(4)) {
         const passes = deserialize(readFileSync(file)) as Pass[], source = file.replace(/^.*\//, '').replace(/\.passes$/, '');
         // ---- the passes as they were
-        const nv = Math.min(nVerb, passes.length);
-        for (let k = 0; k < nv; k++) {
-            const i = Math.floor(k * passes.length / nv);
+        // (MUST: texels 'x,y;x,y': every pass with a stamp over one of them, besides the evenly spread ones)
+        const must = (process.env.MUST || '').split(';').filter(Boolean).map((t) => t.split(',').map(Number));
+        const nv = Math.min(nVerb, passes.length), pick = new Set<number>();
+        for (let k = 0; k < nv; k++) pick.add(Math.floor(k * passes.length / nv));
+        for (const [i, P] of passes.entries()) if (P.stamps.some((st) => must.some(([x, y]) => x >= st.q[0] && x < st.q[2] && y >= st.q[1] && y < st.q[3]))) pick.add(i);
+        for (const i of [...pick].sort((a, b) => a - b)) {
             const P = passes[i], d = P.blocks.get(P.dst)!, label = `${source} ${i} tick ${P.tick}`;
             emit(Sc, A, P, label);
             cases.push({ label, source, tick: P.tick, variant: '', w: d.w!, h: d.h!, stamps: P.stamps });
@@ -348,7 +353,8 @@ if (mode === 'capture') {
             emit(Sc, A, P, label, m, WINDOW);
             cases.push({ label, source: 'grid', tick: 0, variant: `${type ? 'goop' : 'clean'} ${variant}`, w: dim[type].w!, h: dim[type].h!, stamps: P.stamps });
         };
-        const flat = (type: number) => new Uint8Array(dim[type].size).fill(type ? 0 : 255);
+        // (a map of 0: a goop stamp leaves its alpha there, a cleaning stamp its alpha squared, near enough)
+        const flat = (type: number) => new Uint8Array(dim[type].size);
         const texes: [string, Uint8Array][] = [['realClean', realTex[0]], ['realGoop', realTex[1]], ...VARIANTS.filter(([n]) => !n.startsWith('blocks')).map(([n, f]) => [n, i8(64, 64, f)] as [string, Uint8Array])];
         for (const type of [0, 1]) {
             // every size and corner, three arrangements, each texture
@@ -363,7 +369,7 @@ if (mode === 'capture') {
         }
         // bigger stamps (to a texel a pixel and two pixels a texel), each corner even or odd
         for (const [px, py] of [[0, 0], [1, 0], [0, 1], [1, 1]]) for (const [name, tex] of texes.filter(([n]) => /^(realClean|rampS|rampT|sawS0|sawT0|fineS0|fineT0)$/.test(n))) {
-            add(0, `${name} big ${px}${py}`, [{ x: 2 + px, y: 2 + py, size: 32 }, { x: 40 + px, y: 2 + py, size: 48 }, { x: 96 + px, y: 2 + py, size: 64 }, { x: 2 + px, y: 80 + py, size: 128 }, { x: 140 + px, y: 80 + py, size: 96 }, { x: 170 + px, y: 2 + py, size: 28 }, { x: 204 + px, y: 2 + py, size: 40 }], tex, flat(0));
+            add(1, `${name} big ${px}${py}`, [{ x: 2 + px, y: 2 + py, size: 32 }, { x: 40 + px, y: 2 + py, size: 48 }, { x: 96 + px, y: 2 + py, size: 64 }, { x: 2 + px, y: 80 + py, size: 128 }, { x: 140 + px, y: 80 + py, size: 96 }, { x: 170 + px, y: 2 + py, size: 28 }, { x: 204 + px, y: 2 + py, size: 40 }], tex, flat(1));
         }
     }
     const bytes = Sc.bytes();
