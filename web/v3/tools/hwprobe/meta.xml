@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+  <name>gxprobe</name>
+  <coder>moonshine-ghost-viewer</coder>
+  <version>1</version>
+  <short_description>GPU test for the ghost viewer</short_description>
+  <long_description>Feeds the GPU the commands in script.gxps (beside this program) and saves what it drew as answer.gxpo in the same folder.</long_description>
+</app>

@@ -72,11 +72,22 @@ export class Gx {
     /** what is rasterised and copied, as it happens (debugging) */
     trace: ((s: string) => void) | null = null;
     pixelTrace: ((s: string) => void) | null = null;
-    /** (for tests) every primitive while rasterising, with its vertices on the screen; every frame buffer copy to a texture */
+    /** (for tests) every primitive while rasterising, with its vertices on the screen; every frame buffer copy to a texture (once it is in RAM) */
     drawTrace: ((prim: number, count: number, v: { x: number; y: number; z: number; c: ArrayLike<number>; s: ArrayLike<number>; t: ArrayLike<number> }[]) => void) | null = null;
     copyTrace: ((dst: number, x: number, y: number, w: number, h: number) => void) | null = null;
     /** (for tests) every triangle that reaches the rasteriser */
     triTrace: ((a: { x: number; y: number; c: ArrayLike<number> }, b: { x: number; y: number; c: ArrayLike<number> }, c: { x: number; y: number; c: ArrayLike<number> }) => void) | null = null;
+    /**
+     * (for tests) the commands the GPU gets, each before it takes effect, as a console would get them: the commands of
+     * a display list in its place, a matrix loaded by index as a plain load. While rasterising, all of them; with
+     * recAll, the others too except the primitives (which this model skips then).
+     */
+    rec: ((cmd: Uint8Array, raster: boolean) => void) | null = null;
+    recAll = false;
+    /** (for tests) every read of a vertex array: the array (0 positions, 2 and 3 colours, 4.. texture coordinates), where in RAM, how many bytes */
+    arrayTrace: ((array: number, at: number, n: number) => void) | null = null;
+    /** the BP registers ever written */
+    bpSeen = new Uint8Array(256);
     private layouts = new Map<string, Layout>();
 
     constructor(private ram: Uint8Array, private host: GxHost) { }
@@ -134,16 +145,17 @@ export class Gx {
                     break;
                 }
                 this.commands++;
-                if (this.raster) this.draw(cmd & 0xF8, count, lay, b, p + 3);
+                if (this.raster) { if (this.rec) this.rec(b.subarray(p, p + total), true); this.draw(cmd & 0xF8, count, lay, b, p + 3); }
                 p += total; continue;
             }
             this.commands++;
             switch (cmd) {
-                case 0x08: if (p + 6 > end) return p; this.cp[b[p + 1]] = r32(b, p + 2); p += 6; continue;
+                case 0x08: if (p + 6 > end) return p; if (this.rec && (this.raster || this.recAll)) this.rec(b.subarray(p, p + 6), this.raster); this.cp[b[p + 1]] = r32(b, p + 2); p += 6; continue;
                 case 0x10: {
                     if (p + 5 > end) return p;
                     const n = (b[p + 2] & 0xF) + 1, addr = (b[p + 3] << 8) | b[p + 4];
                     if (p + 5 + 4 * n > end) return p;
+                    if (this.rec && (this.raster || this.recAll)) this.rec(b.subarray(p, p + 5 + 4 * n), this.raster);
                     for (let i = 0; i < n; i++) this.xfLoad(addr + i, r32(b, p + 5 + 4 * i));
                     p += 5 + 4 * n; continue;
                 }
@@ -151,6 +163,7 @@ export class Gx {
                     if (p + 5 > end) return p;
                     const index = (b[p + 1] << 8) | b[p + 2], v = (b[p + 3] << 8) | b[p + 4], n = (v >>> 12) + 1, addr = v & 0xFFF, arr = 12 + ((cmd - 0x20) >> 3);
                     const src = (this.cp[0xA0 + arr] & 0x03FFFFFF) + index * (this.cp[0xB0 + arr] & 0xFF);
+                    if (this.rec && (this.raster || this.recAll)) { const c = new Uint8Array(5 + 4 * n); c[0] = 0x10; c[2] = n - 1; c[3] = addr >> 8; c[4] = addr; c.set(this.ram.subarray(src, src + 4 * n), 5); this.rec(c, this.raster); }
                     for (let i = 0; i < n; i++) this.xfLoad(addr + i, r32(this.ram, src + 4 * i));
                     p += 5; continue;
                 }
@@ -162,7 +175,7 @@ export class Gx {
                     p += 9; continue;
                 }
                 case 0x44: case 0x48: p++; continue;   // metrics, invalidate the vertex cache
-                case 0x61: if (p + 5 > end) return p; this.bpLoad(r32(b, p + 1)); p += 5; continue;
+                case 0x61: if (p + 5 > end) return p; if (this.rec && (this.raster || this.recAll)) this.rec(b.subarray(p, p + 5), this.raster); this.bpLoad(r32(b, p + 1)); p += 5; continue;
             }
             this.warn(`an unknown GX command 0x${cmd.toString(16)}${inList ? ' in a display list' : ''}`);
             return end;
@@ -174,6 +187,7 @@ export class Gx {
 
     private bpLoad(word: number) {
         const reg = word >>> 24, v = ((this.bp[reg] & ~this.bpMask) | (word & this.bpMask)) & 0xFFFFFF;
+        this.bpSeen[reg] = 1;
         if (reg !== 0xFE) this.bpMask = 0xFFFFFF;
         switch (reg) {
             case 0xFE: this.bpMask = word & 0xFFFFFF; return;
@@ -243,6 +257,7 @@ export class Gx {
         if (at.how !== 1) {
             const index = at.how === 2 ? b[q] : (b[q] << 8) | b[q + 1];
             src = this.ram; q = (this.cp[0xA0 + at.array] & 0x03FFFFFF) + index * (this.cp[0xB0 + at.array] & 0xFF);
+            if (this.arrayTrace) this.arrayTrace(at.array, q, at.comps * COMP_SIZE[Math.min(at.fmt, 4)]);
         }
         const out = this.comp, scale = at.fmt === 4 ? 1 : 1 / (1 << at.frac);
         for (let i = 0; i < at.comps; i++) {
@@ -306,7 +321,7 @@ export class Gx {
             const vc = xw[0x100E + ch] & 1, va = xw[0x1010 + ch] & 1;
             if ((vc || va) && col.how) {
                 let src = b, q = p + col.off;
-                if (col.how !== 1) { const index = col.how === 2 ? b[q] : (b[q] << 8) | b[q + 1]; src = this.ram; q = (this.cp[0xA2 + ch] & 0x03FFFFFF) + index * (this.cp[0xB2 + ch] & 0xFF); }
+                if (col.how !== 1) { const index = col.how === 2 ? b[q] : (b[q] << 8) | b[q + 1]; src = this.ram; q = (this.cp[0xA2 + ch] & 0x03FFFFFF) + index * (this.cp[0xB2 + ch] & 0xFF); if (this.arrayTrace) this.arrayTrace(2 + ch, q, 4); }
                 let vr: number, vg: number, vb: number, vl = 255;
                 switch (col.fmt) {
                     case 0: { const v = (src[q] << 8) | src[q + 1]; vr = ((v >> 11) << 3) | (v >> 13); vg = (((v >> 5) & 63) << 2) | ((v >> 9) & 3); vb = ((v & 31) << 3) | ((v & 31) >> 2); break; }
@@ -651,7 +666,6 @@ export class Gx {
         const sx = bp[0x49] & 0x3FF, sy = (bp[0x49] >>> 10) & 0x3FF, sw = (bp[0x4A] & 0x3FF) + 1, sh = ((bp[0x4A] >>> 10) & 0x3FF) + 1;
         if (this.trace) this.trace(`copy ctl ${ctl.toString(16)} src ${sx},${sy} ${sw}x${sh} to ${((bp[0x4B] << 5) >>> 0).toString(16)} quads ${this.blendQuads} filter ${bp[0x53].toString(16)} ${bp[0x54].toString(16)} samples ${bp[1].toString(16)}`);
         if (!(ctl & 0x4000)) {
-            if (this.copyTrace) this.copyTrace((bp[0x4B] << 5) & 0x03FFFFFF, sx, sy, sw, sh);
             this.copies++;
             const f = (ctl >>> 3) & 15, fmt = (f >> 1) + (f & 1) * 8, dst = (bp[0x4B] << 5) & 0x03FFFFFF, half = (ctl >>> 9) & 1;
             if (half) this.warn('a half-size frame buffer copy');
@@ -677,6 +691,7 @@ export class Gx {
                     ram[dst + ((y >> 2) * bw + (x >> 3)) * 32 + (y & 3) * 8 + (x & 7)] = v;
                 }
             }
+            if (this.copyTrace) this.copyTrace((bp[0x4B] << 5) & 0x03FFFFFF, sx, sy, sw, sh);
         } else this.warn('a frame buffer copy to the display while rasterising');
         if (ctl & 0x800) {
             // the clear: colour 0x4F (alpha, red) and 0x50 (green, blue), where the blender's updates are on

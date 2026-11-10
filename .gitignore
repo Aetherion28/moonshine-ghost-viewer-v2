@@ -2,3 +2,4 @@ node_modules/
 web/node_modules
 web/meta.json
 __pycache__/
+web/v3/tools/hwprobe/build/
