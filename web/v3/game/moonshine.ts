@@ -312,7 +312,8 @@ export class Moonshine {
             const speed = CRANE_UPDOWN_SPEED[r], retailBits = mem.r32(speed), retailSpeed = this.rf(speed);
             const rec = this.findCrane(crane, true), percent = rec ? this.cranePercent(rec.roll) : 0;
             if (!percent) return null;
-            this.wf(speed, Math.fround(Math.fround(retailSpeed * percent) * Math.fround(0.01)));
+            // (Moonshine's compiled code multiplies in this order: fmuls retail, 0.01f; fmuls that, percent)
+            this.wf(speed, Math.fround(Math.fround(retailSpeed * Math.fround(0.01)) * percent));
             return () => mem.w32(speed, retailBits);
         });
         wrap(CRANE_ROTY_SLOT[r], CRANE_ROTY_CONTROL[r], (crane) => {

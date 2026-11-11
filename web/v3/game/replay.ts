@@ -33,6 +33,8 @@ export interface GameAddrs {
     launchScript: number; launchScriptInterp: number; spcUpdate: number; spcCountStep: number; spcLock: number; spcUnlock: number;
     /** FLUDD's three calls of TModelWaterManager::emitRequest (TNozzleDeform::emit, TNozzleTrigger::emit, TNozzleBase::emit): the ones Moonshine records */
     waterCalls: number[];
+    /** TWaterGun's two copies of setEmitPt (in perform and init): the instruction after the three stores */
+    emitPtDone: number[];
     /** TBossMantaManager::TMantaBattleState::update, where it tests the all-Mantas-dead jingle's handle (in r0); gpMapObjManager */
     mantaJingleTest: number; gpMapObjManager: number;
     /** TShine's vtable and TShine::mUpSpeed (1 at boot; TShine::appearSimple leaves it 2 for the rest of the session) */
@@ -51,7 +53,7 @@ export const JP10: GameAddrs = {
     goopLayerDraw: 0x801ECF38, goopObjDraw: [0x801EE5B0, 0x2D4],
     marioPulling: 0x8013DD68, unsetTakingMtx: [[0x803E083C, 0x80], [0x803D75E4, 0x74]],   // TBGTakeHit (a tentacle), TBGBeakHit
     launchScript: 0x800DC654, launchScriptInterp: 0x800DC6F0, spcUpdate: 0x80116F14, spcCountStep: 0x80116F88, spcLock: 0x8011C7CC, spcUnlock: 0x8011C6E8,
-    waterCalls: [0x8014AC84, 0x8014B5AC, 0x8014C0D4],
+    waterCalls: [0x8014AC84, 0x8014B5AC, 0x8014C0D4], emitPtDone: [0x80148DD0, 0x80149F90],
     mantaJingleTest: 0x80322E18, gpMapObjManager: 0x8040A4D0,
     shineVtable: 0x803C11E4, shineUpSpeed: 0x80409030,
 };
@@ -122,11 +124,12 @@ export class Replay {
     countAtStage = 0; countAtPlay = 0;
     private iFlow = 0; private iCall = 0; private lastCall = -1;
     private strict = false;
-    private curFrame: TraceFrame | null = null; private curTick = 0; private curTickIndex = -1; private between = 0;
+    private curFrame: TraceFrame | null = null; private curFrameIndex = -1; private curTick = 0; private curTickIndex = -1; private between = 0;
     private observations = 0; private noWater = false;
     private padAdopted = false; private adopted = new Set<string>(); private otherHandle = false;
     /** the recording's actors as of the current frame (by Moonshine's id), and how the comparison went */
     private actors = new Map<number, { ptr: number; data: Uint8Array; dv: DataView }>();
+    private actorScene = -1;
     actorsChecked = 0; actorWordsOff = 0; private actorsOff = new Set<string>();
     /** water requests compared with the recording's, and how many differed */
     waters = 0; watersOff = 0; private iWater = 0;
@@ -167,6 +170,9 @@ export class Replay {
             cpu.hook(call, (c) => { if (this.phase === 'stage') this.atWater(c.gpr[4]); return false; });
             cpu.hook(call + 4, (c) => { if (this.phase === 'stage' && this.waterNow) { if ((c.gpr[3] & 0xFF) !== (this.waterNow.accepted & 0xFF)) this.waterOff(`the water manager's answer is ${c.gpr[3] & 0xFF}, the trace's ${this.waterNow.accepted & 0xFF}`); this.waterNow = null; } return false; });
         }
+        // FLUDD's emit positions are copied out of its nozzle's joint matrices. A nozzle Mario isn't using is never
+        // posed, so its matrices are still the heap's leftovers (zeros here): then the positions are the recording's.
+        for (const at of A.emitPtDone) cpu.hook(at, (c) => { if (this.phase === 'stage' && c.gpr[3]) this.unsetEmitPos(c.gpr[3], c.gpr[4] + 0x1C90); return false; });
         // A sound the game waits for. Manta Storm's hotel rises when the all-Mantas-dead jingle has ended (its handle
         // is null again): no sound runs here, so the handle reads as the recording shows it: null in the tick
         // before the one in which the recording makes the hotel's particles (the event's watch runs a tick after
@@ -369,7 +375,7 @@ export class Replay {
         const f = T.frames[T.a[i]];
         if (f.state === -1) {
             // a frame of another director (a movie, a menu) between two stages: it gets the recorded pad, nothing is compared
-            this.curFrame = f; this.frames++;
+            this.curFrame = f; this.curFrameIndex = T.a[i]; this.frames++;
             if (!this.between++) this.log(`frame ${f.frame}: the recording has frames without a stage director here (the game's director: ${hex(mem.r32(mem.r32(A.app + APP.director)))})`);
             i = this.nextFlowFrom(i + 1);
             if (i < T.n && T.kind[i] === Ev.PAD) { this.setPad(mem.r32(A.app + APP.pads), T.pads[T.a[i]].input, `frame ${f.frame}`); i = this.nextFlowFrom(i + 1); }
@@ -386,12 +392,13 @@ export class Replay {
             if (!f.setupThreadDone && threadDone) hold = true;
             if (f.setupThreadDone) { this.strict = true; this.countAtPlay = this.m.cpu.count; }
         }
-        this.curFrame = f; this.frames++;
+        this.curFrame = f; this.curFrameIndex = T.a[i]; this.frames++;
         this.checkCalls(f.ev, `frame ${f.frame}`);
         if (this.phase !== 'stage') return false;
         if (f.session) { this.session = f.session; this.moonshine.apply(f.session); }
-        this.compareActors(f);
-        this.compareObject('fludd', 'FLUDD', f.fludd); this.compareObject('yoshi', 'Yoshi', f.yoshi);
+        // (the recorder samples the actors, FLUDD and Yoshi only in a frame whose stage is set up, and forgets its actors when the scene changes)
+        if (f.scene !== this.actorScene) { this.actors.clear(); this.actorScene = f.scene; }
+        if (f.setupDone) { this.compareActors(f); this.compareObject('fludd', 'FLUDD', f.fludd); this.compareObject('yoshi', 'Yoshi', f.yoshi); }
         if (this.phase !== 'stage') return false;
         if (this.strict) {
             const seed = mem.r32(A.seed);
@@ -537,6 +544,20 @@ export class Replay {
         n++; while (n < T.n && T.kind[n] !== Ev.TICK) n++;
         return mark.ev < n;
     }
+    private emitPosSaid = false;
+    /** FLUDD's emit position at `pos` was just copied from the joint matrix at `mtx`: if that matrix was never computed, the position is the recording's */
+    private unsetEmitPos(mtx: number, pos: number) {
+        const mem = this.m.mem, T = this.T;
+        for (let k = 0; k < 48; k += 4) if (mem.r32(mtx + k) !== 0) return;
+        // (the recorder's next sample of FLUDD, as the next frame begins, has what the console's copy left there)
+        const next = T.frames[this.curFrameIndex + 1], rec = next && next.setupDone ? next.fludd : null;
+        if (!rec) return;
+        const off = pos - rec.ptr;
+        if (off < 0x1C90 || off > 0x1CA8 || (off - 0x1C90) % 12 || off + 12 > rec.data.length) return;
+        const dv = new DataView(rec.data.buffer, rec.data.byteOffset, rec.data.length);
+        for (let k = 0; k < 12; k += 4) mem.w32(pos + k, dv.getUint32(off + k));
+        if (!this.emitPosSaid) { this.emitPosSaid = true; this.log(`tick ${this.curTick}: FLUDD's emit position comes from a nozzle's joint matrix the game never computed (the heap's leftovers, zeros here): taken from the recording`); }
+    }
     private waterNow: { accepted: number } | null = null;
     private waterOff(text: string) { if (this.watersOff++ < 12) this.issue('water', text); }
     /** a water request against the recording's next one */
@@ -667,6 +688,15 @@ export class Replay {
             if (caller === lr || (caller >= this.modLo && caller < this.modHi && ++this.shimCalls)) { this.lastCall = i; this.iCall = this.nextCallFrom(i + 1); this.calls++; return; }
         }
         if (i >= T.n) { this.issue('rand', `rand called from ${hex(lr)} after the trace's last call`); return; }
+        if (this.ticks === 0 && this.stages === 1 && !this.layoutDelta) {
+            // the first stage is still being set up: a heap laid out differently (see `layoutDelta`) explains a different call
+            const mario = this.m.mem.r32(this.A.gpMarioOriginal), rec = T.ticks.length ? T.ticks[0].marioPtr : 0;
+            if (mario && rec && mario !== rec) {
+                this.layoutDelta = mario - rec;
+                this.issue('layout', `Mario is at ${hex(mario)}, the recording's at ${hex(rec)}: the stage's heap is laid out differently`);
+                if (this.phase !== 'stage') return;
+            }
+        }
         const k = T.kind[i];
         this.issue('rand', `rand called from ${hex(lr)} (seed ${hex(seed)}); the trace's next is ${k === Ev.RAND ? `rand from ${hex(T.a[i])} (seed ${hex(T.b[i])})` : `a literal at ${hex(T.a[i])}`} (call ${this.calls + this.literals})`);
         // carry on in step where that is possible: the same number of calls gives the same seed
@@ -690,6 +720,12 @@ export class Replay {
  * script the other way (the last script before the parting whose unset lock word decided something, see
  * Replay.scriptDoubts). null: nothing left to try. The caller keeps the new replay only if it follows further.
  */
+/** Whether replay `a` follows the recording further than `b`: more frames, or as many with less that differs. */
+export function followsFurther(a: Replay, b: Replay): boolean {
+    if (a.frames !== b.frames) return a.frames > b.frames;
+    if (a.issues.length !== b.issues.length) return a.issues.length < b.issues.length;
+    return a.actorWordsOff < b.actorWordsOff;
+}
 export function nextScriptLocks(R: Replay, tried: Set<string>): string[] | null {
     if (!R.issues.length) return null;
     const stop = R.issues[0].frame;

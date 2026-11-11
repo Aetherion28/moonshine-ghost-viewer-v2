@@ -3,7 +3,7 @@
 // stage heap's size differs, and again with Shiny Shines when the heap is laid out differently.
 // Used by the browser's worker (web/worker.ts) and by the Node check of a disc (tests/verify.ts).
 import { readTrace, type Trace } from '../game/trace.ts';
-import { nextScriptLocks, Replay, JP10, type Issue } from '../game/replay.ts';
+import { nextScriptLocks, followsFurther, Replay, JP10, type Issue } from '../game/replay.ts';
 import { symJP10 } from '../game/syms_jp10.ts';
 import type { OpenedDisc } from './discs.ts';
 
@@ -113,7 +113,7 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         for (let locks; res === 'done' && (locks = nextScriptLocks(R, tried));) {
             const R1 = R; attempt++; R = make(R1.fstPadUsed, shiny, locks);
             const res2 = await go();
-            if (res2 === 'done' && (!R.issues.length || R.frames > R1.frames)) continue;
+            if (res2 === 'done' && followsFurther(R, R1)) continue;
             if (res2 !== 'done') { res = res2; break; }
             R = R1;
         }

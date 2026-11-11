@@ -3,7 +3,7 @@
 // FSTPAD=n the file table's padding if known, WALL=s a time limit, LOCKED=a.sb,b.sb event scripts that start locked,
 import { readFileSync } from 'node:fs';
 import { readTrace } from '../game/trace.ts';
-import { Replay, JP10, nextScriptLocks } from '../game/replay.ts';
+import { Replay, JP10, nextScriptLocks, followsFurther } from '../game/replay.ts';
 import { symbols } from './syms.ts';
 import { jpDisc, JP_DOL, loadBytes } from './jpdisc.ts';
 import { threads } from './debug.ts';
@@ -47,7 +47,7 @@ try {
     for (let locks; res === 'done' && (locks = nextScriptLocks(R, tried));) {
         console.log(`... booting again with the lock word of [${locks.join(', ')}] not 0`);
         const R1 = R; R = make(R1.fstPadUsed, shiny, locks); const res2 = go();
-        if (res2 === 'done' && (!R.issues.length || R.frames > R1.frames)) res = res2; else { console.log('    (no further: kept as it was)'); R = R1; }
+        if (res2 === 'done' && followsFurther(R, R1)) res = res2; else { console.log('    (no further: kept as it was)'); R = R1; }
     }
 } catch (e) { err = e; }
 const dt = (performance.now() - t0) / 1000, cpu = R.m.cpu;
