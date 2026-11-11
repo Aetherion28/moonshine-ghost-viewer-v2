@@ -45,7 +45,7 @@ export interface GameAddrs {
     /** TMarDirector::updateGameMode's test of the BGM handle a camera demo waits for (the handle in r3, the director in r31) */
     demoJingleTest: number;
     /** TJumpBase::control */
-    jumpBaseControl: number; kuriTimer: number; kuriEndTest: number; cannonGoalRead: number;
+    jumpBaseControl: number; kuriTimer: number; kuriEndTest: number; cannonGoalRead: number; bathPrerender: number;
     /** TBossMantaManager::TMantaBattleState::update, where it tests the all-Mantas-dead jingle's handle (in r0); gpMapObjManager */
     mantaJingleTest: number; gpMapObjManager: number;
     /** TShine's vtable and TShine::mUpSpeed (1 at boot; TShine::appearSimple leaves it 2 for the rest of the session) */
@@ -67,7 +67,7 @@ export const JP10: GameAddrs = {
     waterCalls: [0x8014AC84, 0x8014B5AC, 0x8014C0D4], emitPtDone: [0x80148DD0, 0x80149F90],
     pukuGenerateRead: 0x802ADF70, pukuSinkTest: 0x802AD13C,
     movieVtable: 0x803B48D8, movieThreadTest: 0x8010ACF4, demoJingleTest: 0x800EB480, jumpBaseControl: 0x801D4E6C,
-    kuriTimer: 0x802690B0, kuriEndTest: 0x80269118, cannonGoalRead: 0x802DF0A4,
+    kuriTimer: 0x802690B0, kuriEndTest: 0x80269118, cannonGoalRead: 0x802DF0A4, bathPrerender: 0x801FD7F8,
     heapAllocs: [[0x8000A04C, 0x8000A18C], [0x8000D520, 0x8000D5CC]],
     mantaJingleTest: 0x80322E18, gpMapObjManager: 0x8040A4D0,
     shineVtable: 0x803C11E4, shineUpSpeed: 0x80409030,
@@ -114,6 +114,8 @@ export interface ReplayOptions {
     maxIssues?: number;
     /** bytes the console's file system table was bigger than this disc's (see `heapDelta`) */
     fstPad?: number;
+    /** draw the bath water's height map with the GPU model (ppc/gx.ts) */
+    drawBath?: boolean;
     /** Moonshine's Shiny Shines setting (not recorded: see `layoutDelta`) */
     shinyShines?: boolean;
     /** the doubts to take the other way (not recorded: see `scriptDoubts`): event scripts (file names) whose interpreter starts with a lock word that isn't 0, a trampoline (`TJumpBase@address`) whose state timer isn't */
@@ -351,6 +353,9 @@ export class Replay {
         cpu.hook(A.goopLayerDraw, () => { m.hw.gx.mark(m.hw.streamPos(), true, true); return false; });
         cpu.hook(A.goopObjDraw[0], () => { m.hw.gx.mark(m.hw.streamPos(), true); return false; });
         for (let a = A.goopObjDraw[0]; a < A.goopObjDraw[0] + A.goopObjDraw[1]; a += 4) if (m.mem.r32(a) === 0x4E800020) cpu.hook(a, () => { m.hw.gx.mark(m.hw.streamPos(), false); return false; });
+        // The bath water's height map (TBathWaterMeshRenderer::prerender): the water's balls drawn from above into the
+        // depth buffer, which is copied into a texture the game reads heights from.
+        if (opt.drawBath) cpu.hook(A.bathPrerender, () => { m.hw.gx.zbuf.fill(0xFFFFFF); m.hw.gx.mark(m.hw.streamPos(), true, true); return false; });
         m.hw.gxUnsupported = (what) => this.issue('gpu', `the goop's drawing needs ${what}, which the GPU model here doesn't do`);
         cpu.hook(A.fbCamera, (c) => { const v = this.literal(A.fbCamera + 4); if (v !== null) c.gpr[0] = v; return false; });
         cpu.hook(A.fbSilhouette, (c) => { const v = this.literal(A.fbSilhouette + 4); if (v !== null) c.gpr[0] = v; return false; });

@@ -85,9 +85,10 @@ function finish(P: Pass, ramAfter: Uint8Array) {
     }, (bp, ctl) => {
         if (ctl & 0x4000) throw new Error('a copy to the display inside a pass');
         const sw = (bp[0x4A] & 0x3FF) + 1, sh = ((bp[0x4A] >>> 10) & 0x3FF) + 1, f = (ctl >>> 3) & 15, fmt = (f >> 1) + (f & 1) * 8;
-        if (fmt < 7 || fmt > 10) throw new Error(`a copy to format ${fmt}`);
-        P.dst = (bp[COPY_DST] << 5) & 0x03FFFFFF; P.dstSize = ((sw + 7) >> 3) * ((sh + 3) >> 2) * 32;
-        need(P.dst, P.dstSize, 'dst', { w: sw, h: sh, fmt: 1 });
+        const depth = fmt === 6 && (bp[0x43] & 7) === 3;   // (the depth buffer as a Z24X8 texture)
+        if ((fmt < 7 || fmt > 10) && !depth) throw new Error(`a copy to format ${fmt}`);
+        P.dst = (bp[COPY_DST] << 5) & 0x03FFFFFF; P.dstSize = depth ? ((sw + 3) >> 2) * ((sh + 3) >> 2) * 64 : ((sw + 7) >> 3) * ((sh + 3) >> 2) * 32;
+        need(P.dst, P.dstSize, 'dst', { w: sw, h: sh, fmt: depth ? 6 : 1 });
     });
     for (const [key, [lo, hi]] of P.arrays) need(lo, hi - lo, 'array ' + key);
     P.result = ramAfter.slice(P.dst, P.dst + P.dstSize);
@@ -275,7 +276,7 @@ if (mode === 'capture') {
     const outPath = process.argv[4], spans = process.argv[5].split(',').map((s) => s.split('-').map(Number)), most = +(process.argv[6] || 1e9);
     const lastTick = Math.max(...spans.map((s) => s[1] ?? s[0])), onlyStamps = process.env.ONLY === 'stamps';
     const wanted = (t: number) => spans.some((s) => t >= s[0] && t <= (s[1] ?? s[0]));
-    const R = new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), { log: (s) => { if (/^\[/.test(s)) console.log(s); }, fstPad: +(process.env.FSTPAD ?? (process.env.DISC ? 0 : 480)), scriptsLocked: (process.env.LOCKED || '').split(',').filter(Boolean), stopOn: process.env.ALL ? ['heap', 'layout'] : undefined, maxIssues: process.env.ALL ? 100000 : 50 });
+    const R = new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), { log: (s) => { if (/^\[/.test(s)) console.log(s); }, fstPad: +(process.env.FSTPAD ?? (process.env.DISC ? 0 : 480)), scriptsLocked: (process.env.LOCKED || '').split(',').filter(Boolean), drawBath: !!process.env.BATH, stopOn: process.env.ALL ? ['heap', 'layout'] : undefined, maxIssues: process.env.ALL ? 100000 : 50 });
     const m = R.m, gx = m.hw.gx, ram = m.mem.ram;
     const texel = process.env.TEXEL ? process.env.TEXEL.split(',').map(Number) : null;
     const passes: Pass[] = [];
@@ -472,7 +473,7 @@ if (mode === 'capture') {
     const b = readFileSync(process.argv[3]);
     const T = readTrace(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
     const prefix = process.argv[4], lastTick = +process.argv[5], per = +(process.argv[6] || 250);
-    const R = new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), { log: (s) => { if (/^\[/.test(s)) console.log(s); }, fstPad: +(process.env.FSTPAD ?? (process.env.DISC ? 0 : 480)), scriptsLocked: (process.env.LOCKED || '').split(',').filter(Boolean) });
+    const R = new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), { log: (s) => { if (/^\[/.test(s)) console.log(s); }, fstPad: +(process.env.FSTPAD ?? (process.env.DISC ? 0 : 480)), scriptsLocked: (process.env.LOCKED || '').split(',').filter(Boolean), drawBath: !!process.env.BATH });
     const m = R.m, gx = m.hw.gx, ram = m.mem.ram;
     const A: Arena = { at: new Map(), has: new Map(), top: 0, scratch: -1 }, chained = new Set<string>();
     let Sc = new Script(), cases: object[] = [], lead: string[] = [], job = 0, n = 0;
@@ -590,6 +591,172 @@ if (mode === 'capture') {
     rec(101, sc.ops.length, dumps, new Uint8Array(0));
     writeFileSync(process.argv[4], Buffer.concat(parts));
     console.log(`${dumps} blocks`);
+    process.exit(0);
+} else if (mode === 'depth') {
+    // depth cases on a bath water pass's state (its view from above, its projection, its depth test): the pass's
+    // own primitives replaced by flat squares at many heights (what depth a vertex gets) and by triangles between
+    // heights (how depth goes over a triangle). <out>.cases.json has each case's primitives.
+    //   node v3hwprobe.mjs depth <out.gxps> <bath.passes> [flat cases] [triangle cases]   (SEED=n)
+    const outPath = process.argv[3], P0 = (deserialize(readFileSync(process.argv[4])) as Pass[])[0];
+    const nFlat = +(process.argv[5] ?? 4), nTri = +(process.argv[6] ?? 8);   // (STAGES=n: and n cases of each step of a vertex's depth)
+    const Sc = new Script(), A: Arena = { at: new Map(), has: new Map(), top: 0, scratch: -1 }, cases: object[] = [];
+    let seed = +(process.env.SEED || 1);
+    const rnd = () => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) / 16777216; };
+    // the state as the pass's caps are drawn: every command but the primitives; the commands after the last primitive are the copy
+    let lastPrim = -1; P0.cmds.forEach((c, i) => { if (c[0] & 0x80) lastPrim = i; });
+    const state = P0.cmds.slice(0, lastPrim).filter((c) => !(c[0] & 0x80)), tail = P0.cmds.slice(lastPrim + 1);
+    // the transform there (to place the cases on the screen): the position matrix, the projection, the viewport
+    const xw = P0.xfw.slice(), xf = new Float32Array(xw.buffer);
+    for (const c of state) if (c[0] === 0x10) { const n = (c[2] & 15) + 1, addr = (c[3] << 8) | c[4]; for (let i = 0; i < n; i++) if (addr + i < xw.length) xw[addr + i] = r32(c, 5 + 4 * i); }
+    const m = (xw[0x1018] & 63) * 4;
+    const screen = (x: number, y: number, z: number) => {
+        const ex = xf[m] * x + xf[m + 1] * y + xf[m + 2] * z + xf[m + 3], ey = xf[m + 4] * x + xf[m + 5] * y + xf[m + 6] * z + xf[m + 7];
+        return [(xf[0x1020] * ex + xf[0x1021]) * xf[0x101A] + xf[0x101D] - 342, (xf[0x1022] * ey + xf[0x1023]) * xf[0x101B] + xf[0x101E] - 342];
+    };
+    // (the view looks straight down: the screen is the model's x and z, the depth its height)
+    const o = screen(0, 0, 0), dx = screen(1, 0, 0), dz = screen(0, 0, 1);
+    const a11 = dx[0] - o[0], a12 = dz[0] - o[0], a21 = dx[1] - o[1], a22 = dz[1] - o[1], det = a11 * a22 - a12 * a21;
+    const model = (sx: number, sy: number) => { const u = sx - o[0], v = sy - o[1]; return [(u * a22 - a12 * v) / det, (a11 * v - u * a21) / det]; };
+    const f32 = new DataView(new ArrayBuffer(4));
+    const vert = (out: number[], sx: number, sy: number, h: number) => { const [x, z] = model(sx, sy); for (const v of [x, h, z]) { f32.setFloat32(0, v); out.push(f32.getUint8(0), f32.getUint8(1), f32.getUint8(2), f32.getUint8(3)); } out.push(0x40, 0x40); return [Math.fround(x), Math.fround(h), Math.fround(z)]; };
+    const add = (label: string, prims: { cmd: number[]; verts: number[][]; pre?: number[][]; meta?: object }[]) => {
+        const cmds: Uint8Array[] = [];
+        for (const p of prims) { for (const c of p.pre ?? []) cmds.push(Uint8Array.from(c)); cmds.push(Uint8Array.from(p.cmd)); }
+        const P: Pass = { ...P0, cmds: [...state, ...cmds, ...tail] };
+        emit(Sc, A, P, label);
+        const d = P.blocks.get(P.dst)!;
+        cases.push({ label, source: 'depth', tick: P0.tick, variant: '', w: d.w!, h: d.h!, stamps: [], prims: prims.map((p) => p.verts), meta: prims.map((p) => p.meta ?? null) });
+    };
+    const xfLoad = (addr: number, vals: number[]) => { const c = [0x10, 0, vals.length - 1, addr >> 8, addr & 0xFF]; for (const v of vals) { f32.setFloat32(0, v); c.push(f32.getUint8(0), f32.getUint8(1), f32.getUint8(2), f32.getUint8(3)); } return c; };
+    // a flat square of 4 x 4 pixels, the q-th of 20 x 20, at height h (the two windings: one is culled)
+    const square = (q: number, h: number, pre: number[][] = [], meta: object | undefined = undefined) => {
+        const x0 = 2 + (q % 20) * 4, y0 = 2 + ((q / 20) | 0) * 4, corners = [[x0, y0], [x0 + 4, y0], [x0 + 4, y0 + 4], [x0, y0 + 4]], out: { cmd: number[]; verts: number[][]; pre?: number[][]; meta?: object }[] = [];
+        for (const order of [[0, 1, 2, 3], [3, 2, 1, 0]]) {
+            const cmd = [0x80, 0, 4], verts: number[][] = [];
+            for (const k of order) verts.push(vert(cmd, corners[k][0], corners[k][1], h));
+            out.push({ cmd, verts, pre: out.length ? [] : pre, meta });
+        }
+        return out;
+    };
+    // ---- the steps of a vertex's depth, one at a time (STAGES=n cases of each): the eye's depth is row 3 of the
+    // position matrix times the vertex, the clip depth is projection[4] * eye + projection[5], the screen's is
+    // clip * viewport scale + viewport offset. Each case keeps the other steps exact (a matrix row of (0, 1, 0, 0),
+    // a projection of (1, 0), a viewport of powers of two that leaves the clip depth's every bit in the result).
+    const nStage = +(process.env.STAGES || 0), row3 = m + 8;
+    const mant = () => (0x800000 + Math.floor(rnd() * 0x800000)) / 0x1000000;   // 24 bits, in [0.5, 1)
+    for (let k = 0; k < nStage; k++) {
+        // the viewport step: clip depths of every size against the game's scale and offset, and two other pairs
+        const [zs, zo] = [[16777215, 16777215], [16777215, 16777215], [16777216, 16777216], [8388607, 16777215], [12345678, 14000000]][k % 5];
+        const prims = [];
+        for (let q = 0; q < 400; q++) {
+            const b = q % 12, cz = -mant() * Math.pow(2, -b);   // (-1, 0), twelve sizes
+            prims.push(...square(q, cz, [xfLoad(row3, [0, 1, 0, 0]), xfLoad(0x1024, [1, 0]), xfLoad(0x101C, [zs]), xfLoad(0x101F, [zo])], { step: 'viewport', cz, zs, zo }));
+        }
+        add(`viewport ${k}`, prims);
+    }
+    for (let k = 0; k < nStage; k++) {
+        // the projection step: clip = a * eye + b, read back whole through a viewport of 2^(24 + size) and 2^24
+        const prims = [];
+        for (let q = 0; q < 400; q++) {
+            const b = q % 6;
+            let a = 0, eye = 0, c = 0, cz = 0;
+            for (let tries = 0; tries < 1000; tries++) {
+                // (the game's kind: a small factor, a depth of thousands, minus one; and others)
+                if (k % 2 === 0) { a = Math.fround(-(0.5 + rnd()) / 12000); eye = Math.fround(-rnd() * 12000); c = -1; }
+                else { a = Math.fround((rnd() - 0.5) * 4); eye = Math.fround((rnd() - 0.5) * 4); c = Math.fround((rnd() - 0.5) * 2); }
+                cz = a * eye + c;
+                if (cz < -Math.pow(2, -b - 1) * 1.001 && cz > -Math.pow(2, -b) * 0.999) break;
+            }
+            prims.push(...square(q, eye, [xfLoad(row3, [0, 1, 0, 0]), xfLoad(0x1024, [a, c]), xfLoad(0x101C, [Math.pow(2, 24 + b)]), xfLoad(0x101F, [16777216])], { step: 'projection', a, eye, c, b }));
+        }
+        add(`projection ${k}`, prims);
+    }
+    for (let k = 0; k < nStage; k++) {
+        // the position matrix's step: eye = m * height + t (the row's other two are 0), read back whole
+        const prims = [];
+        for (let q = 0; q < 400; q++) {
+            const b = q % 6;
+            let mm = 0, h = 0, t = 0, ez = 0;
+            for (let tries = 0; tries < 1000; tries++) {
+                if (k % 2 === 0) { mm = 1; h = Math.fround(1900 + rnd() * 11800); t = Math.fround(-13800 - rnd()); }
+                else { mm = Math.fround((rnd() - 0.5) * 4); h = Math.fround((rnd() - 0.5) * 4); t = Math.fround((rnd() - 0.5) * 2); }
+                ez = mm * h + t;
+                // (as a clip depth it has to be in (-1, 0): the first kind is scaled down by 2^-14 in the projection, exactly)
+                const cz = k % 2 === 0 ? ez / 16384 : ez;
+                if (cz < -Math.pow(2, -b - 1) * 1.001 && cz > -Math.pow(2, -b) * 0.999) break;
+            }
+            prims.push(...square(q, h, [xfLoad(row3, [0, mm, 0, t]), xfLoad(0x1024, [k % 2 === 0 ? 1 / 16384 : 1, 0]), xfLoad(0x101C, [Math.pow(2, 24 + b)]), xfLoad(0x101F, [16777216])], { step: 'matrix', mm, h, t, b, scale: k % 2 === 0 ? 1 / 16384 : 1 }));
+        }
+        add(`matrix ${k}`, prims);
+    }
+    // (heights between the two planes of the projection: the eye is at 13,800, the far plane 12,000 below)
+    const height = () => Math.fround(1900 + rnd() * 11800);
+    for (let k = 0; k < nFlat; k++) {
+        // flat squares of 4 x 4 pixels, 20 x 20 of them, each at a height of its own (the two windings: one is culled)
+        const prims: { cmd: number[]; verts: number[][] }[] = [];
+        for (let j = 0; j < 20; j++) for (let i = 0; i < 20; i++) {
+            const h = k === 0 ? Math.fround(1900 + (j * 20 + i) * 29.5) : height(), x0 = 2 + i * 4, y0 = 2 + j * 4;
+            for (const order of [[0, 1, 2, 3], [3, 2, 1, 0]]) {
+                const cmd = [0x80, 0, 4], corners = [[x0, y0], [x0 + 4, y0], [x0 + 4, y0 + 4], [x0, y0 + 4]], verts: number[][] = [];
+                for (const q of order) verts.push(vert(cmd, corners[q][0], corners[q][1], h));
+                prims.push({ cmd, verts });
+            }
+        }
+        add(`flat ${k}`, prims);
+    }
+    for (let k = 0; k < nTri; k++) {
+        // triangles between three heights, one in each of 3 x 3 regions of 26 pixels (both windings)
+        const prims: { cmd: number[]; verts: number[][] }[] = [];
+        for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) {
+            const span = k < 2 ? 40 : k < 4 ? 600 : 6000, base = Math.fround(2500 + rnd() * (11000 - span));
+            const pts = [0, 1, 2].map(() => [2 + i * 27 + rnd() * 25, 2 + j * 27 + rnd() * 25, Math.fround(base + rnd() * span)]);
+            for (const order of [[0, 1, 2], [2, 1, 0]]) {
+                const cmd = [0x90, 0, 3], verts: number[][] = [];
+                for (const q of order) verts.push(vert(cmd, pts[q][0], pts[q][1], pts[q][2]));
+                prims.push({ cmd, verts });
+            }
+        }
+        add(`triangles ${k}`, prims);
+    }
+    const bytes = Sc.bytes();
+    writeFileSync(outPath, bytes); writeFileSync(outPath + '.cases.json', JSON.stringify(cases));
+    console.log(`${cases.length} cases, arena ${Sc.arena}, script ${bytes.length} bytes; screen of the model's origin ${o.map((v) => v.toFixed(2)).join(', ')}, a unit of x ${a11.toFixed(5)}, ${a21.toFixed(5)}, of z ${a12.toFixed(5)}, ${a22.toFixed(5)}`);
+    process.exit(0);
+} else if (mode === 'zcompare') {
+    // depth maps (Z24X8 copies of the depth buffer): a console's answer against ppc/gx.ts, case by case
+    //   node v3hwprobe.mjs zcompare <script.gxps> <answer.gxpo> [out.json]   (SHOW=n: that many differing texels a case)
+    const sc = readScript(new Uint8Array(readFileSync(process.argv[3]))), cases = JSON.parse(readFileSync(process.argv[3] + '.cases.json', 'utf8')) as Case[];
+    const model = simulate(sc.ops, sc.arena, +(process.env.SEED || 0));
+    const o = new Uint8Array(readFileSync(process.argv[4])), got: Uint8Array[] = [];
+    if (r32(o, 0) !== 0x4758504F) throw new Error('not an answer file');
+    for (let p = 16; p + 16 <= o.length;) {
+        const kind = r32(o, p), b = r32(o, p + 8), len = r32(o, p + 12), data = o.subarray(p + 16, p + 16 + len);
+        if (kind === 102) console.log(`the console stopped the script: ${Buffer.from(data).toString('latin1')}`);
+        else if (kind === OP.DUMP || kind === OP.READ16) got.push(data.slice());
+        else if (kind === OP.MEMRLE) got.push(rleDecode(data, b));
+        p += 16 + ((len + 3) & ~3);
+    }
+    const depth = (m: Uint8Array, w: number, h: number) => {
+        const z = new Int32Array(w * h), bw = (w + 3) >> 2;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const q = ((y >> 2) * bw + (x >> 2)) * 64 + ((y & 3) * 4 + (x & 3)) * 2; z[y * w + x] = (m[q + 1] << 16) | (m[q + 32] << 8) | m[q + 33]; }
+        return z;
+    };
+    const out: object[] = [], all = new Map<number, number>();
+    for (const [i, c] of cases.entries()) {
+        const mine = depth(model[2 * i + 1], c.w, c.h), theirs = depth(got[2 * i + 1], c.w, c.h), hist = new Map<number, number>();
+        let off = 0, far = 0, covered = 0; const ex: string[] = [];
+        for (let k = 0; k < mine.length; k++) {
+            if (theirs[k] !== 0xFFFFFF) covered++;
+            const d = mine[k] - theirs[k];
+            if ((mine[k] === 0xFFFFFF) !== (theirs[k] === 0xFFFFFF)) { far++; continue; }
+            hist.set(d, (hist.get(d) || 0) + 1); all.set(d, (all.get(d) || 0) + 1);
+            if (d) { off++; if (ex.length < +(process.env.SHOW || 0)) ex.push(`(${k % c.w},${(k / c.w) | 0}) ${mine[k]} here, ${theirs[k]} there`); }
+        }
+        console.log(`${c.label}: ${c.w}x${c.h}, ${covered} texels drawn on the console; ${off} differ in depth, ${far} drawn on one side only${ex.length ? ' | ' + ex.join('; ') : ''}`);
+        out.push({ label: c.label, w: c.w, h: c.h, mine: [...mine], theirs: [...theirs] });
+    }
+    console.log('depth here minus the console\'s: ' + [...all].sort((a, b) => a[0] - b[0]).map(([d, n]) => `${d}: ${n}`).join(', '));
+    if (process.argv[5]) writeFileSync(process.argv[5], JSON.stringify(out));
     process.exit(0);
 } else if (mode === 'check' || mode === 'compare') {
     const sc = readScript(new Uint8Array(readFileSync(process.argv[3]))), cases = JSON.parse(readFileSync(process.argv[3] + '.cases.json', 'utf8')) as Case[];

@@ -496,6 +496,8 @@ export class Gx {
     private quadSeen = new Uint8Array(((EFB_W >> 1) + 1) * ((EFB_H >> 1) + 1));
     /** the depth buffer (24 bits) */
     zbuf = new Uint32Array(EFB_W * EFB_H).fill(0xFFFFFF);
+    /** (for tests) which triangle (its number in trianglesDrawn) wrote each pixel's depth */
+    zOwner: Int32Array | null = null;
 
     // ---- the texture environment, per pixel
     private stages = 0;
@@ -540,7 +542,7 @@ export class Gx {
     private pixel(x: number, y: number, z: number, memo: boolean): boolean {
         const bp = this.bp, O = this.out, zm = bp[0x40], pi = y * EFB_W + x;
         const early = (bp[0x43] & 0x40) !== 0;
-        if ((zm & 1) && early) { if (!alphaPass(z, this.zbuf[pi], (zm >>> 1) & 7)) return false; if (zm & 0x10) this.zbuf[pi] = z; }
+        if ((zm & 1) && early) { if (!alphaPass(z, this.zbuf[pi], (zm >>> 1) & 7)) return false; if (zm & 0x10) { this.zbuf[pi] = z; if (this.zOwner) this.zOwner[pi] = this.trianglesDrawn; } }
         if (memo) {
             let v = 0;
             if (this.memoMap >= 0) { this.sample(this.memoMap, this.uv[this.memoCoord * 2], this.uv[this.memoCoord * 2 + 1]); v = this.texel[0]; }
@@ -549,7 +551,7 @@ export class Gx {
             if (this.memoState[v] === 2) return false;
             O[0] = M[k]; O[1] = M[k + 1]; O[2] = M[k + 2]; O[3] = M[k + 3];
         } else if (!this.tev(false)) return false;
-        if ((zm & 1) && !early) { if (!alphaPass(z, this.zbuf[pi], (zm >>> 1) & 7)) return false; if (zm & 0x10) this.zbuf[pi] = z; }
+        if ((zm & 1) && !early) { if (!alphaPass(z, this.zbuf[pi], (zm >>> 1) & 7)) return false; if (zm & 0x10) { this.zbuf[pi] = z; if (this.zOwner) this.zOwner[pi] = this.trianglesDrawn; } }
         const sr = O[0], sg = O[1], sb = O[2], sa = O[3];
         // ---- the blender (0x41)
         const bm = bp[0x41], efb = this.efb, o = pi * 4;
@@ -682,6 +684,10 @@ export class Gx {
                 const p = ti.addr + ((y >> 2) * ((ti.w + 3) >> 2) + (x >> 2)) * 32 + ((y & 3) * 4 + (x & 3)) * 2;
                 out[0] = out[1] = out[2] = ram[p + 1]; out[3] = ram[p]; return;
             }
+            case 6: {   // RGBA8: 4 x 4 blocks, 32 bytes of alpha and red, then 32 of green and blue
+                const p = ti.addr + ((y >> 2) * ((ti.w + 3) >> 2) + (x >> 2)) * 64 + ((y & 3) * 4 + (x & 3)) * 2;
+                out[3] = ram[p]; out[0] = ram[p + 1]; out[1] = ram[p + 32]; out[2] = ram[p + 33]; return;
+            }
         }
         this.warn(`a texture of format ${ti.fmt}`);
         out[0] = out[1] = out[2] = out[3] = 0;
@@ -704,7 +710,17 @@ export class Gx {
             const wp = w[0] + w[1], wc = w[2] + w[3] + w[4], wn = w[5] + w[6];
             // the channel an 8-bit copy takes: A8 (7), R8 (8), G8 (9), B8 (10)
             const ch = fmt === 8 ? 0 : fmt === 9 ? 1 : fmt === 10 ? 2 : fmt === 7 ? 3 : -1;
-            if (ch < 0) { this.warn(`a frame buffer copy to format ${fmt}`); }
+            if (fmt === 6 && (bp[0x43] & 7) === 3) {
+                // the depth buffer as a Z24X8 texture (GXCopyTex sets the pixel format to Z24 for the copy): blocks of
+                // 4 x 4 texels, 32 bytes of (unused, the depth's top byte) and 32 of its lower two
+                const bw = (sw + 3) >> 2, zb = this.zbuf;
+                for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+                    const ex = sx + x, ey = sy + y;
+                    if (ex >= EFB_W || ey >= EFB_H) continue;
+                    const z = zb[ey * EFB_W + ex], o = dst + ((y >> 2) * bw + (x >> 2)) * 64 + ((y & 3) * 4 + (x & 3)) * 2;
+                    ram[o] = 0xFF; ram[o + 1] = z >>> 16; ram[o + 32] = (z >>> 8) & 0xFF; ram[o + 33] = z & 0xFF;
+                }
+            } else if (ch < 0) { this.warn(`a frame buffer copy to format ${fmt}`); }
             else {
                 const bw = (sw + 7) >> 3;
                 for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
