@@ -86,8 +86,9 @@ const UNSET_AT_FIRST: Record<string, [number, number][]> = {
     mario: [[0xA, 0xB], [0xE, 0xF], [0x1E, 0x1F], [0x152, 0x153], [0x38A, 0x38B], [0x47E, 0x47F], [0x482, 0x483], [0x492, 0x493], [0x519, 0x51B], [0x521, 0x521], [0x525, 0x525], [0x52D, 0x52F]],
     camera: [[0xA, 0xB], [0xE, 0xF], [0x1E, 0x1F], [0x26, 0x27], [0x66, 0x67], [0xAC, 0xB3], [0xE0, 0xE7], [0x114, 0x11B], [0x25A, 0x25B], [0x2CD, 0x2CF]],
 };
-// THamuKuri: unk1A8 (the look-around timer), its parameters and mSLKyoroTimer's value in them; TLiveActor's current BCK, mAnmSoundPath and mPositionDelta
-const KURI = { timer: 0x1A8, params: 0x1F4, kyoroTimer: 0x440, bck: 0x15C, walk: 14, look: 4, soundPath: 0x84, step: 0x94, mactor: 0x74 };
+// THamuKuri: unk1A8 (the look-around timer), its parameters and mSLKyoroTimer's value in them; TLiveActor's current BCK and mAnmSoundPath;
+// its turn (mRotation.y) and TSpineEnemy::unk128 (s16: the ticks walked toward the current node)
+const KURI = { timer: 0x1A8, params: 0x1F4, kyoroTimer: 0x440, bck: 0x15C, walk: 14, look: 4, soundPath: 0x84, rotY: 0x34, walked: 0x128, mactor: 0x74 };
 // MActor::mAnmBck; an MActorAnm's frame control: mEnd, mRate, mFrame
 const MACTOR_BCK = 0x0C, ANM = { end: 0x0C, rate: 0x10, frame: 0x14 };
 const RUN_ASSISTED = 1;   // a trace's run flags: Moonshine's practice session took part
@@ -244,8 +245,8 @@ export class Replay {
         // animation (BCK 4), in which the Goomba doesn't walk; the animation's end starts the walk again. On the
         // console the timer starts at what the heap had there (the same Goomba's timer of an earlier attempt, as the
         // recordings show: 391, 455, 252 in one stage), so its first look-arounds come when the recording says:
-        // - walking, it looks around in the tick after which the recorded Goomba stays where it is with its
-        //   animation's sound path (mAnmSoundPath, +0x84) cleared; from then on the timer is the game's own;
+        // - walking, it looks around in the tick from which the recorded Goomba no longer turns or counts its walk
+        //   and has the look-around's animation (mAnmSoundPath, +0x84, is null); from then on the timer is the game's own;
         // - looking around already, a look-around starts the animation again. The animation advances once a frame, so
         //   that shows as the frame in which it ends (the recorded Goomba walks again), and in what the Goombas
         //   stacked on it do; which tick of the frame it was doesn't show, so the timer stays the recording's.
@@ -815,20 +816,11 @@ export class Replay {
             return 2;
         }
         if (bck !== KURI.walk) return 0;
-        // (the Goomba's tick comes before Mario's: this is game tick ticks + 1. In the frame's last tick the next
-        // sample would be the same either way: then the first sample after another tick says)
-        let g = F + 1;
-        if (this.ticks + 1 >= T.frames[F + 1].tick) { g = F + 2; while (g < T.frames.length && T.frames[g].tick === T.frames[F + 1].tick) g++; }
-        // (it stays where it is but for what the ground and wall checks still move it, an ulp or so; a walking tick is a step on)
-        const sx = f32FromBits(mem.r32(p + KURI.step)), sz = f32FromBits(mem.r32(p + KURI.step + 8)), step2 = sx * sx + sz * sz;
-        const stays = (at: number) => {
-            const x = this.actorWordAhead(id, 0x10, at), z = this.actorWordAhead(id, 0x18, at);
-            if (x === null || z === null) return false;
-            const dx = f32FromBits(x) - f32FromBits(mem.r32(p + 0x10)), dz = f32FromBits(z) - f32FromBits(mem.r32(p + 0x18));
-            return dx * dx + dz * dz < step2 / 16;
-        };
-        if (!(step2 > 0) || !stays(F + 1) || (g !== F + 1 && !stays(g))) return 0;
-        return this.actorWordAhead(id, KURI.soundPath, g) === 0 ? 1 : 0;
+        // (a tick's moveObject, where the timer is, comes before its nerve, where a walking Goomba turns and counts
+        // the tick in unk128: one that looks around from this tick has, at the next sample, the look-around's
+        // animation, and its turn and its count as they are now. Where it stands doesn't say: the ground may carry it)
+        const path = this.actorWordAhead(id, KURI.soundPath, F + 1), turn = this.actorWordAhead(id, KURI.rotY, F + 1), count = this.actorWordAhead(id, KURI.walked, F + 1);
+        return path === 0 && turn === mem.r32(p + KURI.rotY) && count !== null && (count >>> 16) === mem.r16(p + KURI.walked) ? 1 : 0;
     }
     /** the Goombas now looking around on a leftover timer: the frame in which the recording starts the animation again (-1: it doesn't) */
     private kuriAgain = new Map<number, number>();
