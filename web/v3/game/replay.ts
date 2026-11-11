@@ -11,7 +11,7 @@ import { installHle, type Sym } from '../ppc/hle.js';
 import type { VirtualDisc } from '../ppc/disc.js';
 import { f32FromBits } from '../ppc/fpu.js';
 import { TB_DIV } from '../ppc/cpu.js';
-import { Ev, EV_NAMES, IN, MARIO_BYTES, type Trace, type TraceFrame, type TracePad, type TraceTick } from './trace.js';
+import { Ev, EV_NAMES, IN, MARIO_BYTES, NO_NPC_PHASE, type Trace, type TraceFrame, type TracePad, type TraceTick } from './trace.js';
 import { Moonshine, ARENA_RESERVE, type Region } from './moonshine.js';
 
 export interface GameAddrs {
@@ -123,6 +123,10 @@ export interface ReplayOptions {
     drawBath?: boolean;
     /** Moonshine's Shiny Shines setting (not recorded: see `layoutDelta`) */
     shinyShines?: boolean;
+    /** TBaseNPC::initSinkNpc_'s counter at the first stage's start, for a recording that doesn't have it (stage-start schema 1) */
+    npcPhase?: number;
+    /** the recording was made in Dolphin: the one float rule the emulator has differently from the console (`Cpu.laneRounds`) */
+    dolphin?: boolean;
     /** the doubts to take the other way (not recorded: see `scriptDoubts`): event scripts (file names) whose interpreter starts with a lock word that isn't 0, a trampoline (`TJumpBase@address`) whose state timer isn't */
     scriptsLocked?: string[];
     /**
@@ -187,6 +191,10 @@ export class Replay {
     private strict = false;
     private curFrame: TraceFrame | null = null; private curFrameIndex = -1; private curTick = 0; private curTickIndex = -1; private between = 0;
     private observations = 0; private noWater = false;
+    /** the NPC phase the first stage starts with where the recording has none (undefined: the game's own, 0 at its first NPC) */
+    npcPhaseTaken: number | undefined;
+    /** played with Dolphin's float rule (see `ReplayOptions.dolphin`) */
+    dolphin = false;
     /** how many of the bath water's height maps the GPU model drew */
     bathDrawn = 0;
     private padAdopted = false; private adopted = new Set<string>(); private otherHandle = false;
@@ -205,7 +213,8 @@ export class Replay {
         const m = this.m, cpu = m.cpu;
         this.log = opt.log ?? (() => { });
         this.stopOn = new Set(opt.stopOn ?? ['heap', 'layout', 'rand', 'mario', 'camera', 'flow', 'stage', 'unrecorded']); this.maxIssues = opt.maxIssues ?? 50;
-        this.fstPadUsed = opt.fstPad ?? 0; this.selectHoldUsed = opt.selectHold ?? 0;
+        this.fstPadUsed = opt.fstPad ?? 0; this.selectHoldUsed = opt.selectHold ?? 0; this.npcPhaseTaken = opt.npcPhase;
+        this.dolphin = cpu.laneRounds = !!opt.dolphin;
         m.load(dol, disc, this.fstPadUsed);
         const missing = installHle(m, sym, { report: opt.report });
         if (missing.length) this.log('hle: not found: ' + missing.join(', '));
@@ -386,8 +395,10 @@ export class Replay {
             return false;
         });
         m.hw.gxUnsupported = (what) => this.issue('gpu', `the goop's drawing needs ${what}, which the GPU model here doesn't do`);
-        cpu.hook(A.fbCamera, (c) => { const v = this.literal(A.fbCamera + 4); if (v !== null) c.gpr[0] = v; return false; });
-        cpu.hook(A.fbSilhouette, (c) => { const v = this.literal(A.fbSilhouette + 4); if (v !== null) c.gpr[0] = v; return false; });
+        // (occlusion is recorded at its reads only by newer Moonshines: observation bit 0. Without it the game reads
+        // Mario's flag, whose occlusion bit is the recording's of that tick: see `atTick`)
+        cpu.hook(A.fbCamera, (c) => { if (!(this.observations & 1)) return false; const v = this.literal(A.fbCamera + 4); if (v !== null) c.gpr[0] = v; return false; });
+        cpu.hook(A.fbSilhouette, (c) => { if (!(this.observations & 1)) return false; const v = this.literal(A.fbSilhouette + 4); if (v !== null) c.gpr[0] = v; return false; });
         // (the bath water's height is recorded only by newer Moonshines: observation bit 2)
         cpu.hook(A.fbWater, (c) => {
             if (!(this.observations & 4)) { if (this.phase === 'stage' && !this.noWater) { this.noWater = true; this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: the bath water's height isn't in this trace: read from the depth map the GPU model draws`); } return false; }
@@ -459,7 +470,9 @@ export class Replay {
             const st = T.stages[0], w = st.words;
             // (the NPC phase is a function's static: its guard byte, right after it, says it was initialised.
             // On a console that has run a stage with NPCs it is set; here it isn't yet, and the first NPC would zero the phase.)
-            mem.w32(A.seed, w[6]); mem.w32(A.npcPhase, st.npcPhase); mem.w8(A.npcPhase + 4, 1);
+            mem.w32(A.seed, w[6]);
+            const phase = st.npcPhase !== NO_NPC_PHASE ? st.npcPhase : this.npcPhaseTaken;
+            if (phase !== undefined) { mem.w32(A.npcPhase, phase); mem.w8(A.npcPhase + 4, 1); }
             this.adoptShineSpeed();
             // the stage heap as the recording had it: the same size means the same arena
             if ((w[1] & 2) && (end - start !== w[11] || head - start !== w[9] || end - tail !== w[10])) {
@@ -499,7 +512,7 @@ export class Replay {
         const seq = (o: number) => ((mem.r8(A.app + o) << 24) | (mem.r8(A.app + o + 1) << 16) | mem.r16(A.app + o + 2)) >>> 0;
         if (seq(APP.cur) !== w[4]) this.issue('stage', `the game goes to scene ${hex(seq(APP.cur))}, the trace to ${hex(w[4])}`);
         if (mem.r32(A.seed) !== w[6]) this.issue('stage', `the RNG seed at the stage's start is ${hex(mem.r32(A.seed))}, the trace's ${hex(w[6])}`);
-        if (mem.r32(A.npcPhase) !== st.npcPhase) this.issue('stage', `the NPC pollution phase is ${mem.r32(A.npcPhase)}, the trace's ${st.npcPhase}`);
+        if (st.npcPhase !== NO_NPC_PHASE && mem.r32(A.npcPhase) !== st.npcPhase) this.issue('stage', `the NPC pollution phase is ${mem.r32(A.npcPhase)}, the trace's ${st.npcPhase}`);
         const fm = mem.bytes(mem.r32(A.flagMgr), 0x380), diff: string[] = [];
         for (let k = 0; k < 0x380; k++) if (fm[k] !== st.flags[k]) diff.push(`+0x${k.toString(16)} ${fm[k].toString(16)}/${st.flags[k].toString(16)}`);
         if (diff.length) {
@@ -1187,6 +1200,14 @@ export function followsFurther(a: Replay, b: Replay): boolean {
     if (a.frames !== b.frames) return a.frames > b.frames;
     if (a.issues.length !== b.issues.length) return a.issues.length < b.issues.length;
     return a.actorWordsOff < b.actorWordsOff;
+}
+/**
+ * Whether the replay parted from the recording in a number the game computed (not in what it did): the sign of a
+ * recording made on another machine's arithmetic. Dolphin's differs from the console's in one rule (`Cpu.laneRounds`),
+ * which shows first as an ulp in a row of Mario's matrices; a driver then plays the recording again with Dolphin's.
+ */
+export function partedInArithmetic(R: Replay): boolean {
+    return !R.dolphin && R.issues.length > 0 && ['mario', 'camera', 'fludd', 'yoshi', 'actor', 'water'].includes(R.issues[0].kind);
 }
 export function nextScriptLocks(R: Replay, tried: Set<string>): string[] | null {
     if (!R.issues.length) return null;

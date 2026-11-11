@@ -3,7 +3,8 @@
 v2 is a hand port of Super Mario Sunshine's code to TypeScript, checked function by function against the decomp and the DOL.
 v3 instead runs the game's machine code from the user's own `main.dol` in a PowerPC (Gekko) interpreter, so the game logic is bit-exact by construction.
 The site still hosts no game data: the DOL and the disc's files come from the user's disc in their browser, as the stage files already do.
-v3 only reads the newest trace format (the user, 2026-11-09).
+v3 reads the traces that have a stage-start record: container 3, stage-start schema 1 to 3 (2026-11-11; it was the newest only until then).
+The viewer is to support every regional version, and a recording must still show as it was recorded on another version's disc (the user, 2026-11-11): see "The 35 other recordings, and the regions".
 v2 is no longer developed (the user, 2026-11-09).
 
 ## How it works
@@ -68,7 +69,7 @@ Taken from the recording, because the game itself can't know them:
 
 A recording counts as in step while every `rand()` call (caller and seed), every frame's seed and director state, Mario's and the camera's records at every movement tick, every recorded actor's sample, FLUDD, Yoshi and FLUDD's water requests are bit-identical with it.
 
-**The whole batch** (the 126 recordings of the three archives that are from the recorder v3 reads; 35 more are from older recorders): all 126 replay to their end with nothing off: 207,111 of 207,111 frames and 709,806 of 709,806 movement ticks in step (2026-11-11).
+**The whole batch** (the 126 recordings of the three archives with the newest stage-start record; of the 35 others two replay to their ends as well, both made in Dolphin, and 33 are from the PAL game: see below): all 126 replay to their end with nothing off: 207,111 of 207,111 frames and 709,806 of 709,806 movement ticks in step (2026-11-11).
 On 2026-11-10 it was 93 of 124 recordings and 175,873 of 205,745 frames.
 `tests/survey.mjs` runs it here (two at a time, about two hours); `tests/batch.ts` runs it on all of a computer's cores from the disc image and a folder of traces (`tools/batch/run-batch.bat` on Windows).
 
@@ -87,6 +88,32 @@ What ruled the goop out: every goop pass of the recording up to there (2,229 fra
 In Manta Storm the goop's stamp queues (255 stamps of each kind a frame) overflow: 13,670 goop stamps and 2,245 cleaning stamps are dropped in the game itself.
 
 What still stops a recording: nothing in this batch.
+
+## The 35 other recordings, and the regions (2026-11-11)
+
+All 35 are in the first archive (`a`). Why v3 didn't read them, by what the file holds (`/tmp/claude-0/s/census.ts` printed it: container, capabilities, record kinds, the stage-start record's size and schema):
+
+| Recordings | Game | Container, capabilities | Stage start | What is missing |
+|---|---|---|---|---|
+| 3 (`022C6BE9_*`) | PAL | 1, 0x4FF | none | the stage start, every `rand` call, sounds, particles, water requests, the frame's pad, the pad mirrors |
+| 4 (`4569B2E9_*`) | PAL | 2, 0xFFFF | none | the stage start, the frame's pad, the pad mirrors, the director's state |
+| 10 (`A4362729_*`) | PAL | 3, 0xFFFF | none | the same |
+| 1 (`22ADE86D_18928C07`) | PAL | 3, 0x3FFFFF | none | everything: a header and no records |
+| 2 (`12345678_000004D3`, `_D4`) | JP | 3, 0x3FFFFF | schema 1 (960 bytes) | the NPC phase, the GPU reads (no kind-15 records) |
+| 11 | PAL | 3, 0x3FFFFF (7) or 0x7FFFFF (4) | schema 1 | the same |
+| 4 | PAL | 3, 0xFFFFFF | schema 2 (964 bytes) | the GPU reads |
+
+- **No stage-start record (17) or nothing at all (1).** These begin at a frame after the stage has loaded: the flag manager before the load, the seed the load started from, the loading frames and the heap's size are not in them. The replay starts a stage from exactly those, so it has nothing to start from. Moonshine's own replay refuses them as well (`hasPreStageEvidence` in its `ghost_trace_decode.cpp` wants the stage start, the frame's pad, the pads and the `rand` calls).
+- **Stage-start schema 1 and 2 (17).** The record is the same 16 words and flag image; schema 2 adds the NPC phase, schema 3 which GPU results are recorded (`observations`). Moonshine's own decoder reads all three, and so does `game/trace.ts` now:
+  - without recorded GPU reads the game's own read stands: the camera and the silhouette read Mario's flag, whose occlusion bit the replay sets from every tick's Mario record anyway, and the bath water's height comes from the depth map `ppc/gx.ts` draws;
+  - without the NPC phase (`TraceStage.npcPhase` is `NO_NPC_PHASE`) the first stage starts with the game's own (the first NPC zeroes it); `ReplayOptions.npcPhase` gives another. No recording has needed one yet.
+- **33 of the 35 are from the PAL game**, and v3 is set up for JP 1.0 only (`JP10` in `game/replay.ts`, `game/syms_jp10.ts`, Moonshine's patch sites in `game/moonshine.ts`). The user's PAL image is on the PC (`Games\SMS\PAL (GMSP01).iso`, with JP 1.1, NA, KR and 3DAS beside it). This is the work now.
+
+**The two JP ones were made in Dolphin**, and they replay to their ends: `a/12345678_000004D3` (Sirena Beach, four stages: 1,840 frames, 6,840 ticks, 1,811,605 `rand` calls, 227,845 actor samples, 501 water requests) and `a/12345678_000004D4` (Noki Bay to Eely-Mouth: 2,939 frames, 11,563 ticks, 3,547,716 `rand` calls, 496,248 actor samples, 4,406 water requests), nothing off in either.
+What shows it: the time base ticks exactly 675,675 a video field in them (a GameCube's clock, with no jitter; the 126 others tick 1,013,505 to 1,013,525, a Wii's), the boot nonce is 0x12345678, and with the console's arithmetic they part after 610 ticks and after 4, in an ulp of the second number of a pair: the rows of Mario's matrices that `MsVECNormalize` made, an actor's position.
+`Cpu.laneRounds` (`ReplayOptions.dolphin`) is Dolphin's rule for `ps_muls0` and `ps_madds0` (the second lane's multiplier rounded to 25 bits where the console cuts it); with it both are bit-identical to their ends.
+A driver tries it when a replay parts in a number the game computed (`partedInArithmetic`: the first issue is of kind mario, camera, fludd, yoshi, actor or water) and keeps it if the replay then follows further; the report says so (`VerifyReport.dolphin`).
+So the rule found from the Wii recordings (below) is confirmed from the other side, and a recording's machine shows in its arithmetic: a console recording breaks under Dolphin's rule, a Dolphin recording under the console's.
 The last three were the bath water's height in traces older than its recording (Bowser's fight, `a/2A1D8909_80000028`, stopped at frame 34: the game reads the height from a depth map the GPU draws, and `ppc/gx.ts` now makes the console's depths, "Depth" below) and what happens between two stages (below).
 The goop no longer stops anything: with the GPU's arithmetic measured on a Wii ("The goop: what the GPU does" below) every recording with goop replays through it.
 
@@ -94,7 +121,7 @@ What the traces taught (each is a rule the replay breaks without):
 - **the console's leftovers are an earlier attempt's values.** A runner plays a stage again and again; each attempt builds the stage heap with the same layout, so an object lands where its predecessor was, and a field its constructor doesn't write still holds what the predecessor left: a Goomba's look-around timer goes on from the last attempt's (391, 455, 252), the cannon's aim point is the last attempt's. So unset memory is neither zero nor random on the console, and what it was shows only in what the recorded objects then do;
 - **a frame is two video fields.** The SDK sets two display interrupts a frame, at lines 1 and 263, a field apart. `ppc/hw.ts` raised both at the same field's start, so the game saw one retrace every two fields and each of its frames (it waits for two retraces) took four: the clock ran at twice the frames' pace. A 60-second red-coin timer ran out after 30 seconds of play, in a recording that takes 46 (`a/41726535_80000013`). Found through the timer's script calling `startMiss`;
 - a single multiply's frC keeps 25 bits, rounded (Dolphin's rule): without it Bianco Hills 1 breaks at tick 253;
-- **in `ps_muls0` and `ps_madds0` the second lane's multiplier (frC's first lane) is cut to 25 bits, not rounded**: Dolphin rounds it. With Dolphin's rule the replay breaks at tick 598 (one ulp in a row of Mario's head matrix, from `MsVECNormalize`); with a 24-bit multiplier, at tick 592. See `trunc25` in `ppc/fpu.ts`. The traces are from a Wii (Moonshine's recorder exists only there), so Dolphin is not a bit-exact reference for them;
+- **in `ps_muls0` and `ps_madds0` the second lane's multiplier (frC's first lane) is cut to 25 bits, not rounded**: Dolphin rounds it. With Dolphin's rule the replay breaks at tick 598 (one ulp in a row of Mario's head matrix, from `MsVECNormalize`); with a 24-bit multiplier, at tick 592. See `trunc25` in `ppc/fpu.ts`. The traces are from a Wii, so Dolphin is not a bit-exact reference for them; the two recordings made in Dolphin break the other way round ("The 35 other recordings" above);
 - the NPC pollution phase is a function-local static with a guard byte after it: on a freshly booted machine the first NPC zeroes the phase unless the guard is set too;
 - `CLBPalFrame(30)` is 15 on this console (the phase wraps there).
 

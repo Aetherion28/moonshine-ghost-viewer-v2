@@ -3,7 +3,7 @@
 // stage heap's size differs, and again with Shiny Shines when the heap is laid out differently.
 // Used by the browser's worker (web/worker.ts) and by the Node check of a disc (tests/verify.ts).
 import { readTrace, type Trace } from '../game/trace.ts';
-import { nextScriptLocks, followsFurther, Replay, JP10, type Issue } from '../game/replay.ts';
+import { nextScriptLocks, followsFurther, partedInArithmetic, Replay, JP10, type Issue } from '../game/replay.ts';
 import { symJP10 } from '../game/syms_jp10.ts';
 import type { OpenedDisc } from './discs.ts';
 
@@ -31,6 +31,8 @@ export interface VerifyReport {
     /** Moonshine settings on in the recording that v3 doesn't reproduce */
     unsupported: string[];
     shinyShines: boolean; fstPad: number; disc: string;
+    /** the recording follows Dolphin's arithmetic (it was made in the emulator, not on a console) */
+    dolphin: boolean;
     instructions: number; seconds: number;
     /** the replay's last log lines */
     log: string[];
@@ -46,7 +48,7 @@ function emptyReport(T: Trace | null, result: VerifyReport['result'], summary: s
         result, inStep: false, summary, stageName: '', area: w >>> 24, episode: (w >>> 16) & 0xFF,
         frames: 0, totalFrames: T ? T.frames.length : 0, ticks: 0, totalTicks: T ? T.ticks.length : 0,
         marioChecked: 0, calls: 0, literals: 0, shimCalls: 0, padCorrections: 0, issues: [], unsupported: [],
-        shinyShines: false, fstPad: 0, disc: '', instructions: 0, seconds: (performance.now() - t0) / 1000, log: [],
+        shinyShines: false, dolphin: false, fstPad: 0, disc: '', instructions: 0, seconds: (performance.now() - t0) / 1000, log: [],
     };
 }
 
@@ -82,8 +84,9 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
 
         const log: string[] = [];
         const tried = new Set<string>();
+        let dolphin = false;
         const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = [], whole = false, selectHold = 0) => new Replay(D.dol, D.make(), T!, JP10, symJP10, {
-            log: (s) => { log.push(s); if (log.length > 40) log.shift(); }, fstPad, shinyShines, scriptsLocked, selectHold, tried: whole ? undefined : tried,
+            log: (s) => { log.push(s); if (log.length > 40) log.shift(); }, fstPad, shinyShines, scriptsLocked, selectHold, dolphin, tried: whole ? undefined : tried,
         });
         let R = make(0), attempt = 1, shiny = false;
         // one attempt: slices of the machine's time, with a breath between them for messages (cancel)
@@ -108,6 +111,13 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         if (res === 'done' && R.layoutDelta) {
             // the heap's layout: Moonshine's Shiny Shines isn't recorded; see whether it explains the recording's
             attempt = 3; shiny = true; R = make(R.fstPadUsed, true); res = await go();
+        }
+        if (res === 'done' && partedInArithmetic(R)) {
+            // a number differs, not what the game did: the recording may be Dolphin's (one float rule differs from the console's)
+            const R1 = R; attempt++; dolphin = true; R = make(R1.fstPadUsed, shiny, R1.scriptsLocked);
+            const res2 = await go();
+            if (res2 !== 'done') res = res2;
+            else if (!followsFurther(R, R1)) { R = R1; dolphin = false; }
         }
         // an event script's lock word is the console's heap garbage: where it decided something before the replay parted, try it the other way
         for (let locks; res === 'done' && (locks = nextScriptLocks(R, tried));) {
@@ -136,6 +146,7 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         else if (!n && R.frames >= T.frames.length) summary = `In step to the end: the game's own code reproduced all ${R.frames} frames and ${R.ticks} movement ticks of ${stage} (${R.calls} random-number calls and ${R.marioChecked} records of Mario bit for bit).`;
         else if (!n) summary = `In step for ${sofar} of ${stage}, where the replay ended${log.length ? ': ' + log[log.length - 1] : ''}.`;
         else summary = `In step for ${sofar} of ${stage}, then the game's code and the recording part (frame ${first!.frame}, tick ${first!.tick}): ${first!.text.split('\n')[0]}`;
+        if (R.dolphin) summary += ' The recording follows Dolphin\'s arithmetic, not the console\'s (one multiply rounds differently in the emulator): it was made in Dolphin.';
         if (shiny) summary += ' Shiny Shines was taken as on (the recording doesn\'t say; the heap\'s layout does).';
         const scripts = R.scriptsLocked.filter((k) => k.endsWith('.sb')), others = R.scriptsLocked.length - scripts.length;
         if (scripts.length) summary += ` The event script ${scripts.join(', ')} was taken as starting locked (its lock word is leftover memory the recording doesn't hold; what the script did shows it).`;
@@ -146,7 +157,7 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
             result: res, inStep: res === 'done' && !n && R.frames >= T.frames.length, summary, stageName: R.stageName, area: w >>> 24, episode: (w >>> 16) & 0xFF,
             frames: R.frames, totalFrames: T.frames.length, ticks: R.ticks, totalTicks: T.ticks.length,
             marioChecked: R.marioChecked, calls: R.calls, literals: R.literals, shimCalls: R.shimCalls, padCorrections: R.padCorrections,
-            issues: R.issues, unsupported: R.unsupported, shinyShines: shiny, fstPad: R.fstPadUsed, disc: D.kind,
+            issues: R.issues, unsupported: R.unsupported, shinyShines: shiny, dolphin: R.dolphin, fstPad: R.fstPadUsed, disc: D.kind,
             instructions: Math.round(R.m.cpu.count / 1e6), seconds: 0, log,
         });
     } catch (e) {

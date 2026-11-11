@@ -1,4 +1,4 @@
-// v3: a trace (.msgt, the newest format only: container 3, stage-start schema 3) as the ordered list of
+// v3: a trace (.msgt: container 3 with a stage-start record, schema 1 to 3) as the ordered list of
 // events a replay follows. Moonshine writes its records in the order things happen in the game, so the
 // order here is the order the game must reproduce:
 //   STAGE   as TMarDirector::setup is about to be called (the flag manager's image, the RNG seed, ...)
@@ -22,6 +22,8 @@ export const EV_NAMES = ['?', 'stage', 'frame', 'pad', 'tick', 'rand', 'literal'
 /** offsets in the 300-byte controller observation */
 export const IN = { cue: 0, flags: 4, raw: 8, valid: 20, pad: 24, work: 264, size: 300 };
 export const MARIO_BYTES = 0x574, CAMERA_BYTES = 0x350;
+/** `TraceStage.npcPhase` of a recording that doesn't have it (stage-start schema 1) */
+export const NO_NPC_PHASE = 0xFFFFFFFF;
 
 export interface TraceStage {
     ev: number;
@@ -30,6 +32,7 @@ export interface TraceStage {
     words: Uint32Array;
     /** the TFlagManager object's 0x380 bytes */
     flags: Uint8Array;
+    /** TBaseNPC::initSinkNpc_'s counter (NO_NPC_PHASE: not recorded); the GPU results recorded as literals: bit 0 occlusion, bit 2 the bath water's height */
     npcPhase: number; observations: number;
     /** Moonshine's settings in effect (the session record before it) */
     session: Uint8Array | null;
@@ -168,10 +171,12 @@ export function readTrace(buf: ArrayBuffer): Trace {
                 if (frames.length && frames[frames.length - 1].frame === r.frame) { frames[frames.length - 1].session = session; sessionNew = false; }
                 break;
             case K.STAGE_START: {
-                if (r.body.length !== 968 || bv.getUint32(0) !== 3) throw new TraceFormatError('this trace was recorded by an older Moonshine: v3 needs stage-start schema 3');
+                // (schema 1: 960 bytes; schema 2 adds the NPC phase; schema 3 adds which GPU results are recorded)
+                const schema = bv.getUint32(0);
+                if (!(schema >= 1 && schema <= 3) || r.body.length !== 956 + 4 * schema || bv.getUint32(32) !== 896) throw new TraceFormatError(`stage-start schema ${schema} (${r.body.length} bytes) isn't one v3 knows`);
                 const words = new Uint32Array(16); for (let i = 0; i < 16; i++) words[i] = bv.getUint32(i * 4);
                 if (!(words[1] & 1)) throw new TraceFormatError('the trace has no flag image at its stage start');
-                const st: TraceStage = { ev: 0, words, flags: r.body.slice(64, 960), npcPhase: bv.getUint32(960), observations: bv.getUint32(964), session };
+                const st: TraceStage = { ev: 0, words, flags: r.body.slice(64, 960), npcPhase: schema >= 2 ? bv.getUint32(960) : NO_NPC_PHASE, observations: schema >= 3 ? bv.getUint32(964) : 0, session };
                 st.ev = push(Ev.STAGE, stages.length); stages.push(st);
                 break;
             }

@@ -151,7 +151,7 @@ export function blocksModule(blocks: BlockCode[]): Uint8Array {
 let MODULE_HEAD: Uint8Array | null = null;
 const uleb = (v: number) => new Asm().u(v).b;
 
-export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => boolean): BlockCode | null {
+export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => boolean, laneRounds = false): BlockCode | null {
     pc0 >>>= 0;
     // ---- which instructions: to the first unconditional branch (or a hook, or the length limit)
     const words: number[] = [], next: number[] = [];
@@ -578,7 +578,7 @@ export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => 
                 case 21: if (xo !== 21) break; a.kf(ps0(ra)).kf(ps0(rb)).op(FADD).set(FX); a.kf(ps1(ra)).kf(ps1(rb)).op(FADD).set(FY); return lanes(ra, rb, -1, ra | 32, rb | 32, -1);
                 case 20: if (xo !== 20) break; a.kf(ps0(ra)).kf(ps0(rb)).op(FSUB).set(FX); a.kf(ps1(ra)).kf(ps1(rb)).op(FSUB).set(FY); return lanes(ra, rb, -1, ra | 32, rb | 32, -1);
                 case 25: a.kf(ps0(ra)); mul25(ps0(rc)); a.op(FMUL).set(FX); a.kf(ps1(ra)); mul25(ps1(rc)); a.op(FMUL).set(FY); return lanes(ra, -1, rc, ra | 32, -1, rc | 32);
-                case 12: a.kf(ps0(ra)); mul25(ps0(rc)); a.op(FMUL).set(FX); a.kf(ps1(ra)); mul25(ps0(rc), true); a.op(FMUL).set(FY); return lanes(ra, -1, rc, ra | 32, -1, rc);   // ps_muls0
+                case 12: a.kf(ps0(ra)); mul25(ps0(rc)); a.op(FMUL).set(FX); a.kf(ps1(ra)); mul25(ps0(rc), !laneRounds); a.op(FMUL).set(FY); return lanes(ra, -1, rc, ra | 32, -1, rc);   // ps_muls0
                 case 13: a.kf(ps0(ra)); mul25(ps1(rc)); a.op(FMUL).set(FX); a.kf(ps1(ra)); mul25(ps1(rc)); a.op(FMUL).set(FY); return lanes(ra, -1, rc | 32, ra | 32, -1, rc | 32);   // ps_muls1
                 case 10: a.kf(ps0(ra)).kf(ps1(rb)).op(FADD).set(FX); a.kf(ps1(rc)).set(FY); return lanes(ra, rb | 32, -1, rc | 32, -1, -1);   // ps_sum0
                 case 11: a.kf(ps0(ra)).kf(ps1(rb)).op(FADD).set(FY); a.kf(ps0(rc)).set(FX); resL(d, 1, FY, ra, rb | 32, -1); resL(d, 0, FX, rc, -1, -1); return;   // ps_sum1

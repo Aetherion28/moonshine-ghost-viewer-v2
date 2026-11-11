@@ -3,7 +3,7 @@
 // FSTPAD=n the file table's padding if known, WALL=s a time limit, LOCKED=a.sb,b.sb event scripts that start locked,
 import { readFileSync } from 'node:fs';
 import { readTrace } from '../game/trace.ts';
-import { Replay, JP10, nextScriptLocks, followsFurther } from '../game/replay.ts';
+import { Replay, JP10, nextScriptLocks, followsFurther, partedInArithmetic } from '../game/replay.ts';
 import { symbols } from './syms.ts';
 import { jpDisc, JP_DOL, loadBytes } from './jpdisc.ts';
 import { threads } from './debug.ts';
@@ -16,9 +16,10 @@ if (T.gameId !== 'GMSJ01' || T.discRevision !== 0) { console.log(`the trace is f
 const who = (text: string) => text.replace(/\b(80[0-9a-f]{6})\b/g, (m) => { const w = S.who(parseInt(m, 16)); return w === '?' ? m : `${m} ${w}`; });
 const stopOn = process.env.ALL ? ['heap', 'layout'] : undefined;
 const tried = new Set<string>();
+let dolphin = !!process.env.DOLPHIN;
 const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = [], whole = false, selectHold = 0) => tune(new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), {
     log: (s) => console.log(who(s)), report: process.env.QUIET ? undefined : (t) => process.stdout.write('[game] ' + t),
-    stopOn, maxIssues: process.env.ALL ? 200 : 50, fstPad, shinyShines, scriptsLocked, selectHold, tried: whole || process.env.WHOLE ? undefined : tried,
+    stopOn, maxIssues: process.env.ALL ? 200 : 50, fstPad, shinyShines, scriptsLocked, selectHold, dolphin, tried: whole || process.env.WHOLE ? undefined : tried,
 }));
 const tune = (r: Replay) => { if (process.env.JIT === '0') r.m.cpu.jit = false; if (process.env.JITVERIFY) r.m.cpu.jitVerify = true; return r; };
 const budget = +(process.argv[3] || 4000) * 1e6;
@@ -43,6 +44,12 @@ try {
         if (R2.layoutDelta) console.log('    (still laid out differently)');
         res = res2; shiny = true;
     }
+    if (res === 'done' && partedInArithmetic(R) && !process.env.ALL) {
+        // a number differs, not what the game did: the recording may be Dolphin's (one float rule differs from the console's)
+        console.log("... booting again with Dolphin's arithmetic");
+        const R1 = R; dolphin = true; R = make(R1.fstPadUsed, shiny, R1.scriptsLocked); const res2 = go();
+        if (res2 === 'done' && followsFurther(R, R1)) res = res2; else { console.log('    (no further: kept as it was)'); R = R1; dolphin = false; }
+    }
     // an event script's lock word is the console's heap garbage: where it decided something before the replay parted, try it the other way
     for (let locks; res === 'done' && (locks = nextScriptLocks(R, tried));) {
         console.log(`... booting again with the unset word of [${locks.join(', ')}] not 0`);
@@ -63,7 +70,7 @@ try {
 } catch (e) { err = e; }
 const dt = (performance.now() - t0) / 1000, cpu = R.m.cpu;
 if (err) { console.log('STOP', String(err), (err as Error).stack?.split('\n').slice(1, 5).join(' | ')); console.log('pc', cpu.pc.toString(16), S.who(cpu.pc), 'lr', cpu.lr.toString(16), S.who(cpu.lr)); if (process.env.THREADS) console.log(threads(R.m, S)); }
-console.log(`scene ${(T.stages[0].words[4] >>> 24)},${(T.stages[0].words[4] >>> 16) & 0xFF} ${R.stageName}${shiny ? ' (Shiny Shines)' : ''}${R.unsupported.length ? ' unsupported: ' + R.unsupported.join(', ') : ''}`);
+console.log(`scene ${(T.stages[0].words[4] >>> 24)},${(T.stages[0].words[4] >>> 16) & 0xFF} ${R.stageName}${shiny ? ' (Shiny Shines)' : ''}${R.dolphin ? " (Dolphin's arithmetic)" : ''}${R.unsupported.length ? ' unsupported: ' + R.unsupported.join(', ') : ''}`);
 console.log(`${res}: ${R.frames} of ${T.frames.length} frames, ${R.ticks} of ${T.ticks.length} movement ticks (${R.marioChecked} Mario records compared), ${R.calls} rand calls and ${R.literals} GPU reads in step, ${R.actorsChecked} actor samples (${R.actorWordsOff} word(s) off) and ${R.waters} water requests (${R.watersOff} off) compared${R.shimCalls ? ` (${R.shimCalls} through Moonshine's shims)` : ''}; ${R.padCorrections} pad correction(s)${R.flagBytesTaken ? `, ${R.flagBytesTaken} flag byte(s) taken from the recording between stages` : ''}${R.bathDrawn ? `, ${R.bathDrawn} bath water height map(s) drawn by the GPU model` : ''}${R.leaveHeldFrames ? `, ${R.leaveHeldFrames} frame(s) between stages waited out` : ''}; ${R.issues.length} issue(s)`);
 console.log(`${(cpu.count / 1e6).toFixed(0)} M instructions (${((cpu.count - R.m.idleSkipped) / 1e6).toFixed(0)} M run) in ${dt.toFixed(1)} s; stage load ${((R.countAtPlay - R.countAtStage) / 486e6).toFixed(2)} s of game time, ${R.extraLoadFrames} extra loading frame(s)`);
 process.exit(R.issues.length ? 1 : 0);

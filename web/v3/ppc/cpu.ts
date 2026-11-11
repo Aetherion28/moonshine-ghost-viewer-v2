@@ -66,6 +66,11 @@ export class Cpu {
     private hookMap = new Uint16Array(MEM1_SIZE >>> 2);
     private hookFns: (Hook | null)[] = [null];
 
+    /**
+     * ps_muls0's and ps_madds0's second lane takes frC's first lane rounded to 25 bits, as Dolphin computes it, instead
+     * of cut there, as the console does (see `trunc25` in fpu.ts): for a recording made in Dolphin. Set before anything runs.
+     */
+    laneRounds = false;
     /** compile hot straight runs to WebAssembly (jit.ts); off: every instruction through exec() */
     jit = true;
     /** check each block against memory as it is entered (a test for code changed without icbi) */
@@ -152,7 +157,7 @@ export class Cpu {
         while (queue.length && list.length < 48) {
             const p = queue.shift()!, o = (p ^ 0x80000000) >>> 0;
             if (o >= CODE_SPAN || (p & 3) || bmap[o >>> 2] > 0 || bmap[o >>> 2] === -0x7FFFFFFF || hooked(p)) continue;
-            const b = compileBlock(dv, p, hooked);
+            const b = compileBlock(dv, p, hooked, this.laneRounds);
             if (!b) { bmap[o >>> 2] = -0x7FFFFFFF; continue; }
             list.push(b);
             for (const q of b.next) if (q >= lo && q < hi && !seen.has(q)) { seen.add(q); queue.push(q); }
@@ -693,13 +698,13 @@ export class Cpu {
                 case 20: this.resL(d, 0, a0 - b0, a, b, -1); this.resL(d, 1, a1 - b1, A1, B1, -1); break;   // ps_sub
                 case 18: this.resL(d, 0, a0 / b0, a, b, -1); this.resL(d, 1, a1 / b1, A1, B1, -1); break;   // ps_div
                 case 25: this.resL(d, 0, a0 * force25(c0), a, -1, c); this.resL(d, 1, a1 * force25(c1), A1, -1, C1); break;   // ps_mul
-                case 12: this.resL(d, 0, a0 * force25(c0), a, -1, c); this.resL(d, 1, a1 * trunc25(c0), A1, -1, c); break;   // ps_muls0
+                case 12: this.resL(d, 0, a0 * force25(c0), a, -1, c); this.resL(d, 1, a1 * (this.laneRounds ? force25(c0) : trunc25(c0)), A1, -1, c); break;   // ps_muls0
                 case 13: this.resL(d, 0, a0 * force25(c1), a, -1, C1); this.resL(d, 1, a1 * force25(c1), A1, -1, C1); break;   // ps_muls1
                 case 29: { const x = this.madds(a0, c0, b0), y = this.madds(a1, c1, b1); this.resL(d, 0, x, a, b, c); this.resL(d, 1, y, A1, B1, C1); break; }   // ps_madd
                 case 28: { const x = this.madds(a0, c0, -b0), y = this.madds(a1, c1, -b1); this.resL(d, 0, x, a, b, c); this.resL(d, 1, y, A1, B1, C1); break; }   // ps_msub
                 case 31: { const x = this.madds(a0, c0, b0), y = this.madds(a1, c1, b1); this.resL(d, 0, x === x ? -x : x, a, b, c); this.resL(d, 1, y === y ? -y : y, A1, B1, C1); break; }   // ps_nmadd
                 case 30: { const x = this.madds(a0, c0, -b0), y = this.madds(a1, c1, -b1); this.resL(d, 0, x === x ? -x : x, a, b, c); this.resL(d, 1, y === y ? -y : y, A1, B1, C1); break; }   // ps_nmsub
-                case 14: { const x = this.madds(a0, c0, b0), y = this.madds(a1, trunc25(c0), b1); this.resL(d, 0, x, a, b, c); this.resL(d, 1, y, A1, B1, c); break; }   // ps_madds0
+                case 14: { const x = this.madds(a0, c0, b0), y = this.madds(a1, this.laneRounds ? c0 : trunc25(c0), b1); this.resL(d, 0, x, a, b, c); this.resL(d, 1, y, A1, B1, c); break; }   // ps_madds0
                 case 15: { const x = this.madds(a0, c1, b0), y = this.madds(a1, c1, b1); this.resL(d, 0, x, a, b, C1); this.resL(d, 1, y, A1, B1, C1); break; }   // ps_madds1
                 case 10: this.resL(d, 0, a0 + b1, a, B1, -1); this.resL(d, 1, c1, C1, -1, -1); break;   // ps_sum0
                 case 11: this.resL(d, 1, a0 + b1, a, B1, -1); this.resL(d, 0, c0, c, -1, -1); break;   // ps_sum1
