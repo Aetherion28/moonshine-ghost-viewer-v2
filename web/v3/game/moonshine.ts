@@ -375,6 +375,8 @@ export class Moonshine {
      */
     afterDirect(c: { gpr: Uint32Array; lr: number; pc: number }, back: number): boolean {
         if (this.regrabbed) { this.regrabbed = false; return false; }
+        // (no binds while the practice session owns the gameplay input: PracticeSession::ownsGameplayInput)
+        if (this.practiceFrozen) return false;
         const mem = this.m.mem, d = mem.r32(this.A.gpMarDirector);
         if (!this.actionCave || !d || !mem.r8(d + DIR_SETUP_DONE) || mem.r8(d + DIR_STATE) < STATE_GAME_STARTING) return false;
         const mario = mem.r32(this.A.gpMarioAddress);

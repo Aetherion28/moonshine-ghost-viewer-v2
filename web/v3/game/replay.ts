@@ -190,6 +190,7 @@ export class Replay {
         cpu.hook(A.directRet, (c) => {
             this.afterDirect(c);
             const sent = this.moonshine.afterDirect(c, A.directRet);
+            if (!sent) this.moonshine.practiceFrozen = false;
             if (sent && this.moonshine.regrabs === 1) this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: Moonshine's Regrab Last Held Object (the pad holds X and D-pad up): Mario's status set to TAKE and the object he held last sent the take message`);
             return sent;
         });
@@ -527,7 +528,6 @@ export class Replay {
         const mem = this.m.mem;
         if (this.suppressed) { PAD_SUPPRESS.forEach((o, k) => mem.w32(this.suppressedPad + o, this.suppressed![k])); this.suppressed = null; }
         if (this.frozenState >= 0) { mem.w8(mem.r32(this.A.gpMarDirector) + DIR.state, this.frozenState); this.frozenState = -1; c.gpr[3] = 0; }
-        this.moonshine.practiceFrozen = false;
     }
 
     // ---------------------------------------------------------------- movement ticks
