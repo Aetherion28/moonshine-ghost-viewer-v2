@@ -17,7 +17,7 @@
 // `unsupported()` names the ones a session has on.
 import type { Machine } from '../ppc/machine.js';
 
-export type Region = 0 | 1 | 2;   // JP, US, PAL
+export type Region = 0 | 1 | 2 | -1;   // JP 1.0, US, PAL; -1: a version Moonshine has no build for
 /** Moonshine's simulation settings: the session record's byte offsets (GhostSimulation::Field) */
 export const F = {
     FAST_TEXT: 0, FLUDD_SECRETS: 1, AREA_LOCK: 2, INFINITE_LIVES: 3, DISABLE_BLUE_COIN: 4, FMV_SKIPS: 5, UNLOCK_YOSHI: 6, UNLOCK_NOZZLES: 7,

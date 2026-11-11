@@ -50,7 +50,8 @@ export class Machine {
      * Loads the DOL and sets memory and registers up as the console's boot ROM and the disc's apploader leave them.
      * The file system table sits at the top of memory and the arena ends below it.
      */
-    load(dol: Uint8Array, disc: VirtualDisc, fstPad = 0) {
+    /** `tv`: the console's TV format (VIGetTvFormat: 0 NTSC, 1 PAL, 5 PAL at 60 Hz); the disc's own when left out */
+    load(dol: Uint8Array, disc: VirtualDisc, fstPad = 0, tv = disc.pal ? 1 : 0) {
         const { entry } = loadDol(this.mem, dol);
         const m = this.mem;
         this.hw.disc = disc;
@@ -66,7 +67,7 @@ export class Machine {
         m.ram.set(fst, fstAddr & 0x01FFFFFF);
         m.w32(0x80000030, 0); m.w32(0x80000034, fstAddr);
         m.w32(0x80000038, fstAddr); m.w32(0x8000003C, fst.length);
-        m.w32(0x800000CC, disc.pal ? 1 : 0);   // the TV format the boot ROM set
+        m.w32(0x800000CC, tv);   // the TV format the boot ROM set
         m.w32(0x800000D0, 0x01000000);   // ARAM size
         m.w32(0x800000EC, 0x81800000); m.w32(0x800000F0, 0x01800000);   // debug monitor (none), simulated memory size
         m.w32(0x800000F4, 0);   // no BI2
@@ -79,8 +80,8 @@ export class Machine {
         c.gpr[1] = 0x816FFFF0;
         c.pc = entry; c.lr = 0;
         this.entry = entry;
-        this.hw.field = disc.pal ? 486_000_000 / 50 : Math.round(486_000_000 / 59.94);
-        this.hw.lines = disc.pal ? 625 : 525;
+        this.hw.field = tv === 1 ? 486_000_000 / 50 : Math.round(486_000_000 / 59.94);
+        this.hw.lines = tv === 1 ? 625 : 525;
         const field = () => { this.fields++; this.hw.vsync(); this.after(this.hw.field, field); };
         this.after(this.hw.field, field);
     }

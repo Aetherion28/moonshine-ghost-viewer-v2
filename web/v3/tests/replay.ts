@@ -3,21 +3,23 @@
 // FSTPAD=n the file table's padding if known, WALL=s a time limit, LOCKED=a.sb,b.sb event scripts that start locked,
 import { readFileSync } from 'node:fs';
 import { readTrace } from '../game/trace.ts';
-import { Replay, JP10, nextScriptLocks, followsFurther, partedInArithmetic } from '../game/replay.ts';
+import { Replay, nextScriptLocks, followsFurther, partedInArithmetic } from '../game/replay.ts';
+import { versionOf } from '../game/versions.ts';
 import { symbols } from './syms.ts';
-import { jpDisc, JP_DOL, loadBytes } from './jpdisc.ts';
+import { discOf, loadBytes } from './jpdisc.ts';
 import { threads } from './debug.ts';
 
-const S = symbols();
 const file = process.argv[2];
 const b = readFileSync(file);
 const T = readTrace(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
-if (T.gameId !== 'GMSJ01' || T.discRevision !== 0) { console.log(`the trace is from ${T.gameId} revision ${T.discRevision}: only GMSJ01 revision 0 is set up here`); process.exit(2); }
+const V = versionOf(T.gameId, T.discRevision);
+if (!V) { console.log(`the trace is from ${T.gameId} revision ${T.discRevision}: that version isn't set up here`); process.exit(2); }
+const S = symbols(`${process.env.DECOMP || '/home/claude/sms-ai-decomp/config'}/${V.decomp}/symbols.txt`), D = discOf(V.key);
 const who = (text: string) => text.replace(/\b(80[0-9a-f]{6})\b/g, (m) => { const w = S.who(parseInt(m, 16)); return w === '?' ? m : `${m} ${w}`; });
 const stopOn = process.env.ALL ? ['heap', 'layout'] : undefined;
 const tried = new Set<string>();
 let dolphin = !!process.env.DOLPHIN;
-const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = [], whole = false, selectHold = 0) => tune(new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), {
+const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = [], whole = false, selectHold = 0) => tune(new Replay(loadBytes(D.dol), D.disc(), T, V.addrs, (n) => S.byName.get(n), {
     log: (s) => console.log(who(s)), report: process.env.QUIET ? undefined : (t) => process.stdout.write('[game] ' + t),
     stopOn, maxIssues: process.env.ALL ? 200 : 50, fstPad, shinyShines, scriptsLocked, selectHold, dolphin, tried: whole || process.env.WHOLE ? undefined : tried,
 }));

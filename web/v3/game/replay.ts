@@ -19,7 +19,7 @@ export interface GameAddrs {
     app: number; procLoopHead: number; setupCall: number; directCall: number; directRet: number; setupObjectsCall: number;
     marioPerform: number; randRet: number; seed: number; npcPhase: number; flagMgr: number;
     gpMarDirector: number; gpMarioOriginal: number; gpMarioAddress: number; gpCamera: number; gpPollution: number; setupThread: number;
-    PADRead: number; PADClamp: number; OSGetArenaLo: number; arenaLoVar: number;
+    PADRead: number; PADClamp: number; OSGetArenaLo: number; arenaLoVar: number; VIConfigure: number;
     fbCamera: number; fbSilhouette: number; fbWater: number; fastTextCall: number;
     padStatus: number; padButton: number; padMStick: number; padSStick: number;
     /** after changeState's call to MSound::checkWaveOnAram (the stage's exit waits for it) */
@@ -59,7 +59,7 @@ export const JP10: GameAddrs = {
     app: 0x803E6000, procLoopHead: 0x800FA1CC, setupCall: 0x800F9F70, directCall: 0x800F9B60, directRet: 0x800F9B74, setupObjectsCall: 0x800ECE3C,
     marioPerform: 0x8012C77C, randRet: 0x80085AE4, seed: 0x80408CF0, npcPhase: 0x8040A4A0, flagMgr: 0x8040A290,
     gpMarDirector: 0x8040A2A8, gpMarioOriginal: 0x8040A378, gpMarioAddress: 0x8040A398, gpCamera: 0x8040B370, gpPollution: 0x8040A5A8, setupThread: 0x803F2390,
-    PADRead: 0x8009BF20, PADClamp: 0x8009B1A4, OSGetArenaLo: 0x8008DCBC, arenaLoVar: 0x80408D08,
+    PADRead: 0x8009BF20, PADClamp: 0x8009B1A4, OSGetArenaLo: 0x8008DCBC, arenaLoVar: 0x80408D08, VIConfigure: 0x8009A46C,
     fbCamera: 0x80359CA4, fbSilhouette: 0x800C2D0C, fbWater: 0x801FABF0, fastTextCall: 0x8021530C,
     padStatus: 0x80400D50, padButton: 0x80400D80, padMStick: 0x80400E40, padSStick: 0x80400E80,
     exitWaveRet: 0x800ECAB4,
@@ -195,6 +195,7 @@ export class Replay {
     npcPhaseTaken: number | undefined;
     /** played with Dolphin's float rule (see `ReplayOptions.dolphin`) */
     dolphin = false;
+    private tvForced = false;
     /** how many of the bath water's height maps the GPU model drew */
     bathDrawn = 0;
     private padAdopted = false; private adopted = new Set<string>(); private otherHandle = false;
@@ -215,9 +216,19 @@ export class Replay {
         this.stopOn = new Set(opt.stopOn ?? ['heap', 'layout', 'rand', 'mario', 'camera', 'flow', 'stage', 'unrecorded']); this.maxIssues = opt.maxIssues ?? 50;
         this.fstPadUsed = opt.fstPad ?? 0; this.selectHoldUsed = opt.selectHold ?? 0; this.npcPhaseTaken = opt.npcPhase;
         this.dolphin = cpu.laneRounds = !!opt.dolphin;
-        m.load(dol, disc, this.fstPadUsed);
+        // (the console's TV format is the recording's: a PAL game on an NTSC console runs at NTSC's rate)
+        m.load(dol, disc, this.fstPadUsed, T.stages[0].words[14]);
         const missing = installHle(m, sym, { report: opt.report });
         if (missing.length) this.log('hle: not found: ' + missing.join(', '));
+        // The console's video mode is the recording's (VIGetTvFormat at the stage's start). The PAL game asks for PAL (or
+        // PAL at 60 Hz) whatever the console is; the recordings at hand were made with the mode forced to NTSC (the
+        // loader does that), and the game takes its frame rate from the mode it got (SMSGetRealVSyncTimesPerSec).
+        const tv = T.stages[0].words[14];
+        cpu.hook(A.VIConfigure, (c) => {
+            const mode = m.mem.r32(c.gpr[3]);
+            if (mode >>> 2 !== tv) { m.mem.w32(c.gpr[3], ((tv << 2) | (mode & 3)) >>> 0); if (!this.tvForced) { this.tvForced = true; this.log(`the game asks for TV format ${mode >>> 2}; the recording's console gave it ${tv}`); } }
+            return false;
+        });
         this.moonshine = new Moonshine(m, A.region, A);
         this.moonshine.shinyShines = !!opt.shinyShines;
         this.moonshine.install();
