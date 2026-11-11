@@ -721,7 +721,72 @@ if (mode === 'capture') {
             while (isNaN(hFor(z0)) || isNaN(hFor(z0 + dx)) || isNaN(hFor(z0 + dy))) z0++;
             return [[x, y, z0], [x + w, y, z0 + dx], [x, y + h, z0 + dy]];
         };
-        if (process.env.SLOPES === '2') {
+        if (process.env.SLOPES === '3') {
+            // the weights' steps, read through the depth's slope: right triangles of w x h twelfths with a depth
+            // difference of 2^(N - 7) along one leg, N = 10 + floor(log2(w h)): the slope in units of 2^-15 is then
+            // 256 times the step of the weight along that leg ((the other leg << N) / area on paper). Legs for which
+            // that quotient is just above or below a whole number, areas next to a power of two, and others.
+            const legs = new Map<string, string>();
+            const want = (w: number, h: number, kind: string) => { if (w >= 90 && h >= 90 && w <= 960 && h <= 960 && !legs.has(`${w},${h}`)) legs.set(`${w},${h}`, kind); };
+            const nOf = (w: number, h: number) => 10 + Math.floor(Math.log2(w * h));
+            const fracOf = (w: number, h: number) => { const q = Math.pow(2, nOf(w, h)) / w; return q - Math.floor(q); };   // (2^N h / (w h))
+            for (const [w, h] of [[720, 720], [720, 360], [360, 720], [360, 360], [180, 180], [720, 540], [540, 720], [900, 900], [450, 450], [768, 768], [384, 768], [960, 960], [480, 480], [240, 240], [120, 120], [600, 600], [300, 300], [150, 150], [444, 636], [636, 444], [960, 480], [480, 960]]) want(w, h, 'known');
+            // (the quotient's fraction small, large, or middling: the legs with the smallest of each, at most three heights a width)
+            const all: [number, number, number][] = [];
+            for (let w = 90; w <= 960; w++) for (const h of [w, Math.round(w * 0.71), Math.round(w * 0.5), Math.min(960, Math.round(w * 1.41))]) if (h >= 90 && h <= 960) all.push([w, h, fracOf(w, h)]);
+            const pick = (list: [number, number, number][], n: number, kind: string) => { let k = 0; const seen = new Set<number>(); for (const [w, h] of list) { if (k >= n) break; if (seen.has(w)) continue; seen.add(w); want(w, h, kind); k++; } };
+            pick(all.filter((v) => v[2] > 0 && v[2] < 0.02).sort((p, q) => p[2] - q[2]), 60, 'just over');
+            pick(all.filter((v) => v[2] >= 0.02 && v[2] < 0.06).sort((p, q) => p[2] - q[2]), 40, 'over');
+            pick(all.filter((v) => v[2] >= 0.06 && v[2] < 0.15).sort((p, q) => p[2] - q[2]), 25, 'well over');
+            pick(all.filter((v) => v[2] > 0.985).sort((p, q) => q[2] - p[2]), 20, 'just under');
+            pick(all.filter((v) => v[2] === 0), 12, 'whole');
+            // (areas next to a power of two, from both sides)
+            for (let e = 13; e <= 19; e++) for (const r of [0.97, 0.985, 0.995, 1.004, 1.015]) { const w = Math.round(Math.sqrt(r * Math.pow(2, e))); let h = Math.round(r * Math.pow(2, e) / w); if ((w * h >= Math.pow(2, e)) !== (r > 1)) h += r > 1 ? 1 : -1; want(w, h, 'power of two'); }
+            for (let k = 0; k < 36; k++) want(90 + Math.floor(rnd() * 860), 90 + Math.floor(rnd() * 860), 'any');
+            for (const [key, kind] of legs) {
+                const [w, h] = key.split(',').map(Number), d = Math.pow(2, nOf(w, h) - 7);
+                add(`weight ${kind} ${w}x${h} across ${d}`, tri(right(2, 2, w / 12, h / 12, 9000000, d, 0)));
+                add(`weight ${kind} ${w}x${h} down ${d}`, tri(right(2, 2, w / 12, h / 12, 9000000, 0, d)));
+            }
+        } else if (process.env.SLOPES === '5') {
+            // one area, many legs: triangles of the same base and height sheared by s twelfths, so that the step of one
+            // weight is (s << N) / area with the same area: the shears for which that quotient is just over or just
+            // under a whole number (is the step one lower? how far over may the quotient be?)
+            for (const [bs, h] of [[720, 720], [504, 504], [510, 255], [723, 362], [512, 750], [698, 289], [548, 238], [784, 678], [956, 865], [601, 433], [665, 364], [951, 858], [959, 510]]) {
+                const A = BigInt(bs * h), L = Math.floor(Math.log2(bs * h)), N = 10 + L, cand: [number, number][] = [];
+                for (let sh = 30; sh <= 940; sh++) {
+                    const q = (BigInt(sh) << BigInt(N + 20)) / A, frac = Number(q & 0xFFFFFn) / 1048576;
+                    const over = frac * 32768 / sh, under = (1 - frac) * 32768 / sh;
+                    if (over < 2.2) cand.push([sh, over]); else if (under < 2.2) cand.push([sh, -under]);
+                }
+                cand.sort((p, q) => p[1] - q[1]);
+                const n = Math.min(16, cand.length), d = Math.pow(2, N - 7);
+                for (let k = 0; k < n; k++) {
+                    const [sh, t] = cand[Math.floor(k * (cand.length - 1) / Math.max(1, n - 1))];
+                    let z0 = 9000000; while (isNaN(hFor(z0)) || isNaN(hFor(z0 + d))) z0++;
+                    add(`shear ${bs}x${h} by ${sh} (${t.toFixed(3)}) ${d}`, tri([[2, 2, z0], [2 + bs / 12, 2, z0 + d], [2 + sh / 12, 2 + h / 12, z0]]));
+                }
+            }
+        } else if (process.env.SLOPES === '4') {
+            // the area's reciprocal (job 27: m = floor(2^(L + 25) / area - c), c between 0.0955 and 0.2315): legs whose
+            // weight's step is one lower exactly when c is above the reciprocal's fraction f, for many f in that range
+            const picked: [number, number, number, boolean][] = [];
+            for (let w = 90; w <= 960 && picked.length < 4000; w++) for (let h = 90; h <= 960; h++) {
+                const A = BigInt(w * h), L = Math.floor(Math.log2(w * h)), M = (1n << BigInt(L + 25 + 20)) / A, f = Number(M & 0xFFFFFn) / 1048576;
+                if (f < 0.09 || f > 0.24) continue;
+                for (const down of [false, true]) {
+                    const leg = down ? w : h, q = (BigInt(leg) << BigInt(10 + L + 20)) / A, frac = Number(q & 0xFFFFFn) / 1048576;
+                    // (lowered with the fraction plus one, not with the fraction alone; clear of both edges)
+                    if (frac > leg * (f + 0.02) / 32768 && frac < leg * (f + 0.98) / 32768) picked.push([w, h, f, down]);
+                }
+            }
+            picked.sort((p, q) => p[2] - q[2]);
+            const n = 96;
+            for (let k = 0; k < n; k++) {
+                const [w, h, f, down] = picked[Math.floor(k * (picked.length - 1) / (n - 1))], d = Math.pow(2, 10 + Math.floor(Math.log2(w * h)) - 7);
+                add(`reciprocal ${f.toFixed(5)} ${w}x${h} ${down ? 'down' : 'across'} ${d}`, tri(right(2, 2, w / 12, h / 12, 9000000, down ? 0 : d, down ? d : 0)));
+            }
+        } else if (process.env.SLOPES === '2') {
             // thin triangles, nine a case, with the slope across only: every slope of a run, the same slope at many
             // places, and corners whose depth has a fraction (a viewport of 2^18: depths in 64ths)
             const thin = (x: number, t: number, z0: number, dx: number): Pt[] => right(x, 2 + 9 * t, 64, 8, z0, dx, 0);

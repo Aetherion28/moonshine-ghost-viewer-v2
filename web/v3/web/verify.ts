@@ -140,6 +140,7 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         const scripts = R.scriptsLocked.filter((k) => k.endsWith('.sb')), others = R.scriptsLocked.length - scripts.length;
         if (scripts.length) summary += ` The event script ${scripts.join(', ')} was taken as starting locked (its lock word is leftover memory the recording doesn't hold; what the script did shows it).`;
         if (others) summary += ` ${others} object${others > 1 ? 's were' : ' was'} taken as starting on leftover memory that wasn't zero (what it did shows it).`;
+        if (R.bathDrawn) summary += ` The bath water's height isn't in this recording: it was read from the ${R.bathDrawn} depth maps the GPU model drew.`;
         if (R.unsupported.length) summary += ` Moonshine settings on in this recording that aren't reproduced yet: ${R.unsupported.join(', ')}.`;
         return finish({
             result: res, inStep: res === 'done' && !n && R.frames >= T.frames.length, summary, stageName: R.stageName, area: w >>> 24, episode: (w >>> 16) & 0xFF,

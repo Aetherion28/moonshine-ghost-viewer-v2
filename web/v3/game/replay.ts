@@ -118,7 +118,8 @@ export interface ReplayOptions {
     fstPad?: number;
     /** frames the episode select screen's loading took longer on the console than here (not recorded: see `selectDelta`) */
     selectHold?: number;
-    /** draw the bath water's height map with the GPU model (ppc/gx.ts) */
+    /** draw the bath water's height map with the GPU model (ppc/gx.ts) even where the trace records the height
+     *  (the recorded height is used all the same); a trace without it always has the map drawn */
     drawBath?: boolean;
     /** Moonshine's Shiny Shines setting (not recorded: see `layoutDelta`) */
     shinyShines?: boolean;
@@ -178,12 +179,16 @@ export class Replay {
     /** bytes of the flag manager set to the recording's image at a later stage's start (Moonshine's doing between stages) */
     flagBytesTaken = 0;
     private selectHeld = 0; private betweenSelect = false;
+    /** the last frame was one without a stage director; the director's leave being held (see afterDirect), and for how many frames it was */
+    private lastBetween = false; private leaveHeld = 0; leaveHeldFrames = 0;
     /** instructions at the stage's start and at its first frame after setup */
     countAtStage = 0; countAtPlay = 0;
     private iFlow = 0; private iCall = 0; private lastCall = -1;
     private strict = false;
     private curFrame: TraceFrame | null = null; private curFrameIndex = -1; private curTick = 0; private curTickIndex = -1; private between = 0;
     private observations = 0; private noWater = false;
+    /** how many of the bath water's height maps the GPU model drew */
+    bathDrawn = 0;
     private padAdopted = false; private adopted = new Set<string>(); private otherHandle = false;
     /** the recording's actors as of the current frame (by Moonshine's id), and how the comparison went */
     private actors = new Map<number, { ptr: number; data: Uint8Array; dv: DataView }>();
@@ -374,14 +379,18 @@ export class Replay {
         cpu.hook(A.goopObjDraw[0], () => { m.hw.gx.mark(m.hw.streamPos(), true); return false; });
         for (let a = A.goopObjDraw[0]; a < A.goopObjDraw[0] + A.goopObjDraw[1]; a += 4) if (m.mem.r32(a) === 0x4E800020) cpu.hook(a, () => { m.hw.gx.mark(m.hw.streamPos(), false); return false; });
         // The bath water's height map (TBathWaterMeshRenderer::prerender): the water's balls drawn from above into the
-        // depth buffer, which is copied into a texture the game reads heights from.
-        if (opt.drawBath) cpu.hook(A.bathPrerender, () => { m.hw.gx.zbuf.fill(0xFFFFFF); m.hw.gx.mark(m.hw.streamPos(), true, true); return false; });
+        // depth buffer, which is copied into a texture the game reads heights from. A trace that doesn't record the
+        // height has the map drawn here (ppc/gx.ts makes the console's depths: tools/hwprobe, jobs 22 to 26).
+        cpu.hook(A.bathPrerender, () => {
+            if (opt.drawBath || !(this.observations & 4)) { m.hw.gx.zbuf.fill(0xFFFFFF); m.hw.gx.mark(m.hw.streamPos(), true, true); this.bathDrawn++; }
+            return false;
+        });
         m.hw.gxUnsupported = (what) => this.issue('gpu', `the goop's drawing needs ${what}, which the GPU model here doesn't do`);
         cpu.hook(A.fbCamera, (c) => { const v = this.literal(A.fbCamera + 4); if (v !== null) c.gpr[0] = v; return false; });
         cpu.hook(A.fbSilhouette, (c) => { const v = this.literal(A.fbSilhouette + 4); if (v !== null) c.gpr[0] = v; return false; });
         // (the bath water's height is recorded only by newer Moonshines: observation bit 2)
         cpu.hook(A.fbWater, (c) => {
-            if (!(this.observations & 4)) { if (this.phase === 'stage' && !this.noWater) { this.noWater = true; this.issue('unrecorded', "the game reads the bath water's height from the GPU, and this trace doesn't record it"); } return false; }
+            if (!(this.observations & 4)) { if (this.phase === 'stage' && !this.noWater) { this.noWater = true; this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: the bath water's height isn't in this trace: read from the depth map the GPU model draws`); } return false; }
             const v = this.literal(A.fbWater + 4); if (v !== null) { const f = f32FromBits(v); c.ps0[1] = f; c.ps1[1] = f; } return false;
         });
     }
@@ -559,10 +568,22 @@ export class Replay {
             this.issue('flow', `the game's frame ended ${n} movement tick(s) before the trace's`);
             if (this.phase !== 'stage') return false;
         }
-        if (i >= T.n || T.kind[i] !== Ev.FRAME) { this.log(i >= T.n ? 'the trace ended' : `the trace has ${EV_NAMES[T.kind[i]]} where a frame was expected`); this.stop(); return false; }
+        if (i >= T.n || T.kind[i] !== Ev.FRAME) { this.log(i >= T.n ? 'the trace ended' : `the trace has ${EV_NAMES[T.kind[i]]} where a frame was expected (the game's director: ${hex(mem.r32(mem.r32(A.app + APP.director)))}, after ${this.movieFrame} frame(s) without a stage director)`); this.stop(); return false; }
         const f = T.frames[T.a[i]];
         if (f.state === -1) {
             // a frame of another director (a movie, a menu) between two stages: it gets the recorded pad, nothing is compared
+            if (this.leaveHeld) {
+                // (the director here was done before the console's: see afterDirect. It leaves with the recording's last such frame)
+                this.movieFrame++; this.leaveHeldFrames++;
+                this.curFrame = f; this.curFrameIndex = T.a[i]; this.frames++;
+                this.alignClock(f, T.a[i]);
+                i = this.nextFlowFrom(i + 1);
+                if (i < T.n && T.kind[i] === Ev.PAD) i = this.nextFlowFrom(i + 1);
+                this.iFlow = i;
+                const more = i < T.n && T.kind[i] === Ev.FRAME && T.frames[T.a[i]].state === -1;
+                c.gpr[3] = more ? 0 : this.leaveHeld; if (!more) this.leaveHeld = 0;
+                c.pc = A.directRet; return true;
+            }
             if (!this.moviePlanned) { this.moviePlanned = true; this.planMovie(i); }
             // (a movie whose loading had ended on the console by this frame, and hasn't here yet: this frame waits, as a stage's loading does)
             if (this.movieLoaded && this.movieFrame + 1 >= this.movieLoaded) {
@@ -573,6 +594,7 @@ export class Replay {
             this.curFrame = f; this.curFrameIndex = T.a[i]; this.frames++;
             if (!this.between++) this.log(`frame ${f.frame}: the recording has frames without a stage director here (the game's director: ${hex(mem.r32(mem.r32(A.app + APP.director)))})`);
             this.betweenSelect = mem.r32(mem.r32(A.app + APP.director)) === A.selectVtable;
+            this.lastBetween = true;
             this.alignClock(f, T.a[i]);
             i = this.nextFlowFrom(i + 1);
             if (i < T.n && T.kind[i] === Ev.PAD) { this.setPad(mem.r32(A.app + APP.pads), T.pads[T.a[i]].input, `frame ${f.frame}`); i = this.nextFlowFrom(i + 1); }
@@ -589,7 +611,7 @@ export class Replay {
             if (!f.setupThreadDone && threadDone) hold = true;
             if (f.setupThreadDone) { this.strict = true; this.countAtPlay = this.m.cpu.count; }
         }
-        this.curFrame = f; this.curFrameIndex = T.a[i]; this.frames++; this.movieFrame = 0; this.moviePlanned = false;
+        this.curFrame = f; this.curFrameIndex = T.a[i]; this.frames++; this.movieFrame = 0; this.moviePlanned = false; this.lastBetween = false;
         this.alignClock(f, T.a[i]);
         this.checkCalls(f.ev, `frame ${f.frame}`);
         if (this.phase !== 'stage') return false;
@@ -628,7 +650,20 @@ export class Replay {
         return hold ? skip() : false;
     }
     private afterDirect(c: { gpr: Uint32Array }) {
-        const mem = this.m.mem;
+        const mem = this.m.mem, T = this.T;
+        // A director between two stages (a movie, the save question after one) that leaves for the next stage while
+        // the recording still has frames without a stage director: what such a director waits for is the console's
+        // (its disc, its memory card), and nothing of those frames is compared, so the leave is held until the
+        // recording's are over. Where in them the console waited longer doesn't show.
+        if (this.phase === 'stage' && this.lastBetween && !this.leaveHeld && c.gpr[3] === 5) {
+            const i = this.iFlow;
+            if (i < T.n && T.kind[i] === Ev.FRAME && T.frames[T.a[i]].state === -1) {
+                let n = 0, k = i;
+                while (k < T.n && T.kind[k] === Ev.FRAME && T.frames[T.a[k]].state === -1) { n++; k = this.nextFlowFrom(k + 1); if (k < T.n && T.kind[k] === Ev.PAD) k = this.nextFlowFrom(k + 1); }
+                this.leaveHeld = c.gpr[3]; c.gpr[3] = 0;
+                this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: the director between two stages (${hex(mem.r32(mem.r32(this.A.app + APP.director)))}) is done ${n} frame(s) before the recording's: its leave for the next stage is held until then`);
+            }
+        }
         if (this.suppressed) { PAD_SUPPRESS.forEach((o, k) => mem.w32(this.suppressedPad + o, this.suppressed![k])); this.suppressed = null; }
         if (this.frozenState >= 0) { mem.w8(mem.r32(this.A.gpMarDirector) + DIR.state, this.frozenState); this.frozenState = -1; c.gpr[3] = 0; }
     }
@@ -818,6 +853,8 @@ export class Replay {
         const T = this.T, mem = this.m.mem, A = this.A;
         this.movieLoaded = 0;
         if (mem.r32(mem.r32(A.app + APP.director)) !== A.movieVtable) return;
+        // (a movie that another movie or the save question follows, TMovieDirector::decideNextMode: the frames are not this movie's alone)
+        if ([2, 3, 12, 14, 15, 16, 17, 18, 19].includes(mem.r32(A.app + APP.movie))) return;
         const meaning: number[] = [];
         let i = i0;
         while (i < T.n && T.kind[i] === Ev.FRAME && T.frames[T.a[i]].state === -1) {

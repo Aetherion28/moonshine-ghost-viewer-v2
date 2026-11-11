@@ -328,9 +328,19 @@ export class Gx {
         // hair smaller in size than the product here: a position on the grid right of (below) the viewport's middle
         // lands one twelfth lower, one left of (above) it stays. Measured on a Wii (tools/hwprobe, the grid cases:
         // a vertex at 129 or more of a 256-pixel viewport is taken 1/12 pixel lower, one at 128 or less exactly).
-        const rx = fr(fr(cx * iw) * xf[0x101A]) * SUB, ry = fr(fr(cy * iw) * xf[0x101B]) * SUB;
-        out.gx = (rx > 0 ? Math.ceil(rx) - 1 : Math.floor(rx)) + Math.floor((xf[0x101D] - 342) * SUB);
-        out.gy = (ry > 0 ? Math.ceil(ry) - 1 : Math.floor(ry)) + Math.floor((xf[0x101E] - 342) * SUB);
+        if (w === 1) {
+            // (in the unit's own arithmetic, as the depth below)
+            const exc = addCut(addCut(mulCut(xf[m], px), mulCut(xf[m + 1], py)), addCut(mulCut(xf[m + 2], pz), xf[m + 3]));
+            const eyc = addCut(addCut(mulCut(xf[m + 4], px), mulCut(xf[m + 5], py)), addCut(mulCut(xf[m + 6], pz), xf[m + 7]));
+            const rx = mulCut(cut(addCut(mulCut(xf[0x1020], exc), xf[0x1021]) * UNDER_ONE), xf[0x101A]) * SUB;
+            const ry = mulCut(cut(addCut(mulCut(xf[0x1022], eyc), xf[0x1023]) * UNDER_ONE), xf[0x101B]) * SUB;
+            out.gx = Math.floor(rx) + Math.floor((xf[0x101D] - 342) * SUB);
+            out.gy = Math.floor(ry) + Math.floor((xf[0x101E] - 342) * SUB);
+        } else {
+            const rx = fr(fr(cx * iw) * xf[0x101A]) * SUB, ry = fr(fr(cy * iw) * xf[0x101B]) * SUB;
+            out.gx = (rx > 0 ? Math.ceil(rx) - 1 : Math.floor(rx)) + Math.floor((xf[0x101D] - 342) * SUB);
+            out.gy = (ry > 0 ? Math.ceil(ry) - 1 : Math.floor(ry)) + Math.floor((xf[0x101E] - 342) * SUB);
+        }
         out.x = out.gx / SUB; out.y = out.gy / SUB;
         if (w === 1) {
             // (the depth, in the unit's own arithmetic: one product a row measured, the sums in the order above)
@@ -467,7 +477,35 @@ export class Gx {
             slope(v0.c[i], v1.c[i], v2.c[i], 80 + i * 3);
         }
         const zOn = (bp[0x40] & 1) !== 0;
-        if (zOn) slope(v0.z, v1.z, v2.z, 104);
+        // Depth without perspective, as a Wii works it out (measured, tools/hwprobe jobs 22 to 26, 2026-11-11: every
+        // texel of the maps of jobs 22 to 27, 5.1 million). The corners' depths are whole numbers. The two weights'
+        // steps come from a reciprocal of the area of 25 bits, m = floor(2^(L + 25) / area) or one less, L =
+        // floor(log2(area)): a step is (the edge's height or width * m) >> 15, rounded down (jobs 27 and 29: 680
+        // triangles that read a step through the depth's slope). When m is one less is not understood: always when
+        // 2^(L + 25) / area has a fraction under 0.0955 (and when it is whole), never over 0.25, and in between for
+        // 66 of 101 areas measured (jobs 28 and 29) with no rule found; taken here as under 7/32, right for 69 of
+        // those. It matters for a step whose exact quotient is within about (the edge / 2^14) over a whole number.
+        // The depth's slope a twelfth of a pixel, across and down, is the two depth differences times their steps,
+        // cut down to 15 fractional bits. The plane counts from the screen's own origin (342
+        // pixels left of and above the frame buffer): its value there is cut down to half units. A group of 2 x 2
+        // pixels takes the plane at its middle; each pixel adds 6 twelfths, left or right and up or down, times each
+        // slope cut down to 5 fractional bits, the sum of the two cut down to half units; the result is cut down to
+        // a whole number.
+        const zFlat = zOn && flat;
+        let zC = 0n, zS = 0n, zT = 0n;
+        const zQ = this.zQ;
+        if (zFlat) {
+            const A = Math.abs(area), L = Math.floor(Math.log2(A)), sg = area > 0 ? 1n : -1n;
+            const m = (((1n << BigInt(L + 30)) / BigInt(A)) - 7n) >> 5n;
+            const step = (v: number) => (BigInt(v) * sg * m) >> 15n;
+            const z0 = BigInt(Math.floor(v0.z)), d1 = BigInt(Math.floor(v1.z)) - z0, d2 = BigInt(Math.floor(v2.z)) - z0;
+            const cut15 = (v: bigint) => L >= 5 ? v >> BigInt(L - 5) : v << BigInt(5 - L);
+            // (in units of 2^-15)
+            zS = cut15(d1 * step(Y3 - Y1) + d2 * step(Y1 - Y2)); zT = cut15(d1 * step(X1 - X3) + d2 * step(X2 - X1));
+            zC = (((z0 << 15n) - zS * BigInt(v0.gx + ORIGIN) - zT * BigInt(v0.gy + ORIGIN)) >> 14n) << 14n;
+            const s6 = (6n * (zS >> 10n)) << 10n, t6 = (6n * (zT >> 10n)) << 10n;
+            zQ[0] = ((-s6 - t6) >> 14n) << 14n; zQ[1] = ((s6 - t6) >> 14n) << 14n; zQ[2] = ((-s6 + t6) >> 14n) << 14n; zQ[3] = ((s6 + t6) >> 14n) << 14n;
+        } else if (zOn) slope(v0.z, v1.z, v2.z, 104);
         // (with one intensity texture as the only thing that changes from pixel to pixel, the environment's result is a function of one byte: kept)
         const memo = !varying && this.memoMap !== -1;
         if (memo) this.memoState.fill(0);
@@ -507,7 +545,13 @@ export class Gx {
                     }
                     if (varying) for (let i = 0; i < 8; i++) if (this.chanUsed[i >> 2]) { const o = 80 + i * 3, v = Math.trunc(fr(fr(S[o] + fr(S[o + 1] * mx)) + fr(S[o + 2] * my))); ras[i] = v < 0 ? 0 : v > 255 ? 255 : v; }
                     let z = 0;
-                    if (zOn) { z = Math.trunc(fr(fr(S[104] + fr(S[105] * mx)) + fr(S[106] * my))); z = z < 0 ? 0 : z > 0xFFFFFF ? 0xFFFFFF : z; }
+                    if (zFlat) {
+                        // (the group's middle from the screen's origin, in twelfths)
+                        const v = (zC + zS * BigInt((x & ~1) * SUB + SUB + ORIGIN) + zT * BigInt((y & ~1) * SUB + SUB + ORIGIN) + zQ[(x & 1) | ((y & 1) << 1)]) >> 15n;
+                        // (in front of the near plane: not drawn. Measured for whole squares; the far side wasn't)
+                        if (v < 0n) { CX1 -= FDY12; CX2 -= FDY23; CX3 -= FDY31; continue; }
+                        z = v > 0xFFFFFFn ? 0xFFFFFF : Number(v);
+                    } else if (zOn) { z = Math.trunc(fr(fr(S[104] + fr(S[105] * mx)) + fr(S[106] * my))); z = z < 0 ? 0 : z > 0xFFFFFF ? 0xFFFFFF : z; }
                     if (this.pixel(x, y, z, memo)) { const qi = (y >> 1) * qw + (x >> 1); if (!seen[qi]) { seen[qi] = 1; this.blendQuads++; } }
                 }
                 CX1 -= FDY12; CX2 -= FDY23; CX3 -= FDY31;
@@ -516,6 +560,7 @@ export class Gx {
         }
     }
     private slopes = new Float64Array(110);
+    private zQ = [0n, 0n, 0n, 0n];
     private uv = new Int32Array(16);
     private quadSeen = new Uint8Array(((EFB_W >> 1) + 1) * ((EFB_H >> 1) + 1));
     /** the depth buffer (24 bits) */
@@ -779,6 +824,8 @@ export class Gx {
  *  count in twelfths of a pixel, and the game sets every one to 6, the middle (GXSetCopyFilter without anti-aliasing).
  *  The recordings agree: with Dolphin's 1/16 grid Bianco Hills 1 stops at tick 2,952, with this one it passes it. */
 const SUB = 12, MID = 6;
+/** the screen's origin: 342 pixels left of and above the frame buffer's corner, in twelfths */
+const ORIGIN = 342 * SUB;
 const F32 = new Float32Array(1), F32W = new Uint32Array(F32.buffer);
 const r32 = (b: Uint8Array, p: number) => ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0;
 /** the constant fractions a stage can select: 8/8 ... 1/8 */
