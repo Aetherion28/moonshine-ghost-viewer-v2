@@ -31,6 +31,12 @@ export interface GameAddrs {
     /** the event scripts' interpreters: TEventWatcher::launchScript and where it has the new interpreter (r29); TSpcInterp::update,
      *  its step count (reached only while the lock word is 0) and the lock / unlock builtins */
     launchScript: number; launchScriptInterp: number; spcUpdate: number; spcCountStep: number; spcLock: number; spcUnlock: number;
+    /** FLUDD's three calls of TModelWaterManager::emitRequest (TNozzleDeform::emit, TNozzleTrigger::emit, TNozzleBase::emit): the ones Moonshine records */
+    waterCalls: number[];
+    /** TBossMantaManager::TMantaBattleState::update, where it tests the all-Mantas-dead jingle's handle (in r0); gpMapObjManager */
+    mantaJingleTest: number; gpMapObjManager: number;
+    /** TShine's vtable and TShine::mUpSpeed (1 at boot; TShine::appearSimple leaves it 2 for the rest of the session) */
+    shineVtable: number; shineUpSpeed: number;
 }
 /** GMSJ01 revision 0 */
 export const JP10: GameAddrs = {
@@ -45,6 +51,9 @@ export const JP10: GameAddrs = {
     goopLayerDraw: 0x801ECF38, goopObjDraw: [0x801EE5B0, 0x2D4],
     marioPulling: 0x8013DD68, unsetTakingMtx: [[0x803E083C, 0x80], [0x803D75E4, 0x74]],   // TBGTakeHit (a tentacle), TBGBeakHit
     launchScript: 0x800DC654, launchScriptInterp: 0x800DC6F0, spcUpdate: 0x80116F14, spcCountStep: 0x80116F88, spcLock: 0x8011C7CC, spcUnlock: 0x8011C6E8,
+    waterCalls: [0x8014AC84, 0x8014B5AC, 0x8014C0D4],
+    mantaJingleTest: 0x80322E18, gpMapObjManager: 0x8040A4D0,
+    shineVtable: 0x803C11E4, shineUpSpeed: 0x80409030,
 };
 const SPC = { stepsToDo: 4, stepsLeft: 0xC, locked: 0x14 };   // TSpcInterp
 // offsets in the game's objects
@@ -116,6 +125,11 @@ export class Replay {
     private curFrame: TraceFrame | null = null; private curTick = 0; private curTickIndex = -1; private between = 0;
     private observations = 0; private noWater = false;
     private padAdopted = false; private adopted = new Set<string>(); private otherHandle = false;
+    /** the recording's actors as of the current frame (by Moonshine's id), and how the comparison went */
+    private actors = new Map<number, { ptr: number; data: Uint8Array; dv: DataView }>();
+    actorsChecked = 0; actorWordsOff = 0; private actorsOff = new Set<string>();
+    /** water requests compared with the recording's, and how many differed */
+    waters = 0; watersOff = 0; private iWater = 0;
     private frozenState = -1; private suppressed: number[] | null = null; private suppressedPad = 0;
     private stopOn: Set<string>; private maxIssues: number;
     private log: (s: string) => void;
@@ -148,6 +162,16 @@ export class Replay {
         cpu.hook(A.marioPerform, (c) => { if ((c.gpr[4] & 1) && this.phase === 'stage' && c.gpr[3] === m.mem.r32(A.gpMarioOriginal)) this.atTick(c.gpr[3], c.gpr[4]); return false; });
         cpu.hook(A.randRet, (c) => { if (this.phase === 'stage') this.atRand(c.lr); return false; });
         cpu.hook(A.marioPulling, (c) => { if (this.phase === 'stage') this.unsetTakingMtx(c.gpr[3]); return false; });
+        // FLUDD's water requests: what a nozzle asks of the water manager (its place, direction, power) against the recording's
+        for (const call of A.waterCalls) {
+            cpu.hook(call, (c) => { if (this.phase === 'stage') this.atWater(c.gpr[4]); return false; });
+            cpu.hook(call + 4, (c) => { if (this.phase === 'stage' && this.waterNow) { if ((c.gpr[3] & 0xFF) !== (this.waterNow.accepted & 0xFF)) this.waterOff(`the water manager's answer is ${c.gpr[3] & 0xFF}, the trace's ${this.waterNow.accepted & 0xFF}`); this.waterNow = null; } return false; });
+        }
+        // A sound the game waits for. Manta Storm's hotel rises when the all-Mantas-dead jingle has ended (its handle
+        // is null again): no sound runs here, so the handle reads as the recording shows it: null in the tick
+        // before the one in which the recording makes the hotel's particles (the event's watch runs a tick after
+        // the Mantas' manager has seen the handle null, and the particles are the first thing the rising does).
+        cpu.hook(A.mantaJingleTest, (c) => { if (this.phase === 'stage' && this.T.particles.length) { const now = this.hotelRisesNow(); if (now !== (c.gpr[0] === 0) && !this.jingleSaid) { this.jingleSaid = true; this.log(`tick ${this.curTick}: the hotel waits for the jingle's end as in the recording (the sound doesn't run here)`); } c.gpr[0] = now ? 0 : 1; } return false; });
         // the event scripts' lock words (see scriptDoubts)
         this.scriptsLocked = opt.scriptsLocked ?? [];
         const unset = new Map<number, string>(), locked = new Set(opt.scriptsLocked ?? []), mem = m.mem;
@@ -251,6 +275,7 @@ export class Replay {
             // (the NPC phase is a function's static: its guard byte, right after it, says it was initialised.
             // On a console that has run a stage with NPCs it is set; here it isn't yet, and the first NPC would zero the phase.)
             mem.w32(A.seed, w[6]); mem.w32(A.npcPhase, st.npcPhase); mem.w8(A.npcPhase + 4, 1);
+            this.adoptShineSpeed();
             // the stage heap as the recording had it: the same size means the same arena
             if ((w[1] & 2) && (end - start !== w[11] || head - start !== w[9] || end - tail !== w[10])) {
                 // the arena's top depends on the disc's file table, and the recording console's disc had other files:
@@ -365,6 +390,9 @@ export class Replay {
         this.checkCalls(f.ev, `frame ${f.frame}`);
         if (this.phase !== 'stage') return false;
         if (f.session) { this.session = f.session; this.moonshine.apply(f.session); }
+        this.compareActors(f);
+        this.compareObject('fludd', 'FLUDD', f.fludd); this.compareObject('yoshi', 'Yoshi', f.yoshi);
+        if (this.phase !== 'stage') return false;
         if (this.strict) {
             const seed = mem.r32(A.seed);
             if (seed !== f.seed) this.issue('frame', `the RNG seed is ${hex(seed)}, the trace's ${hex(f.seed)}`);
@@ -468,6 +496,132 @@ export class Replay {
         f.setFloat32(0, m02); mem.w32(mtx + 0x08, f.getUint32(0));
         f.setFloat32(0, m22); mem.w32(mtx + 0x28, f.getUint32(0));
         this.log(`tick ${this.curTick}: Mario grabs an object whose taking matrix is uninitialised memory (zeros here); its direction is taken from the next record's face angle (0x${(angle & 0xFFFF).toString(16)})`);
+    }
+    /**
+     * What the console carried from before the recording, outside the recorded objects: TShine::mUpSpeed. It is 1
+     * at boot and TShine::appearSimple leaves it 2 for the rest of the session, so a console that showed a Shine
+     * that way earlier raises its later Shines twice as fast. The recording's own Shine says which: the first run
+     * of three equal rises a frame (four ticks each) is its moving up.
+     */
+    private adoptShineSpeed() {
+        const T = this.T, A = this.A, y = new Map<number, { shine: boolean; y: number; rises: number[] }>();
+        const f = new DataView(new ArrayBuffer(4)), flt = (bits: number) => { f.setUint32(0, bits); return f.getFloat32(0); };
+        let speed = 0;
+        scan: for (const fr of T.frames) {
+            if (!fr.actors) continue;
+            for (const r of fr.actors) {
+                let a = y.get(r.id);
+                if (!a || r.created) { a = { shine: false, y: NaN, rises: [] }; y.set(r.id, a); }
+                for (let k = 0; k < r.word.length; k++) {
+                    if (r.word[k] === 0) a.shine = r.value[k] === A.shineVtable;
+                    if (r.word[k] === 5) { const now = flt(r.value[k]); if (a.shine && !r.created) { a.rises.push(now - a.y); const n = a.rises.length; if (n >= 3 && a.rises[n - 1] > 0 && a.rises[n - 1] === a.rises[n - 2] && a.rises[n - 2] === a.rises[n - 3]) { speed = a.rises[n - 1] / 4; break scan; } } a.y = now; }
+                }
+            }
+        }
+        if (!speed) return;
+        f.setUint32(0, this.m.mem.r32(A.shineUpSpeed));
+        if (f.getFloat32(0) === speed) return;
+        this.log(`TShine::mUpSpeed is ${f.getFloat32(0)} here; the recording's Shine rises ${speed} a tick (an earlier Shine of the console's session left it so): taken from the recording`);
+        f.setFloat32(0, speed); this.m.mem.w32(A.shineUpSpeed, f.getUint32(0));
+    }
+    private jingleSaid = false; private iHotel = 0;
+    /** does the recording make the hotel's particles (at gpMapObjManager's place, +0x44) in its next movement tick? */
+    private hotelRisesNow(): boolean {
+        const T = this.T, at = this.m.mem.r32(this.A.gpMapObjManager) + 0x44;
+        const from = this.curTickIndex >= 0 ? T.ticks[this.curTickIndex].ev : 0;
+        while (this.iHotel < T.particles.length && !(T.particles[this.iHotel].ev >= from && T.particles[this.iHotel].type === 2 && T.particles[this.iHotel].args[1] === at)) this.iHotel++;
+        const mark = T.particles[this.iHotel];
+        if (!mark) return false;
+        // (the events up to the tick after next's start: the rest of this tick and all of the next)
+        let n = this.iFlow; while (n < T.n && T.kind[n] !== Ev.TICK) n++;
+        n++; while (n < T.n && T.kind[n] !== Ev.TICK) n++;
+        return mark.ev < n;
+    }
+    private waterNow: { accepted: number } | null = null;
+    private waterOff(text: string) { if (this.watersOff++ < 12) this.issue('water', text); }
+    /** a water request against the recording's next one */
+    private atWater(info: number) {
+        const T = this.T, mem = this.m.mem;
+        if (!T.waters.length) return;
+        // (requests the recording made before this stage's start are not the game's here)
+        const st = T.stages[this.stages - 1];
+        while (this.iWater < T.waters.length && st && T.waters[this.iWater].ev < st.ev) this.iWater++;
+        const w = T.waters[this.iWater++];
+        if (!w) { this.waterOff('the game asks for water after the trace\'s last request'); return; }
+        this.waters++; this.waterNow = w;
+        const mine = mem.bytes(info, w.info.length), d = new DataView(w.info.buffer, w.info.byteOffset, w.info.length), out: string[] = [];
+        // (a TWaterEmitInfo's parameters have padding its constructor never writes: at a request object's first use
+        // the bytes still zero here are the console's leftovers, as in the recorded objects)
+        if (!this.adopted.has('water' + hex(info))) {
+            this.adopted.add('water' + hex(info));
+            let took = 0;
+            for (let k = 0; k < w.info.length; k++) if (mine[k] === 0 && w.info[k] !== 0) { mine[k] = w.info[k]; took++; }
+            if (took) this.log(`a water request object at ${hex(info)}: ${took} uninitialised byte(s) taken from its first record`);
+        }
+        for (let o = 0; o + 4 <= w.info.length; o += 4) { const g = mem.r32(info + o), t = d.getUint32(o); if (g !== t) out.push(`+0x${o.toString(16)}: ${hex(g)} / ${hex(t)} (${f32FromBits(g).toPrecision(8)} / ${f32FromBits(t).toPrecision(8)})`); }
+        if (info !== w.source) out.unshift(`the request is at ${hex(info)}, the trace's at ${hex(w.source)}`);
+        if (out.length) this.waterOff(`water request ${this.iWater} differs (game / trace):\n    ` + out.slice(0, 12).join('\n    '));
+    }
+    /** FLUDD or Yoshi against the frame's sample: as the actors, each differing word reported once */
+    private compareObject(kind: string, name: string, o: { ptr: number; data: Uint8Array } | null) {
+        if (!o || o.ptr < 0x80000000 || o.ptr + o.data.length > 0x81800000) return;
+        const mem = this.m.mem, mine = mem.bytes(o.ptr, o.data.length), rec = o.data;
+        if (!this.adopted.has(kind + hex(o.ptr))) {
+            this.adopted.add(kind + hex(o.ptr));
+            let took = 0;
+            for (let k = 0; k < rec.length; k++) if (mine[k] !== rec[k] && mine[k] === 0) { mine[k] = rec[k]; took++; }
+            if (took) this.log(`${name}: ${took} uninitialised byte(s) taken from its first record`);
+        }
+        let same = true;
+        for (let k = 0; k < rec.length; k++) if (mine[k] !== rec[k]) { same = false; break; }
+        if (same) return;
+        const d = new DataView(rec.buffer, rec.byteOffset, rec.length);
+        for (let off = 0; off + 4 <= rec.length; off += 4) {
+            const g = mem.r32(o.ptr + off), t = d.getUint32(off);
+            if (g === t) continue;
+            const key = `${kind}+${off.toString(16)}`;
+            if (this.actorsOff.has(key)) continue;
+            this.actorsOff.add(key);
+            if (this.actorsOff.size <= 60) this.issue(kind, `${name} differs at +0x${off.toString(16)}: ${hex(g)} / ${hex(t)} (${f32FromBits(g).toPrecision(8)} / ${f32FromBits(t).toPrecision(8)}) (game / trace)`);
+        }
+    }
+    /**
+     * The actors against the recording's samples of this frame (every actor of the conductor's managers, as the
+     * frame began). A new actor's bytes that are still zero here and not in the recording are the console's
+     * leftovers, taken from it as Mario's are. A word that differs is reported once (per class and offset) and
+     * then follows the recording's value in the comparison only: the game's memory is left as the game made it.
+     */
+    private compareActors(f: TraceFrame) {
+        const mem = this.m.mem;
+        if (f.actorsGone) for (const id of f.actorsGone) this.actors.delete(id);
+        if (f.actors) for (const r of f.actors) {
+            let a = this.actors.get(r.id);
+            if (!a || r.created) { const data = new Uint8Array(r.bytes); a = { ptr: r.ptr, data, dv: new DataView(data.buffer) }; this.actors.set(r.id, a); }
+            for (let k = 0; k < r.word.length; k++) a.dv.setUint32(r.word[k] * 4, r.value[k]);
+            if (r.created && r.ptr >= 0x80000000 && r.ptr + r.bytes <= 0x81800000) {
+                const mine = mem.bytes(r.ptr, r.bytes);
+                let took = 0;
+                for (let k = 0; k < r.bytes; k++) if (mine[k] === 0 && a.data[k] !== 0 && mem.r32(r.ptr) === a.dv.getUint32(0)) { mine[k] = a.data[k]; took++; }
+                if (took && this.actorsOff.size < 40 && !this.actorsOff.has('new' + hex(a.dv.getUint32(0)))) { this.actorsOff.add('new' + hex(a.dv.getUint32(0))); this.log(`frame ${f.frame}: an actor of class ${hex(a.dv.getUint32(0))} at ${hex(r.ptr)}: ${took} uninitialised byte(s) taken from its first record`); }
+            }
+        }
+        for (const [id, a] of this.actors) {
+            if (a.ptr < 0x80000000 || a.ptr + a.data.length > 0x81800000) continue;
+            const mine = mem.bytes(a.ptr, a.data.length), rec = a.data;
+            this.actorsChecked++;
+            let same = true;
+            for (let k = 0; k < rec.length; k++) if (mine[k] !== rec[k]) { same = false; break; }
+            if (same) continue;
+            for (let o = 0; o + 4 <= rec.length; o += 4) {
+                const g = mem.r32(a.ptr + o), t = a.dv.getUint32(o);
+                if (g === t) continue;
+                this.actorWordsOff++;
+                const key = `${hex(a.dv.getUint32(0))}+${o.toString(16)}`;
+                if (this.actorsOff.has(key)) continue;
+                this.actorsOff.add(key);
+                if (this.actorsOff.size <= 40) this.issue('actor', `actor ${id} (class ${hex(a.dv.getUint32(0))}, at ${hex(a.ptr)}) differs at +0x${o.toString(16)}: ${hex(g)} / ${hex(t)} (${f32FromBits(g).toPrecision(8)} / ${f32FromBits(t).toPrecision(8)}) (game / trace)`);
+            }
+        }
     }
     /**
      * An object of the game against its record. At its first record, memory the game hasn't written yet (zero

@@ -8,6 +8,12 @@
 //   RAND    a rand() call: its caller (the return address) and the seed it left
 //   LIT     a GPU result read at one of three sites (occlusion at the camera and the silhouette, the bath
 //           water's height): the value the game used
+//   WATER   a water request (TModelWaterManager::emitRequest): the TWaterEmitInfo the game passed, and its answer
+//   FX      a particle emitter made or deleted (JPAEmitterManager::createSimpleEmitterID, createEmitter, deleteEmitter,
+//           forceDeleteEmitter) or a sound started (MSoundSE::startSoundActorInner): the caller, the arguments, the
+//           place, the RNG seed then
+// With each FRAME (once the stage is set up) Moonshine also samples FLUDD and Yoshi whole (TWaterGun, TYoshi) and every actor of the conductor's managers: the
+// first 0x150 bytes of an enemy manager's, 0xF4 of the others', as the words that changed since its last sample.
 import { readMstr, applyBlob, applyInputDelta, K, lcgNext, MstrError, type BlobState } from '../../src/ghost/mstr.ts';
 
 export const enum Ev { STAGE = 1, FRAME = 2, PAD = 3, TICK = 4, RAND = 5, LIT = 6 }
@@ -38,7 +44,18 @@ export interface TraceFrame {
     session: Uint8Array | null;
     /** the flag manager, camera, FLUDD and Yoshi objects as the frame began (null: not recorded yet) */
     flags: Uint8Array | null;
+    /** the actors whose bytes changed since their last sample (or that are new), and the ids of those gone */
+    actors: TraceActor[] | null; actorsGone: number[] | null;
+    /** FLUDD and Yoshi as the frame began (the same object from frame to frame while nothing in it changed) */
+    fludd: TraceObject | null; yoshi: TraceObject | null;
 }
+export interface TraceObject { ptr: number; data: Uint8Array }
+/** a particle or sound call: type 1 a sound, 2 createSimpleEmitterID, 3 createEmitter, 4 deleteEmitter, 5 forceDeleteEmitter */
+export interface TraceFx { ev: number; type: number; caller: number; args: Uint32Array; valid: number; pos: Uint32Array; seed: number }
+/** a water request, in the order the game made them */
+export interface TraceWater { ev: number; accepted: number; source: number; info: Uint8Array }
+/** an actor's sample: its address, how many bytes are recorded, the words that changed (all of them when `created`) */
+export interface TraceActor { id: number; ptr: number; bytes: number; created: boolean; word: Uint16Array; value: Uint32Array }
 /** `mirrors`: JUTGamePad's port-0 statics as the pad was read (mPadButton[0] 48 bytes, mPadMStick[0] 16, mPadSStick[0] 16) */
 export interface TracePad { ev: number; frame: number; frozen: boolean; suppressed: boolean; input: Uint8Array; mirrors: Uint8Array | null }
 export interface TraceTick {
@@ -57,7 +74,9 @@ export interface Trace {
     b: Uint32Array;
     /** LIT: the seed at the read */
     c: Uint32Array;
-    stages: TraceStage[]; frames: TraceFrame[]; pads: TracePad[]; ticks: TraceTick[];
+    stages: TraceStage[]; frames: TraceFrame[]; pads: TracePad[]; ticks: TraceTick[]; waters: TraceWater[];
+    /** the particle calls (types 2 to 5), in order; the sounds started (type 1), with the movement tick each came in */
+    particles: TraceFx[]; sounds: (TraceFx & { tick: number })[];
     runFlags: number;
 }
 
@@ -74,7 +93,8 @@ export function readTrace(buf: ArrayBuffer): Trace {
         }
         kind[n] = k; a[n] = x; b[n] = y; c[n] = z; return n++;
     };
-    const stages: TraceStage[] = [], frames: TraceFrame[] = [], pads: TracePad[] = [], ticks: TraceTick[] = [];
+    const stages: TraceStage[] = [], frames: TraceFrame[] = [], pads: TracePad[] = [], ticks: TraceTick[] = [], waters: TraceWater[] = [], particles: TraceFx[] = [], sounds: (TraceFx & { tick: number })[] = [];
+    let fluddNow: TraceObject | null = null, yoshiNow: TraceObject | null = null;
     const blobs = new Map<number, BlobState>();
     let input: Uint8Array | null = null, scene = -1, session: Uint8Array | null = null, sessionNew = false;
     let mirrors: Uint8Array | null = null;
@@ -94,18 +114,24 @@ export function readTrace(buf: ArrayBuffer): Trace {
             case K.FRAME: {
                 flush();
                 const s = bv.getUint32(0);
-                if (s !== scene) { blobs.clear(); scene = s; input = null; }
+                if (s !== scene) { blobs.clear(); scene = s; input = null; fluddNow = yoshiNow = null; }
                 const w7 = bv.getUint32(28);
                 const f: TraceFrame = {
                     ev: 0, frame: r.frame, scene: s, context: bv.getUint32(4), retrace: bv.getUint32(8), osTick: bv.getUint32(12), seed: bv.getUint32(16),
                     tick: bv.getUint32(20), state: bv.getUint32(24) | 0, menuShown: (w7 & 1) !== 0, setupDone: (w7 & 2) !== 0, setupThreadDone: (w7 & 4) !== 0,
-                    session: null, flags: null,
+                    session: null, flags: null, actors: null, actorsGone: null, fludd: null, yoshi: null,
                 };
+                f.fludd = fluddNow; f.yoshi = yoshiNow;
                 f.ev = push(Ev.FRAME, frames.length); frames.push(f);
                 break;
             }
             case K.MARIO: case K.CAMERA: case K.FLAGS: case K.FLUDD: case K.YOSHI:
                 applyBlob(r.body, bv, version, blobs, r.kind);
+                // (FLUDD and Yoshi come in pieces of 0x200 bytes: the frame keeps the object as of its last piece)
+                if ((r.kind === K.FLUDD || r.kind === K.YOSHI) && frames.length) {
+                    const st = blobs.get(r.kind)!, o = { ptr: st.pointer, data: st.data.slice() };
+                    if (r.kind === K.FLUDD) frames[frames.length - 1].fludd = fluddNow = o; else frames[frames.length - 1].yoshi = yoshiNow = o;
+                }
                 if (r.kind === K.FLAGS && frames.length) { const s = snap(K.FLAGS, 0x380); if (s) frames[frames.length - 1].flags = s.data; }
                 break;
             case K.INPUT: case K.INPUT_DELTA: {
@@ -116,6 +142,21 @@ export function readTrace(buf: ArrayBuffer): Trace {
                 else { const t: TraceTick = { ev: 0, frame: r.frame, tick: r.tick, input, mirrors, marioPtr: 0, mario: null, cameraPtr: 0, camera: null }; t.ev = push(Ev.TICK, ticks.length); ticks.push(t); pending = t; }
                 break;
             }
+            case K.ACTOR: if (frames.length) {
+                const bytes = bv.getUint32(8), words = bytes >>> 2, word: number[] = [], value: number[] = [];
+                for (let n = 0, q = 28; n < words; n++) if (bv.getUint32(16 + 4 * (n >> 5)) & (1 << (n & 31))) { word.push(n); value.push(bv.getUint32(q)); q += 4; }
+                (frames[frames.length - 1].actors ??= []).push({ id: bv.getUint32(0), ptr: bv.getUint32(4), bytes, created: bv.getUint32(12) === 1, word: Uint16Array.from(word), value: Uint32Array.from(value) });
+            } break;
+            case K.SOUND: if (r.body.length === 88) {
+                const w = new Uint32Array(22); for (let i = 0; i < 22; i++) w[i] = bv.getUint32(i * 4);
+                sounds.push({ ev: n, type: w[0], caller: w[1], args: w.slice(2, 10), valid: w[10], pos: w.slice(11, 20), seed: w[21], tick: ticks.length });
+            } break;
+            case K.PARTICLE: if (r.body.length === 88) {
+                const w = new Uint32Array(22); for (let i = 0; i < 22; i++) w[i] = bv.getUint32(i * 4);
+                particles.push({ ev: n, type: w[0], caller: w[1], args: w.slice(2, 10), valid: w[10], pos: w.slice(11, 20), seed: w[21] });
+            } break;
+            case K.WATER: waters.push({ ev: n, accepted: bv.getUint32(0), source: bv.getUint32(4), info: r.body.slice(8) }); break;
+            case K.ACTOR_END: if (frames.length) (frames[frames.length - 1].actorsGone ??= []).push(bv.getUint32(0)); break;
             case 24: if (r.body.length === 88) mirrors = r.body.slice(8, 88); break;   // pad mirrors
             case 25: if (mirrors) {   // pad mirrors, the changed words
                 mirrors = mirrors.slice();
@@ -155,5 +196,5 @@ export function readTrace(buf: ArrayBuffer): Trace {
     if (!stages.length) throw new TraceFormatError('the trace has no stage-start record');
     if (stages[0].ev > frames[0]?.ev) { /* the stage start is written with the first frame when capture began at setup */ }
     void MstrError; void sessionNew;
-    return { gameId, discRevision, container: version, capabilities: sum.header.capabilities, complete: sum.complete, n, kind, a, b, c, stages, frames, pads, ticks, runFlags };
+    return { gameId, discRevision, container: version, capabilities: sum.header.capabilities, complete: sum.complete, n, kind, a, b, c, stages, frames, pads, ticks, waters, particles, sounds, runFlags };
 }

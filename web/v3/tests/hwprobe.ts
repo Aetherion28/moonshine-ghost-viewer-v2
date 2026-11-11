@@ -1,15 +1,22 @@
 // Makes a script for tools/hwprobe (a Wii program that feeds a console's GPU and saves what it drew): the goop
 // passes of a replay, each as the console's GPU got it (its registers, its textures, its commands up to the frame
 // buffer copy), to be drawn again on a real console and compared with ppc/gx.ts texel by texel.
-// Run: node v3hwprobe.mjs capture <trace> <out.passes> <ticks a-b[,c-d ...]> [most passes]    (ONLY=stamps: the passes that draw a stamp)
+// Run: node v3hwprobe.mjs capture <trace> <out.passes> <ticks a-b[,c-d ...]> [most passes]    (ONLY=stamps: the passes that draw a stamp;
+//        TEXEL='x,y': the passes that change this texel of their map or stamp over it (NEAR=n: or within n texels of it); LOCKED=a.sb: event scripts that start locked)
 //      node v3hwprobe.mjs script <out.gxps> <a.passes> [...]     the script, and <out.gxps>.cases.json (what each case is)
 //        (VERBATIM=n passes as they were, evenly spread; MUST='x,y;x,y' and those with a stamp over these texels;
 //         SYN=n passes with test textures; GRID=0 without the script's own stamp cases)
 //      node v3hwprobe.mjs check <script.gxps>                    the script through ppc/gx.ts (what it expects of a console)
 //      node v3hwprobe.mjs compare <script.gxps> <answer.gxpo>    a console's answer against ppc/gx.ts, case by case
 //      node v3hwprobe.mjs model <script.gxps> <out.gxpo>         ppc/gx.ts's own answer, as a console would save it
+//      node v3hwprobe.mjs chain <trace> <prefix> <last tick> [passes a job]
+//        every goop pass of a replay as jobs <prefix>-000.gxps, ..., the layer's map carried from pass to pass on the
+//        console (sent once: after that each pass draws over what the console's own last pass left), so the answers
+//        are the console's map after every pass of the recording; <prefix>.model.bin: ppc/gx.ts's own maps
+//      node v3hwprobe.mjs chaincmp <prefix> <answer 000> [...]    the console's maps against ppc/gx.ts's, pass by pass
+//        (WATCH='x,y': that texel's history; writes <prefix>.console.bin, the console's maps)
 //      node v3hwprobe.mjs feed <script.gxps> <out.bin>           the bytes the script sends to the GPU (for tools/hwprobe/hosttest)
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, openSync, writeSync, closeSync } from 'node:fs';
 import { serialize, deserialize } from 'node:v8';
 import { Gx } from '../ppc/gx.ts';
 import { OP, Script, readScript, rleDecode, rleEncode, type Op } from '../tools/hwprobe/script.ts';
@@ -92,7 +99,7 @@ function finish(P: Pass, ramAfter: Uint8Array) {
  * (TEV colours 1 and 2) set to these two values instead of each stamp's own; repeat: the stamps' texture repeats
  * (for texture coordinates past 1).
  */
-function emit(S: Script, A: Arena, P: Pass, label: string, sub: Map<number, Uint8Array> = new Map(), window: number[] | null = null, repeat = false) {
+function emit(S: Script, A: Arena, P: Pass, label: string, sub: Map<number, Uint8Array> = new Map(), window: number[] | null = null, repeat = false, chain: Set<string> | null = null) {
     S.note(label);
     const off = new Map<number, number>();
     for (const [addr, b] of P.blocks) {
@@ -101,11 +108,14 @@ function emit(S: Script, A: Arena, P: Pass, label: string, sub: Map<number, Uint
         let at = A.at.get(key);
         if (at === undefined) { at = A.top; A.at.set(key, at); A.top += (b.size + 31) & ~31; }
         off.set(addr, at);
+        // (chained: the map the console's own last pass left is drawn over, not this replay's)
+        if (chain && addr === P.dst && chain.has(key)) continue;
         // (a block the console has as the script left it isn't sent again)
         const has = A.has.get(key);
         if (!has || has.length !== d.length || has.some((v, i) => v !== d[i])) { S.mem(at, d); A.has.set(key, d); }
     }
     A.has.delete(`${P.dst}:${P.blocks.get(P.dst)!.size}`);   // (the copy will write it)
+    if (chain) chain.add(`${P.dst}:${P.blocks.get(P.dst)!.size}`);
     if (A.scratch < 0) { A.scratch = A.top; A.top += 640 / 8 * (528 / 4) * 32; }
     const scratch = A.scratch;
     S.arena = Math.max(S.arena, A.top);
@@ -265,8 +275,9 @@ if (mode === 'capture') {
     const outPath = process.argv[4], spans = process.argv[5].split(',').map((s) => s.split('-').map(Number)), most = +(process.argv[6] || 1e9);
     const lastTick = Math.max(...spans.map((s) => s[1] ?? s[0])), onlyStamps = process.env.ONLY === 'stamps';
     const wanted = (t: number) => spans.some((s) => t >= s[0] && t <= (s[1] ?? s[0]));
-    const R = new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), { log: (s) => { if (/^\[/.test(s)) console.log(s); }, fstPad: +(process.env.FSTPAD ?? (process.env.DISC ? 0 : 480)) });
+    const R = new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), { log: (s) => { if (/^\[/.test(s)) console.log(s); }, fstPad: +(process.env.FSTPAD ?? (process.env.DISC ? 0 : 480)), scriptsLocked: (process.env.LOCKED || '').split(',').filter(Boolean), stopOn: process.env.ALL ? ['heap', 'layout'] : undefined, maxIssues: process.env.ALL ? 100000 : 50 });
     const m = R.m, gx = m.hw.gx, ram = m.mem.ram;
+    const texel = process.env.TEXEL ? process.env.TEXEL.split(',').map(Number) : null;
     const passes: Pass[] = [];
     let cur: Pass | null = null, skipping = false, seen = 0;
     gx.rec = (cmd, raster) => {
@@ -298,7 +309,16 @@ if (mode === 'capture') {
         gx.recAll = false; skipping = false;
         if (!cur) return;
         seen++;
-        if (!onlyStamps || cur.stamps.length) { finish(cur, ram); passes.push(cur); if (passes.length % 100 === 1) console.log(`pass ${passes.length} at tick ${cur.tick}: ${cur.cmds.length} commands, ${cur.stamps.length} stamps, ${[...cur.blocks].map(([a, k]) => `${hex(a)} ${k.kind} ${k.size}`).join(', ')}`); }
+        if (process.env.LIST) {
+            // (LIST=clean | goop: only a line a pass with those stamps' quads; nothing kept)
+            const want = process.env.LIST === 'clean' ? 0 : 1, l = cur.stamps.filter((st) => st.type === want);
+            if (l.length) console.log(`tick ${cur.tick}: ${l.map((st) => st.q.join(' ')).join('; ')}`);
+        } else if (texel) {
+            finish(cur, ram);
+            const d = cur.blocks.get(cur.dst)!, [x, y] = texel, at = (((y >> 2) * (d.w! >> 3)) + (x >> 3)) * 32 + (y & 3) * 8 + (x & 7);
+            const near = +(process.env.NEAR || 0), over = cur.stamps.some((st) => x + near >= st.q[0] && x - near < st.q[2] && y + near >= st.q[1] && y - near < st.q[3]);
+            if (x < d.w! && y < d.h! && (over || d.data[at] !== cur.result![at])) { passes.push(cur); console.log(`pass ${passes.length} at tick ${cur.tick}: ${cur.stamps.length} stamps${over ? ', one over the texel: ' + cur.stamps.filter((st) => x + near >= st.q[0] && x - near < st.q[2] && y + near >= st.q[1] && y - near < st.q[3]).map((st) => `${st.type ? 'goop' : 'clean'} ${st.q.join(' ')}`).slice(0, 6).join('; ') : ''}; the texel ${d.data[at]} -> ${cur.result![at]} (map ${hex(cur.dst)}, ${d.w} x ${d.h})`); }
+        } else if (!onlyStamps || cur.stamps.length) { finish(cur, ram); passes.push(cur); if (passes.length % 100 === 1) console.log(`pass ${passes.length} at tick ${cur.tick}: ${cur.cmds.length} commands, ${cur.stamps.length} stamps, ${[...cur.blocks].map(([a, k]) => `${hex(a)} ${k.kind} ${k.size}`).join(', ')}`); }
         cur = null;
     };
     while (m.cpu.count < 4000e9 && R.run(50e6) !== 'done' && R.ticks <= lastTick + 8) { /* on */ }
@@ -443,6 +463,109 @@ if (mode === 'capture') {
     writeFileSync(outPath + '.cases.json', JSON.stringify(cases));
     console.log(`${cases.length} cases, arena ${Sc.arena}, script ${bytes.length} bytes`);
     process.exit(0);
+} else if (mode === 'chain') {
+    const { readTrace } = await import('../game/trace.ts');
+    const { Replay, JP10 } = await import('../game/replay.ts');
+    const { symbols } = await import('./syms.ts');
+    const { jpDisc, JP_DOL, loadBytes } = await import('./jpdisc.ts');
+    const S = symbols();
+    const b = readFileSync(process.argv[3]);
+    const T = readTrace(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
+    const prefix = process.argv[4], lastTick = +process.argv[5], per = +(process.argv[6] || 250);
+    const R = new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), { log: (s) => { if (/^\[/.test(s)) console.log(s); }, fstPad: +(process.env.FSTPAD ?? (process.env.DISC ? 0 : 480)), scriptsLocked: (process.env.LOCKED || '').split(',').filter(Boolean) });
+    const m = R.m, gx = m.hw.gx, ram = m.mem.ram;
+    const A: Arena = { at: new Map(), has: new Map(), top: 0, scratch: -1 }, chained = new Set<string>();
+    let Sc = new Script(), cases: object[] = [], lead: string[] = [], job = 0, n = 0;
+    const model = openSync(prefix + '.model.bin', 'w');
+    const endJob = () => {
+        if (!cases.length) return;
+        const name = `${prefix}-${String(job).padStart(3, '0')}.gxps`, bytes = Sc.bytes();
+        writeFileSync(name, bytes); writeFileSync(name + '.cases.json', JSON.stringify({ lead, cases }));
+        console.log(`${name}: ${cases.length} passes, ${bytes.length} bytes, arena ${A.top}`);
+        job++; Sc = new Script(); Sc.arena = A.top; cases = [];
+        // (the next job begins by saving the maps as the console has them: they must be what the last job left)
+        lead = [...chained];
+        for (const key of lead) Sc.dump(A.at.get(key)!, +key.split(':')[1]);
+    };
+    let cur: Pass | null = null;
+    gx.rec = (cmd, raster) => {
+        if (R.ticks > lastTick) return;
+        if (!cur) {
+            gx.recAll = true;
+            cur = { tick: R.ticks, bp: gx.bp.slice(), cp: gx.cp.slice(), xfw: gx.xfw.slice(), tevReg: gx.tevReg.slice(), konst: gx.konst.slice(), bpSeen: gx.bpSeen.slice(), cmds: [], ram: ram.slice(), arrays: new Map(), blocks: new Map(), dst: 0, dstSize: 0, result: null, stamps: [], hmap: 0 };
+        }
+        if (cmd[0] === 0x61 && (cmd[1] === 0x45 || cmd[1] === 0x47 || cmd[1] === 0x48 || (cmd[1] === 0x52 && !raster))) return;
+        cur.cmds.push(cmd.slice());
+    };
+    gx.arrayTrace = (array, at, len) => {
+        if (!cur) return;
+        const key = `${array}:${gx.cp[0xA0 + array] & 0x03FFFFFF}`, r = cur.arrays.get(key);
+        if (!r) cur.arrays.set(key, [at, at + len]); else { if (at < r[0]) r[0] = at; if (at + len > r[1]) r[1] = at + len; }
+    };
+    gx.drawTrace = (prim, count) => { if (cur && prim === 0x80 && count === 4 && ((gx.bp[0] >>> 10) & 15) === 2) cur.stamps.push({ q: [], tex: 0, type: 0, c0: 0, c1: 0 }); };
+    gx.copyTrace = () => {
+        gx.recAll = false;
+        if (!cur) return;
+        const P = cur; cur = null;
+        finish(P, ram);
+        const d = P.blocks.get(P.dst)!;
+        emit(Sc, A, P, `pass ${n} tick ${P.tick}`, new Map(), null, false, chained);
+        const packed = rleEncode(P.result!), head = new Uint8Array(16), hv = new DataView(head.buffer);
+        hv.setUint32(0, n); hv.setUint32(4, P.tick); hv.setUint32(8, P.result!.length); hv.setUint32(12, packed.length);
+        writeSync(model, head); writeSync(model, packed);
+        cases.push({ n, tick: P.tick, w: d.w, h: d.h, dst: P.dst, stamps: P.stamps.length });
+        if (++n % per === 0) endJob();
+    };
+    while (m.cpu.count < 4000e9 && R.run(50e6) !== 'done' && R.ticks <= lastTick + 8) { /* on */ }
+    endJob(); closeSync(model);
+    console.log(`${n} passes in ${job} jobs to tick ${R.ticks}; issues: ${R.issues.length ? String((R.issues[0] as any).text).split('\n')[0] : 'none'}`);
+    process.exit(0);
+} else if (mode === 'chaincmp') {
+    const prefix = process.argv[3], watch = process.env.WATCH ? process.env.WATCH.split(',').map(Number) : null;
+    const mb = readFileSync(prefix + '.model.bin'), models: { n: number; tick: number; at: number; raw: number; len: number }[] = [];
+    for (let p = 0; p < mb.length;) { const len = r32(mb, p + 12); models.push({ n: r32(mb, p), tick: r32(mb, p + 4), raw: r32(mb, p + 8), at: p + 16, len }); p += 16 + len; }
+    const out = openSync(prefix + '.console.bin', 'w');
+    let last = new Map<string, Uint8Array>(), prevDiff = new Map<number, string>(), k = 0, firstBad = -1, worst = 0;
+    const news: object[] = [];
+    for (const [j, file] of process.argv.slice(4).entries()) {
+        const meta = JSON.parse(readFileSync(`${prefix}-${String(j).padStart(3, '0')}.gxps.cases.json`, 'utf8')) as { lead: string[]; cases: { n: number; tick: number; w: number; h: number; dst: number; stamps: number }[] };
+        const o = new Uint8Array(readFileSync(file)), got: Uint8Array[] = [];
+        if (r32(o, 0) !== 0x4758504F) throw new Error('not an answer file');
+        for (let p = 16; p + 16 <= o.length;) {
+            const kind = r32(o, p), bb = r32(o, p + 8), len = r32(o, p + 12), data = o.subarray(p + 16, p + 16 + len);
+            if (kind === 102) console.log(`job ${j}: the console stopped the script: ${Buffer.from(data).toString('latin1')}`);
+            else if (kind === OP.DUMP || kind === OP.READ16) got.push(data.slice());
+            else if (kind === OP.MEMRLE) got.push(rleDecode(data, bb));
+            p += 16 + ((len + 3) & ~3);
+        }
+        for (const [i, key] of meta.lead.entries()) {
+            const was = last.get(key), now = got[i];
+            if (was && (was.length !== now.length || was.some((v, q) => v !== now[q]))) throw new Error(`job ${j}: the console's map ${key} is not what job ${j - 1} left`);
+        }
+        for (const [i, c] of meta.cases.entries()) {
+            const map = got[meta.lead.length + 2 * i + 1], M = models[k++];
+            if (!map) { console.log(`pass ${c.n}: no answer`); continue; }
+            if (M.n !== c.n) throw new Error('the model file and the jobs are out of step');
+            const want = rleDecode(mb.subarray(M.at, M.at + M.len), M.raw);
+            last.set(`${c.dst}:${map.length}`, map);
+            const packed = rleEncode(map), head = new Uint8Array(16), hv = new DataView(head.buffer);
+            hv.setUint32(0, c.n); hv.setUint32(4, c.tick); hv.setUint32(8, map.length); hv.setUint32(12, packed.length);
+            writeSync(out, head); writeSync(out, packed);
+            const d = diffI8(want, map, c.w, c.h), now = new Map<number, string>();
+            const fresh: number[][] = [];
+            for (const q of d) { const id = q[1] * 4096 + q[0], v = `${q[2]}>${q[3]}`; now.set(id, v); if (prevDiff.get(id) !== v) fresh.push(q); }
+            if (d.length && firstBad < 0) firstBad = c.n;
+            worst = Math.max(worst, d.length);
+            if (fresh.length) news.push({ n: c.n, tick: c.tick, total: d.length, fresh });
+            if (fresh.length && news.length <= 40) console.log(`pass ${c.n} tick ${c.tick} (${c.stamps} stamps): ${d.length} texels differ, new: ${fresh.slice(0, 8).map((q) => `(${q[0]},${q[1]}) ${q[2]}->${q[3]}`).join(' ')}${fresh.length > 8 ? ` ... ${fresh.length}` : ''}`);
+            if (watch) { const at = (((watch[1] >> 2) * (c.w >> 3)) + (watch[0] >> 3)) * 32 + (watch[1] & 3) * 8 + (watch[0] & 7); const key = `${want[at]}/${map[at]}`; if ((watch as any).last !== key) { (watch as any).last = key; console.log(`    pass ${c.n} tick ${c.tick}: texel (${watch[0]},${watch[1]}) is ${want[at]} here, ${map[at]} on the console`); } }
+            prevDiff = now;
+        }
+    }
+    closeSync(out);
+    writeFileSync(prefix + '.news.json', JSON.stringify(news));
+    console.log(`${k} passes compared (model -> console); the first with a difference: ${firstBad}; passes with new differences: ${news.length}; most texels different at once: ${worst}`);
+    process.exit(0);
 } else if (mode === 'feed') {
     // the bytes the script sends to the GPU, addresses counted from 0x01000000 (to compare with tools/hwprobe/hosttest's fifo.bin)
     const sc = readScript(new Uint8Array(readFileSync(process.argv[3]))), fed: number[] = [];
@@ -502,4 +625,4 @@ if (mode === 'capture') {
     console.log(bad ? `${bad} of ${cases.length} cases differ from ppc/gx.ts` : `all ${cases.length} cases as ppc/gx.ts draws them`);
     if (process.argv[5]) writeFileSync(process.argv[5], JSON.stringify(detail));
     process.exit(0);
-} else { console.log('capture | script | check | compare | model'); process.exit(2); }
+} else { console.log('capture | script | check | compare | model | chain | chaincmp | feed'); process.exit(2); }
