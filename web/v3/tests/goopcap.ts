@@ -3,7 +3,7 @@
 // a layer's frame) and every goop test the game makes whose verdict the recording fixes (the random tests of
 // TPollutionLayer::action, which decide how many rand() calls follow, and Mario's nine texels, which decide his
 // dirty flag). While the replay is in step, the draws are the console's and so are the verdicts.
-// Run: node v3goopcap.mjs <trace> <out.jsonl> [last tick]      (GX_SP: the sample points, eight numbers as in tests/replay.ts)
+// Run: node v3goopcap.mjs <trace> <out.jsonl> [last tick]
 import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { readTrace } from '../game/trace.ts';
 import { Replay, JP10 } from '../game/replay.ts';
@@ -16,7 +16,6 @@ const T = readTrace(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as
 const out = process.argv[3], last = +(process.argv[4] || 1e9);
 const R = new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), { log: (s) => { if (/^\[/.test(s)) console.log(s); }, fstPad: +(process.env.FSTPAD ?? (process.env.DISC ? 0 : 480)) });
 const m = R.m, mem = m.mem, gx = m.hw.gx;
-if (process.env.GX_SP) gx.samplePoint.set(process.env.GX_SP.split(',').map(Number));
 const sym = (n: string) => { const a = S.byName.get(n); if (a === undefined) throw new Error('no symbol ' + n); return a; };
 const f32 = (a: number) => { const d = new DataView(new ArrayBuffer(4)); d.setUint32(0, mem.r32(a)); return d.getFloat32(0); };
 const idx = (x: number, z: number, l2w: number) => (z & 3) * 8 + ((x >> 3) + ((z >> 2) << (l2w - 3))) * 0x20 + (x & 7);

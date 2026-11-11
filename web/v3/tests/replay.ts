@@ -1,7 +1,6 @@
 // v3: plays a trace in the game and reports how far the game's own state matches the recording.
 // Run: node v3replay.mjs <trace.msgt> [millions of instructions] (env: QUIET=1 hides the game's console, ALL=1 doesn't stop at the first issue,
 // FSTPAD=n the file table's padding if known, WALL=s a time limit,
-// GX_SP the GPU model's sample points, eight numbers: x,y for the pixels (even x, even y), (odd, even), (even, odd), (odd, odd) (experiments))
 import { readFileSync } from 'node:fs';
 import { readTrace } from '../game/trace.ts';
 import { Replay, JP10 } from '../game/replay.ts';
@@ -20,7 +19,7 @@ const make = (fstPad: number, shinyShines = false) => tune(new Replay(loadBytes(
     log: (s) => console.log(who(s)), report: process.env.QUIET ? undefined : (t) => process.stdout.write('[game] ' + t),
     stopOn, maxIssues: process.env.ALL ? 200 : 50, fstPad, shinyShines,
 }));
-const tune = (r: Replay) => { if (process.env.JIT === '0') r.m.cpu.jit = false; if (process.env.JITVERIFY) r.m.cpu.jitVerify = true; if (process.env.GX_SP) r.m.hw.gx.samplePoint.set(process.env.GX_SP.split(',').map(Number)); return r; };
+const tune = (r: Replay) => { if (process.env.JIT === '0') r.m.cpu.jit = false; if (process.env.JITVERIFY) r.m.cpu.jitVerify = true; return r; };
 const budget = +(process.argv[3] || 4000) * 1e6;
 const t0 = performance.now();
 let err: unknown = null, res = 'error', shiny = false;

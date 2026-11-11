@@ -41,8 +41,9 @@ const COMP_SIZE = [1, 1, 2, 2, 4];
 const COLOR_SIZE = [2, 3, 4, 2, 3, 4];
 
 /** c: the two channels' colours (r g b a each, 0..255) */
-interface Vtx { x: number; y: number; z: number; w: number; s: Float64Array; t: Float64Array; q: Float64Array; c: Float64Array }
-const newVtx = (): Vtx => ({ x: 0, y: 0, z: 0, w: 1, s: new Float64Array(8), t: new Float64Array(8), q: new Float64Array(8), c: new Float64Array(8) });
+/** a vertex on the screen: gx, gy its place on the rasteriser's grid (1/SUB pixel); x, y the same in pixels */
+interface Vtx { x: number; y: number; gx: number; gy: number; z: number; w: number; s: Float64Array; t: Float64Array; q: Float64Array; c: Float64Array }
+const newVtx = (): Vtx => ({ x: 0, y: 0, gx: 0, gy: 0, z: 0, w: 1, s: new Float64Array(8), t: new Float64Array(8), q: new Float64Array(8), c: new Float64Array(8) });
 
 export class Gx {
     cp = new Uint32Array(256);
@@ -55,13 +56,6 @@ export class Gx {
 
     /** rasterise the primitives that come (else they are skipped) */
     raster = false;
-    /**
-     * Where in a pixel the texture coordinates are taken, in pixels from its left and top edges, for each pixel of a
-     * 2 x 2 group (the GPU draws in such groups): index (y & 1) * 2 + (x & 1), x then y. Not the middle, where the
-     * colours are, and not the same for the four: see README, "The goop's sample point", for what the recordings
-     * allow. Dolphin's software renderer has 0.495 for all.
-     */
-    samplePoint = new Float32Array([SX_EVEN, SY_EE, SX_ODD, SY_OE, SX_EVEN, SY_EO, SX_ODD, SY_OO]);
     /** the embedded frame buffer: RGBA, 8 bits each */
     efb = new Uint8Array(EFB_W * EFB_H * 4);
     /** the pixel engine's counter of 2 x 2 pixel groups that reached the blender (GXReadPixMetric multiplies by 4) */
@@ -310,8 +304,14 @@ export class Gx {
         if (!(w > 0)) this.warn('a vertex behind the eye (no clipping here)');
         const iw = fr(1 / w);
         // the viewport (0x101A: half width, half height, depth range, origin x, y, far); the screen starts at 342
-        out.x = fr(fr(fr(cx * iw) * xf[0x101A]) + xf[0x101D]) - 342;
-        out.y = fr(fr(fr(cy * iw) * xf[0x101B]) + xf[0x101E]) - 342;
+        // The screen position goes to the rasteriser's grid of 1/12 pixel rounded down, and what is rounded is a
+        // hair smaller in size than the product here: a position on the grid right of (below) the viewport's middle
+        // lands one twelfth lower, one left of (above) it stays. Measured on a Wii (tools/hwprobe, the grid cases:
+        // a vertex at 129 or more of a 256-pixel viewport is taken 1/12 pixel lower, one at 128 or less exactly).
+        const rx = fr(fr(cx * iw) * xf[0x101A]) * SUB, ry = fr(fr(cy * iw) * xf[0x101B]) * SUB;
+        out.gx = (rx > 0 ? Math.ceil(rx) - 1 : Math.floor(rx)) + Math.floor((xf[0x101D] - 342) * SUB);
+        out.gy = (ry > 0 ? Math.ceil(ry) - 1 : Math.floor(ry)) + Math.floor((xf[0x101E] - 342) * SUB);
+        out.x = out.gx / SUB; out.y = out.gy / SUB;
         out.z = fr(fr(fr(cz * iw) * xf[0x101C]) + xf[0x101F]);
         out.w = w;
         // the colour channels, unlit: the material's register, or the vertex's colour (0x100E.. colour, 0x1010.. alpha: bit 0)
@@ -376,12 +376,10 @@ export class Gx {
     }
     private raster3(v0: Vtx, v1: Vtx, v2: Vtx) {
         if (this.triTrace) this.triTrace(v0, v1, v2);
-        // Screen positions in twelfths of a pixel, rounded down (the grid of the sample positions, BP 1-4); a pixel is
-        // tested at its middle, 6/12. So a left edge covers a pixel up to 7/12 into it, which is what Dolphin's
-        // hardware test measured (hwtests gxtest/rasterization.cpp), and the recordings need the colours taken
-        // there from the positions so rounded (README, "The goop's sample point").
-        const X1 = Math.floor(SUB * v0.x) - MID, X2 = Math.floor(SUB * v1.x) - MID, X3 = Math.floor(SUB * v2.x) - MID;
-        const Y1 = Math.floor(SUB * v0.y) - MID, Y2 = Math.floor(SUB * v1.y) - MID, Y3 = Math.floor(SUB * v2.y) - MID;
+        // Screen positions are on the grid of 1/12 pixel (the sample positions' grid, BP 1-4: see vertex()); a pixel is
+        // tested, and everything interpolated is taken, at its middle, 6/12.
+        const X1 = v0.gx - MID, X2 = v1.gx - MID, X3 = v2.gx - MID;
+        const Y1 = v0.gy - MID, Y2 = v1.gy - MID, Y3 = v2.gy - MID;
         const DX12 = X1 - X2, DX23 = X2 - X3, DX31 = X3 - X1, DY12 = Y1 - Y2, DY23 = Y2 - Y3, DY31 = Y3 - Y1;
         const FDX12 = DX12 * SUB, FDX23 = DX23 * SUB, FDX31 = DX31 * SUB, FDY12 = DY12 * SUB, FDY23 = DY23 * SUB, FDY31 = DY31 * SUB;
         const up = (v: number) => Math.floor((v + SUB - 1) / SUB);
@@ -398,8 +396,7 @@ export class Gx {
         const px1 = fr((X1 + MID) / SUB), py1 = fr((Y1 + MID) / SUB), px2 = fr((X2 + MID) / SUB), py2 = fr((Y2 + MID) / SUB), px3 = fr((X3 + MID) / SUB), py3 = fr((Y3 + MID) / SUB);
         const fx1 = px1, fy1 = py1, dx31 = fr(px3 - fx1), dx12 = fr(fx1 - px2), dy12 = fr(fy1 - py2), dy31 = fr(py3 - fy1);
         const vx0 = up(X1), vy0 = up(Y1);
-        // (texture coordinates are taken at the pixel's samplePoint; colours and depth at its middle)
-        const sp = this.samplePoint, baseX = fr(vx0 - fx1), baseY = fr(vy0 - fy1);
+        // (everything is taken at the pixel's middle; measured on a Wii for the texture coordinates)
         const midX = fr(fr(vx0 - fx1) + 0.5), midY = fr(fr(vy0 - fy1) + 0.5);
         const w0 = fr(1 / v0.w), w1 = fr(1 / v1.w), w2 = fr(1 / v2.w);
         const cden = fr(fr(-dx12 * dy31) - fr(dx31 * -dy12));
@@ -409,11 +406,18 @@ export class Gx {
             const pa = fr(fr(d31 * -dy12) - fr(d21 * dy31)), pb = fr(fr(dx31 * d21) + fr(dx12 * d31));
             S[i] = f1; S[i + 1] = fr(-pa / cden); S[i + 2] = fr(-pb / cden);
         };
+        // (texture coordinates: the planes without single-precision rounding, see where they are taken)
+        const gx1 = (X1 + MID) / SUB, gy1 = (Y1 + MID) / SUB, ex31 = (X3 - X1) / SUB, ex12 = (X1 - X2) / SUB, ey12 = (Y1 - Y2) / SUB, ey31 = (Y3 - Y1) / SUB;
+        const dden = -ex12 * ey31 - ex31 * -ey12;
+        const slopeD = (f1: number, f2: number, f3: number, i: number) => {
+            const d31 = f3 - f1, d21 = f2 - f1;
+            S[i] = f1; S[i + 1] = -(d31 * -ey12 - d21 * ey31) / dden; S[i + 2] = -(ex31 * d21 + ex12 * d31) / dden;
+        };
         const gens = (bp[0] & 15), ras = this.ras;
         slope(w0, w1, w2, 0);
         for (let g = 0; g < gens; g++) {
-            slope(fr(v0.s[g] * w0), fr(v1.s[g] * w1), fr(v2.s[g] * w2), 3 + g * 9);
-            slope(fr(v0.t[g] * w0), fr(v1.t[g] * w1), fr(v2.t[g] * w2), 6 + g * 9);
+            slopeD(v0.s[g] * w0, v1.s[g] * w1, v2.s[g] * w2, 3 + g * 9);
+            slopeD(v0.t[g] * w0, v1.t[g] * w1, v2.t[g] * w2, 6 + g * 9);
             slope(fr(v0.q[g] * w0), fr(v1.q[g] * w1), fr(v2.q[g] * w2), 9 + g * 9);
         }
         // the channels' colours: the same at the three corners, or planes too
@@ -444,16 +448,20 @@ export class Gx {
             let CX1 = CY1, CX2 = CY2, CX3 = CY3;
             for (let x = minx; x < maxx; x++) {
                 if (CX1 > 0 && CX2 > 0 && CX3 > 0) {
-                    const q = ((y & 1) << 2) | ((x & 1) << 1);
-                    const dx = fr(fr(baseX + sp[q]) + (x - vx0)), dy = fr(fr(baseY + sp[q + 1]) + (y - vy0)), mx = fr(midX + (x - vx0)), my = fr(midY + (y - vy0));
+                    const mx = fr(midX + (x - vx0)), my = fr(midY + (y - vy0)), dx = mx, dy = my, ddx = x + 0.5 - gx1, ddy = y + 0.5 - gy1;
                     const invW = fr(1 / fr(fr(S[0] + fr(S[1] * dx)) + fr(S[2] * dy)));
                     for (let g = 0; g < gens; g++) {
                         const o = 3 + g * 9;
                         let pr = invW;
                         if (proj[0x1040 + g] & 2) { const q = fr(fr(fr(S[o + 6] + fr(S[o + 7] * dx)) + fr(S[o + 8] * dy)) * invW); if (q !== 0) pr = fr(invW / q); }
-                        // (the texture environment takes texture coordinates with 7 fractional bits)
-                        uv[g * 2] = Math.trunc(fr(fr(fr(fr(S[o] + fr(S[o + 1] * dx)) + fr(S[o + 2] * dy)) * pr) * 128));
-                        uv[g * 2 + 1] = Math.trunc(fr(fr(fr(fr(S[o + 3] + fr(S[o + 4] * dx)) + fr(S[o + 5] * dy)) * pr) * 128));
+                        // Texture coordinates reach the sampler in 1/64 texel, rounded down, and a hair low: one that
+                        // is exactly on a 64th comes out one lower (measured on a Wii, tools/hwprobe: ramp and
+                        // saw-tooth textures on stamps of every size; 24,944 such pixels, all one lower). So they are
+                        // worked out here without single-precision rounding and a little is taken off before rounding
+                        // down. (Not all of it: the console also takes a few coordinates a hair ABOVE a 64th one
+                        // lower, in stamps that cross the viewport's middle; its own arithmetic isn't known yet.)
+                        uv[g * 2] = Math.floor((S[o] + S[o + 1] * ddx + S[o + 2] * ddy) * pr * 64 - 1e-6);
+                        uv[g * 2 + 1] = Math.floor((S[o + 3] + S[o + 4] * ddx + S[o + 5] * ddy) * pr * 64 - 1e-6);
                     }
                     if (varying) for (let i = 0; i < 8; i++) if (this.chanUsed[i >> 2]) { const o = 80 + i * 3, v = Math.trunc(fr(fr(S[o] + fr(S[o + 1] * mx)) + fr(S[o + 2] * my))); ras[i] = v < 0 ? 0 : v > 255 ? 255 : v; }
                     let z = 0;
@@ -617,22 +625,24 @@ export class Gx {
     }
 
     // ---- textures
-    /** texture `map` at (s, t) (texels, 7 fractional bits) into this.texel */
+    /** texture `map` at (s, t) (texels, 6 fractional bits) into this.texel */
     private sample(map: number, s: number, t: number) {
         const ti = this.texInfo[map], out = this.texel;
         if (ti.mixed) this.warn('a texture with mipmaps or two kinds of filter');
-        if (!ti.linear) { this.fetch(ti, wrap(s >> 7, ti.wrapS, ti.w), wrap(t >> 7, ti.wrapT, ti.h), out); return; }
-        s -= 64; t -= 64;
-        const is = s >> 7, it = t >> 7, fs = s & 127, ft = t & 127;
+        if (!ti.linear) { this.fetch(ti, wrap(s >> 6, ti.wrapS, ti.w), wrap(t >> 6, ti.wrapT, ti.h), out); return; }
+        s -= 32; t -= 32;
+        const is = s >> 6, it = t >> 6, fs = s & 63, ft = t & 63;
         const s0 = wrap(is, ti.wrapS, ti.w), s1 = wrap(is + 1, ti.wrapS, ti.w), t0 = wrap(it, ti.wrapT, ti.h), t1 = wrap(it + 1, ti.wrapT, ti.h);
-        const tmp = this.tmp;
-        let r = 0, g = 0, b = 0, a = 0, w = (128 - fs) * (128 - ft);
-        this.fetch(ti, s0, t0, tmp); r += tmp[0] * w; g += tmp[1] * w; b += tmp[2] * w; a += tmp[3] * w;
-        w = fs * (128 - ft); this.fetch(ti, s1, t0, tmp); r += tmp[0] * w; g += tmp[1] * w; b += tmp[2] * w; a += tmp[3] * w;
-        w = (128 - fs) * ft; this.fetch(ti, s0, t1, tmp); r += tmp[0] * w; g += tmp[1] * w; b += tmp[2] * w; a += tmp[3] * w;
-        w = fs * ft; this.fetch(ti, s1, t1, tmp); r += tmp[0] * w; g += tmp[1] * w; b += tmp[2] * w; a += tmp[3] * w;
-        out[0] = r >> 14; out[1] = g >> 14; out[2] = b >> 14; out[3] = a >> 14;
+        // (the two columns are mixed along S first, each to 8 bits, then the two results along T: measured on a Wii,
+        // the game's stamp textures on stamps of every size; one sum of four weights is off by one in many places)
+        const q0 = this.q0, q1 = this.q1, q2 = this.q2, q3 = this.q3;
+        this.fetch(ti, s0, t0, q0); this.fetch(ti, s1, t0, q1); this.fetch(ti, s0, t1, q2); this.fetch(ti, s1, t1, q3);
+        for (let c = 0; c < 4; c++) {
+            const top = (q0[c] * (64 - fs) + q1[c] * fs) >> 6, bot = (q2[c] * (64 - fs) + q3[c] * fs) >> 6;
+            out[c] = (top * (64 - ft) + bot * ft) >> 6;
+        }
     }
+    private q0 = new Int32Array(4); private q1 = new Int32Array(4); private q2 = new Int32Array(4); private q3 = new Int32Array(4);
     private tmp = new Int32Array(4);
     private fetch(ti: { addr: number; w: number; h: number; fmt: number }, x: number, y: number, out: Int32Array) {
         const ram = this.ram;
@@ -707,8 +717,6 @@ export class Gx {
 }
 
 // ---------------------------------------------------------------- helpers
-/** the texture sample points (Gx.samplePoint): x for an even and an odd pixel column, y for the four pixels of a group */
-const SX_EVEN = 0.65625, SX_ODD = 0.59375, SY_EE = 0.46875, SY_OE = 0.625, SY_EO = 0.46875, SY_OO = 0.46875;
 /** Screen positions are kept in 1/SUB pixel and a pixel is tested MID/SUB in: the GPU's sample location registers (BP 1 to 4)
  *  count in twelfths of a pixel, and the game sets every one to 6, the middle (GXSetCopyFilter without anti-aliasing).
  *  The recordings agree: with Dolphin's 1/16 grid Bianco Hills 1 stops at tick 2,952, with this one it passes it. */

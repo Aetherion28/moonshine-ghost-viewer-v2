@@ -283,7 +283,8 @@ if (mode === 'capture') {
         const bp = gx.bp;
         if (!cur || prim !== 0x80 || count !== 4 || ((bp[0] >>> 10) & 15) !== 2) return;
         const xs = [v[0].x, v[1].x, v[2].x, v[3].x], ys = [v[0].y, v[1].y, v[2].y, v[3].y];
-        cur.stamps.push({ q: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], tex: (bp[0x94] << 5) & 0x03FFFFFF, type: ((bp[0xC4] >>> 12) & 15) === 8 ? 0 : 1, c0: gx.tevReg[7], c1: gx.tevReg[11] });
+        cur.stamps.push({ q: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map(Math.round),   // (a corner past the viewport's middle is 1/12 lower)
+             tex: (bp[0x94] << 5) & 0x03FFFFFF, type: ((bp[0xC4] >>> 12) & 15) === 8 ? 0 : 1, c0: gx.tevReg[7], c1: gx.tevReg[11] });
         cur.hmap = (bp[0x95] << 5) & 0x03FFFFFF;
     };
     // a pass ends with its copy
@@ -367,6 +368,15 @@ if (mode === 'capture') {
                 const map = (type: number) => i8(dim[type].w!, dim[type].h!, (x, y) => [x + y * 16, x * 3 + y * 7, 255 - x + y * 5, (x >> 2) * 4 + (y >> 2) * 36 + g, x * 9 + y, x ^ (y * 3), x * y, (x >> 3) * 8 + (y >> 3) * 72 + 3][g]);
                 for (let k = 0; k < 4; k++) add(type, `blocks${k} map ${g}`, four.map(([x, y]) => ({ x: x + 32, y: y + 32, size: 64 })), i8(64, 64, VARIANTS.find(([n]) => n === `blocks${k}`)![1]), map(type));
                 add(type, `no stamp map ${g}`, [], null, map(type));
+            }
+        }
+        // DENSE=1: the game's stamp sizes with a corner on every column and row of the map (fine saw-tooth textures)
+        if (process.env.DENSE) for (const size of [4, 6, 8, 12, 14, 16, 18, 20, 24]) {
+            const P = Math.ceil((size + 8) / 8) * 8, n = Math.floor(256 / P);
+            for (let L = 0; L * n < P; L++) {
+                const list: { x: number; y: number; size: number }[] = [];
+                for (let r = 0; r < n; r++) for (let j = 0; j < n; j++) { const x = j * P + (L * n + r) % P, y = r * P + (L * n + j) % P; if (x + size <= 256 && y + size <= 256) list.push({ x, y, size }); }
+                for (const [name, tex] of texes.filter(([nm]) => /^fine/.test(nm))) add(1, `${name} dense ${size} ${L}`, list, tex, flat(1));
             }
         }
         // bigger stamps (to a texel a pixel and two pixels a texel), each corner even or odd

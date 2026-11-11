@@ -2,7 +2,7 @@
 // Run: node v3goopdbg.mjs <trace> <from tick> <to tick>
 // Env: WATCH=x,y (every pixel drawn at one place of the frame buffer, from <from> on), PX=<regex> (the pixels of
 // the 3-stage draws that match), TEXEL=layer,x,z (a texel per tick), REGION=layer,x,z,n (an n x n block of the
-// map and of the height map at <from>), GX_SP (the GPU model's sample points, as in tests/replay.ts), POLL=1 (every goop test of the game: layer, texel, value, and each
+// map and of the height map at <from>), POLL=1 (every goop test of the game: layer, texel, value, and each
 // layer's action), DUMP=<file> (all layers' maps at <to>), EARLY=layer,x,z, ALL=1 (don't stop on issues).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { readTrace } from '../game/trace.ts';
@@ -16,7 +16,6 @@ const T = readTrace(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as
 const from = +process.argv[3], to = +process.argv[4];
 const R = new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), { log: (s) => { if (/^\[/.test(s)) console.log(s); }, fstPad: +(process.env.FSTPAD ?? (process.env.DISC ? 0 : 480)), stopOn: process.env.ALL ? ['heap', 'layout'] : undefined });
 const m = R.m, mem = m.mem, gx = m.hw.gx;
-if (process.env.GX_SP) gx.samplePoint.set(process.env.GX_SP.split(',').map(Number));
 const f32 = (a: number) => { const d = new DataView(new ArrayBuffer(4)); d.setUint32(0, mem.r32(a)); return d.getFloat32(0); };
 let lastTick = -1;
 if (process.env.EARLY) { const [li, tx, tz] = process.env.EARLY.split(',').map(Number); let n = 0; const val = () => { const l = layers()[li]; return l ? mem.r8(l.map + idx(tx, tz, l.l2w)) : -1; }; m.cpu.hook(JP10.goopLayerDraw + 4, (c) => { if (n++ < 40) console.log(`layer draw ${c.gpr[4]} at count ${c.count} tick ${R.ticks}: texel = ${val()}`); return false; }); gx.trace = (s) => { if (n < 40 && /^copy|stages 2/.test(s)) console.log('   ' + s.slice(0, 200) + ' texel ' + val()); }; }
