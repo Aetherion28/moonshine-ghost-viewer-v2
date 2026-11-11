@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moonshine MSGT Viewer</title>
+<meta name="description" content="Plays a Moonshine recording in Super Mario Sunshine's own code, from your disc, and checks it against what was recorded.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='%23f5b331'/%3E%3Cg stroke='%23f5b331' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M16 2v3M16 27v3M2 16h3M27 16h3M6 6l2.2 2.2M23.8 23.8L26 26M6 26l2.2-2.2M23.8 8.2L26 6'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #0d1318; --panel: #141c23; --raised: #1a242d; --line: #26323c; --text: #e7edf2; --muted: #8a99a6; --faint: #5c6b78;
+  --accent: #f5b331; --accent-ink: #1a1200; --ok: #45c28a; --warn: #f0a23b; --bad: #ef5d63; --info: #5aa9f7;
+  --mario: #ff6252; --camera: #5aa9f7; --actor: #73828f; --path: #33424e; --grid: #18222a;
+  --radius: 10px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f4f6f8; --panel: #ffffff; --raised: #f0f3f5; --line: #d9e0e6; --text: #17212a; --muted: #5b6b78; --faint: #8998a5;
+    --accent: #c98300; --accent-ink: #ffffff; --ok: #1f9d63; --warn: #b96f00; --bad: #d23b42; --info: #1f6fd0;
+    --mario: #e0402f; --camera: #1f6fd0; --actor: #8795a1; --path: #c4ced6; --grid: #e9edf0;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f4f6f8; --panel: #ffffff; --raised: #f0f3f5; --line: #d9e0e6; --text: #17212a; --muted: #5b6b78; --faint: #8998a5;
+  --accent: #c98300; --accent-ink: #ffffff; --ok: #1f9d63; --warn: #b96f00; --bad: #d23b42; --info: #1f6fd0;
+  --mario: #e0402f; --camera: #1f6fd0; --actor: #8795a1; --path: #c4ced6; --grid: #e9edf0;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+h1 { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; margin: 0; display: flex; align-items: center; gap: 10px; }
+h1 .sun { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
+header p { margin: 0; color: var(--muted); flex: 1 1 320px; }
+.layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.panel > h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0; padding: 12px 14px 0; }
+.panel .body { padding: 10px 14px 14px; }
+.side { display: grid; gap: 16px; }
+.btn { appearance: none; border: 1px solid var(--line); background: var(--raised); border-radius: 8px; padding: 7px 12px; cursor: pointer; font-weight: 550; }
+.btn:hover:not(:disabled) { border-color: var(--faint); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.small { padding: 4px 9px; font-size: 13px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+.chosen { margin-top: 10px; font-size: 14px; }
+.chosen b { font-weight: 600; }
+.chosen .sub { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.drop { border: 1.5px dashed var(--line); border-radius: 8px; padding: 12px; text-align: center; color: var(--muted); font-size: 13px; margin-top: 10px; }
+body.dragging .drop { border-color: var(--accent); color: var(--text); }
+ul.jobs { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; max-height: 46vh; overflow: auto; }
+.job { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); cursor: pointer; text-align: left; width: 100%; }
+.job[aria-current="true"] { border-color: var(--accent); }
+.job .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--faint); }
+.job.run .dot { background: var(--info); animation: pulse 1.1s ease-in-out infinite; }
+.job.ok .dot { background: var(--ok); } .job.follow .dot { background: var(--info); } .job.off .dot { background: var(--bad); } .job.skip .dot { background: var(--warn); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .job.run .dot { animation: none; } }
+.job .name { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job .state { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.job .x { color: var(--faint); border: 0; background: none; cursor: pointer; padding: 0 2px; font-size: 16px; line-height: 1; }
+.job .x:hover { color: var(--text); }
+.main { display: grid; gap: 16px; min-width: 0; }
+.stage { position: relative; }
+.stagehead { display: flex; gap: 10px 18px; flex-wrap: wrap; align-items: baseline; padding: 12px 14px 0; }
+.stagehead .title { font-weight: 650; font-size: 16px; }
+.stagehead .meta { color: var(--muted); font-size: 13px; }
+.view { padding: 10px 14px 0; }
+canvas { display: block; width: 100%; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+#map { aspect-ratio: 16 / 10; }
+#height { height: 84px; margin-top: 8px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: 12.5px; padding: 8px 14px 0; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.transport { display: flex; gap: 10px; align-items: center; padding: 10px 14px 0; }
+.transport input[type=range] { flex: 1; accent-color: var(--accent); min-width: 0; }
+.transport .clock { font-family: var(--mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar { height: 4px; background: var(--raised); margin: 12px 14px 0; border-radius: 2px; overflow: hidden; }
+.bar > div { height: 100%; width: 0; background: var(--accent); transition: width 0.2s linear; }
+.readout { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; padding: 12px 14px 14px; }
+.cell { background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.cell .k { color: var(--muted); font-size: 11.5px; letter-spacing: 0.04em; text-transform: uppercase; }
+.cell .v { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.empty { padding: 44px 20px; text-align: center; color: var(--muted); }
+.empty b { color: var(--text); display: block; font-size: 16px; margin-bottom: 6px; }
+.verdict { display: flex; gap: 10px; align-items: center; font-weight: 650; font-size: 16px; }
+.verdict .mark { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; color: #fff; flex: none; }
+.verdict.ok .mark { background: var(--ok); } .verdict.follow .mark { background: var(--info); } .verdict.off .mark { background: var(--bad); } .verdict.skip .mark { background: var(--warn); }
+.summary { margin: 8px 0 0; color: var(--text); overflow-wrap: anywhere; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+details { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+pre { margin: 8px 0 0; padding: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
+footer { margin-top: 22px; color: var(--faint); font-size: 12.5px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="sun" aria-hidden="true"></span>Moonshine MSGT Viewer</h1>
+    <p>Plays a Moonshine recording in Super Mario Sunshine's own code, from your disc, and checks every frame against what was recorded. Your disc and recordings never leave this computer.</p>
+  </header>
+  <div class="layout">
+    <div class="side">
+      <section class="panel">
+        <h2>1 · Game disc</h2>
+        <div class="body">
+          <div class="row">
+            <button class="btn" id="pickIso">Choose disc image…</button>
+            <button class="btn" id="pickFolder">Extracted folder…</button>
+          </div>
+          <input type="file" id="isoFile" accept=".iso,.gcm" hidden>
+          <input type="file" id="folderFile" webkitdirectory hidden>
+          <div class="chosen" id="discInfo" hidden></div>
+          <p class="hint" id="discHint">A plain .iso or .gcm image of your own disc, or the folder Dolphin makes with "Extract Entire Disc".</p>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>2 · Recordings</h2>
+        <div class="body">
+          <div class="row">
+            <button class="btn" id="pickTraces">Add recordings…</button>
+            <button class="btn small" id="clearJobs" hidden>Clear</button>
+          </div>
+          <input type="file" id="traceFile" accept=".msgt" multiple hidden>
+          <div class="drop" id="drop">or drop .msgt files and a disc image anywhere on this page</div>
+          <ul class="jobs" id="jobs"></ul>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>3 · Play</h2>
+        <div class="body">
+          <div class="row">
+            <button class="btn primary" id="run" disabled>Play</button>
+            <button class="btn" id="stop" disabled>Stop</button>
+            <label class="row" style="gap:6px;color:var(--muted);font-size:13px">at a time
+              <select id="parallel" class="btn small"></select>
+            </label>
+          </div>
+          <p class="hint" id="runHint">Choose a disc and at least one recording.</p>
+        </div>
+      </section>
+    </div>
+    <div class="main">
+      <section class="panel stage">
+        <div class="empty" id="empty"><b>Nothing playing yet</b>The game's own Mario, camera and actors show here, top-down, as a recording plays.</div>
+        <div id="live" hidden>
+          <div class="stagehead"><span class="title" id="stageTitle"></span><span class="meta" id="stageMeta"></span></div>
+          <div class="view">
+            <canvas id="map"></canvas>
+            <canvas id="height"></canvas>
+          </div>
+          <div class="legend">
+            <span><i style="background:var(--mario)"></i>Mario, in the game's code</span>
+            <span><i style="background:var(--path)"></i>the recorded path</span>
+            <span><i style="background:var(--camera)"></i>camera</span>
+            <span><i style="background:var(--actor)"></i>actors</span>
+            <button class="btn small" id="wide" style="margin-left:auto">Whole stage</button>
+          </div>
+          <div class="transport">
+            <button class="btn small" id="playback" disabled>Replay</button>
+            <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Frame">
+            <span class="clock" id="clock">0:00.00</span>
+          </div>
+          <div class="bar" aria-hidden="true"><div id="progress"></div></div>
+          <div class="readout" id="readout"></div>
+        </div>
+      </section>
+      <section class="panel" id="resultPanel" hidden>
+        <h2>Result</h2>
+        <div class="body" id="result"></div>
+      </section>
+    </div>
+  </div>
+  <footer>Nothing of the game is on this site: the program and its files are read from your disc, in your browser.</footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

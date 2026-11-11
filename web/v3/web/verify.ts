@@ -3,7 +3,8 @@
 // stage heap's size differs, and again with Shiny Shines when the heap is laid out differently.
 // Used by the browser's worker (web/worker.ts) and by the Node check of a disc (tests/verify.ts).
 import { readTrace, NO_NPC_PHASE, type Trace } from '../game/trace.ts';
-import { nextScriptLocks, followsFurther, partedInArithmetic, Replay, type Issue } from '../game/replay.ts';
+import { nextScriptLocks, followsFurther, partedInArithmetic, Replay, type Issue, type LiveSample } from '../game/replay.ts';
+export type { LiveSample } from '../game/replay.ts';
 import { versionOf, symOf, VERSIONS } from '../game/versions.ts';
 import type { OpenedDisc } from './discs.ts';
 
@@ -62,6 +63,17 @@ export interface VerifyHost {
     cancelled(): boolean;
     /** a breath between slices (the worker's way to receive a cancel) */
     breathe(): Promise<void>;
+    /** what the recording is, once it and the disc are read (a page showing the replay) */
+    intro?(i: VerifyIntro): void;
+    /** the game's state at each frame of a stage, as the replay goes (`Replay.liveSample`) */
+    live?(s: LiveSample, attempt: number): void;
+}
+export interface VerifyIntro {
+    type: 'intro';
+    recordingVersion: string; discVersion: string; otherVersion: boolean;
+    area: number; episode: number; frames: number; ticks: number; stages: number;
+    /** Mario's recorded position at every movement tick (x, y, z each), and the tick each stage of the recording starts at */
+    path: Float32Array; stageTicks: number[];
 }
 
 /** Plays a trace on the game from `open`'s disc and reports how far the game's state matches the recording. */
@@ -87,12 +99,19 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         if (!V) return finish(emptyReport(T, 'unsupported', `The disc is ${D.gameId || 'not named'} revision ${D.revision} (its program is ${D.dol.length} bytes): that version of the game isn't set up.`, t0));
         // (a disc of another version than the recording's: its code plays the recording, and the recorded state is put in where they part)
         const other = V.key !== VT.key;
+        if (host.intro) {
+            const path = new Float32Array(T.ticks.length * 3), w0 = T.stages[0].words[4];
+            T.ticks.forEach((t, k) => { if (t.mario) { const dv = new DataView(t.mario.buffer, t.mario.byteOffset); path[k * 3] = dv.getFloat32(0x10); path[k * 3 + 1] = dv.getFloat32(0x14); path[k * 3 + 2] = dv.getFloat32(0x18); } else path[k * 3] = NaN; });
+            const stageTicks = T.stages.map((s) => T.ticks.findIndex((t) => t.ev > s.ev)).map((k) => k < 0 ? T.ticks.length : k);
+            host.intro({ type: 'intro', recordingVersion: VT.name, discVersion: V.name, otherVersion: other, area: w0 >>> 24, episode: (w0 >>> 16) & 0xFF, frames: T.frames.length, ticks: T.ticks.length, stages: T.stages.length, path, stageTicks });
+        }
 
         const log: string[] = [];
         const tried = new Set<string>();
         let dolphin = false, npcPhase: number | undefined, stopOnActors = false;
         const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = [], whole = false, selectHold = 0) => new Replay(D.dol, D.make(), T!, V.addrs, symOf(V), {
             log: (s) => { log.push(s); if (log.length > 40) log.shift(); }, fstPad, shinyShines, scriptsLocked, selectHold, dolphin, npcPhase, stopOnActors, recorded: VT.addrs, tried: whole ? undefined : tried,
+            onFrame: host.live ? () => { const s = R.liveSample(); if (s) host.live!(s, attempt); } : undefined,
         });
         let R = make(0), attempt = 1, shiny = false;
         // one attempt: slices of the machine's time, with a breath between them for messages (cancel)

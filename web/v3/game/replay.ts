@@ -112,10 +112,12 @@ const TAKE_HELD = 0x6C, MARIO_STATUS = 0x7C, MARIO_FACE_ANGLE_Y = 0x96;   // TTa
 const STATUS_PULLING = 0x560, STATUS_OIL_PULLING = 0x40561;
 const MARIO_SOUND = 0x4E4;   // TMario::mSound, the JAISound of his damage voice: only started and stopped
 const FLAG_OPTIONS = [0x284, 0x298];   // TFlagManager: mSavedOptionBools to mOptionInts
+const MARIO_FORWARD_SPEED = 0xB0, CAMERA_EYE = 0x124, CAMERA_TARGET = 0x148;   // TMario::mForwardVel; CPolarSubCamera::unk124, unk148
 const MARIO_FLUDD = 0x3E4, MARIO_YOSHI = 0x3F0;   // TMario::mWaterGun, mYoshi
 const MARIO_FLAGS = 0x118;   // TMario::mFlags; bit 0 is MARIO_FLAG_OCCLUDED, written from the GPU's draw-sync callback
 
 export interface Issue { kind: string; frame: number; tick: number; text: string }
+export interface LiveSample { frame: number; tick: number; mario: number[]; camera: number[]; actors: Float32Array }
 /** the kinds of difference a following replay answers by taking the recording's state */
 const FOLLOWED = new Set(['mario', 'camera', 'fludd', 'yoshi', 'actor', 'water', 'rand', 'seed', 'literal', 'pad', 'tick']);
 export interface ReplayOptions {
@@ -160,6 +162,8 @@ export interface ReplayOptions {
      * other way instead of playing this one to its end first.
      */
     tried?: Set<string>;
+    /** called at each frame of a stage that is set up, before its director runs (a page showing the replay as it goes: `liveSample`) */
+    onFrame?: (frame: number) => void;
     /** told of every block the heaps give out (a tool's: tests/uninit.ts) */
     onAlloc?: (ptr: number, size: number) => void;
 }
@@ -220,7 +224,7 @@ export class Replay {
     npcPhaseTaken: number | undefined;
     /** played with Dolphin's float rule (see `ReplayOptions.dolphin`) */
     dolphin = false;
-    private tvForced = false;
+    private tvForced = false; private onFrame: ((frame: number) => void) | undefined;
     /** `ReplayOptions.follow`, and how often each kind of state was put in from the recording */
     follow = false; taken: Record<string, number> = {};
     /** the disc is another version of the game than the recording's (only with `follow`) */
@@ -245,7 +249,7 @@ export class Replay {
         this.stopOn = new Set(opt.stopOn ?? ['heap', 'layout', 'rand', 'mario', 'camera', 'flow', 'stage', 'unrecorded']); this.maxIssues = opt.maxIssues ?? 50;
         if (opt.stopOnActors) this.stopOn.add('actor');
         this.fstPadUsed = opt.fstPad ?? 0; this.selectHoldUsed = opt.selectHold ?? 0; this.npcPhaseTaken = opt.npcPhase;
-        this.dolphin = cpu.laneRounds = !!opt.dolphin;
+        this.dolphin = cpu.laneRounds = !!opt.dolphin; this.onFrame = opt.onFrame;
         this.recA = opt.recorded && opt.recorded !== A ? opt.recorded : A; this.otherVersion = this.recA !== A; this.follow = !!opt.follow || this.otherVersion;
         // (the console's TV format is the recording's: a PAL game on an NTSC console runs at NTSC's rate)
         m.load(dol, disc, this.fstPadUsed, T.stages[0].words[14]);
@@ -814,6 +818,7 @@ export class Replay {
             }
         }
         this.iFlow = i;
+        if (setupDone && this.onFrame) this.onFrame(this.frames);
         return hold ? skip() : false;
     }
     private afterDirect(c: { gpr: Uint32Array }) {
@@ -1243,6 +1248,24 @@ export class Replay {
             this.actorsOff.add(key);
             if (this.actorsOff.size <= 60) this.issue(kind, `${name} differs at +0x${off.toString(16)}: ${hex(g)} / ${hex(t)} (${f32FromBits(g).toPrecision(8)} / ${f32FromBits(t).toPrecision(8)}) (game / trace)`);
         }
+    }
+    /**
+     * The game's state for a page that shows the replay as it goes: Mario (position, facing in turns of 65536, forward
+     * speed, status), the camera's eye and target, and where every actor that is neither dead nor hidden stands.
+     */
+    liveSample(): LiveSample | null {
+        const mem = this.m.mem, A = this.A, mario = mem.r32(A.gpMarioOriginal), cam = mem.r32(A.gpCamera);
+        if (this.phase !== 'stage' || !mario) return null;
+        const f = (a: number) => f32FromBits(mem.r32(a));
+        const list = this.roster(), actors = new Float32Array(list.length * 3);
+        let n = 0;
+        for (const p of list) { if (mem.r32(p + 0xF0) & 3) continue; actors[n++] = f(p + 0x10); actors[n++] = f(p + 0x14); actors[n++] = f(p + 0x18); }
+        return {
+            frame: this.frames, tick: this.ticks,
+            mario: [f(mario + 0x10), f(mario + 0x14), f(mario + 0x18), mem.r16(mario + MARIO_FACE_ANGLE_Y), f(mario + MARIO_FORWARD_SPEED), mem.r32(mario + MARIO_STATUS)],
+            camera: cam ? [f(cam + CAMERA_EYE), f(cam + CAMERA_EYE + 4), f(cam + CAMERA_EYE + 8), f(cam + CAMERA_TARGET), f(cam + CAMERA_TARGET + 4), f(cam + CAMERA_TARGET + 8)] : [0, 0, 0, 0, 0, 0],
+            actors: actors.subarray(0, n),
+        };
     }
     /** the game's actors in the order Moonshine's recorder lists them: the enemy managers' objects, the other managers', the actors on their own */
     private roster(): number[] {
