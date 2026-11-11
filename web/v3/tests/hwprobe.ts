@@ -36,7 +36,7 @@ interface Pass {
     blocks: Map<number, { size: number; data: Uint8Array; kind: string; w?: number; h?: number; fmt?: number }>;
     dst: number; dstSize: number; result: Uint8Array | null;
     /** the stamps drawn: the quad on the screen (x1, y1, x2, y2), the texture, 0 cleaning / 1 goop, the height window */
-    stamps: { q: number[]; tex: number; type: number; c0: number; c1: number }[];
+    stamps: { q: number[]; tex: number; type: number; c0: number; c1: number; k?: number }[];
     /** the height map the stamps test (their second texture) */
     hmap: number;
 }
@@ -89,9 +89,10 @@ function finish(P: Pass, ramAfter: Uint8Array) {
 
 /**
  * A pass as a script case. sub: other contents for a block (by game address); window: the stamps' height window
- * (TEV colours 1 and 2) set to these two values instead of each stamp's own.
+ * (TEV colours 1 and 2) set to these two values instead of each stamp's own; repeat: the stamps' texture repeats
+ * (for texture coordinates past 1).
  */
-function emit(S: Script, A: Arena, P: Pass, label: string, sub: Map<number, Uint8Array> = new Map(), window: number[] | null = null) {
+function emit(S: Script, A: Arena, P: Pass, label: string, sub: Map<number, Uint8Array> = new Map(), window: number[] | null = null, repeat = false) {
     S.note(label);
     const off = new Map<number, number>();
     for (const [addr, b] of P.blocks) {
@@ -144,16 +145,21 @@ function emit(S: Script, A: Arena, P: Pass, label: string, sub: Map<number, Uint
     // (GXInvalidateTexAll)
     bpw(0x0F, P.bp[0x0F]); bpw(0x66, 0x001000); bpw(0x66, 0x001100); bpw(0x0F, P.bp[0x0F]);
     // ---- the pass
-    const bp = P.bp.slice(); let mask = 0xFFFFFF, stampsOn = false;
+    const bp = P.bp.slice(); let mask = 0xFFFFFF, stampsOn = false, repeated = false;
     for (const c of P.cmds) {
         if (c[0] === 0x61) {
             const w = r32(c, 1), reg = w >>> 24; let v = w & 0xFFFFFF;
             if (reg === 0xFE) mask = v; else { bp[reg] = ((bp[reg] & ~mask) | (v & mask)) & 0xFFFFFF; mask = 0xFFFFFF; }
             // (the stamps' height window: set before each stamp, after the layer's own quad)
             if (window && stampsOn && reg >= 0xE2 && reg <= 0xE5 && !(v & 0x800000)) { const k = window[(reg - 0xE2) >> 1] & 0x7FF; v = (k << 12) | k; }
+            if (repeat && stampsOn && reg === 0x80) v = (v & ~0xF) | 5;
             bpAny(reg, v);
         } else if (c[0] === 0x08) cpw(c[1], r32(c, 2));
-        else { if ((c[0] & 0x80) && ((bp[0] >>> 10) & 15) === 1) stampsOn = true; S.fifo(c); }
+        else {
+            if ((c[0] & 0x80) && ((bp[0] >>> 10) & 15) === 1) stampsOn = true;
+            if (repeat && !repeated && (c[0] & 0x80) && ((bp[0] >>> 10) & 15) === 2) { repeated = true; bpw(0x80, (bp[0x80] & ~0xF) | 5); }
+            S.fifo(c);
+        }
     }
     S.sync();
     S.read16(0xCC001018, 12);
@@ -215,9 +221,9 @@ interface Case { label: string; source: string; tick: number; variant: string; w
 /**
  * A pass that draws stamps, with other stamps in their place: squares of `size` pixels with the corner at (x, y),
  * drawn as the game draws its own (four vertices: the place in pixels, the texture's corner, the place again for
- * the height map; 16-bit numbers).
+ * the height map; 16-bit numbers). k: the texture's corner is (k, k) instead of (1, 1): the texture k times across. w, h: a rectangle instead of a square.
  */
-function withStamps(P: Pass, list: { x: number; y: number; size: number }[]): Pass {
+function withStamps(P: Pass, list: { x: number; y: number; size: number; k?: number; w?: number; h?: number }[]): Pass {
     const bp = P.bp.slice(), cmds: Uint8Array[] = []; let done = false;
     for (const c of P.cmds) {
         if (c[0] === 0x61) bp[c[1]] = r32(c, 1) & 0xFFFFFF;
@@ -227,14 +233,14 @@ function withStamps(P: Pass, list: { x: number; y: number; size: number }[]): Pa
             done = true;
             for (const st of list) {
                 const b: number[] = [0x80, 0, 4], w = (v: number) => b.push((v >> 8) & 0xFF, v & 0xFF);
-                for (const [i, j] of [[0, 0], [1, 0], [1, 1], [0, 1]]) { const x = st.x + i * st.size, y = st.y + j * st.size; w(x); w(y); w(i); w(j); w(x); w(y); }
+                for (const [i, j] of [[0, 0], [1, 0], [1, 1], [0, 1]]) { const x = st.x + i * (st.w ?? st.size), y = st.y + j * (st.h ?? st.size); w(x); w(y); w(i * (st.k ?? 1)); w(j * (st.k ?? 1)); w(x); w(y); }
                 cmds.push(Uint8Array.from(b));
             }
         } else cmds.push(c);
     }
     if (!done) throw new Error('a pass without a stamp');
     const s0 = P.stamps[0];
-    return { ...P, cmds, stamps: list.map((st) => ({ q: [st.x, st.y, st.x + st.size, st.y + st.size], tex: s0.tex, type: s0.type, c0: WINDOW[0], c1: WINDOW[1] })) };
+    return { ...P, cmds, stamps: list.map((st) => ({ q: [st.x, st.y, st.x + (st.w ?? st.size), st.y + (st.h ?? st.size)], tex: s0.tex, type: s0.type, c0: WINDOW[0], c1: WINDOW[1], k: st.k ?? 1 })) };
 }
 /** the stamps of the grid cases: every even size to 24 with the corner on an even or odd column and row, some odd sizes; three arrangements */
 function grid(layout: number): { x: number; y: number; size: number }[] {
@@ -349,17 +355,17 @@ if (mode === 'capture') {
         const first = deserialize(readFileSync(process.argv[4])) as Pass[];
         const one = (type: number) => { const P = first.filter((q) => q.stamps.length > 0 && q.stamps.every((st) => st.type === type) && q.blocks.get(q.dst)!.w! >= 256 && q.blocks.get(q.dst)!.h! >= 256).sort((a, b) => a.stamps.length - b.stamps.length)[0]; if (!P) throw new Error(`no pass with stamps of type ${type} only`); return P; };
         const T = [one(0), one(1)], realTex = T.map((P) => P.blocks.get(P.stamps[0].tex)!.data), dim = T.map((P) => P.blocks.get(P.dst)!);
-        const add = (type: number, variant: string, list: { x: number; y: number; size: number }[], tex: Uint8Array | null, map: Uint8Array) => {
+        const add = (type: number, variant: string, list: { x: number; y: number; size: number; k?: number; w?: number; h?: number }[], tex: Uint8Array | null, map: Uint8Array) => {
             const P = list.length ? withStamps(T[type], list) : { ...T[type], cmds: withStamps(T[type], []).cmds, stamps: [] }, label = `grid ${type ? 'goop' : 'clean'} ${variant}`;
             // (the height map all of one height, and every height let through)
             const m = new Map<number, Uint8Array>([[P.dst, map], [P.hmap, new Uint8Array(P.blocks.get(P.hmap)!.size).fill(128)]]); if (tex) m.set(T[type].stamps[0].tex, tex);
-            emit(Sc, A, P, label, m, WINDOW);
+            emit(Sc, A, P, label, m, WINDOW, list.some((st) => (st.k ?? 1) > 1));
             cases.push({ label, source: 'grid', tick: 0, variant: `${type ? 'goop' : 'clean'} ${variant}`, w: dim[type].w!, h: dim[type].h!, stamps: P.stamps });
         };
         // (a map of 0: a goop stamp leaves its alpha there, a cleaning stamp its alpha squared, near enough)
         const flat = (type: number) => new Uint8Array(dim[type].size);
         const texes: [string, Uint8Array][] = [['realClean', realTex[0]], ['realGoop', realTex[1]], ...VARIANTS.filter(([n]) => !n.startsWith('blocks')).map(([n, f]) => [n, i8(64, 64, f)] as [string, Uint8Array])];
-        for (const type of [0, 1]) {
+        if (!process.env.SWEEP) for (const type of [0, 1]) {
             // every size and corner, three arrangements, each texture
             for (const [name, tex] of texes) for (let layout = 0; layout < 3; layout++) add(type, `${name} layout ${layout}`, grid(layout), tex, flat(type));
             // the blender: stamps of 64 pixels (a texel a pixel) with 64 flat squares each, on maps of every value
@@ -370,6 +376,11 @@ if (mode === 'capture') {
                 add(type, `no stamp map ${g}`, [], null, map(type));
             }
         }
+        // AMP=1: one big stamp with the texture many times across (the texture repeating), so that the rounding of the
+        // console's interpolation grows to something the saw-tooth textures show
+        if (process.env.AMP) for (const k of [1, 16, 256, 1024]) for (const [x, y, size] of [[8, 8, 240], [10, 10, 100], [140, 140, 100], [120, 120, 24], [3, 131, 120]]) {
+            for (const [name, tex] of texes.filter(([nm]) => /^(fine|saw)/.test(nm))) add(1, `${name} amp ${k} ${x},${y},${size}`, [{ x, y, size, k }], tex, flat(1));
+        }
         // DENSE=1: the game's stamp sizes with a corner on every column and row of the map (fine saw-tooth textures)
         if (process.env.DENSE) for (const size of [4, 6, 8, 12, 14, 16, 18, 20, 24]) {
             const P = Math.ceil((size + 8) / 8) * 8, n = Math.floor(256 / P);
@@ -379,6 +390,49 @@ if (mode === 'capture') {
                 for (const [name, tex] of texes.filter(([nm]) => /^fine/.test(nm))) add(1, `${name} dense ${size} ${L}`, list, tex, flat(1));
             }
         }
+        // SWEEP=1 (and nothing else of the grid): thin stamps of every length, the texture 256, 1024 or 4096 times across,
+        // to read the slope of the console's texture coordinate along each one (S along rows, T along columns)
+        if (process.env.SWEEP === '1') {
+            type St = { x: number; y: number; size: number; k?: number; w?: number; h?: number };
+            const fine = (A: string) => texes.filter(([nm]) => nm.startsWith('fine' + A));
+            const put = (A: string, name: string, list: St[]) => { for (let o = 0; o < list.length; o += 40) for (const [nm, tex] of fine(A)) add(1, `${nm} sweep ${name} ${o / 40}`, list.slice(o, o + 40).map((st, n) => A === 'S' ? { ...st, y: 2 + 6 * n } : { ...st, x: 2 + 6 * n }), tex, flat(1)); };
+            const len = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_v, i) => from + i);
+            for (const k of [1024, 256, 4096]) for (const x of k === 1024 ? [4, 130, 64] : [4]) {
+                put('S', `k ${k} x ${x}`, len(2, 121).map((w) => ({ x, y: 0, size: 0, w, h: 5, k })));
+                put('T', `k ${k} y ${x}`, len(2, 121).map((h) => ({ x: 0, y: x, size: 0, w: 5, h, k })));
+            }
+            // the same lengths from other corners, and with other heights
+            put('S', 'corner', [100, 120, 24, 50, 64].flatMap((w) => len(0, 7).map((x) => ({ x, y: 0, size: 0, w, h: 5, k: 1024 }))));
+            for (const w of [100, 120]) for (const [nm, tex] of fine('S')) {
+                let y = 1; const list: St[] = [];
+                for (const h of [2, 3, 5, 9, 17, 33, 65, 100]) { list.push({ x: 4, y, size: 0, w, h, k: 1024 }); y += h + 1; }
+                add(1, `${nm} sweep heights ${w}`, list, tex, flat(1));
+            }
+        }
+        // SWEEP=2: the same thin stamps with the texture a different number of times across in each case, so that each
+        // pixel's weight (what the console multiplies the texture's length by) can be read to a few bits past its own
+        if (process.env.SWEEP === '2') {
+            const list: { x: number; y: number; size: number; k?: number; w?: number; h?: number }[] = [];
+            let y = 2;
+            for (const x of [4, 6, 130, 60]) for (const w of [100, 64, 97, 120, 50, 24, 12, 77]) { list.push({ x, y, size: 0, w, h: 5 }); y += 6; }
+            for (const [w, h] of [[100, 3], [100, 9], [97, 3], [97, 9]]) { list.push({ x: 4, y, size: 0, w, h }); y += h + 1; }
+            const tall = list.map((st) => ({ x: st.y, y: st.x, size: 0, w: st.h, h: st.w }));
+            for (const k of [1024, 1021, 1013, 997, 983, 967, 947, 929, 911, 887, 863, 839, 811, 787, 761, 733, 709, 683, 659, 631, 607, 577, 547, 521]) {
+                for (const [nm, tex] of texes.filter(([n]) => /^fineS/.test(n))) add(1, `${nm} weights k ${k}`, list.map((st) => ({ ...st, k })), tex, flat(1));
+                if (k > 1000 || k < 530) for (const [nm, tex] of texes.filter(([n]) => /^fineT/.test(n))) add(1, `${nm} weights k ${k}`, tall.map((st) => ({ ...st, k })), tex, flat(1));
+            }
+            // squares, for the triangle whose weights both change
+            for (const k of [1024, 1021, 1013, 997, 983, 967, 947, 929]) for (const [nm, tex] of texes.filter(([n]) => /^fine/.test(n))) add(1, `${nm} weights square k ${k}`, [{ x: 4, y: 4, size: 100, k }, { x: 6, y: 134, size: 97, k }, { x: 134, y: 6, size: 100, k }, { x: 140, y: 140, size: 64, k }], tex, flat(1));
+        }
+        // SWEEP=3: one thin stamp shape on every row of the map and from several columns (is what the console loses a
+        // matter of where on the screen the stamp is?)
+        if (process.env.SWEEP === '3') {
+            const fineS = texes.filter(([n]) => /^fineS/.test(n));
+            const rows = (x: number, w: number, r: number) => Array.from({ length: 41 }, (_v, n) => ({ x, y: 6 * n + r, size: 0, w, h: 5, k: 1024 })).filter((st) => st.y + 5 <= 256);
+            for (const w of [100, 92]) for (let r = 0; r < 6; r++) for (const [nm, tex] of fineS) add(1, `${nm} place w ${w} x 4 r ${r}`, rows(4, w, r), tex, flat(1));
+            for (const x of [0, 1, 2, 3, 5, 8, 12, 16, 24]) for (const [nm, tex] of fineS) add(1, `${nm} place w 100 x ${x} r 2`, rows(x, 100, 2), tex, flat(1));
+        }
+        if (!process.env.SWEEP)
         // bigger stamps (to a texel a pixel and two pixels a texel), each corner even or odd
         for (const [px, py] of [[0, 0], [1, 0], [0, 1], [1, 1]]) for (const [name, tex] of texes.filter(([n]) => /^(realClean|rampS|rampT|sawS0|sawT0|fineS0|fineT0)$/.test(n))) {
             add(1, `${name} big ${px}${py}`, [{ x: 2 + px, y: 2 + py, size: 32 }, { x: 40 + px, y: 2 + py, size: 48 }, { x: 96 + px, y: 2 + py, size: 64 }, { x: 2 + px, y: 80 + py, size: 128 }, { x: 140 + px, y: 80 + py, size: 96 }, { x: 170 + px, y: 2 + py, size: 28 }, { x: 204 + px, y: 2 + py, size: 40 }], tex, flat(1));

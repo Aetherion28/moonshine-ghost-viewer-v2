@@ -81,9 +81,23 @@ The goop maps are drawn by the GPU, so the replay needs the GPU's exact arithmet
 - **Bilinear filtering mixes along S first, each pair to 8 bits, then the two results along T**, with the 6-bit fractions. One sum of four weights (what Dolphin's software renderer does, with 7 bits) is off by one in many places.
 - The blender and the layer's fade (the map's own quad) were right as they were: every value of the flat-square cases matches.
 
+- **Texture coordinates come from two weights with a reciprocal cut short** (jobs 8 to 11: one stamp with the texture 16 to 1,024 times across, so that the rounding grows to whole 64ths; thin stamps of every length from 2 to 121 pixels; the same stamp on every row).
+  Vertices 1 and 2 of a triangle each have a weight that is 0 on the edge facing it and 2^N at the vertex, with N = 10 + floor(log2(the triangle's area doubled, in 1/12 pixel squared)).
+  The weight's step for 1/12 pixel across is (the facing edge's height << N) / area, and down (its width << N) / area, each rounded DOWN, toward minus infinity.
+  The weights count from vertex 0, and the coordinate is vertex 0's plus each vertex's difference times its weight / 2^N.
+  So the slope along a stamp of d twelfths is floor(2^N / d) / 2^N of the texture's length, not 1 / d: this matched all 120 lengths, at three places on the map, for S and T.
+  Because a negative step rounds away from zero, the triangle of a quad where both weights change (S in the upper right one, T in the lower left one) loses one unit of 2^-N for every 1/12 pixel along the other axis.
+  `Gx.raster3` does this for triangles without perspective; with perspective the old plane is kept (not measured).
+
 With this the three goop recordings that stopped (Bianco Hills 1 at tick 4,533, Bianco Hills 5 at 3,457, Pianta Village 1 at 1,688) replay to their ends with no issue.
 
-Still open: in stamps with a vertex past the middle, a few coordinates a hair ABOVE a 64th (within about 2/1024 of a twelfth of a pixel) also come out one lower on the console, and which ones depends on the other screen coordinate and on which of the quad's two triangles the pixel is in (`/tmp` scratch `h8.py`: the pattern in a 20-pixel stamp at (123,123)). So the console's interpolation has rounding of its own that isn't known yet. Against the console's answers the model is now wrong in 288 texels of the 186 grid cases (about 12 million texels), all of this kind. The way to find it: bigger triangles and textures, where the same rounding grows to whole texels.
+Still open (the model is wrong in 180 of about 12 million texels of the grid job, 752 in the dense job, 274 on 512-pixel maps; before the weights: 288, 1,132 and 423): the console loses a little more than the weights explain.
+What the jobs show about it, none of it turned into arithmetic yet:
+- at the game's scale it only shows in stamps with a vertex past the middle, in the triangle where both weights change, on coordinates up to about 60 units of 2^-N above a 64th;
+- with the texture 1,024 times across it shows everywhere: the loss grows along the row, odd pixels lose more than even ones (first odd pixels fail, about 23 pixels later all), and it is the same on every row of the map;
+- it depends on the column on the screen, not on the distance from the stamp's corner: a 100-pixel stamp starting at column 0 to 5 fails from column 57 (odd) and 80 (even), one starting at column 6 to 24 from 81 and 106. 25 pixels is 2^20 in 64ths there, so the steps look like a value kept in two parts or in floating point;
+- two stamps of the same shape, with the same weights at a pixel, can differ (dense job, 14-pixel stamps across the middle).
+The scratch scripts for these are `amp*.py`, `sw*.py`, `wt*.py`, `pl1.py` and `res*.py` in the workspace's `/tmp/claude-0/hwp` (not kept); the jobs are `tests/hwprobe.ts script` with `AMP=1`, `SWEEP=1`, `SWEEP=2` and `SWEEP=3`.
 
 `tools/goopfit/` (the fitting tools) and the captures they read are history; they still run but nothing depends on them.
 

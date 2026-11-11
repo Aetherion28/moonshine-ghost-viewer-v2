@@ -415,6 +415,20 @@ export class Gx {
         };
         const gens = (bp[0] & 15), ras = this.ras;
         slope(w0, w1, w2, 0);
+        // Texture coordinates without perspective, as a Wii works them out (measured, tools/hwprobe: stamps with the
+        // texture up to 1024 times across, 2026-11-10). Each of vertices 1 and 2 has a weight that is 0 on the edge
+        // facing it and 2^N at the vertex, N = 10 + floor(log2(the triangle's area doubled, in 1/12 pixel squared)).
+        // The weight's step for 1/12 pixel across and down is (the edge's height or width << N) / area, rounded DOWN
+        // (toward minus infinity, so the two triangles of a quad differ), counted from vertex 0. The coordinate is
+        // vertex 0's plus each vertex's difference times its weight; see where it is taken for the last rounding.
+        const area = (X2 - X1) * (Y3 - Y1) - (X3 - X1) * (Y2 - Y1);
+        const flat = w0 === 1 && w1 === 1 && w2 === 1 && area !== 0;
+        let wN = 0, a1 = 0, b1 = 0, a2 = 0, b2 = 0;
+        if (flat) {
+            wN = Math.pow(2, 10 + Math.floor(Math.log2(Math.abs(area))));
+            a1 = Math.floor((Y3 - Y1) * wN / area); b1 = Math.floor((X1 - X3) * wN / area);
+            a2 = Math.floor((Y1 - Y2) * wN / area); b2 = Math.floor((X2 - X1) * wN / area);
+        }
         for (let g = 0; g < gens; g++) {
             slopeD(v0.s[g] * w0, v1.s[g] * w1, v2.s[g] * w2, 3 + g * 9);
             slopeD(v0.t[g] * w0, v1.t[g] * w1, v2.t[g] * w2, 6 + g * 9);
@@ -450,16 +464,20 @@ export class Gx {
                 if (CX1 > 0 && CX2 > 0 && CX3 > 0) {
                     const mx = fr(midX + (x - vx0)), my = fr(midY + (y - vy0)), dx = mx, dy = my, ddx = x + 0.5 - gx1, ddy = y + 0.5 - gy1;
                     const invW = fr(1 / fr(fr(S[0] + fr(S[1] * dx)) + fr(S[2] * dy)));
+                    // (the two weights here, the pixel's middle counted from vertex 0 in 1/12 pixel)
+                    const tx = x * SUB + 6 - v0.gx, ty = y * SUB + 6 - v0.gy, L1 = a1 * tx + b1 * ty, L2 = a2 * tx + b2 * ty;
                     for (let g = 0; g < gens; g++) {
                         const o = 3 + g * 9;
+                        if (flat && !(proj[0x1040 + g] & 2)) {
+                            // (in 1/64 texel; one exactly on a 64th comes out one lower: 24,944 such pixels measured)
+                            const s0 = v0.s[g] * 64, t0 = v0.t[g] * 64;
+                            uv[g * 2] = Math.ceil(s0 + ((v1.s[g] * 64 - s0) * L1 + (v2.s[g] * 64 - s0) * L2) / wN) - 1;
+                            uv[g * 2 + 1] = Math.ceil(t0 + ((v1.t[g] * 64 - t0) * L1 + (v2.t[g] * 64 - t0) * L2) / wN) - 1;
+                            continue;
+                        }
                         let pr = invW;
                         if (proj[0x1040 + g] & 2) { const q = fr(fr(fr(S[o + 6] + fr(S[o + 7] * dx)) + fr(S[o + 8] * dy)) * invW); if (q !== 0) pr = fr(invW / q); }
-                        // Texture coordinates reach the sampler in 1/64 texel, rounded down, and a hair low: one that
-                        // is exactly on a 64th comes out one lower (measured on a Wii, tools/hwprobe: ramp and
-                        // saw-tooth textures on stamps of every size; 24,944 such pixels, all one lower). So they are
-                        // worked out here without single-precision rounding and a little is taken off before rounding
-                        // down. (Not all of it: the console also takes a few coordinates a hair ABOVE a 64th one
-                        // lower, in stamps that cross the viewport's middle; its own arithmetic isn't known yet.)
+                        // (with perspective the console's arithmetic hasn't been measured: the plane, a hair low)
                         uv[g * 2] = Math.floor((S[o] + S[o + 1] * ddx + S[o + 2] * ddy) * pr * 64 - 1e-6);
                         uv[g * 2 + 1] = Math.floor((S[o + 3] + S[o + 4] * ddx + S[o + 5] * ddy) * pr * 64 - 1e-6);
                     }
