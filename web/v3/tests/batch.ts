@@ -1,7 +1,8 @@
 // v3: plays every trace of a folder on this computer's cores, each in a process of its own, and writes a line a
 // trace (survey.tsv, the columns of tests/survey.mjs) and each trace's report. The bundle needs only Node, so it
 // can run where the disc and the traces are (tools/batch/run-batch.bat starts it on Windows).
-// Run: node v3batch.mjs <disc image or extracted folder> <folder of traces, or a file listing them> [out folder] [workers]
+// Run: node v3batch.mjs <disc image, extracted folder, or a folder of disc images> <folder of traces, or a file listing them> [out folder] [workers]
+//   (a folder of images, one a game version: each trace is played on the image of its own version)
 //   (workers: by default all of the computer's threads but two, and no more than its memory holds at 0.9 GB each;
 //    WALL=seconds: the most a trace may take, 3600)
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, statSync, existsSync } from 'node:fs';
@@ -12,19 +13,31 @@ import { basename, join, resolve } from 'node:path';
 import { openDisc } from '../web/discs.ts';
 import { source } from './nodedisc.ts';
 import { verify, type VerifyReport } from '../web/verify.ts';
+import { readTrace } from '../game/trace.ts';
+import { versionOf } from '../game/versions.ts';
 
 const MARK = '@@report ';
 if (process.argv[2] === '--one') {
     // one trace, in a process of its own: the report as a line of JSON
-    const [disc, trace] = process.argv.slice(3);
+    const [discs, trace] = process.argv.slice(3);
     const tb = readFileSync(trace);
+    // of several discs, the one of the recording's version (the first when none is)
+    let disc = discs.split('|')[0];
+    if (discs.includes('|')) try {
+        const T = readTrace(tb.buffer.slice(tb.byteOffset, tb.byteOffset + tb.byteLength) as ArrayBuffer), V = versionOf(T.gameId, T.discRevision);
+        for (const d of discs.split('|')) { const D = openDisc(source(d)); if (V && versionOf(D.gameId, D.revision, D.dol.length)?.key === V.key) { disc = d; break; } }
+    } catch { /* (verify reports what is wrong with the trace) */ }
     const report = await verify(tb.buffer.slice(tb.byteOffset, tb.byteOffset + tb.byteLength) as ArrayBuffer, () => openDisc(source(disc)), { slice: 200e6, cancelled: () => false, breathe: async () => { }, progress: () => { } });
     console.log(MARK + JSON.stringify(report));
     process.exit(0);
 }
 
-const [disc, where, outArg, workersArg] = process.argv.slice(2);
-if (!disc || !where) { console.log('node v3batch.mjs <disc image or extracted folder> <folder of traces, or a file listing them> [out folder] [workers]'); process.exit(2); }
+const [discArg, where, outArg, workersArg] = process.argv.slice(2);
+if (!discArg || !where) { console.log('node v3batch.mjs <disc image, extracted folder, or a folder of disc images> <folder of traces, or a file listing them> [out folder] [workers]'); process.exit(2); }
+// (a folder that isn't an extracted disc: the disc images in it)
+const images = statSync(discArg).isDirectory() && !existsSync(join(discArg, 'sys')) && !existsSync(join(discArg, 'files')) ? readdirSync(discArg).filter((n) => /\.(iso|gcm)$/i.test(n)).sort().map((n) => join(discArg, n)) : [];
+const disc = images.length ? images.join('|') : discArg;
+if (images.length) console.log(`discs: ${images.map((p) => basename(p)).join(', ')}`);
 const out = resolve(outArg || 'v3batch-results'), wall = +(process.env.WALL || 3600) * 1000;
 // (a replay takes about 0.7 GB: no more at a time than fit in 60 % of the memory)
 const workers = Math.max(1, +(workersArg || 0) || Math.min(availableParallelism() - 2, Math.floor(totalmem() * 0.6 / 0.9e9)));
@@ -70,6 +83,6 @@ await new Promise<void>((done) => {
     };
     pump();
 });
-const summary = `${clean} of ${clean + off} recordings replay to their end with nothing off (${skipped} not for this game version or from an older recorder); ${frames} of ${totalFrames} frames in step; ${((Date.now() - t0) / 60000).toFixed(1)} minutes on ${workers} threads`;
+const summary = `${clean} of ${clean + off} recordings replay to their end with nothing off (${skipped} that can't be replayed: no disc of their version here, or no stage start in them); ${frames} of ${totalFrames} frames in step; ${((Date.now() - t0) / 60000).toFixed(1)} minutes on ${workers} threads`;
 writeFileSync(join(out, 'summary.txt'), summary + '\n');
 console.log(summary);

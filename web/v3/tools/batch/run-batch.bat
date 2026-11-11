@@ -3,6 +3,7 @@ rem Replays every recording with the game's own code on all of this PC's cores (
 rem Put v3batch.mjs beside this file (built from web/v3/tests/batch.ts), set the two paths below, and double-click.
 rem Leave the window open until it says how many recordings replayed. The results go to the folder "results" here:
 rem results\survey.tsv has a line a recording, results\reports the whole report of each, results\summary.txt the totals.
+rem DISC is one disc image, or the folder that holds the images of several versions (each recording is played on its own version's).
 set "DISC=C:\path\to\JP 1.0 (GMSJ01).iso"
 set "TRACES=C:\path\to\the folder with the .msgt recordings"
 cd /d "%~dp0"

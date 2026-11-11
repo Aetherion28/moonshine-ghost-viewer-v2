@@ -111,6 +111,16 @@ function carry(v, to, toDol, notes, what) {
     return isAddr(v) ? place(v, to, toDol, notes, what) : v;
 }
 
+// node v3/tools/gen_addrs.mjs --place 0x80363E48 ...: where single JP addresses are in each version (nothing is written)
+if (process.argv[2] === '--place') {
+    for (const arg of process.argv.slice(3)) {
+        const a = parseInt(arg, 16), s = jpSyms.at(a), row = [`0x${a.toString(16).toUpperCase()} ${s ? s.name + '+0x' + (a - s.addr).toString(16) : '?'}`];
+        for (const [key, dir, , , dolName] of VERSIONS) { const notes = [], v = place(a, readSymbols(dir), readDol(path.join(DOLS, dolName)), notes, key); row.push(`${key} ${v ? '0x' + v.toString(16).toUpperCase() : '(' + notes.join('; ') + ')'}`); }
+        console.log(row.join('  '));
+    }
+    process.exit(0);
+}
+
 // the JP tables, as they stand in the code
 const replaySrc = fs.readFileSync(path.join(v3, 'game/replay.ts'), 'utf8');
 const jp10 = new Function('return ' + /export const JP10: GameAddrs = (\{[\s\S]*?\n\});/.exec(replaySrc)[1])();
@@ -129,7 +139,7 @@ for (const [key, dir, id, rev, dolName, region] of VERSIONS) {
     if (!fs.existsSync(dolPath)) { console.log(`${key}: no DOL at ${dolPath}: left out`); continue; }
     const to = readSymbols(dir), toDol = readDol(dolPath), notes = [];
     const table = {};
-    for (const [k, v] of Object.entries(jp10)) table[k] = k === 'region' ? region : carry(v, to, toDol, notes, k);
+    for (const [k, v] of Object.entries(jp10)) table[k] = k === 'region' ? region : k === 'liveFlagsShifted' ? true : carry(v, to, toDol, notes, k);
     const syms = {};
     for (const n of names) { const t = (to.byName.get(n) || []).filter((x) => x.type === 'function'); if (t.length === 1) syms[n] = t[0].addr; else notes.push(`name ${n}: not one function in this version`); }
     console.log(`${key} (${id} revision ${rev}): ${Object.keys(table).length} entries, ${notes.length} not placed`);

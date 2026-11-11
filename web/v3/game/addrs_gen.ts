@@ -31,6 +31,7 @@ export const JP11: GameAddrs = {
     fbSilhouette: 0x8020786C,
     fbWater: 0x801897F8,
     fastTextCall: 0x80135240,
+    cameraPerform: [0x8035561C, 0x3C4],
     padStatus: 0x803F5428,
     padButton: 0x803F5458,
     padMStick: 0x803F5518,
@@ -65,6 +66,8 @@ export const JP11: GameAddrs = {
     gpMapObjManager: 0x803FEDA8,
     shineVtable: 0x803B9CFC,
     shineUpSpeed: 0x803FD6E0,
+    gpConductor: 0x803FE048,
+    liveFlagsShifted: true,
 };
 export const SYMS_JP11: Record<string, number> = {
     DCFlushRange: 0x80322F8C,
@@ -114,6 +117,7 @@ export const US: GameAddrs = {
     fbSilhouette: 0x8022795C,
     fbWater: 0x801A90AC,
     fastTextCall: 0x80153E1C,
+    cameraPerform: [0x80023004, 0x3C4],
     padStatus: 0x80404454,
     padButton: 0x80404484,
     padMStick: 0x80404544,
@@ -148,6 +152,8 @@ export const US: GameAddrs = {
     gpMapObjManager: 0x8040DF08,
     shineVtable: 0x803C97EC,
     shineUpSpeed: 0x8040C7A0,
+    gpConductor: 0x8040D110,
+    liveFlagsShifted: true,
 };
 export const SYMS_US: Record<string, number> = {
     DCFlushRange: 0x8034368C,
@@ -197,6 +203,7 @@ export const PAL: GameAddrs = {
     fbSilhouette: 0x8021F8B0,
     fbWater: 0x801A1934,
     fastTextCall: 0x80148D9C,
+    cameraPerform: [0x800230BC, 0x3C4],
     padStatus: 0x803FBBF4,
     padButton: 0x803FBC24,
     padMStick: 0x803FBCE4,
@@ -231,6 +238,8 @@ export const PAL: GameAddrs = {
     gpMapObjManager: 0x804055D0,
     shineVtable: 0x803C0FDC,
     shineUpSpeed: 0x80403F00,
+    gpConductor: 0x80404870,
+    liveFlagsShifted: true,
 };
 export const SYMS_PAL: Record<string, number> = {
     DCFlushRange: 0x8033B80C,
@@ -280,6 +289,7 @@ export const PAL_3DAS: GameAddrs = {
     fbSilhouette: 0x8021DF1C,
     fbWater: 0x8019FFA0,
     fastTextCall: 0x80149644,
+    cameraPerform: [0x800230BC, 0x3C4],
     padStatus: 0x803F9114,
     padButton: 0x803F9144,
     padMStick: 0x803F9204,
@@ -314,6 +324,8 @@ export const PAL_3DAS: GameAddrs = {
     gpMapObjManager: 0x80402AD0,
     shineVtable: 0x803BEE9C,
     shineUpSpeed: 0x80401418,
+    gpConductor: 0x80401D70,
+    liveFlagsShifted: true,
 };
 export const SYMS_PAL_3DAS: Record<string, number> = {
     DCFlushRange: 0x8033A1CC,

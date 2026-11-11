@@ -2,9 +2,9 @@
 // the recording. The driver is tests/replay.ts's: boot, play, boot again with the file table padded when the
 // stage heap's size differs, and again with Shiny Shines when the heap is laid out differently.
 // Used by the browser's worker (web/worker.ts) and by the Node check of a disc (tests/verify.ts).
-import { readTrace, type Trace } from '../game/trace.ts';
-import { nextScriptLocks, followsFurther, partedInArithmetic, Replay, JP10, type Issue } from '../game/replay.ts';
-import { symJP10 } from '../game/syms_jp10.ts';
+import { readTrace, NO_NPC_PHASE, type Trace } from '../game/trace.ts';
+import { nextScriptLocks, followsFurther, partedInArithmetic, Replay, type Issue } from '../game/replay.ts';
+import { versionOf, symOf, VERSIONS } from '../game/versions.ts';
 import type { OpenedDisc } from './discs.ts';
 
 export interface VerifyProgress {
@@ -22,6 +22,8 @@ export interface VerifyReport {
     result: 'done' | 'cancelled' | 'stalled' | 'error' | 'unsupported';
     /** the whole recording was reproduced with no issue */
     inStep: boolean;
+    /** the replay followed the recording (the disc is another version than the recording's): what was put in from it, by kind */
+    followed: boolean; taken: Record<string, number>;
     /** the result in plain words */
     summary: string;
     stageName: string; area: number; episode: number;
@@ -45,7 +47,7 @@ const STALL = 20e9;
 function emptyReport(T: Trace | null, result: VerifyReport['result'], summary: string, t0: number): VerifyReport {
     const w = T ? T.stages[0].words[4] : 0;
     return {
-        result, inStep: false, summary, stageName: '', area: w >>> 24, episode: (w >>> 16) & 0xFF,
+        result, inStep: false, followed: false, taken: {}, summary, stageName: '', area: w >>> 24, episode: (w >>> 16) & 0xFF,
         frames: 0, totalFrames: T ? T.frames.length : 0, ticks: 0, totalTicks: T ? T.ticks.length : 0,
         marioChecked: 0, calls: 0, literals: 0, shimCalls: 0, padCorrections: 0, issues: [], unsupported: [],
         shinyShines: false, dolphin: false, fstPad: 0, disc: '', instructions: 0, seconds: (performance.now() - t0) / 1000, log: [],
@@ -75,18 +77,22 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
     try {
         progress('reading the recording');
         try { T = readTrace(traceBuf); } catch (e) { return finish(emptyReport(null, 'unsupported', `This recording can't be verified: ${(e as Error).message}.`, t0)); }
-        if (T.gameId !== 'GMSJ01' || T.discRevision !== 0) return finish(emptyReport(T, 'unsupported', `The recording is from ${T.gameId} revision ${T.discRevision}: only the Japanese version 1.0 (GMSJ01) is set up so far.`, t0));
+        const VT = versionOf(T.gameId, T.discRevision);
+        if (!VT) return finish(emptyReport(T, 'unsupported', `The recording is from ${T.gameId} revision ${T.discRevision}: that version of the game isn't set up.`, t0));
         progress('reading the disc');
         let D: OpenedDisc;
         try { D = open(); } catch (e) { return finish(emptyReport(T, 'unsupported', `The game's code couldn't be read from the disc: ${(e as Error).message}.`, t0)); }
-        if (D.gameId && (D.gameId !== T.gameId || D.revision !== T.discRevision))
-            return finish(emptyReport(T, 'unsupported', `The disc is ${D.gameId} revision ${D.revision}, the recording is from ${T.gameId} revision ${T.discRevision}: the game's code must be the recording's.`, t0));
+        // (a folder without its boot.bin has no ID: the DOL's size still tells the version)
+        const V = D.gameId ? versionOf(D.gameId, D.revision, D.dol.length) : VERSIONS.find((v) => v.dolSize === D.dol.length);
+        if (!V) return finish(emptyReport(T, 'unsupported', `The disc is ${D.gameId || 'not named'} revision ${D.revision} (its program is ${D.dol.length} bytes): that version of the game isn't set up.`, t0));
+        // (a disc of another version than the recording's: its code plays the recording, and the recorded state is put in where they part)
+        const other = V.key !== VT.key;
 
         const log: string[] = [];
         const tried = new Set<string>();
-        let dolphin = false;
-        const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = [], whole = false, selectHold = 0) => new Replay(D.dol, D.make(), T!, JP10, symJP10, {
-            log: (s) => { log.push(s); if (log.length > 40) log.shift(); }, fstPad, shinyShines, scriptsLocked, selectHold, dolphin, tried: whole ? undefined : tried,
+        let dolphin = false, npcPhase: number | undefined, stopOnActors = false;
+        const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = [], whole = false, selectHold = 0) => new Replay(D.dol, D.make(), T!, V.addrs, symOf(V), {
+            log: (s) => { log.push(s); if (log.length > 40) log.shift(); }, fstPad, shinyShines, scriptsLocked, selectHold, dolphin, npcPhase, stopOnActors, recorded: VT.addrs, tried: whole ? undefined : tried,
         });
         let R = make(0), attempt = 1, shiny = false;
         // one attempt: slices of the machine's time, with a breath between them for messages (cancel)
@@ -106,7 +112,7 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         let res = await go();
         if (res === 'done' && R.heapDelta) {
             // the arena's top: boot again with the file system table as big as the recording console's
-            attempt = 2; R = make(R.heapDelta); res = await go();
+            attempt = 2; R = make(R.fstPadUsed + R.heapDelta); res = await go();
         }
         if (res === 'done' && R.layoutDelta) {
             // the heap's layout: Moonshine's Shiny Shines isn't recorded; see whether it explains the recording's
@@ -129,6 +135,17 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         }
         // (no doubt explains the difference the replay was stopped at: play it whole)
         if (res === 'done' && R.cutShort) { attempt++; R = make(R.fstPadUsed, shiny, R.scriptsLocked, true); res = await go(); }
+        // (an older recording doesn't have the NPCs' goop-check counter: where an actor differs, the other 29 values are tried)
+        if (res === 'done' && !other && T.stages[0].npcPhase === NO_NPC_PHASE && R.issues.some((i) => i.kind === 'actor')) {
+            const R0 = R; stopOnActors = true;
+            for (let p = 1; p < 30 && R === R0 && res === 'done'; p++) {
+                attempt++; npcPhase = p; const R2 = make(R0.fstPadUsed, shiny, R0.scriptsLocked, true); R = R2;
+                const res2 = await go();
+                if (res2 !== 'done') { res = res2; break; }
+                if (R2.issues.length || R2.frames < T.frames.length) { R = R0; npcPhase = undefined; }
+            }
+            stopOnActors = false;
+        }
         // (the episode select screen between two stages ended early here: its loading took longer on the console)
         for (let n = 0; res === 'done' && R.selectDelta && n < 3; n++) {
             const R1 = R; attempt++; R = make(R1.fstPadUsed, shiny, R1.scriptsLocked, true, R1.selectDelta);
@@ -143,9 +160,16 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         let summary: string;
         if (res === 'cancelled') summary = `Cancelled after ${sofar} of ${stage}${n ? '' : ', in step so far'}.`;
         else if (res === 'stalled') summary = `The game stopped making progress after ${sofar} of ${stage}.`;
+        else if (other) {
+            const took = Object.entries(R.taken).filter(([k]) => k !== 'rand').map(([k, c]) => `${{ mario: 'Mario', camera: 'the camera', actor: 'actor words', fludd: 'FLUDD', yoshi: 'Yoshi', seed: 'the RNG seed', water: 'water requests' }[k] || k} ${c}`).join(', ');
+            summary = `The disc is ${V.name}, the recording is from ${VT.name}: the disc's code played ${R.frames >= T.frames.length && !n ? `all ${R.frames} frames` : sofar} of ${stage} on the recording's inputs, with the recorded state put in where the two versions part (${took || 'nowhere'}). This shows the recording as it was made; it doesn't check it, which needs a disc of its own version.`;
+            if (n) summary += ` It stopped at frame ${first!.frame}: ${first!.text.split('\n')[0]}`;
+        }
         else if (!n && R.frames >= T.frames.length) summary = `In step to the end: the game's own code reproduced all ${R.frames} frames and ${R.ticks} movement ticks of ${stage} (${R.calls} random-number calls and ${R.marioChecked} records of Mario bit for bit).`;
         else if (!n) summary = `In step for ${sofar} of ${stage}, where the replay ended${log.length ? ': ' + log[log.length - 1] : ''}.`;
         else summary = `In step for ${sofar} of ${stage}, then the game's code and the recording part (frame ${first!.frame}, tick ${first!.tick}): ${first!.text.split('\n')[0]}`;
+        if (R.occlusionTaken || R.occlusionOpen) summary += ` The camera's reads of Mario's occlusion aren't in this recording: ${R.occlusionTaken} were found from what the camera did next${R.occlusionOpen ? `, ${R.occlusionOpen} camera ticks fit neither value` : ''}.`;
+        if (R.npcPhaseTaken !== undefined) summary += ` The NPCs' goop-check counter isn't in this recording: it was taken as ${R.npcPhaseTaken}, the one of its 30 values under which nothing differs.`;
         if (R.dolphin) summary += ' The recording follows Dolphin\'s arithmetic, not the console\'s (one multiply rounds differently in the emulator): it was made in Dolphin.';
         if (shiny) summary += ' Shiny Shines was taken as on (the recording doesn\'t say; the heap\'s layout does).';
         const scripts = R.scriptsLocked.filter((k) => k.endsWith('.sb')), others = R.scriptsLocked.length - scripts.length;
@@ -154,7 +178,7 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         if (R.bathDrawn) summary += ` The bath water's height isn't in this recording: it was read from the ${R.bathDrawn} depth maps the GPU model drew.`;
         if (R.unsupported.length) summary += ` Moonshine settings on in this recording that aren't reproduced yet: ${R.unsupported.join(', ')}.`;
         return finish({
-            result: res, inStep: res === 'done' && !n && R.frames >= T.frames.length, summary, stageName: R.stageName, area: w >>> 24, episode: (w >>> 16) & 0xFF,
+            result: res, inStep: res === 'done' && !other && !n && R.frames >= T.frames.length, followed: R.follow, taken: R.taken, summary, stageName: R.stageName, area: w >>> 24, episode: (w >>> 16) & 0xFF,
             frames: R.frames, totalFrames: T.frames.length, ticks: R.ticks, totalTicks: T.ticks.length,
             marioChecked: R.marioChecked, calls: R.calls, literals: R.literals, shimCalls: R.shimCalls, padCorrections: R.padCorrections,
             issues: R.issues, unsupported: R.unsupported, shinyShines: shiny, dolphin: R.dolphin, fstPad: R.fstPadUsed, disc: D.kind,

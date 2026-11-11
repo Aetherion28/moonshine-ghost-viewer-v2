@@ -111,8 +111,8 @@ const CHOMPLET_PATHS: [number, number[]][] = [
 const BOSS_PATHS = [0x1E, 0x6E, 0x20];
 const PETEY_PATH = [1, 2, 3, 10, 3, 4, 7, 8, 12, 10, 8, 4, 16, 3, 11, 12, 9, 3];
 const TYPE_ANIMAL_BIRD = 0x00800001, TYPE_BLUE_COIN = 0x20000010;
-/** gelato_patterns.cpp: the fish's call of getRandomNextIndex (only the JP site is known here) */
-const GELATO_FISH_CALL = R3(0x80363E48, 0, 0);
+/** gelato_patterns.cpp: the fish's call of getRandomNextIndex (the JP site is Moonshine's; the others are the same call, placed by tools/gen_addrs.mjs) */
+const GELATO_FISH_CALL = R3(0x80363E48, 0x80005DDC, 0x80005DDC);
 /** force_box_game.cpp: evGetSystemFlag's call of TFlagManager::getFlag */
 const BOX_GAME_CALL = R3(0x800E64E8, 0x80292FA0, 0x8028AD2C);
 /** rng_control.cpp: King Boo's call of forceStopSlot; the cranes' rand calls (the crane in r31 / r30), their control functions and vtable slots, the up-down speed */
@@ -157,6 +157,7 @@ export class Moonshine {
 
     /** The parts that are always there: the raised arena floor, onSetup, the practice session's hooks. */
     install() {
+        if (this.region < 0) return;
         const { m, A } = this, cpu = m.cpu;
         cpu.hook(A.OSGetArenaLo, (c) => {
             const lo = m.mem.r32(A.arenaLoVar);
@@ -374,6 +375,7 @@ export class Moonshine {
      * sent into the object's receiveMessage instead: it comes back to `back`, and this is then called again.
      */
     afterDirect(c: { gpr: Uint32Array; lr: number; pc: number }, back: number): boolean {
+        if (this.region < 0) return false;
         if (this.regrabbed) { this.regrabbed = false; return false; }
         // (no binds while the practice session owns the gameplay input: PracticeSession::ownsGameplayInput)
         if (this.practiceFrozen) return false;
@@ -414,6 +416,7 @@ export class Moonshine {
     /** featuresApply: makes the game's code what the settings in `session` (a session record) make it. */
     apply(session: Uint8Array) {
         this.session = session;
+        if (this.region < 0) return;
         if (!this.controlsInstalled && this.caveAt) { this.controlsInstalled = true; this.installControls(); }
         if (this.shinyShines) this.write(SHINY_SHINES[this.region], this.pick(SHINY_SHINES[3])); else this.restore(SHINY_SHINES[this.region]);
         for (const p of PATCHES) for (const r of p.rows) {

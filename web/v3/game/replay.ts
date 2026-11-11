@@ -7,11 +7,12 @@
 //   - at every movement tick (before TMario::perform): the first 0x574 bytes of Mario, and his controller.
 // The GPU results the game reads back (occlusion, the bath water's height) come from the trace.
 import { Machine } from '../ppc/machine.js';
+import { MEM1_SIZE, STATE } from '../ppc/mem.js';
 import { installHle, type Sym } from '../ppc/hle.js';
 import type { VirtualDisc } from '../ppc/disc.js';
 import { f32FromBits } from '../ppc/fpu.js';
 import { TB_DIV } from '../ppc/cpu.js';
-import { Ev, EV_NAMES, IN, MARIO_BYTES, NO_NPC_PHASE, type Trace, type TraceFrame, type TracePad, type TraceTick } from './trace.js';
+import { Ev, EV_NAMES, IN, MARIO_BYTES, NO_NPC_PHASE, type TraceObject, type Trace, type TraceFrame, type TracePad, type TraceTick } from './trace.js';
 import { Moonshine, ARENA_RESERVE, type Region } from './moonshine.js';
 
 export interface GameAddrs {
@@ -21,6 +22,8 @@ export interface GameAddrs {
     gpMarDirector: number; gpMarioOriginal: number; gpMarioAddress: number; gpCamera: number; gpPollution: number; setupThread: number;
     PADRead: number; PADClamp: number; OSGetArenaLo: number; arenaLoVar: number; VIConfigure: number;
     fbCamera: number; fbSilhouette: number; fbWater: number; fastTextCall: number;
+    /** CPolarSubCamera::perform [address, size]: the camera's tick, in which it reads Mario's occlusion (fbCamera) */
+    cameraPerform: [number, number];
     padStatus: number; padButton: number; padMStick: number; padSStick: number;
     /** after changeState's call to MSound::checkWaveOnAram (the stage's exit waits for it) */
     exitWaveRet: number;
@@ -52,6 +55,9 @@ export interface GameAddrs {
     mantaJingleTest: number; gpMapObjManager: number;
     /** TShine's vtable and TShine::mUpSpeed (1 at boot; TShine::appearSimple leaves it 2 for the rest of the session) */
     shineVtable: number; shineUpSpeed: number;
+    gpConductor: number;
+    /** TLiveActor's flags from 0x4000 up sit one bit higher than in JP 1.0 (every other version) */
+    liveFlagsShifted: boolean;
 }
 /** GMSJ01 revision 0 */
 export const JP10: GameAddrs = {
@@ -60,7 +66,7 @@ export const JP10: GameAddrs = {
     marioPerform: 0x8012C77C, randRet: 0x80085AE4, seed: 0x80408CF0, npcPhase: 0x8040A4A0, flagMgr: 0x8040A290,
     gpMarDirector: 0x8040A2A8, gpMarioOriginal: 0x8040A378, gpMarioAddress: 0x8040A398, gpCamera: 0x8040B370, gpPollution: 0x8040A5A8, setupThread: 0x803F2390,
     PADRead: 0x8009BF20, PADClamp: 0x8009B1A4, OSGetArenaLo: 0x8008DCBC, arenaLoVar: 0x80408D08, VIConfigure: 0x8009A46C,
-    fbCamera: 0x80359CA4, fbSilhouette: 0x800C2D0C, fbWater: 0x801FABF0, fastTextCall: 0x8021530C,
+    fbCamera: 0x80359CA4, fbSilhouette: 0x800C2D0C, fbWater: 0x801FABF0, fastTextCall: 0x8021530C, cameraPerform: [0x80352F70, 0x3C4],
     padStatus: 0x80400D50, padButton: 0x80400D80, padMStick: 0x80400E40, padSStick: 0x80400E80,
     exitWaveRet: 0x800ECAB4,
     goopLayerDraw: 0x801ECF38, goopObjDraw: [0x801EE5B0, 0x2D4],
@@ -73,6 +79,7 @@ export const JP10: GameAddrs = {
     heapAllocs: [[0x8000A04C, 0x8000A18C], [0x8000D520, 0x8000D5CC]],
     mantaJingleTest: 0x80322E18, gpMapObjManager: 0x8040A4D0,
     shineVtable: 0x803C11E4, shineUpSpeed: 0x80409030,
+    gpConductor: 0x8040A6E8, liveFlagsShifted: false,
 };
 const SPC = { stepsToDo: 4, stepsLeft: 0xC, locked: 0x14 };   // TSpcInterp
 // offsets in the game's objects
@@ -104,9 +111,13 @@ const MARIO_PAD = 0x4FC, MARIO_WORK = 0x108;   // TMario::mGamePad, its TMarioCo
 const TAKE_HELD = 0x6C, MARIO_STATUS = 0x7C, MARIO_FACE_ANGLE_Y = 0x96;   // TTakeActor::mHeldObject, TMario::mStatus, mFaceAngle.y
 const STATUS_PULLING = 0x560, STATUS_OIL_PULLING = 0x40561;
 const MARIO_SOUND = 0x4E4;   // TMario::mSound, the JAISound of his damage voice: only started and stopped
+const FLAG_OPTIONS = [0x284, 0x298];   // TFlagManager: mSavedOptionBools to mOptionInts
+const MARIO_FLUDD = 0x3E4, MARIO_YOSHI = 0x3F0;   // TMario::mWaterGun, mYoshi
 const MARIO_FLAGS = 0x118;   // TMario::mFlags; bit 0 is MARIO_FLAG_OCCLUDED, written from the GPU's draw-sync callback
 
 export interface Issue { kind: string; frame: number; tick: number; text: string }
+/** the kinds of difference a following replay answers by taking the recording's state */
+const FOLLOWED = new Set(['mario', 'camera', 'fludd', 'yoshi', 'actor', 'water', 'rand', 'seed', 'literal', 'pad', 'tick']);
 export interface ReplayOptions {
     log?: (s: string) => void;
     /** the game's console (OSReport) */
@@ -125,6 +136,20 @@ export interface ReplayOptions {
     shinyShines?: boolean;
     /** TBaseNPC::initSinkNpc_'s counter at the first stage's start, for a recording that doesn't have it (stage-start schema 1) */
     npcPhase?: number;
+    /** stop at the first actor that differs too (a driver trying values for something the recording doesn't have) */
+    stopOnActors?: boolean;
+    /**
+     * Where the game parts from the recording, put the recording's state in and go on, instead of stopping: Mario and
+     * the camera at each tick, the actors, FLUDD and Yoshi at each frame, the RNG seed at each frame and tick. What
+     * was put in is counted (`taken`). What can't be put in (the game leaving the stage at another frame, say) still stops it.
+     */
+    follow?: boolean;
+    /**
+     * The recording's own version of the game, when the disc is another one (then the replay follows): the recording's
+     * addresses (where its GPU reads were made) and flag layout are that version's, the heap is laid out the disc's
+     * way, so objects are matched by the order the recorder lists them in, and addresses in a record stay the game's.
+     */
+    recorded?: GameAddrs;
     /** the recording was made in Dolphin: the one float rule the emulator has differently from the console (`Cpu.laneRounds`) */
     dolphin?: boolean;
     /** the doubts to take the other way (not recorded: see `scriptDoubts`): event scripts (file names) whose interpreter starts with a lock word that isn't 0, a trampoline (`TJumpBase@address`) whose state timer isn't */
@@ -196,6 +221,10 @@ export class Replay {
     /** played with Dolphin's float rule (see `ReplayOptions.dolphin`) */
     dolphin = false;
     private tvForced = false;
+    /** `ReplayOptions.follow`, and how often each kind of state was put in from the recording */
+    follow = false; taken: Record<string, number> = {};
+    /** the disc is another version of the game than the recording's (only with `follow`) */
+    otherVersion = false; private recA!: GameAddrs;
     /** how many of the bath water's height maps the GPU model drew */
     bathDrawn = 0;
     private padAdopted = false; private adopted = new Set<string>(); private otherHandle = false;
@@ -214,8 +243,10 @@ export class Replay {
         const m = this.m, cpu = m.cpu;
         this.log = opt.log ?? (() => { });
         this.stopOn = new Set(opt.stopOn ?? ['heap', 'layout', 'rand', 'mario', 'camera', 'flow', 'stage', 'unrecorded']); this.maxIssues = opt.maxIssues ?? 50;
+        if (opt.stopOnActors) this.stopOn.add('actor');
         this.fstPadUsed = opt.fstPad ?? 0; this.selectHoldUsed = opt.selectHold ?? 0; this.npcPhaseTaken = opt.npcPhase;
         this.dolphin = cpu.laneRounds = !!opt.dolphin;
+        this.recA = opt.recorded && opt.recorded !== A ? opt.recorded : A; this.otherVersion = this.recA !== A; this.follow = !!opt.follow || this.otherVersion;
         // (the console's TV format is the recording's: a PAL game on an NTSC console runs at NTSC's rate)
         m.load(dol, disc, this.fstPadUsed, T.stages[0].words[14]);
         const missing = installHle(m, sym, { report: opt.report });
@@ -408,12 +439,17 @@ export class Replay {
         m.hw.gxUnsupported = (what) => this.issue('gpu', `the goop's drawing needs ${what}, which the GPU model here doesn't do`);
         // (occlusion is recorded at its reads only by newer Moonshines: observation bit 0. Without it the game reads
         // Mario's flag, whose occlusion bit is the recording's of that tick: see `atTick`)
-        cpu.hook(A.fbCamera, (c) => { if (!(this.observations & 1)) return false; const v = this.literal(A.fbCamera + 4); if (v !== null) c.gpr[0] = v; return false; });
-        cpu.hook(A.fbSilhouette, (c) => { if (!(this.observations & 1)) return false; const v = this.literal(A.fbSilhouette + 4); if (v !== null) c.gpr[0] = v; return false; });
+        cpu.hook(A.fbCamera, (c) => {
+            if (!(this.observations & 1)) { const s = this.spec; if (s) { if (!s.read) { s.read = true; s.native = c.gpr[0] & 1; } if (s.force >= 0) c.gpr[0] = s.force; } return false; }
+            const v = this.literal(this.recA.fbCamera + 4); if (v !== null) c.gpr[0] = v; return false;
+        });
+        cpu.hook(A.cameraPerform[0], (c) => this.cameraBegins(c));
+        for (let a = A.cameraPerform[0]; a < A.cameraPerform[0] + A.cameraPerform[1]; a += 4) if (m.mem.r32(a) === 0x4E800020) cpu.hook(a, (c) => this.cameraEnds(c));
+        cpu.hook(A.fbSilhouette, (c) => { if (!(this.observations & 1)) return false; const v = this.literal(this.recA.fbSilhouette + 4); if (v !== null) c.gpr[0] = v; return false; });
         // (the bath water's height is recorded only by newer Moonshines: observation bit 2)
         cpu.hook(A.fbWater, (c) => {
             if (!(this.observations & 4)) { if (this.phase === 'stage' && !this.noWater) { this.noWater = true; this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: the bath water's height isn't in this trace: read from the depth map the GPU model draws`); } return false; }
-            const v = this.literal(A.fbWater + 4); if (v !== null) { const f = f32FromBits(v); c.ps0[1] = f; c.ps1[1] = f; } return false;
+            const v = this.literal(this.recA.fbWater + 4); if (v !== null) { const f = f32FromBits(v); c.ps0[1] = f; c.ps1[1] = f; } return false;
         });
     }
 
@@ -423,9 +459,63 @@ export class Replay {
         return this.phase === 'done' ? 'done' : 'budget';
     }
 
+    // ---------------------------------------------------------------- the camera's occlusion read, where it isn't recorded
+    /**
+     * Mario's occlusion bit is written by the GPU's draw-sync callback, at a time of its own, more than once a frame.
+     * Newer recordings have each read of it (observation bit 0). Older ones only have the bit as each tick's Mario
+     * record caught it, and the camera can read another value later in the tick: in the recordings that have the
+     * reads, 1,839 of 461,000 camera reads differ from the tick's record (1,703 of them with the same bit in the next
+     * tick's record too). What the camera read shows in what it then did, and that is recorded: its record at the next
+     * tick. So for such a recording the camera's tick is played with the bit the record has, and if the camera then
+     * isn't the next record's, played again from a copy of memory with the other bit; the bit that gives the recorded
+     * camera is the one the console's camera read. (No copy is put back if an interrupt came in between.)
+     */
+    private spec: { sp: number; force: number; native: number; read: boolean; tries: number; rerun: boolean; eventAt: number; cursors: number[]; held: [string, string][]; ov: number; bc: number } | null = null;
+    private snapRam: Uint8Array | null = null; private snapState: Uint8Array | null = null; private snapLc: Uint8Array | null = null;
+    /** camera reads taken as the other bit than the tick's Mario record has; camera ticks neither bit explains */
+    occlusionTaken = 0; occlusionOpen = 0;
+    private cameraBegins(c: Machine['cpu']): boolean {
+        const s = this.spec;
+        if (s) { if (s.rerun) s.rerun = false; else this.spec = null; return false; }   // (a begin without an end: forget it)
+        if (this.phase !== 'stage' || (this.observations & 1) || this.otherVersion || !(c.gpr[4] & 1) || this.curTickIndex < 0 || c.gpr[3] !== this.m.mem.r32(this.A.gpCamera)) return false;
+        const T = this.T, nx = T.ticks[this.curTickIndex + 1], nextStage = T.stages[this.stages];
+        if (!nx || !nx.camera || (nextStage && nextStage.ev < nx.ev)) return false;
+        const mem = this.m.mem, buf = mem.wasm.buffer;
+        if (!this.snapRam) { this.snapRam = new Uint8Array(MEM1_SIZE); this.snapState = new Uint8Array(0x10000); this.snapLc = new Uint8Array(mem.lc.length); }
+        this.snapRam.set(mem.ram); this.snapState!.set(new Uint8Array(buf, STATE, 0x10000)); this.snapLc!.set(mem.lc);
+        this.spec = { sp: c.gpr[1], force: -1, native: 0, read: false, tries: 0, rerun: false, eventAt: this.m.nextEventAt(), cursors: [this.iCall, this.lastCall, this.calls, this.shimCalls], held: [], ov: c.xerOV, bc: c.xerBC };
+        return false;
+    }
+    private cameraEnds(c: Machine['cpu']): boolean {
+        const s = this.spec;
+        if (!s || c.gpr[1] !== s.sp) return false;
+        const done = () => { this.spec = null; for (const [k, t] of s.held) this.issue(k, t); return false; };
+        if (!s.read) return done();
+        const mem = this.m.mem, nx = this.T.ticks[this.curTickIndex + 1], rec = nx.camera!, mine = mem.bytes(mem.r32(this.A.gpCamera), rec.length);
+        let same = true;
+        for (let k = 0; k < rec.length; k++) if (mine[k] !== rec[k]) { same = false; break; }
+        if (same || s.tries === 2 || c.count >= s.eventAt) {
+            if (same && s.tries === 1) { if (!this.occlusionTaken++) this.log(`frame ${this.curFrame ? this.curFrame.frame : 0} tick ${this.curTick}: the camera read Mario's occlusion as ${s.force} where this tick's Mario record has ${s.native} (the read isn't in this recording; the camera's next record shows it)`); }
+            else if (!same) this.occlusionOpen++;
+            return done();
+        }
+        // again, from the copy, with the other bit (or, when that didn't give the recorded camera either, as it was)
+        mem.ram.set(this.snapRam!); new Uint8Array(mem.wasm.buffer, STATE, 0x10000).set(this.snapState!); mem.lc.set(this.snapLc!);
+        c.xerOV = s.ov; c.xerBC = s.bc;
+        [this.iCall, this.lastCall, this.calls, this.shimCalls] = s.cursors;
+        s.tries++; s.force = s.tries === 1 ? 1 - s.native : s.native; s.read = false; s.rerun = true; s.held = [];
+        return true;
+    }
+
     // ---------------------------------------------------------------- reporting
     private issue(kind: string, text: string) {
+        if (this.spec) { this.spec.held.push([kind, text]); return; }
         const f = this.curFrame;
+        if (this.follow && FOLLOWED.has(kind)) {
+            const n = this.taken[kind] = (this.taken[kind] || 0) + 1;
+            if (n <= 2) this.log(`[${kind}: the recording's taken] frame ${f ? f.frame : 0} tick ${this.curTick}: ${text.split('\n')[0]}`);
+            return;
+        }
         if (this.issues.length < this.maxIssues) this.issues.push({ kind, frame: f ? f.frame : 0, tick: this.curTick, text });
         if (this.issues.length === 1 && this.tried && this.scriptDoubts.some((d) => d.frame <= (f ? f.frame : 0) && !this.tried!.has(d.script))) this.cutAt = this.frames + 8;
         this.log(`[${kind}] frame ${f ? f.frame : 0} tick ${this.curTick}: ${text}`);
@@ -447,7 +537,45 @@ export class Replay {
             this.issue('rand', `the game reached ${what} without ${missed} recorded call(s); the first is ${EV_NAMES[this.T.kind[i]]} from ${hex(this.T.a[i])}`);
         } else if (this.lastCall > ev) {
             this.issue('rand', `the game made a call the trace has after ${what}: ${hex(this.T.a[this.lastCall])}`);
+            if (this.follow) { this.iCall = this.nextCallFrom(ev); this.lastCall = -1; }
         }
+        if (this.follow) {
+            // (following: the seed is the recording's at this point, whatever calls the game made)
+            const seed = this.seedBefore(ev), A = this.A;
+            if (seed !== null && this.m.mem.r32(A.seed) !== seed) { this.issue('seed', `the RNG seed at ${what} is ${hex(this.m.mem.r32(A.seed))}, the trace's ${hex(seed)}`); this.m.mem.w32(A.seed, seed); }
+        }
+    }
+    /** the recording's RNG seed as event `ev` was reached: what its last call, read or frame before it left */
+    private seedBefore(ev: number): number | null {
+        const T = this.T;
+        for (let i = ev - 1; i >= 0 && i > ev - 100000; i--) {
+            const k = T.kind[i];
+            if (k === Ev.RAND) return T.b[i];
+            if (k === Ev.LIT) return T.c[i];
+            if (k === Ev.FRAME) return T.frames[T.a[i]].seed;
+            if (k === Ev.STAGE) return null;
+        }
+        return null;
+    }
+    /** Following: an object's recorded bytes into the game's. Words that are addresses in both stay (each machine's own heap), unless the heap is laid out as the recording's. */
+    private put(addr: number, rec: Uint8Array, skip = -1) {
+        const mem = this.m.mem, dv = new DataView(rec.buffer, rec.byteOffset, rec.length), own = this.layoutDelta !== 0 || this.otherVersion;
+        // (on another heap an address is never taken, and never written over: a word that is one on either side stays the game's)
+        const ptr = (v: number) => v >= 0x80003100 && v < 0x81800000 && !(v & 3);
+        let n = 0;
+        for (let o = 0; o + 4 <= rec.length; o += 4) {
+            if (o === skip) continue;
+            const t = dv.getUint32(o), g = mem.r32(addr + o);
+            if (g !== t && !(own && (ptr(t) || ptr(g)))) { mem.w32(addr + o, t); n++; }
+        }
+        return n;
+    }
+    /** Following: a recorded object that differs is put in; counted (and said, the first times) when something of it was */
+    private take(kind: string, name: string, addr: number, rec: Uint8Array, skip = -1) {
+        const n = this.put(addr, rec, skip);
+        if (!n) return;
+        const c = this.taken[kind] = (this.taken[kind] || 0) + 1;
+        if (c <= 2) this.log(`[${kind}: the recording's taken] frame ${this.curFrame ? this.curFrame.frame : 0} tick ${this.curTick}: ${name} differs in ${n} word(s)`);
     }
 
     /** Does the trace start another stage before its next frame? */
@@ -467,11 +595,21 @@ export class Replay {
         mem.w8(app + APP.state, 5);
         seq(APP.prev, w[3]); seq(APP.cur, w[4]); seq(APP.next, w[5]);
         mem.w32(app + APP.movie, w[15]);
-        mem.ram.set(st.flags, mem.r32(this.A.flagMgr) & 0x01FFFFFF);
+        this.putFlags(st.flags);
         this.session = st.session ?? new Uint8Array(64);
         this.moonshine.apply(this.session);
         this.modLo = this.moonshine.base; this.modHi = this.modLo + ARENA_RESERVE;
         this.log(`the logos ended at ${(this.m.cpu.count / 486e6).toFixed(2)} s: starting scene ${hex(w[4])} (from ${hex(w[3])})`);
+    }
+    /**
+     * The recording's flag manager image into the game's. On another version's disc the options stay the game's own
+     * (TFlagManager's option flags, +0x284 to +0x297): the language among them, which the PAL game loads files by.
+     */
+    private putFlags(image: Uint8Array) {
+        const mem = this.m.mem, at = mem.r32(this.A.flagMgr) & 0x01FFFFFF;
+        const own = this.otherVersion ? mem.ram.slice(at + FLAG_OPTIONS[0], at + FLAG_OPTIONS[1]) : null;
+        mem.ram.set(image, at);
+        if (own) mem.ram.set(own, at + FLAG_OPTIONS[0]);
     }
     private atSetup() {
         const mem = this.m.mem, A = this.A, T = this.T;
@@ -486,7 +624,7 @@ export class Replay {
             if (phase !== undefined) { mem.w32(A.npcPhase, phase); mem.w8(A.npcPhase + 4, 1); }
             this.adoptShineSpeed();
             // the stage heap as the recording had it: the same size means the same arena
-            if ((w[1] & 2) && (end - start !== w[11] || head - start !== w[9] || end - tail !== w[10])) {
+            if (!this.otherVersion && (w[1] & 2) && (end - start !== w[11] || head - start !== w[9] || end - tail !== w[10])) {
                 // the arena's top depends on the disc's file table, and the recording console's disc had other files:
                 // the difference is what `fstPad` must be for the heap to be the recording's
                 this.heapDelta = (end - start) - w[11];
@@ -530,10 +668,10 @@ export class Replay {
             // Between two stages Moonshine's IL code rewrites flags (an entry's overlay, and its restore when an attempt
             // ends: a Shine got in the attempt is taken away again, the plaza's story byte put back). None of that is
             // recorded, but the stage-start image is the console's flag manager after it: the game goes on from that.
-            mem.ram.set(st.flags, mem.r32(A.flagMgr) & 0x01FFFFFF); this.flagBytesTaken += diff.length;
+            this.putFlags(st.flags); this.flagBytesTaken += diff.length;
             this.log(`stage ${this.stages}: the flag manager set to the recording's image, ${diff.length} byte(s) differed (game/trace): ${diff.slice(0, 12).join(', ')} (Moonshine rewrites flags between stages; that isn't recorded)`);
         }
-        if ((w[1] & 2) && (end - start !== w[11] || head - start !== w[9] || end - tail !== w[10])) this.issue('stage', `the stage heap is ${hex(end - start)} (used ${hex(head - start)} / ${hex(end - tail)}), the trace's ${hex(w[11])} (${hex(w[9])} / ${hex(w[10])})`);
+        if (!this.otherVersion && (w[1] & 2) && (end - start !== w[11] || head - start !== w[9] || end - tail !== w[10])) this.issue('stage', `the stage heap is ${hex(end - start)} (used ${hex(head - start)} / ${hex(end - tail)}), the trace's ${hex(w[11])} (${hex(w[9])} / ${hex(w[10])})`);
         this.log(`stage ${this.stages}: scene ${hex(w[4])} at frame ${this.curFrame ? this.curFrame.frame : 0}`);
     }
 
@@ -641,12 +779,17 @@ export class Replay {
         if (this.phase !== 'stage') return false;
         if (f.session) { this.session = f.session; this.moonshine.apply(f.session); }
         // (the recorder samples the actors, FLUDD and Yoshi only in a frame whose stage is set up, and forgets its actors when the scene changes)
-        if (f.scene !== this.actorScene) { this.actors.clear(); this.actorScene = f.scene; }
-        if (f.setupDone) { this.compareActors(f); this.compareObject('fludd', 'FLUDD', f.fludd); this.compareObject('yoshi', 'Yoshi', f.yoshi); }
+        if (f.scene !== this.actorScene) { this.actors.clear(); this.idAt.clear(); this.atId.clear(); this.actorScene = f.scene; }
+        if (f.setupDone) {
+            this.compareActors(f);
+            // (on another version's disc FLUDD and Yoshi are where the game's Mario has them, not at the recording's addresses)
+            const mario = this.otherVersion ? mem.r32(A.gpMarioOriginal) : 0, here = (o: TraceObject | null, at: number) => o && mario ? { ptr: mem.r32(mario + at), data: o.data } : this.otherVersion ? null : o;
+            this.compareObject('fludd', 'FLUDD', here(f.fludd, MARIO_FLUDD)); this.compareObject('yoshi', 'Yoshi', here(f.yoshi, MARIO_YOSHI));
+        }
         if (this.phase !== 'stage') return false;
         if (this.strict) {
             const seed = mem.r32(A.seed);
-            if (seed !== f.seed) this.issue('frame', `the RNG seed is ${hex(seed)}, the trace's ${hex(f.seed)}`);
+            if (seed !== f.seed) { this.issue(this.follow ? 'seed' : 'frame', `the RNG seed is ${hex(seed)}, the trace's ${hex(f.seed)}`); if (this.follow) mem.w32(A.seed, f.seed); }
             if (f.tick !== this.ticks) this.issue('frame', `${this.ticks} movement ticks so far, the trace has ${f.tick}`);
             if (setupDone && f.state !== mem.r8(dir + DIR.state)) this.issue('frame', `the director's state is ${mem.r8(dir + DIR.state)}, the trace's ${f.state}`);
         }
@@ -722,7 +865,7 @@ export class Replay {
                 }
             }
         }
-        if (t.mario && this.stageTicks === 1 && !this.layoutDelta && mario !== t.marioPtr) {
+        if (t.mario && this.stageTicks === 1 && !this.layoutDelta && mario !== t.marioPtr && !this.otherVersion) {
             this.layoutDelta = mario - t.marioPtr;
             this.issue('layout', `Mario is at ${hex(mario)}, the recording's at ${hex(t.marioPtr)}: the stage's heap is laid out differently`);
             if (this.phase !== 'stage') return;
@@ -983,6 +1126,14 @@ export class Replay {
      * matters where a constructor copies an unset value in (the camera's three look-at records are copied from a
      * local nobody set): then the byte is written, with what the stack happened to hold.
      */
+    /** on another heap (another version's disc): byte k lies in a word that is an address in the game or in the record, which is never taken */
+    private addressAt(mine: Uint8Array, rec: Uint8Array, k: number): boolean {
+        if (!this.otherVersion) return false;
+        const o = k & ~3;
+        if (o + 4 > rec.length) return false;
+        const ptr = (b: Uint8Array) => { const v = ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0; return v >= 0x80003100 && v < 0x81800000 && !(v & 3); };
+        return ptr(mine) || ptr(rec);
+    }
     private takes(kind: string, ptr: number, k: number, v: number): boolean {
         let seen = this.unsetSeen.get(kind);
         if (seen && k < seen.length && seen[k]) return true;
@@ -1062,7 +1213,7 @@ export class Replay {
         if (!this.adopted.has('water' + hex(info))) {
             this.adopted.add('water' + hex(info));
             let took = 0;
-            for (let k = 0; k < w.info.length; k++) if (mine[k] !== w.info[k] && this.takes('water', info, k, mine[k])) { mine[k] = w.info[k]; took++; }
+            for (let k = 0; k < w.info.length; k++) if (mine[k] !== w.info[k] && !this.addressAt(mine, w.info, k) && this.takes('water', info, k, mine[k])) { mine[k] = w.info[k]; took++; }
             if (took) this.log(`a water request object at ${hex(info)}: ${took} uninitialised byte(s) taken from its first record`);
         }
         for (let o = 0; o + 4 <= w.info.length; o += 4) { const g = mem.r32(info + o), t = d.getUint32(o); if (g !== t) out.push(`+0x${o.toString(16)}: ${hex(g)} / ${hex(t)} (${f32FromBits(g).toPrecision(8)} / ${f32FromBits(t).toPrecision(8)})`); }
@@ -1076,7 +1227,7 @@ export class Replay {
         if (!this.adopted.has(kind + hex(o.ptr))) {
             this.adopted.add(kind + hex(o.ptr));
             let took = 0;
-            for (let k = 0; k < rec.length; k++) if (mine[k] !== rec[k] && this.takes(kind, o.ptr, k, mine[k])) { mine[k] = rec[k]; took++; }
+            for (let k = 0; k < rec.length; k++) if (mine[k] !== rec[k] && !this.addressAt(mine, rec, k) && this.takes(kind, o.ptr, k, mine[k])) { mine[k] = rec[k]; took++; }
             if (took) this.log(`${name}: ${took} uninitialised byte(s) taken from its first record`);
         }
         let same = true;
@@ -1086,10 +1237,70 @@ export class Replay {
         for (let off = 0; off + 4 <= rec.length; off += 4) {
             const g = mem.r32(o.ptr + off), t = d.getUint32(off);
             if (g === t) continue;
+            if (this.follow) return this.take(kind, name, o.ptr, rec);
             const key = `${kind}+${off.toString(16)}`;
             if (this.actorsOff.has(key)) continue;
             this.actorsOff.add(key);
             if (this.actorsOff.size <= 60) this.issue(kind, `${name} differs at +0x${off.toString(16)}: ${hex(g)} / ${hex(t)} (${f32FromBits(g).toPrecision(8)} / ${f32FromBits(t).toPrecision(8)}) (game / trace)`);
+        }
+    }
+    /** the game's actors in the order Moonshine's recorder lists them: the enemy managers' objects, the other managers', the actors on their own */
+    private roster(): number[] {
+        const mem = this.m.mem, con = mem.r32(this.A.gpConductor), out: number[] = [], seen = new Set<number>();
+        if (!con) return out;
+        const add = (p: number) => { if (p && !seen.has(p)) { seen.add(p); out.push(p); } };
+        const each = (list: number, fn: (v: number) => void) => { const end = list + 8; let guard = 0; for (let node = mem.r32(end); node !== end && node && guard++ < 4096; node = mem.r32(node)) fn(mem.r32(node + 8)); };
+        for (const list of [0x20, 0x10]) each(con + list, (mgr) => { const n = mem.r32(mgr + 0x14), ary = mem.r32(mgr + 0x18); if (n <= 2048 && ary) for (let i = 0; i < n; i++) add(mem.r32(ary + 4 * i)); });
+        each(con + 0x30, add);
+        return out;
+    }
+    /** following on another version's disc: how often each word of an actor was put in, by its offset */
+    actorTakenAt = new Map<number, number>();
+    /** recorded actors with no counterpart in the game (another version's disc) */
+    actorsLost = 0;
+    private idAt = new Map<number, number>(); private atId = new Map<number, number>(); private rosterOff = false;
+    /** an actor's live flags as the game here has them (bits from 0x4000 up sit one higher in every version but JP 1.0) */
+    private liveFlags(v: number) {
+        const a = this.recA.liveFlagsShifted, b = this.A.liveFlagsShifted;
+        return a === b ? v : b ? (((v & ~0x3FFF) << 1) | (v & 0x3FFF)) >>> 0 : (((v >>> 1) & ~0x3FFF) | (v & 0x3FFF)) >>> 0;
+    }
+    /**
+     * The actors of a recording made on another version of the game. Their addresses are the other heap's, so a
+     * recorded actor is the game's actor at the same place in the recorder's order (new ones paired as they
+     * appear). Its recorded words are put into the game's actor, but for addresses and with the flags moved.
+     */
+    private followActors(f: TraceFrame) {
+        const mem = this.m.mem, fresh: number[] = [];
+        if (f.actorsGone) for (const id of f.actorsGone) { this.actors.delete(id); const p = this.idAt.get(id); if (p !== undefined) { this.idAt.delete(id); if (this.atId.get(p) === id) this.atId.delete(p); } }
+        if (f.actors) for (const r of f.actors) {
+            let a = this.actors.get(r.id);
+            if (!a || r.created) { const data = new Uint8Array(r.bytes); a = { ptr: r.ptr, data, dv: new DataView(data.buffer) }; this.actors.set(r.id, a); fresh.push(r.id); }
+            for (let k = 0; k < r.word.length; k++) a.dv.setUint32(r.word[k] * 4, r.value[k]);
+        }
+        const game = this.roster(), here = new Set(game);
+        for (const [p, id] of this.atId) if (!here.has(p)) { this.atId.delete(p); if (this.idAt.get(id) === p) this.idAt.delete(id); }
+        // (a new recorded actor is the game's first unpaired one, in the recorder's order, with the same name key: TNameRef's key code, +0x8)
+        const unpaired = game.filter((p) => !this.atId.has(p));
+        let lost = 0;
+        for (const id of fresh) {
+            const key = this.actors.get(id)!.dv.getUint16(8), k = unpaired.findIndex((p) => p && mem.r16(p + 8) === key);
+            if (k < 0) { lost++; continue; }
+            this.atId.set(unpaired[k], id); this.idAt.set(id, unpaired[k]); unpaired[k] = 0;
+        }
+        if (lost && !this.rosterOff) { this.rosterOff = true; this.log(`frame ${f.frame}: ${lost} of the recording's ${fresh.length} new actor(s) have no counterpart in the game here (the versions don't have the same objects, or not at the same time)`); }
+        this.actorsLost += lost;
+        const ptr = (v: number) => v >= 0x80003100 && v < 0x81800000 && !(v & 3);
+        for (const [id, a] of this.actors) {
+            const p = this.idAt.get(id);
+            if (!p) continue;
+            this.actorsChecked++;
+            for (let o = 4; o + 4 <= a.data.length; o += 4) {
+                let t = a.dv.getUint32(o); const g = mem.r32(p + o);
+                if (o === 0xF0) t = this.liveFlags(t);
+                if (g === t || ptr(t) || ptr(g)) continue;
+                this.actorWordsOff++; this.taken.actor = (this.taken.actor || 0) + 1; mem.w32(p + o, t);
+                this.actorTakenAt.set(o, (this.actorTakenAt.get(o) || 0) + 1);
+            }
         }
     }
     /**
@@ -1100,6 +1311,7 @@ export class Replay {
      */
     private compareActors(f: TraceFrame) {
         const mem = this.m.mem;
+        if (this.otherVersion) return this.followActors(f);
         if (f.actorsGone) for (const id of f.actorsGone) this.actors.delete(id);
         if (f.actors) for (const r of f.actors) {
             let a = this.actors.get(r.id);
@@ -1123,6 +1335,7 @@ export class Replay {
                 const g = mem.r32(a.ptr + o), t = a.dv.getUint32(o);
                 if (g === t) continue;
                 this.actorWordsOff++;
+                if (this.follow) { this.taken.actor = (this.taken.actor || 0) + 1; mem.w32(a.ptr + o, t); continue; }
                 const key = `${hex(a.dv.getUint32(0))}+${o.toString(16)}`;
                 if (this.actorsOff.has(key)) continue;
                 this.actorsOff.add(key);
@@ -1151,7 +1364,7 @@ export class Replay {
         if (!this.adopted.has(kind)) {
             this.adopted.add(kind);
             const took: string[] = [];
-            for (let k = 0; k < n; k++) if (mine[k] !== rec[k] && this.takes(kind, addr, k, mine[k])) { const w = (k & ~3).toString(16); if (took[took.length - 1] !== w) took.push(w); mine[k] = rec[k]; }
+            for (let k = 0; k < n; k++) if (mine[k] !== rec[k] && !this.addressAt(mine, rec, k) && this.takes(kind, addr, k, mine[k])) { const w = (k & ~3).toString(16); if (took[took.length - 1] !== w) took.push(w); mine[k] = rec[k]; }
             if (took.length) this.log(`${name}: uninitialised bytes taken from the first record: words at +0x${took.join(', +0x')}`);
         }
         let same = true;
@@ -1159,6 +1372,7 @@ export class Replay {
         if (same) return;
         const md = new DataView(mine.buffer, mine.byteOffset, n), rd = new DataView(rec.buffer, rec.byteOffset, n), out: string[] = [];
         let words = 0;
+        if (this.follow) return this.take(kind, name, addr, rec, handle);
         for (let o = 0; o + 4 <= n; o += 4) if (md.getUint32(o) !== rd.getUint32(o)) {
             words++;
             if (out.length < 12) out.push(`+0x${o.toString(16)}: ${hex(md.getUint32(o))} / ${hex(rd.getUint32(o))} (${md.getFloat32(o).toPrecision(8)} / ${rd.getFloat32(o).toPrecision(8)})`);
@@ -1171,10 +1385,10 @@ export class Replay {
         const T = this.T, i = this.iCall, seed = this.m.mem.r32(this.A.seed);
         if (i < T.n && T.kind[i] === Ev.RAND && T.b[i] === seed) {
             const caller = T.a[i];
-            if (caller === lr || (caller >= this.modLo && caller < this.modHi && ++this.shimCalls)) { this.lastCall = i; this.iCall = this.nextCallFrom(i + 1); this.calls++; return; }
+            if (caller === lr || this.otherVersion || (caller >= this.modLo && caller < this.modHi && ++this.shimCalls)) { this.lastCall = i; this.iCall = this.nextCallFrom(i + 1); this.calls++; return; }
         }
         if (i >= T.n) { this.issue('rand', `rand called from ${hex(lr)} after the trace's last call`); return; }
-        if (this.stageTicks === 0 && this.stages === 1 && !this.layoutDelta) {
+        if (this.stageTicks === 0 && this.stages === 1 && !this.layoutDelta && !this.otherVersion) {
             // the first stage is still being set up: a heap laid out differently (see `layoutDelta`) explains a different call
             const mario = this.m.mem.r32(this.A.gpMarioOriginal), rec = T.ticks.length ? T.ticks[0].marioPtr : 0;
             if (mario && rec && mario !== rec) {
