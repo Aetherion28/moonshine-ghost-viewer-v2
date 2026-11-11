@@ -241,7 +241,9 @@ function grid(layout: number): { x: number; y: number; size: number }[] {
     const cells: { size: number; px: number; py: number }[] = [];
     for (let size = 2; size <= 24; size += 2) for (const [px, py] of [[0, 0], [1, 0], [0, 1], [1, 1]]) cells.push({ size, px, py });
     for (const size of [3, 5, 7, 9, 11, 13, 17, 23]) for (const [px, py] of [[0, 0], [1, 1]]) cells.push({ size, px, py });
-    const [bx, by] = [[2, 2], [4, 6], [0, 0]][layout];
+    // (GRIDOFF='x,y': the whole arrangement moved, for maps bigger than 256)
+    const off = (process.env.GRIDOFF || '0,0').split(',').map(Number);
+    const [bx, by] = [[2 + off[0], 2 + off[1]], [4 + off[0], 6 + off[1]], [off[0], off[1]]][layout];
     return cells.map((c, k) => { const cell = layout === 0 ? k : layout === 1 ? 63 - k : (k * 29 + 7) % 64; return { x: 32 * (cell & 7) + bx + c.px, y: 32 * (cell >> 3) + by + c.py, size: c.size }; });
 }
 
