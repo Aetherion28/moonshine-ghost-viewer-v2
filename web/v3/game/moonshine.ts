@@ -125,10 +125,18 @@ const CRANE_NAMES = ['crane90 0', 'crane90 1', 'crane90 2', 'craneUpDown 0', 'cr
 /** ricco_fruit.cpp: TFruitLauncher's fire function; its rand calls at +0x134, +0x250, +0x36C (the fruit's choice, three tries) and +0x4A0 (the first speed roll) */
 const FRUIT_FIRE = R3(0x801A4FC4, 0x801CD40C, 0x801C52C4), DURIAN_ROLL = 0x6000;
 const DIR_AREA = 0x7C, DIR_EPISODE = 0x7D;   // TMarDirector::mAreaID, mEpisodeID
+const DIR_STATE = 0x64, DIR_SETUP_DONE = 0x260, STATE_GAME_STARTING = 2;   // TMarDirector::mCurState, _260
+// actions.cpp's Regrab Last Held Object: TTakeActor::mHeldObject, TMario::mState and mGrabTarget, the status and the message it
+// writes, THitActor::receiveMessage's vtable slot, the bind's default buttons (X and D-pad up) among the buttons a bind can have
+const TAKE_HELD = 0x6C, MARIO_STATE = 0x7C, MARIO_GRAB_TARGET = 0x384, MARIO_STATUS_TAKE = 0x383, HIT_MESSAGE_TAKE = 4;
+const VT_RECEIVE_MESSAGE = 0xA0, BIND_REGRAB = 0x0408, BIND_BUTTON_MASK = 0x1F7F;
+// practice_session.cpp: direct()'s calls of TObjHitCheck::checkActorsHit and clearHitNum, the talk object's perform, TMarDirector::_11 (the talk object)
+const HIT_CHECK_CALLS = [R3(0x800ED07C, 0x80299AF8, 0x80291990), R3(0x800ED088, 0x80299B04, 0x8029199C)];
+const TALK_PERFORM = R3(0x802130A8, 0x80151C88, 0x80146AA4), DIR_TALK = 0xB0;
 
 export const ARENA_RESERVE = 0xC2000;   // the mod's region (0xC0000) and the debug stack OSInit returns to the arena (0x2000)
 
-export interface MoonshineAddrs { OSGetArenaLo: number; arenaLoVar: number; setupObjectsCall: number; gpPollution: number; fastTextCall: number; gpMarDirector: number }
+export interface MoonshineAddrs { OSGetArenaLo: number; arenaLoVar: number; setupObjectsCall: number; gpPollution: number; fastTextCall: number; gpMarDirector: number; gpMarioAddress: number; padStatus: number }
 
 export class Moonshine {
     private region: Region;
@@ -144,7 +152,10 @@ export class Moonshine {
     constructor(private m: Machine, region: Region, private A: MoonshineAddrs) { this.region = region; this.caveAt = 0; }
     private pick(v: number | [number, number, number]) { return typeof v === 'number' ? v : v[this.region]; }
 
-    /** The parts that are always there: the raised arena floor, onSetup. */
+    /** this frame's director call is one the practice session froze (PracticeSession::freezeRequested) */
+    practiceFrozen = false;
+
+    /** The parts that are always there: the raised arena floor, onSetup, the practice session's hooks. */
     install() {
         const { m, A } = this, cpu = m.cpu;
         cpu.hook(A.OSGetArenaLo, (c) => {
@@ -154,6 +165,14 @@ export class Moonshine {
         });
         // onSetup: TPollutionManager's destructor never clears gpPollution; Moonshine does before setupObjects
         cpu.hook(A.setupObjectsCall, () => { m.mem.w32(A.gpPollution, 0); return false; });
+        // The practice session (practice_session.cpp) calls the hit check and its clearing through functions of its own,
+        // which do nothing while it holds the stage (susamunePracticeHitCheck / HitClear), and takes the two update
+        // cues from the director's talk object then (susamunePracticeTalkPerform).
+        for (const call of HIT_CHECK_CALLS) cpu.hook(call[this.region], (c) => { if (!this.practiceFrozen) return false; c.pc = call[this.region] + 4; return true; });
+        cpu.hook(TALK_PERFORM[this.region], (c) => {
+            if (this.practiceFrozen) { const d = m.mem.r32(A.gpMarDirector); if (d && c.gpr[3] === m.mem.r32(d + DIR_TALK)) c.gpr[4] = (c.gpr[4] & ~3) >>> 0; }
+            return false;
+        });
         // setupFastTextBox (in place of setMessageID's fallback call to setupTextBox): with Fast Text on, the message is "!!!"
         cpu.hook(A.fastTextCall, (c) => { if (this.session[F.EFFECTIVE_FAST_TEXT]) c.gpr[4] = (this.fastTextMsg - m.mem.r32(c.gpr[5])) >>> 0; return false; });
     }
@@ -167,9 +186,9 @@ export class Moonshine {
     private str(addr: number, max = 64) { const mem = this.m.mem; let t = ''; for (let k = 0; k < max && addr; k++) { const c = mem.r8(addr + k); if (!c) break; t += String.fromCharCode(c); } return t; }
     private area() { const d = this.m.mem.r32(this.A.gpMarDirector); return d ? this.m.mem.r8(d + DIR_AREA) : -1; }
     private episode() { const d = this.m.mem.r32(this.A.gpMarDirector); return d ? this.m.mem.r8(d + DIR_EPISODE) : -1; }
-    /** rngControlBeforeStageSetup, riccoFruitControlBeforeStageSetup: what the controls remember, forgotten as a stage starts */
+    /** rngControlBeforeStageSetup, riccoFruitControlBeforeStageSetup, actionsOnStageLoad: what the controls remember, forgotten as a stage starts */
     beforeStageSetup() {
-        this.kingBooSlot = 0; this.fruitPending = 0;
+        this.kingBooSlot = 0; this.fruitPending = 0; this.lastHeld = 0;
         for (const c of this.cranes) { c.actor = 0; c.retailSpeed = 0; c.roll = -1; c.speedCaptured = false; }
     }
     private craneIndex(crane: number, upDown: boolean) {
@@ -332,8 +351,46 @@ export class Moonshine {
         cpu.hook(fire + 0x250 + 4, (c) => { const l = c.gpr[31]; if (this.fruitPending === l && durians(l)) c.gpr[3] = DURIAN_ROLL; else this.fruitPending = 0; return false; });
         cpu.hook(fire + 0x36C + 4, (c) => { const l = c.gpr[31], force = this.fruitPending === l && durians(l); this.fruitPending = 0; if (force) c.gpr[3] = DURIAN_ROLL; return false; });
         cpu.hook(fire + 0x4A0 + 4, (c) => { if (this.fruitPending === c.gpr[31]) this.fruitPending = 0; return false; });
+        // regrabLastHeldObject's call of the object's receiveMessage comes back here
+        const cave = this.actionCave = this.caveAt; this.caveAt += 4; this.poke(cave, 0x60000000);
+        cpu.hook(cave, (c) => {
+            const g = this.regrab!; this.regrab = null;
+            if (c.gpr[3]) { mem.w32(g.mario + TAKE_HELD, g.obj); mem.w32(g.mario + MARIO_GRAB_TARGET, 0); }
+            c.gpr[3] = g.r3; c.lr = g.lr; c.pc = g.back; this.regrabbed = true;
+            return true;
+        });
     }
     private controlsInstalled = false;
+
+    // ---------------------------------------------------------------- the actions bound to buttons (actions.cpp)
+    private lastHeld = 0; private actionCave = 0; private regrabbed = false;
+    private regrab: { obj: number; mario: number; r3: number; lr: number; back: number } | null = null;
+    /**
+     * regrabLastHeldObject, which actionsApply runs after the director's frame. It remembers the object Mario
+     * holds; while he holds nothing and the pad's buttons (sampled before the frame, as Binds::update does) are
+     * exactly the bind's, his status becomes TAKE and the remembered object is sent the take message, and holds
+     * if it accepts. The bind is the default one: binds aren't recorded.
+     * `back` is where the processor is (the instruction after the director's call). Returns true when it was
+     * sent into the object's receiveMessage instead: it comes back to `back`, and this is then called again.
+     */
+    afterDirect(c: { gpr: Uint32Array; lr: number; pc: number }, back: number): boolean {
+        if (this.regrabbed) { this.regrabbed = false; return false; }
+        const mem = this.m.mem, d = mem.r32(this.A.gpMarDirector);
+        if (!this.actionCave || !d || !mem.r8(d + DIR_SETUP_DONE) || mem.r8(d + DIR_STATE) < STATE_GAME_STARTING) return false;
+        const mario = mem.r32(this.A.gpMarioAddress);
+        if (!mario) return false;
+        const held = mem.r32(mario + TAKE_HELD);
+        if (held) { this.lastHeld = held; return false; }
+        if (!this.lastHeld || (mem.r16(this.A.padStatus) & BIND_BUTTON_MASK) !== BIND_REGRAB) return false;
+        const obj = this.lastHeld;
+        mem.w32(mario + MARIO_GRAB_TARGET, obj); mem.w32(mario + MARIO_STATE, MARIO_STATUS_TAKE);
+        this.regrab = { obj, mario, r3: c.gpr[3], lr: c.lr, back };
+        c.gpr[3] = obj; c.gpr[4] = mario; c.gpr[5] = HIT_MESSAGE_TAKE; c.lr = this.actionCave; c.pc = mem.r32(mem.r32(obj) + VT_RECEIVE_MESSAGE);
+        this.regrabs++;
+        return true;
+    }
+    /** how often the regrab action ran */
+    regrabs = 0;
 
     private write(addr: number, word: number, mask = 0xFFFFFFFF) {
         const mem = this.m.mem;

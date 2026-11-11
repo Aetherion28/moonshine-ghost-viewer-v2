@@ -18,10 +18,10 @@ export interface GameAddrs {
     region: Region;
     app: number; procLoopHead: number; setupCall: number; directCall: number; directRet: number; setupObjectsCall: number;
     marioPerform: number; randRet: number; seed: number; npcPhase: number; flagMgr: number;
-    gpMarDirector: number; gpMarioOriginal: number; gpCamera: number; gpPollution: number; setupThread: number;
+    gpMarDirector: number; gpMarioOriginal: number; gpMarioAddress: number; gpCamera: number; gpPollution: number; setupThread: number;
     PADRead: number; PADClamp: number; OSGetArenaLo: number; arenaLoVar: number;
     fbCamera: number; fbSilhouette: number; fbWater: number; fastTextCall: number;
-    padButton: number; padMStick: number; padSStick: number;
+    padStatus: number; padButton: number; padMStick: number; padSStick: number;
     /** after changeState's call to MSound::checkWaveOnAram (the stage's exit waits for it) */
     exitWaveRet: number;
     /** the goop's draws: TPollutionCounterLayer::countTexDegree (a layer's map, to be copied back), and
@@ -56,10 +56,10 @@ export const JP10: GameAddrs = {
     region: 0,
     app: 0x803E6000, procLoopHead: 0x800FA1CC, setupCall: 0x800F9F70, directCall: 0x800F9B60, directRet: 0x800F9B74, setupObjectsCall: 0x800ECE3C,
     marioPerform: 0x8012C77C, randRet: 0x80085AE4, seed: 0x80408CF0, npcPhase: 0x8040A4A0, flagMgr: 0x8040A290,
-    gpMarDirector: 0x8040A2A8, gpMarioOriginal: 0x8040A378, gpCamera: 0x8040B370, gpPollution: 0x8040A5A8, setupThread: 0x803F2390,
+    gpMarDirector: 0x8040A2A8, gpMarioOriginal: 0x8040A378, gpMarioAddress: 0x8040A398, gpCamera: 0x8040B370, gpPollution: 0x8040A5A8, setupThread: 0x803F2390,
     PADRead: 0x8009BF20, PADClamp: 0x8009B1A4, OSGetArenaLo: 0x8008DCBC, arenaLoVar: 0x80408D08,
     fbCamera: 0x80359CA4, fbSilhouette: 0x800C2D0C, fbWater: 0x801FABF0, fastTextCall: 0x8021530C,
-    padButton: 0x80400D80, padMStick: 0x80400E40, padSStick: 0x80400E80,
+    padStatus: 0x80400D50, padButton: 0x80400D80, padMStick: 0x80400E40, padSStick: 0x80400E80,
     exitWaveRet: 0x800ECAB4,
     goopLayerDraw: 0x801ECF38, goopObjDraw: [0x801EE5B0, 0x2D4],
     marioPulling: 0x8013DD68, unsetTakingMtx: [[0x803E083C, 0x80], [0x803D75E4, 0x74]],   // TBGTakeHit (a tentacle), TBGBeakHit
@@ -76,6 +76,7 @@ const SPC = { stepsToDo: 4, stepsLeft: 0xC, locked: 0x14 };   // TSpcInterp
 const APP = { director: 4, state: 8, prev: 0xA, cur: 0xE, next: 0x12, movie: 0x18, pads: 0x20, heap: 0x40 };
 const DIR = { demoFlags: 0x4E, pendingTime: 0x54, moveTicks: 0x58, ticks: 0x5C, state: 0x64, setupDone: 0x260 };
 const STATE_STAGE_EXIT_2 = 12;
+const RUN_ASSISTED = 1;   // a trace's run flags: Moonshine's practice session took part
 // TMarioGamePad: the scalar spans Moonshine compares (buttons, the two sticks, the meanings and analog state)
 const PAD_SPANS: [number, number][] = [[0x18, 0x30], [0x48, 0x10], [0x58, 0x10], [0xA8, 58]];
 // ... and with its mode state (flags, the stick timer, the disabled frames): what a pad carries from before the recording
@@ -186,7 +187,12 @@ export class Replay {
         cpu.hook(A.procLoopHead, (c) => { this.atProcLoop(c.gpr[31]); return false; });
         cpu.hook(A.setupCall, () => { this.moonshine.beforeStageSetup(); this.atSetup(); return false; });
         cpu.hook(A.directCall, (c) => this.beforeDirect(c));
-        cpu.hook(A.directRet, (c) => { this.afterDirect(c); return false; });
+        cpu.hook(A.directRet, (c) => {
+            this.afterDirect(c);
+            const sent = this.moonshine.afterDirect(c, A.directRet);
+            if (sent && this.moonshine.regrabs === 1) this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: Moonshine's Regrab Last Held Object (the pad holds X and D-pad up): Mario's status set to TAKE and the object he held last sent the take message`);
+            return sent;
+        });
         cpu.hook(A.marioPerform, (c) => { if ((c.gpr[4] & 1) && this.phase === 'stage' && c.gpr[3] === m.mem.r32(A.gpMarioOriginal)) this.atTick(c.gpr[3], c.gpr[4]); return false; });
         cpu.hook(A.randRet, (c) => { if (this.phase === 'stage') this.atRand(c.lr); return false; });
         cpu.hook(A.marioPulling, (c) => { if (this.phase === 'stage') this.unsetTakingMtx(c.gpr[3]); return false; });
@@ -509,6 +515,9 @@ export class Replay {
                 // Moonshine froze the stage: it lends the director a state that runs nothing for this call
                 const d = mem.r32(A.gpMarDirector);
                 this.frozenState = mem.r8(d + DIR.state); mem.w8(d + DIR.state, STATE_STAGE_EXIT_2);
+                // (the menu, the warp wheel and a state's disc work also take the pad away; a freeze that leaves the pad,
+                // in a run the practice session assisted, is the practice session's: it runs no hit check)
+                this.moonshine.practiceFrozen = !p.suppressed && (T.runFlags & RUN_ASSISTED) !== 0;
             }
         }
         this.iFlow = i;
@@ -518,6 +527,7 @@ export class Replay {
         const mem = this.m.mem;
         if (this.suppressed) { PAD_SUPPRESS.forEach((o, k) => mem.w32(this.suppressedPad + o, this.suppressed![k])); this.suppressed = null; }
         if (this.frozenState >= 0) { mem.w8(mem.r32(this.A.gpMarDirector) + DIR.state, this.frozenState); this.frozenState = -1; c.gpr[3] = 0; }
+        this.moonshine.practiceFrozen = false;
     }
 
     // ---------------------------------------------------------------- movement ticks
