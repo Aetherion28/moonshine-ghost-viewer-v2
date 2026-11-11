@@ -174,6 +174,8 @@ export class Cpu {
     // ---------------------------------------------------------------- time
     /** the time base (bus ticks / 4) */
     tb() { return this.tbBase + Math.floor((this.count - this.tbCount0) / TB_DIV); }
+    /** moves the time base by `ticks` (a replay keeps the OS clock on its recording's: see game/replay.ts) */
+    warpTb(ticks: number) { this.tbBase += ticks; }
     dec() { return (this.decBase - Math.floor((this.count - this.decCount0) / TB_DIV)) >>> 0; }
     /** the instruction count at which DEC passes from 0 to -1 (its exception), or Infinity if it already is negative */
     decZeroAt() { return this.decBase & 0x80000000 ? Infinity : this.decCount0 + (this.decBase + 1) * TB_DIV; }

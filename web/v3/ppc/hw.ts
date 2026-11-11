@@ -256,7 +256,9 @@ export class Hardware implements Mmio {
             const hi = this.r16(r);
             if (!(hi & 0x1000)) continue;   // not enabled
             const line = (hi & 0x3FF) - 1;   // VCT of the interrupt
-            const hit = prev < now ? line >= prev && line < now : line >= prev || line < now;
+            // (a line the beam reaches exactly as the field begins counts for this field: the two interrupts the SDK
+            // sets, at lines 1 and 263, then come a field apart, one a field, as on the console)
+            const hit = prev < now ? line > prev && line <= now : line > prev || line <= now;
             if (hit) this.w16(r, hi | 0x8000);
         }
         this.viIrq();

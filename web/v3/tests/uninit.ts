@@ -18,9 +18,10 @@ for (const l of readFileSync('/home/claude/sms-ai-decomp/config/GMSJ01/symbols.t
 const b = readFileSync(process.argv[2]);
 const T = readTrace(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
 const who = (text: string) => text.replace(/\b(80[0-9a-f]{6})\b/g, (m) => { const w = S.who(parseInt(m, 16)); return w === '?' ? m : `${m} ${w}`; });
+let onAlloc: (ptr: number, size: number) => void = () => { };
 const R = new Replay(loadBytes(JP_DOL), jpDisc(), T, JP10, (n) => S.byName.get(n), {
     log: (s) => { if (!/uninitialised/.test(s)) console.log(who(s)); }, stopOn: ['heap', 'layout'], maxIssues: 200, fstPad: +(process.env.FSTPAD || 480), shinyShines: !!process.env.SHINY,
-    scriptsLocked: (process.env.LOCKED || '').split(',').filter(Boolean),
+    scriptsLocked: (process.env.LOCKED || '').split(',').filter(Boolean), onAlloc: (p, n) => onAlloc(p, n),
 });
 const cpu = R.m.cpu as any, mem = R.m.mem as any, g: Uint32Array = cpu.gpr;
 cpu.jit = false;
@@ -61,25 +62,18 @@ const bytes = mem.bytes.bind(mem);
 // ---------------------------------------------------------------- allocations
 const HEAP_LO = 0x8000A04C, HEAP_HI = 0x8000DE30;   // the JKR heaps and operator new
 const inHeapCode = (a: number) => a >= HEAP_LO && a < HEAP_HI;
-const pend: { size: number; by: number[] }[] = [];
+// (the replay's own hooks on the heaps' alloc functions tell of each block as it is given out: the caller's chain is still on the stack)
 const callers = () => {
     const by: number[] = [cpu.lr >>> 0]; let sp = g[1];
     for (let k = 0; k < 6 && sp > 0x80000000 && sp < 0x81800000; k++) { const up = r32(sp); if (up <= sp || up >= 0x81800000) break; by.push(r32(up + 4)); sp = up; }
     return by.filter((a) => !inHeapCode(a)).slice(0, 3);
 };
-const allocEntry = (c: any) => { pend.push({ size: c.gpr[4], by: callers() }); return false; };
-const allocExit = (c: any) => {
-    const p = pend.pop(), ptr = c.gpr[3];
-    if (p && ptr) {
-        const o = ptr & 0x01FFFFFF;
-        shadow.fill(1, o, o + p.size); came.fill(0, o, o + p.size);
-        allocs.push({ ptr, size: p.size, by: p.by, frame: R.frames });
-        allocOf.fill(allocs.length, o >> 2, (o + p.size + 3) >> 2);
-    }
-    return false;
+onAlloc = (ptr, size) => {
+    const o = ptr & 0x01FFFFFF;
+    shadow.fill(1, o, o + size); came.fill(0, o, o + size);
+    allocs.push({ ptr, size, by: callers(), frame: R.frames });
+    allocOf.fill(allocs.length, o >> 2, (o + size + 3) >> 2);
 };
-cpu.hook(0x8000A04C, allocEntry); cpu.hook(0x8000A18C, allocExit);   // JKRExpHeap::alloc
-cpu.hook(0x8000D520, allocEntry); cpu.hook(0x8000D5CC, allocExit);   // JKRSolidHeap::alloc
 
 // ---------------------------------------------------------------- registers and uses
 const gT = new Int32Array(32).fill(-1), fT = new Int32Array(32).fill(-1);

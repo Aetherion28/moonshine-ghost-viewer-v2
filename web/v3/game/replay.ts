@@ -10,6 +10,7 @@ import { Machine } from '../ppc/machine.js';
 import { installHle, type Sym } from '../ppc/hle.js';
 import type { VirtualDisc } from '../ppc/disc.js';
 import { f32FromBits } from '../ppc/fpu.js';
+import { TB_DIV } from '../ppc/cpu.js';
 import { Ev, EV_NAMES, IN, MARIO_BYTES, type Trace, type TraceFrame, type TracePad, type TraceTick } from './trace.js';
 import { Moonshine, ARENA_RESERVE, type Region } from './moonshine.js';
 
@@ -33,8 +34,18 @@ export interface GameAddrs {
     launchScript: number; launchScriptInterp: number; spcUpdate: number; spcCountStep: number; spcLock: number; spcUnlock: number;
     /** FLUDD's three calls of TModelWaterManager::emitRequest (TNozzleDeform::emit, TNozzleTrigger::emit, TNozzleBase::emit): the ones Moonshine records */
     waterCalls: number[];
+    /** JKRExpHeap::alloc and JKRSolidHeap::alloc: each one's entry and its return */
+    heapAllocs: [number, number][];
     /** TWaterGun's two copies of setEmitPt (in perform and init): the instruction after the three stores */
     emitPtDone: number[];
+    /** TNerveTobiPukuGenerate's load of unk1D0.y (the Cheep Cheep in r30), and TNerveTobiPukuLand's compare of |dy| (f1) with 600 */
+    pukuGenerateRead: number; pukuSinkTest: number;
+    /** TMovieDirector's vtable, and the instruction after its direct() asks whether the setup thread has ended */
+    movieVtable: number; movieThreadTest: number;
+    /** TMarDirector::updateGameMode's test of the BGM handle a camera demo waits for (the handle in r3, the director in r31) */
+    demoJingleTest: number;
+    /** TJumpBase::control */
+    jumpBaseControl: number;
     /** TBossMantaManager::TMantaBattleState::update, where it tests the all-Mantas-dead jingle's handle (in r0); gpMapObjManager */
     mantaJingleTest: number; gpMapObjManager: number;
     /** TShine's vtable and TShine::mUpSpeed (1 at boot; TShine::appearSimple leaves it 2 for the rest of the session) */
@@ -54,13 +65,16 @@ export const JP10: GameAddrs = {
     marioPulling: 0x8013DD68, unsetTakingMtx: [[0x803E083C, 0x80], [0x803D75E4, 0x74]],   // TBGTakeHit (a tentacle), TBGBeakHit
     launchScript: 0x800DC654, launchScriptInterp: 0x800DC6F0, spcUpdate: 0x80116F14, spcCountStep: 0x80116F88, spcLock: 0x8011C7CC, spcUnlock: 0x8011C6E8,
     waterCalls: [0x8014AC84, 0x8014B5AC, 0x8014C0D4], emitPtDone: [0x80148DD0, 0x80149F90],
+    pukuGenerateRead: 0x802ADF70, pukuSinkTest: 0x802AD13C,
+    movieVtable: 0x803B48D8, movieThreadTest: 0x8010ACF4, demoJingleTest: 0x800EB480, jumpBaseControl: 0x801D4E6C,
+    heapAllocs: [[0x8000A04C, 0x8000A18C], [0x8000D520, 0x8000D5CC]],
     mantaJingleTest: 0x80322E18, gpMapObjManager: 0x8040A4D0,
     shineVtable: 0x803C11E4, shineUpSpeed: 0x80409030,
 };
 const SPC = { stepsToDo: 4, stepsLeft: 0xC, locked: 0x14 };   // TSpcInterp
 // offsets in the game's objects
 const APP = { director: 4, state: 8, prev: 0xA, cur: 0xE, next: 0x12, movie: 0x18, pads: 0x20, heap: 0x40 };
-const DIR = { moveTicks: 0x58, ticks: 0x5C, state: 0x64, setupDone: 0x260 };
+const DIR = { demoFlags: 0x4E, pendingTime: 0x54, moveTicks: 0x58, ticks: 0x5C, state: 0x64, setupDone: 0x260 };
 const STATE_STAGE_EXIT_2 = 12;
 // TMarioGamePad: the scalar spans Moonshine compares (buttons, the two sticks, the meanings and analog state)
 const PAD_SPANS: [number, number][] = [[0x18, 0x30], [0x48, 0x10], [0x58, 0x10], [0xA8, 58]];
@@ -86,8 +100,16 @@ export interface ReplayOptions {
     fstPad?: number;
     /** Moonshine's Shiny Shines setting (not recorded: see `layoutDelta`) */
     shinyShines?: boolean;
-    /** event scripts (file names) whose interpreter starts with a lock word that isn't 0 (not recorded: see `scriptDoubts`) */
+    /** the doubts to take the other way (not recorded: see `scriptDoubts`): event scripts (file names) whose interpreter starts with a lock word that isn't 0, a trampoline (`TJumpBase@address`) whose state timer isn't */
     scriptsLocked?: string[];
+    /**
+     * The doubts a driver has already taken the other way. With it, a replay stops a few frames after its first
+     * difference when an untried doubt lies before it (`cutShort`): the driver boots again with that doubt the
+     * other way instead of playing this one to its end first.
+     */
+    tried?: Set<string>;
+    /** told of every block the heaps give out (a tool's: tests/uninit.ts) */
+    onAlloc?: (ptr: number, size: number) => void;
 }
 
 const hex = (x: number) => (x >>> 0).toString(16).padStart(8, '0');
@@ -98,7 +120,7 @@ export class Replay {
     issues: Issue[] = [];
     phase: 'boot' | 'stage' | 'done' = 'boot';
     /** counts of what matched */
-    stages = 1; frames = 0; ticks = 0; calls = 0; literals = 0; marioChecked = 0; extraLoadFrames = 0; shimCalls = 0;
+    stages = 1; frames = 0; ticks = 0; private stageTicks = 0; calls = 0; literals = 0; marioChecked = 0; extraLoadFrames = 0; shimCalls = 0;
     /** the stage's archive (bianco0, ...) and the Moonshine settings on in it that are not reproduced */
     stageName = ''; unsupported: string[] = [];
     /** frames and ticks at which the pad object had to be set to the recording's (Moonshine had changed it) */
@@ -118,6 +140,9 @@ export class Replay {
      * (it ran out of its 0x20, or ran past them), with the frame it first did. The trace doesn't record the word.
      */
     scriptDoubts: { script: string; frame: number; locked: boolean }[] = [];
+    /** stopped a few frames after its first difference, for a doubt before it to be tried the other way (see ReplayOptions.tried) */
+    cutShort = false;
+    private tried: Set<string> | undefined; private cutAt = 0;
     /** the stage heap's size here minus the recording's (0: the same arena) */
     heapDelta = 0;
     /** instructions at the stage's start and at its first frame after setup */
@@ -165,6 +190,19 @@ export class Replay {
         cpu.hook(A.marioPerform, (c) => { if ((c.gpr[4] & 1) && this.phase === 'stage' && c.gpr[3] === m.mem.r32(A.gpMarioOriginal)) this.atTick(c.gpr[3], c.gpr[4]); return false; });
         cpu.hook(A.randRet, (c) => { if (this.phase === 'stage') this.atRand(c.lr); return false; });
         cpu.hook(A.marioPulling, (c) => { if (this.phase === 'stage') this.unsetTakingMtx(c.gpr[3]); return false; });
+        // Each block the stage allocates is kept as the heap gives it out: what an object's constructor doesn't write stays so (see `unset`)
+        const asked = new Map<number, number>(), THREAD = 0x800000E4;
+        for (const [enter, leave] of A.heapAllocs) {
+            cpu.hook(enter, (c) => { asked.set(mem.r32(THREAD), c.gpr[4]); return false; });
+            cpu.hook(leave, (c) => {
+                const t = mem.r32(THREAD), n = asked.get(t), p = c.gpr[3];
+                asked.delete(t);
+                if (!n || p < 0x80000000 || p + n > 0x81800000) return false;
+                if (opt.onAlloc) opt.onAlloc(p, n);
+                if (this.phase === 'stage' && n <= 0x8000) this.allocSnap.set(p, mem.bytes(p, n).slice());
+                return false;
+            });
+        }
         // FLUDD's water requests: what a nozzle asks of the water manager (its place, direction, power) against the recording's
         for (const call of A.waterCalls) {
             cpu.hook(call, (c) => { if (this.phase === 'stage') this.atWater(c.gpr[4]); return false; });
@@ -173,13 +211,35 @@ export class Replay {
         // FLUDD's emit positions are copied out of its nozzle's joint matrices. A nozzle Mario isn't using is never
         // posed, so its matrices are still the heap's leftovers (zeros here): then the positions are the recording's.
         for (const at of A.emitPtDone) cpu.hook(at, (c) => { if (this.phase === 'stage' && c.gpr[3]) this.unsetEmitPos(c.gpr[3], c.gpr[4] + 0x1C90); return false; });
+        // A Cheep Cheep's first dive. TTobiPuku's constructor never sets unk1D0 (+0x1D0). A new one runs its Generate
+        // nerve once as it appears, which adds unk1D0.y to its height, before the launch pad's forceLaunch sets unk1D0;
+        // forceLaunch's reset() keeps that height (unk1E0), and the dive after its first flight ends once it is more than
+        // 600 from it. So the depth of each one's first dive is the heap's leftovers: where they are zeros here, the
+        // recording says in which tick the dive ends (the actor's height at the recorder's next samples).
+        cpu.hook(A.pukuGenerateRead, (c) => { const p = c.gpr[30]; if (this.phase === 'stage' && !mem.r32(p + 0x1DC) && !mem.r32(p + 0x1D0) && !mem.r32(p + 0x1D4) && !mem.r32(p + 0x1D8)) this.unsetPukus.add(p); return false; });
+        cpu.hook(A.pukuSinkTest, (c) => { if (this.phase === 'stage' && this.unsetPukus.has(c.gpr[30])) this.pukuDives(c); return false; });
+        // A camera demo ends when its frames are over and the jingle that plays with it has ended (BGM handle 2 is
+        // null again), or after 720 ticks. No sound runs here, so the handle is null at once. A Shine's appear demo
+        // stops the world (only the Shine moves, Mario has no ticks), so the recording shows the tick the demo ends in:
+        // the one after which its movement ticks start again. (Sirena Beach 6: one tick after the camera's frames.)
+        cpu.hook(A.demoJingleTest, (c) => {
+            const d = c.gpr[31];
+            if (this.phase !== 'stage' || !(mem.r16(d + DIR.demoFlags) & 1)) return false;
+            const ends = this.worldMovesAgain(Math.floor((mem.r32(d + DIR.pendingTime) | 0) / 5));
+            if (ends !== (c.gpr[3] === 0) && !this.demoSaid) { this.demoSaid = true; this.log(`tick ${this.curTick}: a Shine's appear demo ends with its jingle as in the recording (the sound doesn't run here)`); }
+            c.gpr[3] = ends ? 0 : 1;
+            return false;
+        });
+        // A movie between two stages (see planMovie): its loading is the disc's, so the setup thread counts as ended
+        // from the frame that makes the movie end where the recording's does
+        cpu.hook(A.movieThreadTest, (c) => { if (this.phase === 'stage' && this.movieFrame && this.movieFrame < this.movieLoaded && c.gpr[3]) c.gpr[3] = 0; return false; });
         // A sound the game waits for. Manta Storm's hotel rises when the all-Mantas-dead jingle has ended (its handle
         // is null again): no sound runs here, so the handle reads as the recording shows it: null in the tick
         // before the one in which the recording makes the hotel's particles (the event's watch runs a tick after
         // the Mantas' manager has seen the handle null, and the particles are the first thing the rising does).
         cpu.hook(A.mantaJingleTest, (c) => { if (this.phase === 'stage' && this.T.particles.length) { const now = this.hotelRisesNow(); if (now !== (c.gpr[0] === 0) && !this.jingleSaid) { this.jingleSaid = true; this.log(`tick ${this.curTick}: the hotel waits for the jingle's end as in the recording (the sound doesn't run here)`); } c.gpr[0] = now ? 0 : 1; } return false; });
         // the event scripts' lock words (see scriptDoubts)
-        this.scriptsLocked = opt.scriptsLocked ?? [];
+        this.scriptsLocked = opt.scriptsLocked ?? []; this.tried = opt.tried;
         const unset = new Map<number, string>(), locked = new Set(opt.scriptsLocked ?? []), mem = m.mem;
         let script = '', steps = 0;
         const doubt = (it: number, isLocked: boolean) => {
@@ -194,6 +254,20 @@ export class Replay {
         cpu.hook(A.spcUpdate, () => { steps = 0; return false; });
         cpu.hook(A.spcCountStep, (c) => { const it = c.gpr[30]; if (unset.size && unset.has(it) && mem.r32(it + SPC.stepsLeft) === 1) doubt(it, false); return false; });
         cpu.hook(A.spcCountStep - 12, (c) => { const it = c.gpr[30]; if (unset.size && unset.has(it) && mem.r32(it + SPC.locked) !== 0 && ++steps > mem.r32(it + SPC.stepsToDo)) doubt(it, true); return false; });
+        // The trampoline's state timer, a doubt of the same kind. TJumpBase's constructor sets its state (2: being set
+        // down) and not the state's timer (unk13C, +0x13C); a state's first control() starts its animation only if the
+        // timer is 0, and afterwards the timer only counts. So what matters is whether the leftover was 0 (as here) or not.
+        cpu.hook(A.jumpBaseControl, (c) => {
+            const p = c.gpr[3];
+            if (this.phase !== 'stage' || this.jumpBases.has(p)) return false;
+            this.jumpBases.add(p);
+            for (let k = 0; k < 4; k++) if (!this.unset(p, 0x13C + k, mem.r8(p + 0x13C + k))) return false;
+            const key = `TJumpBase@${hex(p)}`, other = locked.has(key);
+            if (other) mem.w32(p + 0x13C, 1);
+            this.scriptDoubts.push({ script: key, frame: this.curFrame ? this.curFrame.frame : 0, locked: other });
+            this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: the trampoline at ${hex(p)} starts on a state timer its constructor never set (taken as ${other ? 'not 0' : '0'})`);
+            return false;
+        });
         // A stage ends when the screen has faded out and the sound's wave data has come off the disc: how long the
         // disc takes is the console's, so the answer is the recording's (did it leave after this frame?).
         cpu.hook(A.exitWaveRet, (c) => {
@@ -227,6 +301,7 @@ export class Replay {
     private issue(kind: string, text: string) {
         const f = this.curFrame;
         if (this.issues.length < this.maxIssues) this.issues.push({ kind, frame: f ? f.frame : 0, tick: this.curTick, text });
+        if (this.issues.length === 1 && this.tried && this.scriptDoubts.some((d) => d.frame <= (f ? f.frame : 0) && !this.tried!.has(d.script))) this.cutAt = this.frames + 8;
         this.log(`[${kind}] frame ${f ? f.frame : 0} tick ${this.curTick}: ${text}`);
         if (this.stopOn.has(kind) || this.issues.length >= this.maxIssues) this.stop();
     }
@@ -305,7 +380,10 @@ export class Replay {
         if (i >= T.n || T.kind[i] !== Ev.STAGE) { this.issue('flow', `the game starts a stage where the trace has ${i >= T.n ? 'ended' : EV_NAMES[T.kind[i]]}`); return; }
         const st = T.stages[T.a[i]], w = st.words;
         this.iFlow = this.nextFlowFrom(i + 1);
-        this.stages++; this.strict = false; this.stageName = ''; this.adopted.clear();
+        this.stages++; this.stageTicks = 0; this.strict = false; this.stageName = ''; this.adopted.clear(); this.unsetPukus.clear(); this.jumpBases.clear();
+        // the new stage's heap holds the last stage's leftovers (and the movie's between them): a byte of a recorded
+        // object that still holds its leftover at the object's first record was never written, as a zero is in the first stage
+        this.heapBase = mem.ram.slice(head & 0x01FFFFFF, tail & 0x01FFFFFF); this.heapBaseAt = head; this.allocSnap.clear();
         const seq = (o: number) => ((mem.r8(A.app + o) << 24) | (mem.r8(A.app + o + 1) << 16) | mem.r16(A.app + o + 2)) >>> 0;
         if (seq(APP.cur) !== w[4]) this.issue('stage', `the game goes to scene ${hex(seq(APP.cur))}, the trace to ${hex(w[4])}`);
         if (mem.r32(A.seed) !== w[6]) this.issue('stage', `the RNG seed at the stage's start is ${hex(mem.r32(A.seed))}, the trace's ${hex(w[6])}`);
@@ -362,6 +440,7 @@ export class Replay {
     // ---------------------------------------------------------------- frames
     private beforeDirect(c: { gpr: Uint32Array; pc: number }): boolean {
         if (this.phase !== 'stage') return false;
+        if (this.cutAt && this.frames >= this.cutAt) { this.cutShort = true; this.log('(stopped here: a doubt before this difference is tried the other way first)'); this.stop(); return false; }
         const T = this.T, mem = this.m.mem, A = this.A;
         const skip = () => { c.gpr[3] = 0; c.pc = A.directRet; return true; };
         let i = this.iFlow;
@@ -375,8 +454,16 @@ export class Replay {
         const f = T.frames[T.a[i]];
         if (f.state === -1) {
             // a frame of another director (a movie, a menu) between two stages: it gets the recorded pad, nothing is compared
+            if (!this.moviePlanned) { this.moviePlanned = true; this.planMovie(i); }
+            // (a movie whose loading had ended on the console by this frame, and hasn't here yet: this frame waits, as a stage's loading does)
+            if (this.movieLoaded && this.movieFrame + 1 >= this.movieLoaded) {
+                const ts = mem.r16(A.setupThread + 0x2C8);
+                if (ts !== 8 && ts !== 0) { this.extraLoadFrames++; return skip(); }
+            }
+            this.movieFrame++;
             this.curFrame = f; this.curFrameIndex = T.a[i]; this.frames++;
             if (!this.between++) this.log(`frame ${f.frame}: the recording has frames without a stage director here (the game's director: ${hex(mem.r32(mem.r32(A.app + APP.director)))})`);
+            this.alignClock(f, T.a[i]);
             i = this.nextFlowFrom(i + 1);
             if (i < T.n && T.kind[i] === Ev.PAD) { this.setPad(mem.r32(A.app + APP.pads), T.pads[T.a[i]].input, `frame ${f.frame}`); i = this.nextFlowFrom(i + 1); }
             this.iFlow = i;
@@ -392,7 +479,8 @@ export class Replay {
             if (!f.setupThreadDone && threadDone) hold = true;
             if (f.setupThreadDone) { this.strict = true; this.countAtPlay = this.m.cpu.count; }
         }
-        this.curFrame = f; this.curFrameIndex = T.a[i]; this.frames++;
+        this.curFrame = f; this.curFrameIndex = T.a[i]; this.frames++; this.movieFrame = 0; this.moviePlanned = false;
+        this.alignClock(f, T.a[i]);
         this.checkCalls(f.ev, `frame ${f.frame}`);
         if (this.phase !== 'stage') return false;
         if (f.session) { this.session = f.session; this.moonshine.apply(f.session); }
@@ -439,7 +527,7 @@ export class Replay {
         if (i >= T.n || T.kind[i] !== Ev.TICK) { this.issue('flow', `the game runs a movement tick where the trace has ${i >= T.n ? 'ended' : EV_NAMES[T.kind[i]]}`); return; }
         const t: TraceTick = T.ticks[T.a[i]];
         this.iFlow = this.nextFlowFrom(i + 1);
-        this.ticks++; this.curTick = t.tick; this.curTickIndex = T.a[i];
+        this.ticks++; this.stageTicks++; this.curTick = t.tick; this.curTickIndex = T.a[i];
         this.checkCalls(t.ev, `tick ${t.tick}`);
         if (this.phase !== 'stage') return;
         const dv = new DataView(t.input.buffer, t.input.byteOffset, IN.size);
@@ -454,7 +542,7 @@ export class Replay {
             for (let k = 4; k < 0x24; k++) {
                 if (k === 14 || k === 15) continue;
                 const rec = t.input[IN.work + k];
-                if (first && mem.r8(work + k) === 0) mem.w8(work + k, rec);
+                if (first && this.takes('work', work, k, mem.r8(work + k))) mem.w8(work + k, rec);
                 if (mem.r8(work + k) !== rec) {
                     const w = k & ~3;
                     this.issue('pad', `Mario's controller work differs at +0x${w.toString(16)}: game ${hex(mem.r32(work + w))}, trace ${hex(dv.getUint32(IN.work + w))}`);
@@ -462,7 +550,7 @@ export class Replay {
                 }
             }
         }
-        if (t.mario && this.ticks === 1 && this.stages === 1 && mario !== t.marioPtr) {
+        if (t.mario && this.stageTicks === 1 && !this.layoutDelta && mario !== t.marioPtr) {
             this.layoutDelta = mario - t.marioPtr;
             this.issue('layout', `Mario is at ${hex(mario)}, the recording's at ${hex(t.marioPtr)}: the stage's heap is laid out differently`);
             if (this.phase !== 'stage') return;
@@ -544,6 +632,161 @@ export class Replay {
         n++; while (n < T.n && T.kind[n] !== Ev.TICK) n++;
         return mark.ev < n;
     }
+    private clockScale = 0; private lastClock: { osTick: number; tb: number; index: number } | null = null;
+    /**
+     * The OS clock is kept on the recording's. The game times some things by the clock, not by frames (the red-coin
+     * timer is an OSStopwatch), and how long a frame really took is the console's: the recorder notes OSGetTick() at
+     * every frame, so the time base is moved to have advanced as much since the last frame as the recording's did.
+     * (A Wii's time base ticks 1.5 times as fast as a GameCube's; the recording's ticks a video field say which it was.)
+     */
+    private alignClock(f: TraceFrame, index: number) {
+        const cpu = this.m.cpu, T = this.T, fieldTicks = this.m.hw.field / TB_DIV;
+        if (!this.clockScale) {
+            const per: number[] = [];
+            for (let k = 1; k < T.frames.length && per.length < 4000; k++) {
+                const dr = T.frames[k].retrace - T.frames[k - 1].retrace, dt = (T.frames[k].osTick - T.frames[k - 1].osTick) >>> 0;
+                if (dr > 0 && dr <= 8) per.push(dt / dr);
+            }
+            per.sort((a, b) => a - b);
+            const mid = per.length ? per[per.length >> 1] : fieldTicks, scale = fieldTicks / mid;
+            this.clockScale = scale > 0.4 && scale < 1.6 ? scale : 1;
+            this.log(`the OS clock follows the recording's (its time base ticks ${Math.round(mid)} a video field, a GameCube's ${Math.round(fieldTicks)})`);
+        }
+        const last = this.lastClock;
+        if (last && index === last.index + 1) {
+            const want = Math.round(((f.osTick - last.osTick) >>> 0) * this.clockScale), have = cpu.tb() - last.tb;
+            // (not back by more than a second: an OS alarm set meanwhile would wait that much longer)
+            if (want !== have && want < fieldTicks * 3600 && want - have > -fieldTicks * 60) cpu.warpTb(want - have);
+        }
+        this.lastClock = { osTick: f.osTick, tb: cpu.tb(), index };
+    }
+    private demoSaid = false;
+    /**
+     * Whether the recording's movement ticks start again right after this game tick, of whose frame `left` game ticks are
+     * still to run: its frame then has exactly that many ticks, or (after a frame's last tick) its next frame has all of its own.
+     */
+    private worldMovesAgain(left: number): boolean {
+        const T = this.T;
+        let i = this.iFlow, n = 0;
+        const count = () => { n = 0; while (i < T.n && T.kind[i] === Ev.TICK) { n++; i = this.nextFlowFrom(i + 1); } };
+        count();
+        if (left > 0) return n === left;
+        if (n || i >= T.n || T.kind[i] !== Ev.FRAME) return false;
+        const from = T.frames[T.a[i]].tick;
+        i = this.nextFlowFrom(i + 1);
+        if (i < T.n && T.kind[i] === Ev.PAD) i = this.nextFlowFrom(i + 1);
+        count();
+        // (a whole frame of ticks: as many as the recording's frames usually have)
+        return n > 0 && n >= this.usualTicks(from);
+    }
+    private usualTicksN = 0;
+    /** how many movement ticks a frame of this recording usually has */
+    private usualTicks(_from: number): number {
+        if (!this.usualTicksN) {
+            const T = this.T, seen = new Map<number, number>();
+            for (let k = 1; k < T.frames.length; k++) { const dt = T.frames[k].tick - T.frames[k - 1].tick; if (dt > 0) seen.set(dt, (seen.get(dt) || 0) + 1); }
+            let best = 4, most = 0;
+            for (const [dt, c] of seen) if (c > most) { most = c; best = dt; }
+            this.usualTicksN = best;
+        }
+        return this.usualTicksN;
+    }
+    /** the frames of the movie being played so far, and the first of them in which its setup thread counts as ended */
+    private movieFrame = 0; private movieLoaded = 0; private moviePlanned = false;
+    /**
+     * A movie between two stages (TMovieDirector), from the first of the recording's frames without a stage director.
+     * Moonshine's FMV Skips lets a button end it; how many frames it then lasts depends on the frame its setup thread
+     * (the disc) ended in: from that frame `j` the screen fades in a step a frame; the first frame `p` with Start, A
+     * or B fades it back out over as many steps, and the director leaves once it is black: after frame 2p - j + 1
+     * (j + 1 when the button comes in frame j itself: the fade never started). The recording says how many frames
+     * the movie had and what the pad meant in each, so `j` is the one that gives that many.
+     */
+    private planMovie(i0: number) {
+        const T = this.T, mem = this.m.mem, A = this.A;
+        this.movieLoaded = 0;
+        if (mem.r32(mem.r32(A.app + APP.director)) !== A.movieVtable) return;
+        const meaning: number[] = [];
+        let i = i0;
+        while (i < T.n && T.kind[i] === Ev.FRAME && T.frames[T.a[i]].state === -1) {
+            let k = this.nextFlowFrom(i + 1), m = 0;
+            if (k < T.n && T.kind[k] === Ev.PAD) { const inp = T.pads[T.a[k]].input; m = new DataView(inp.buffer, inp.byteOffset, inp.length).getUint32(IN.pad + 0xD4); k = this.nextFlowFrom(k + 1); }
+            meaning.push(m); i = k;
+        }
+        const n = meaning.length;
+        if (i >= T.n || T.kind[i] !== Ev.STAGE) return;   // (the recording ends inside the movie)
+        const ends = (j: number) => {
+            let p = j; while (p <= n && !(meaning[p - 1] & 0x61)) p++;
+            return p > n || p - j > 30 ? -1 : p === j ? j + 1 : 2 * p - j + 1;
+        };
+        for (let j = 1; j <= n; j++) if (ends(j) === n) { this.movieLoaded = j; break; }
+        this.log(this.movieLoaded ? `frame ${T.frames[T.a[i0]].frame}: a movie of ${n} frames: its loading counts as done in its frame ${this.movieLoaded}, which ends it where the recording's ends` : `frame ${T.frames[T.a[i0]].frame}: a movie of ${n} frames: no loading time makes it end there with the recorded buttons`);
+    }
+    private unsetPukus = new Set<number>(); private pukuSaid = false; private jumpBases = new Set<number>();
+    /** the stage heap's free memory as the stage's setup began (null: zeros) */
+    private heapBase: Uint8Array | null = null; private heapBaseAt = 0;
+    /** each block the stage has allocated (up to 0x8000 bytes), as it was when the heap gave it out */
+    private allocSnap = new Map<number, Uint8Array>();
+    /**
+     * Whether byte `k` of the object at `ptr`, which reads `v`, is still as it was before the object existed: then the
+     * game hasn't written it, and what the console has there is the heap's leftovers. Known exactly for an object that
+     * is a block of its own (the block's bytes are kept as the heap gives it out); otherwise it is a byte that still
+     * holds what the stage heap had as the stage's setup began (zero in the first stage).
+     */
+    /** the bytes of each kind of recorded object (Mario, the camera, an actor's class) that were found unset at a first record */
+    private unsetSeen = new Map<string, Uint8Array>();
+    /**
+     * Whether byte `k` of a recorded object, which differs from its first record, is the heap's leftovers and so the
+     * recording's to say: it is unset (see `unset`), or it was unset in an earlier object of the same kind. The second
+     * matters where a constructor copies an unset value in (the camera's three look-at records are copied from a
+     * local nobody set): then the byte is written, with what the stack happened to hold.
+     */
+    private takes(kind: string, ptr: number, k: number, v: number): boolean {
+        let seen = this.unsetSeen.get(kind);
+        if (seen && k < seen.length && seen[k]) return true;
+        if (!this.unset(ptr, k, v)) return false;
+        if (!seen || k >= seen.length) { const grown = new Uint8Array(Math.max(0x600, (k + 0x100) & ~0xFF)); if (seen) grown.set(seen); this.unsetSeen.set(kind, seen = grown); }
+        seen[k] = 1;
+        return true;
+    }
+    private unset(ptr: number, k: number, v: number): boolean {
+        const snap = this.allocSnap.get(ptr);
+        if (snap && k < snap.length) return v === snap[k];
+        const b = this.heapBase, o = ptr + k - this.heapBaseAt;
+        return v === (b && o >= 0 && o < b.length ? b[o] : 0);
+    }
+    /** word `o` of a recorded actor as the recorder samples it at the later frame `g` (null: gone or another object by then) */
+    private actorWordAhead(id: number, o: number, g: number): number | null {
+        const a = this.actors.get(id), T = this.T;
+        if (!a || g >= T.frames.length) return null;
+        let v = a.dv.getUint32(o);
+        for (let i = this.curFrameIndex + 1; i <= g; i++) {
+            const f = T.frames[i];
+            if (f.scene !== this.actorScene || (f.actorsGone && f.actorsGone.includes(id))) return null;
+            if (f.actors) for (const r of f.actors) if (r.id === id) { if (r.created) return null; for (let k = 0; k < r.word.length; k++) if (r.word[k] * 4 === o) v = r.value[k]; }
+        }
+        return v;
+    }
+    /** TNerveTobiPukuLand is about to compare how far the Cheep Cheep in r30 has dived (f1) with 600: the recording's answer for one whose reference height is leftovers */
+    private pukuDives(c: { gpr: Uint32Array; ps0: Float64Array }) {
+        const mem = this.m.mem, T = this.T, p = c.gpr[30], bits = mem.r32(p + 0x14), y = f32FromBits(bits), F = this.curFrameIndex;
+        let id = -1;
+        for (const [k, a] of this.actors) if (a.ptr === p) { id = k; break; }
+        const s1 = id < 0 ? null : this.actorWordAhead(id, 0x14, F + 1);
+        if (s1 === null) return;
+        let ends: boolean;
+        if (s1 !== bits) ends = f32FromBits(s1) > y;   // (lower at the next sample: still diving)
+        else {
+            // the same height at the next sample: the dive ended, unless this is the frame's last tick; then the first sample after another tick says
+            let g = F + 2;
+            while (g < T.frames.length && T.frames[g].tick === T.frames[F + 1].tick) g++;
+            const s2 = this.actorWordAhead(id, 0x14, g);
+            if (s2 === null) return;
+            ends = f32FromBits(s2) >= y;
+        }
+        c.ps0[1] = ends ? 601 : 0;
+        if (ends) this.unsetPukus.delete(p);
+        if (!this.pukuSaid) { this.pukuSaid = true; this.log(`tick ${this.curTick}: a Cheep Cheep's first dive ends 600 from a height that is the heap's leftovers (TTobiPuku::unk1D0 is unset when its Generate nerve first adds it): when the dive ends is taken from the recording`); }
+    }
     private emitPosSaid = false;
     /** FLUDD's emit position at `pos` was just copied from the joint matrix at `mtx`: if that matrix was never computed, the position is the recording's */
     private unsetEmitPos(mtx: number, pos: number) {
@@ -576,7 +819,7 @@ export class Replay {
         if (!this.adopted.has('water' + hex(info))) {
             this.adopted.add('water' + hex(info));
             let took = 0;
-            for (let k = 0; k < w.info.length; k++) if (mine[k] === 0 && w.info[k] !== 0) { mine[k] = w.info[k]; took++; }
+            for (let k = 0; k < w.info.length; k++) if (mine[k] !== w.info[k] && this.takes('water', info, k, mine[k])) { mine[k] = w.info[k]; took++; }
             if (took) this.log(`a water request object at ${hex(info)}: ${took} uninitialised byte(s) taken from its first record`);
         }
         for (let o = 0; o + 4 <= w.info.length; o += 4) { const g = mem.r32(info + o), t = d.getUint32(o); if (g !== t) out.push(`+0x${o.toString(16)}: ${hex(g)} / ${hex(t)} (${f32FromBits(g).toPrecision(8)} / ${f32FromBits(t).toPrecision(8)})`); }
@@ -590,7 +833,7 @@ export class Replay {
         if (!this.adopted.has(kind + hex(o.ptr))) {
             this.adopted.add(kind + hex(o.ptr));
             let took = 0;
-            for (let k = 0; k < rec.length; k++) if (mine[k] !== rec[k] && mine[k] === 0) { mine[k] = rec[k]; took++; }
+            for (let k = 0; k < rec.length; k++) if (mine[k] !== rec[k] && this.takes(kind, o.ptr, k, mine[k])) { mine[k] = rec[k]; took++; }
             if (took) this.log(`${name}: ${took} uninitialised byte(s) taken from its first record`);
         }
         let same = true;
@@ -622,7 +865,7 @@ export class Replay {
             if (r.created && r.ptr >= 0x80000000 && r.ptr + r.bytes <= 0x81800000) {
                 const mine = mem.bytes(r.ptr, r.bytes);
                 let took = 0;
-                for (let k = 0; k < r.bytes; k++) if (mine[k] === 0 && a.data[k] !== 0 && mem.r32(r.ptr) === a.dv.getUint32(0)) { mine[k] = a.data[k]; took++; }
+                if (mem.r32(r.ptr) === a.dv.getUint32(0)) for (let k = 0; k < r.bytes; k++) if (mine[k] !== a.data[k] && this.takes('actor' + a.dv.getUint32(0), r.ptr, k, mine[k])) { mine[k] = a.data[k]; took++; }
                 if (took && this.actorsOff.size < 40 && !this.actorsOff.has('new' + hex(a.dv.getUint32(0)))) { this.actorsOff.add('new' + hex(a.dv.getUint32(0))); this.log(`frame ${f.frame}: an actor of class ${hex(a.dv.getUint32(0))} at ${hex(r.ptr)}: ${took} uninitialised byte(s) taken from its first record`); }
             }
         }
@@ -665,7 +908,7 @@ export class Replay {
         if (!this.adopted.has(kind)) {
             this.adopted.add(kind);
             const took: string[] = [];
-            for (let k = 0; k < n; k++) if (mine[k] !== rec[k] && mine[k] === 0) { const w = (k & ~3).toString(16); if (took[took.length - 1] !== w) took.push(w); mine[k] = rec[k]; }
+            for (let k = 0; k < n; k++) if (mine[k] !== rec[k] && this.takes(kind, addr, k, mine[k])) { const w = (k & ~3).toString(16); if (took[took.length - 1] !== w) took.push(w); mine[k] = rec[k]; }
             if (took.length) this.log(`${name}: uninitialised bytes taken from the first record: words at +0x${took.join(', +0x')}`);
         }
         let same = true;
@@ -688,7 +931,7 @@ export class Replay {
             if (caller === lr || (caller >= this.modLo && caller < this.modHi && ++this.shimCalls)) { this.lastCall = i; this.iCall = this.nextCallFrom(i + 1); this.calls++; return; }
         }
         if (i >= T.n) { this.issue('rand', `rand called from ${hex(lr)} after the trace's last call`); return; }
-        if (this.ticks === 0 && this.stages === 1 && !this.layoutDelta) {
+        if (this.stageTicks === 0 && this.stages === 1 && !this.layoutDelta) {
             // the first stage is still being set up: a heap laid out differently (see `layoutDelta`) explains a different call
             const mario = this.m.mem.r32(this.A.gpMarioOriginal), rec = T.ticks.length ? T.ticks[0].marioPtr : 0;
             if (mario && rec && mario !== rec) {

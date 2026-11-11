@@ -81,8 +81,9 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
             return finish(emptyReport(T, 'unsupported', `The disc is ${D.gameId} revision ${D.revision}, the recording is from ${T.gameId} revision ${T.discRevision}: the game's code must be the recording's.`, t0));
 
         const log: string[] = [];
-        const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = []) => new Replay(D.dol, D.make(), T!, JP10, symJP10, {
-            log: (s) => { log.push(s); if (log.length > 40) log.shift(); }, fstPad, shinyShines, scriptsLocked,
+        const tried = new Set<string>();
+        const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = [], whole = false) => new Replay(D.dol, D.make(), T!, JP10, symJP10, {
+            log: (s) => { log.push(s); if (log.length > 40) log.shift(); }, fstPad, shinyShines, scriptsLocked, tried: whole ? undefined : tried,
         });
         let R = make(0), attempt = 1, shiny = false;
         // one attempt: slices of the machine's time, with a breath between them for messages (cancel)
@@ -109,7 +110,6 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
             attempt = 3; shiny = true; R = make(R.fstPadUsed, true); res = await go();
         }
         // an event script's lock word is the console's heap garbage: where it decided something before the replay parted, try it the other way
-        const tried = new Set<string>();
         for (let locks; res === 'done' && (locks = nextScriptLocks(R, tried));) {
             const R1 = R; attempt++; R = make(R1.fstPadUsed, shiny, locks);
             const res2 = await go();
@@ -117,6 +117,8 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
             if (res2 !== 'done') { res = res2; break; }
             R = R1;
         }
+        // (no doubt explains the difference the replay was stopped at: play it whole)
+        if (res === 'done' && R.cutShort) { attempt++; R = make(R.fstPadUsed, shiny, R.scriptsLocked, true); res = await go(); }
         const w = T.stages[0].words[4], n = R.issues.length, first = n ? R.issues[0] : null;
         const stage = R.stageName || `scene ${w >>> 24},${(w >>> 16) & 0xFF}`;
         const sofar = `${R.frames} of ${T.frames.length} frames (${R.ticks} of ${T.ticks.length} movement ticks)`;
@@ -127,7 +129,9 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         else if (!n) summary = `In step for ${sofar} of ${stage}, where the replay ended${log.length ? ': ' + log[log.length - 1] : ''}.`;
         else summary = `In step for ${sofar} of ${stage}, then the game's code and the recording part (frame ${first!.frame}, tick ${first!.tick}): ${first!.text.split('\n')[0]}`;
         if (shiny) summary += ' Shiny Shines was taken as on (the recording doesn\'t say; the heap\'s layout does).';
-        if (R.scriptsLocked.length) summary += ` The event script ${R.scriptsLocked.join(', ')} was taken as starting locked (its lock word is leftover memory the recording doesn't hold; what the script did shows it).`;
+        const scripts = R.scriptsLocked.filter((k) => k.endsWith('.sb')), others = R.scriptsLocked.length - scripts.length;
+        if (scripts.length) summary += ` The event script ${scripts.join(', ')} was taken as starting locked (its lock word is leftover memory the recording doesn't hold; what the script did shows it).`;
+        if (others) summary += ` ${others} object${others > 1 ? 's were' : ' was'} taken as starting on leftover memory that wasn't zero (what it did shows it).`;
         if (R.unsupported.length) summary += ` Moonshine settings on in this recording that aren't reproduced yet: ${R.unsupported.join(', ')}.`;
         return finish({
             result: res, inStep: res === 'done' && !n && R.frames >= T.frames.length, summary, stageName: R.stageName, area: w >>> 24, episode: (w >>> 16) & 0xFF,
