@@ -26,6 +26,26 @@ export interface GxHost {
 export const EFB_W = 640, EFB_H = 528;
 const fr = Math.fround;
 
+// The transform unit's own arithmetic, measured on a Wii for a vertex's depth (tools/hwprobe, the depth cases'
+// steps, 2026-11-11: 5,996 of 5,996 squares, and 1,600 of 1,600 through the bath water's own matrices): floats of
+// 24 bits whose every result is cut off toward zero; a sum's smaller operand is first cut off two bits below the
+// larger's last; and the divide by a w of 1 leaves the value one step smaller in size (times 1 - 2^-24).
+const cutF = new Float32Array(1), cutI = new Int32Array(cutF.buffer);
+/** x (exact in a double) as a float of 24 bits, toward zero */
+const cut = (x: number) => { cutF[0] = x; if (Math.abs(cutF[0]) > Math.abs(x)) cutI[0]--; return cutF[0]; };
+const mulCut = (a: number, b: number) => cut(a * b);
+const addCut = (a: number, b: number) => {
+    if (a === 0) return b;
+    if (b === 0) return a;
+    if (Math.abs(a) < Math.abs(b)) { const t = a; a = b; b = t; }
+    cutF[0] = a;
+    const g = Math.pow(2, ((cutI[0] >>> 23) & 0xFF) - 152);   // a quarter of the larger's last bit
+    return cut(a + Math.trunc(b / g) * g);
+};
+const UNDER_ONE = 1 - Math.pow(2, -24);
+/** (for tests: the arithmetic above) */
+export const xfArith = { cut, mulCut, addCut, UNDER_ONE };
+
 /** a vertex format's layout: the bytes of a vertex, and where its position and texture coordinates are */
 interface Layout {
     size: number;
@@ -312,7 +332,11 @@ export class Gx {
         out.gx = (rx > 0 ? Math.ceil(rx) - 1 : Math.floor(rx)) + Math.floor((xf[0x101D] - 342) * SUB);
         out.gy = (ry > 0 ? Math.ceil(ry) - 1 : Math.floor(ry)) + Math.floor((xf[0x101E] - 342) * SUB);
         out.x = out.gx / SUB; out.y = out.gy / SUB;
-        out.z = fr(fr(fr(cz * iw) * xf[0x101C]) + xf[0x101F]);
+        if (w === 1) {
+            // (the depth, in the unit's own arithmetic: one product a row measured, the sums in the order above)
+            const ezc = addCut(addCut(mulCut(xf[m + 8], px), mulCut(xf[m + 9], py)), addCut(mulCut(xf[m + 10], pz), xf[m + 11]));
+            out.z = addCut(xf[0x101F], mulCut(cut(addCut(mulCut(xf[0x1024], ezc), xf[0x1025]) * UNDER_ONE), xf[0x101C]));
+        } else out.z = fr(fr(fr(cz * iw) * xf[0x101C]) + xf[0x101F]);
         out.w = w;
         // the colour channels, unlit: the material's register, or the vertex's colour (0x100E.. colour, 0x1010.. alpha: bit 0)
         for (let ch = 0; ch < 2; ch++) {

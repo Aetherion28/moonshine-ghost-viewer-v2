@@ -82,8 +82,8 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
 
         const log: string[] = [];
         const tried = new Set<string>();
-        const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = [], whole = false) => new Replay(D.dol, D.make(), T!, JP10, symJP10, {
-            log: (s) => { log.push(s); if (log.length > 40) log.shift(); }, fstPad, shinyShines, scriptsLocked, tried: whole ? undefined : tried,
+        const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = [], whole = false, selectHold = 0) => new Replay(D.dol, D.make(), T!, JP10, symJP10, {
+            log: (s) => { log.push(s); if (log.length > 40) log.shift(); }, fstPad, shinyShines, scriptsLocked, selectHold, tried: whole ? undefined : tried,
         });
         let R = make(0), attempt = 1, shiny = false;
         // one attempt: slices of the machine's time, with a breath between them for messages (cancel)
@@ -119,6 +119,14 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         }
         // (no doubt explains the difference the replay was stopped at: play it whole)
         if (res === 'done' && R.cutShort) { attempt++; R = make(R.fstPadUsed, shiny, R.scriptsLocked, true); res = await go(); }
+        // (the episode select screen between two stages ended early here: its loading took longer on the console)
+        for (let n = 0; res === 'done' && R.selectDelta && n < 3; n++) {
+            const R1 = R; attempt++; R = make(R1.fstPadUsed, shiny, R1.scriptsLocked, true, R1.selectDelta);
+            const res2 = await go();
+            if (res2 === 'done' && followsFurther(R, R1)) continue;
+            if (res2 !== 'done') { res = res2; break; }
+            R = R1; break;
+        }
         const w = T.stages[0].words[4], n = R.issues.length, first = n ? R.issues[0] : null;
         const stage = R.stageName || `scene ${w >>> 24},${(w >>> 16) & 0xFF}`;
         const sofar = `${R.frames} of ${T.frames.length} frames (${R.ticks} of ${T.ticks.length} movement ticks)`;

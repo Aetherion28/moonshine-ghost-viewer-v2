@@ -42,6 +42,8 @@ export interface GameAddrs {
     pukuGenerateRead: number; pukuSinkTest: number;
     /** TMovieDirector's vtable, and the instruction after its direct() asks whether the setup thread has ended */
     movieVtable: number; movieThreadTest: number;
+    /** TSelectDir's vtable (the episode select screen), and the instruction after its direct() asks whether its setup thread has ended */
+    selectVtable: number; selectThreadTest: number;
     /** TMarDirector::updateGameMode's test of the BGM handle a camera demo waits for (the handle in r3, the director in r31) */
     demoJingleTest: number;
     /** TJumpBase::control */
@@ -66,7 +68,7 @@ export const JP10: GameAddrs = {
     launchScript: 0x800DC654, launchScriptInterp: 0x800DC6F0, spcUpdate: 0x80116F14, spcCountStep: 0x80116F88, spcLock: 0x8011C7CC, spcUnlock: 0x8011C6E8,
     waterCalls: [0x8014AC84, 0x8014B5AC, 0x8014C0D4], emitPtDone: [0x80148DD0, 0x80149F90],
     pukuGenerateRead: 0x802ADF70, pukuSinkTest: 0x802AD13C,
-    movieVtable: 0x803B48D8, movieThreadTest: 0x8010ACF4, demoJingleTest: 0x800EB480, jumpBaseControl: 0x801D4E6C,
+    movieVtable: 0x803B48D8, movieThreadTest: 0x8010ACF4, selectVtable: 0x803D1C28, selectThreadTest: 0x802364C4, demoJingleTest: 0x800EB480, jumpBaseControl: 0x801D4E6C,
     kuriTimer: 0x802690B0, kuriEndTest: 0x80269118, cannonGoalRead: 0x802DF0A4, bathPrerender: 0x801FD7F8,
     heapAllocs: [[0x8000A04C, 0x8000A18C], [0x8000D520, 0x8000D5CC]],
     mantaJingleTest: 0x80322E18, gpMapObjManager: 0x8040A4D0,
@@ -114,6 +116,8 @@ export interface ReplayOptions {
     maxIssues?: number;
     /** bytes the console's file system table was bigger than this disc's (see `heapDelta`) */
     fstPad?: number;
+    /** frames the episode select screen's loading took longer on the console than here (not recorded: see `selectDelta`) */
+    selectHold?: number;
     /** draw the bath water's height map with the GPU model (ppc/gx.ts) */
     drawBath?: boolean;
     /** Moonshine's Shiny Shines setting (not recorded: see `layoutDelta`) */
@@ -163,6 +167,17 @@ export class Replay {
     private tried: Set<string> | undefined; private cutAt = 0;
     /** the stage heap's size here minus the recording's (0: the same arena) */
     heapDelta = 0;
+    /**
+     * The episode select screen between two stages (TSelectDir) loads from the disc, then opens and takes the pad: a
+     * runner mashing A picks the episode with the first press after it has opened, so how long the screen lasts
+     * depends on the disc. The recording has the screen's frames but not the frame its loading ended in. When the
+     * game here leaves the screen before the recording does, this is the number of frames to hold its loading for
+     * (ReplayOptions.selectHold) so that it ends where the recording's does; a driver boots again with it.
+     */
+    selectDelta = 0; selectHoldUsed = 0;
+    /** bytes of the flag manager set to the recording's image at a later stage's start (Moonshine's doing between stages) */
+    flagBytesTaken = 0;
+    private selectHeld = 0; private betweenSelect = false;
     /** instructions at the stage's start and at its first frame after setup */
     countAtStage = 0; countAtPlay = 0;
     private iFlow = 0; private iCall = 0; private lastCall = -1;
@@ -185,7 +200,7 @@ export class Replay {
         const m = this.m, cpu = m.cpu;
         this.log = opt.log ?? (() => { });
         this.stopOn = new Set(opt.stopOn ?? ['heap', 'layout', 'rand', 'mario', 'camera', 'flow', 'stage', 'unrecorded']); this.maxIssues = opt.maxIssues ?? 50;
-        this.fstPadUsed = opt.fstPad ?? 0;
+        this.fstPadUsed = opt.fstPad ?? 0; this.selectHoldUsed = opt.selectHold ?? 0;
         m.load(dol, disc, this.fstPadUsed);
         const missing = installHle(m, sym, { report: opt.report });
         if (missing.length) this.log('hle: not found: ' + missing.join(', '));
@@ -305,6 +320,11 @@ export class Replay {
         // A movie between two stages (see planMovie): its loading is the disc's, so the setup thread counts as ended
         // from the frame that makes the movie end where the recording's does
         cpu.hook(A.movieThreadTest, (c) => { if (this.phase === 'stage' && this.movieFrame && this.movieFrame < this.movieLoaded && c.gpr[3]) c.gpr[3] = 0; return false; });
+        // The episode select screen between two stages: its loading counts as going on for the frames the console's took longer (see selectDelta)
+        cpu.hook(A.selectThreadTest, (c) => {
+            if (this.phase === 'stage' && c.gpr[3] && this.selectHeld < this.selectHoldUsed) { if (!this.selectHeld++) this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: the episode select screen's loading held for ${this.selectHoldUsed} frame(s), which ends it where the recording's ends`); c.gpr[3] = 0; }
+            return false;
+        });
         // A sound the game waits for. Manta Storm's hotel rises when the all-Mantas-dead jingle has ended (its handle
         // is null again): no sound runs here, so the handle reads as the recording shows it: null in the tick
         // before the one in which the recording makes the hotel's particles (the event's watch runs a tick after
@@ -452,7 +472,15 @@ export class Replay {
         if (this.phase !== 'stage') return;
         // a later stage of the same recording: the game got here by itself, so its state should be the recorded one
         const i = this.iFlow;
-        if (i >= T.n || T.kind[i] !== Ev.STAGE) { this.issue('flow', `the game starts a stage where the trace has ${i >= T.n ? 'ended' : EV_NAMES[T.kind[i]]}`); return; }
+        if (i >= T.n || T.kind[i] !== Ev.STAGE) {
+            if (this.betweenSelect) {
+                // (the episode select screen ended early: the frames without a stage director the recording still has before its next stage)
+                let k = i, n = 0;
+                while (k < T.n && T.kind[k] !== Ev.STAGE) { if (T.kind[k] === Ev.FRAME) { if (T.frames[T.a[k]].state !== -1) { n = 0; break; } n++; } k = this.nextFlowFrom(k + 1); }
+                if (k < T.n && n) this.selectDelta = this.selectHoldUsed + n;
+            }
+            this.issue('flow', `the game starts a stage where the trace has ${i >= T.n ? 'ended' : EV_NAMES[T.kind[i]]}`); return;
+        }
         const st = T.stages[T.a[i]], w = st.words;
         this.iFlow = this.nextFlowFrom(i + 1);
         this.stages++; this.stageTicks = 0; this.strict = false; this.stageName = ''; this.adopted.clear(); this.unsetPukus.clear(); this.jumpBases.clear(); this.kuris.clear(); this.kuriAgain.clear();
@@ -465,7 +493,13 @@ export class Replay {
         if (mem.r32(A.npcPhase) !== st.npcPhase) this.issue('stage', `the NPC pollution phase is ${mem.r32(A.npcPhase)}, the trace's ${st.npcPhase}`);
         const fm = mem.bytes(mem.r32(A.flagMgr), 0x380), diff: string[] = [];
         for (let k = 0; k < 0x380; k++) if (fm[k] !== st.flags[k]) diff.push(`+0x${k.toString(16)} ${fm[k].toString(16)}/${st.flags[k].toString(16)}`);
-        if (diff.length) this.issue('stage', `the flag manager differs from the trace's image in ${diff.length} byte(s) (game/trace): ${diff.slice(0, 12).join(', ')}`);
+        if (diff.length) {
+            // Between two stages Moonshine's IL code rewrites flags (an entry's overlay, and its restore when an attempt
+            // ends: a Shine got in the attempt is taken away again, the plaza's story byte put back). None of that is
+            // recorded, but the stage-start image is the console's flag manager after it: the game goes on from that.
+            mem.ram.set(st.flags, mem.r32(A.flagMgr) & 0x01FFFFFF); this.flagBytesTaken += diff.length;
+            this.log(`stage ${this.stages}: the flag manager set to the recording's image, ${diff.length} byte(s) differed (game/trace): ${diff.slice(0, 12).join(', ')} (Moonshine rewrites flags between stages; that isn't recorded)`);
+        }
         if ((w[1] & 2) && (end - start !== w[11] || head - start !== w[9] || end - tail !== w[10])) this.issue('stage', `the stage heap is ${hex(end - start)} (used ${hex(head - start)} / ${hex(end - tail)}), the trace's ${hex(w[11])} (${hex(w[9])} / ${hex(w[10])})`);
         this.log(`stage ${this.stages}: scene ${hex(w[4])} at frame ${this.curFrame ? this.curFrame.frame : 0}`);
     }
@@ -538,6 +572,7 @@ export class Replay {
             this.movieFrame++;
             this.curFrame = f; this.curFrameIndex = T.a[i]; this.frames++;
             if (!this.between++) this.log(`frame ${f.frame}: the recording has frames without a stage director here (the game's director: ${hex(mem.r32(mem.r32(A.app + APP.director)))})`);
+            this.betweenSelect = mem.r32(mem.r32(A.app + APP.director)) === A.selectVtable;
             this.alignClock(f, T.a[i]);
             i = this.nextFlowFrom(i + 1);
             if (i < T.n && T.kind[i] === Ev.PAD) { this.setPad(mem.r32(A.app + APP.pads), T.pads[T.a[i]].input, `frame ${f.frame}`); i = this.nextFlowFrom(i + 1); }

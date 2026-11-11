@@ -18,7 +18,7 @@
 //      node v3hwprobe.mjs feed <script.gxps> <out.bin>           the bytes the script sends to the GPU (for tools/hwprobe/hosttest)
 import { readFileSync, writeFileSync, openSync, writeSync, closeSync } from 'node:fs';
 import { serialize, deserialize } from 'node:v8';
-import { Gx } from '../ppc/gx.ts';
+import { Gx, xfArith } from '../ppc/gx.ts';
 import { OP, Script, readScript, rleDecode, rleEncode, type Op } from '../tools/hwprobe/script.ts';
 
 const r32 = (b: Uint8Array, p: number) => ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0;
@@ -688,6 +688,94 @@ if (mode === 'capture') {
             prims.push(...square(q, h, [xfLoad(row3, [0, mm, 0, t]), xfLoad(0x1024, [k % 2 === 0 ? 1 / 16384 : 1, 0]), xfLoad(0x101C, [Math.pow(2, 24 + b)]), xfLoad(0x101F, [16777216])], { step: 'matrix', mm, h, t, b, scale: k % 2 === 0 ? 1 / 16384 : 1 }));
         }
         add(`matrix ${k}`, prims);
+    }
+    // ---- depth over a triangle, one thing at a time (SLOPES=1): right triangles whose corners sit in the middle of
+    // a grid cell just past a whole pixel (so the corner's place on the grid of 1/12 pixel is certain), with heights
+    // found for exact depths at the corners (so the slope across and down is known exactly). Both windings start
+    // with the same corner.
+    if (process.env.SLOPES) {
+        const { cut, mulCut, addCut, UNDER_ONE } = xfArith;
+        if (xf[row3] !== 0 || xf[row3 + 2] !== 0) throw new Error('the depth here depends on more than the height');
+        const zOf = (h: number) => Math.floor(addCut(xf[0x101F], mulCut(cut(addCut(mulCut(xf[0x1024], addCut(mulCut(xf[row3 + 1], h), xf[row3 + 3])), xf[0x1025]) * UNDER_ONE), xf[0x101C])));
+        const bitsOf = (v: number) => { f32.setFloat32(0, v); return f32.getUint32(0); }, at = (b: number) => { f32.setUint32(0, b); return f32.getFloat32(0); };
+        const hFor = (zT: number) => {
+            // (the depth falls as the height rises)
+            let lo = bitsOf(1850), hi = bitsOf(13790);
+            while (lo < hi) { const mid = (lo + hi) >>> 1; if (zOf(at(mid)) > zT) lo = mid + 1; else hi = mid; }
+            for (const d of [0, -1, 1, -2, 2, -3, 3]) if (zOf(at(lo + d)) === zT) return at(lo + d);
+            return NaN;   // (the arithmetic skips this depth)
+        };
+        type Pt = [number, number, number];   // pixel x, y (whole or in twelfths), the depth wanted
+        const tri = (pts: Pt[], first = 0) => {
+            const out: { cmd: number[]; verts: number[][]; meta?: object }[] = [];
+            const o = [first, (first + 1) % 3, (first + 2) % 3];
+            for (const order of [o, [o[0], o[2], o[1]]]) {
+                const cmd = [0x90, 0, 3], verts: number[][] = [];
+                for (const q of order) verts.push(vert(cmd, pts[q][0] + 1 / 24, pts[q][1] + 1 / 24, hFor(pts[q][2])));
+                out.push({ cmd, verts, meta: { step: 'slope', pts, order } });
+            }
+            return out;
+        };
+        const right = (x: number, y: number, w: number, h: number, z0: number, dx: number, dy: number): Pt[] => {
+            // (the nearest depth from z0 up whose three corners all have a height)
+            while (isNaN(hFor(z0)) || isNaN(hFor(z0 + dx)) || isNaN(hFor(z0 + dy))) z0++;
+            return [[x, y, z0], [x + w, y, z0 + dx], [x, y + h, z0 + dy]];
+        };
+        if (process.env.SLOPES === '2') {
+            // thin triangles, nine a case, with the slope across only: every slope of a run, the same slope at many
+            // places, and corners whose depth has a fraction (a viewport of 2^18: depths in 64ths)
+            const thin = (x: number, t: number, z0: number, dx: number): Pt[] => right(x, 2 + 9 * t, 64, 8, z0, dx, 0);
+            const runs = (label: string, slopes: number[]) => { for (let k = 0; k < slopes.length; k += 9) add(`${label} ${slopes[k]}..${slopes[Math.min(k + 8, slopes.length - 1)]}`, slopes.slice(k, k + 9).flatMap((d, t) => tri(thin(8, t, 12000000, d)))); };
+            const upTo = (n: number, f: (j: number) => number) => Array.from({ length: n }, (_, j) => f(j + 1));
+            runs('thin 3j', upTo(135, (j) => 3 * j)); runs('thin -3j', upTo(135, (j) => -3 * j));
+            runs('thin j', upTo(135, (j) => j)); runs('thin -j', upTo(135, (j) => -j));
+            for (const d of [3, 7, 33, 65, 4099, -33]) for (let k = 0; k < 18; k += 9) add(`thin at x ${2 + k}..${10 + k}: ${d}`, Array.from({ length: 9 }, (_, t) => tri(thin(2 + k + t, t, 12000000, d))).flat());
+            // (fractions: the depth of each corner as the transform leaves it, before it is cut to a whole number)
+            const zs = 262144, fOf = (h: number) => addCut(zs, mulCut(cut(addCut(mulCut(xf[0x1024], addCut(mulCut(xf[row3 + 1], h), xf[row3 + 3])), xf[0x1025]) * UNDER_ONE), zs));
+            const hFrac = (zT: number) => {
+                let lo = bitsOf(1850), hi = bitsOf(13790);
+                while (lo < hi) { const mid = (lo + hi) >>> 1; if (fOf(at(mid)) > zT) lo = mid + 1; else hi = mid; }
+                for (const d of [0, -1, 1, -2, 2, -3, 3]) if (fOf(at(lo + d)) === zT) return at(lo + d);
+                return NaN;
+            };
+            const fracTri = (t: number, z0: number, dx: number, flat = false) => {
+                while (isNaN(hFrac(z0)) || isNaN(hFrac(z0 + dx))) z0 += 1 / 64;
+                const pts: Pt[] = [[8, 2 + 9 * t, z0], [72, 2 + 9 * t, z0 + dx], [8, 10 + 9 * t, z0]], out: { cmd: number[]; verts: number[][]; pre?: number[][]; meta?: object }[] = [];
+                for (const order of [[0, 1, 2], [0, 2, 1]]) {
+                    const cmd = [0x90, 0, 3], verts: number[][] = [];
+                    for (const q of order) verts.push(vert(cmd, pts[q][0] + 1 / 24, pts[q][1] + 1 / 24, hFrac(pts[q][2])));
+                    out.push({ cmd, verts, meta: { step: 'fraction', pts, order, zs } });
+                }
+                return out;
+            };
+            const view = [xfLoad(0x101C, [zs]), xfLoad(0x101F, [zs])];
+            for (const dx of [0, 1, 3, 33, -1]) for (let k = 0; k < 2; k++) {
+                const prims = Array.from({ length: 9 }, (_, t) => fracTri(t, 150000 + (k * 9 + t) * (dx === 0 ? 5 : 4) / 64, dx)).flat();
+                prims[0].pre = view;
+                add(`fraction ${dx}, ${k}`, prims);
+            }
+        } else {
+        const Z0 = 12000000, D = [1, 2, 3, 7, 16, 31, 32, 33, 63, 64, 65, 95, 96, 97, 127, 128, 129, 1000, 4099, 65543, 1048583, -1, -3, -33, -64, -97, -4099, -65543, -1048583];
+        for (const d of D) add(`slope x ${d}`, tri(right(8, 8, 64, 64, Z0, d, 0)));
+        for (const d of D) add(`slope y ${d}`, tri(right(8, 8, 64, 64, Z0, 0, d)));
+        for (const [dx, dy] of [[33, 97], [97, 33], [-33, 97], [65, -31], [4099, 65543], [-65543, 4099], [1, 1], [127, 127], [3, -3], [1048583, -1048583], [129, 4099], [-4099, -129]]) add(`slope xy ${dx} ${dy}`, tri(right(8, 8, 64, 64, Z0, dx, dy)));
+        // (where the triangle starts: odd and even pixels)
+        for (const [ox, oy] of [[9, 8], [8, 9], [9, 9]]) for (const [dx, dy] of [[33, 0], [4099, 0], [0, 33], [0, 4099]]) add(`slope at ${ox},${oy}: ${dx} ${dy}`, tri(right(ox, oy, 64, 64, Z0, dx, dy)));
+        // (which corner comes first)
+        for (const first of [1, 2]) for (const [dx, dy] of [[33, 0], [0, 97], [33, 97]]) add(`slope from corner ${first}: ${dx} ${dy}`, tri(right(8, 8, 64, 64, Z0, dx, dy), first));
+        // (other widths and heights)
+        for (const [w, h] of [[60, 60], [37, 53], [80, 80]]) for (const [dx, dy] of [[1000, 0], [0, 1000], [4099, 0], [0, 4099]]) add(`slope ${w}x${h}: ${dx} ${dy}`, tri(right(2, 2, w, h, Z0, dx, dy)));
+        // (corners between pixels)
+        for (const k of [1, 5, 6, 7, 11]) { add(`slope x off ${k}/12: 4099`, tri(right(8 + k / 12, 8, 64, 64, Z0, 4099, 0))); add(`slope y off ${k}/12: 4099`, tri(right(8, 8 + k / 12, 64, 64, Z0, 0, 4099))); }
+        // (small triangles, nine a case)
+        for (const size of [8, 16]) for (const [dx, dy] of [[33, 0], [0, 97], [4099, 65543]]) {
+            const prims = [];
+            for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) prims.push(...tri(right(4 + i * 26 + (i & 1), 4 + j * 26 + (j >> 1), size, size, Z0 + (j * 3 + i) * 1001, dx, dy)));
+            add(`slope small ${size}: ${dx} ${dy}`, prims);
+        }
+        // (other depths)
+        for (const z0 of [300000, 5000000, 8388000, 16000000]) { add(`slope x 4099 from ${z0}`, tri(right(8, 8, 64, 64, z0, 4099, 0))); add(`slope y 97 from ${z0}`, tri(right(8, 8, 64, 64, z0, 0, 97))); }
+        }
     }
     // (heights between the two planes of the projection: the eye is at 13,800, the far plane 12,000 below)
     const height = () => Math.fround(1900 + rnd() * 11800);
