@@ -45,7 +45,7 @@ export interface GameAddrs {
     /** TMarDirector::updateGameMode's test of the BGM handle a camera demo waits for (the handle in r3, the director in r31) */
     demoJingleTest: number;
     /** TJumpBase::control */
-    jumpBaseControl: number;
+    jumpBaseControl: number; kuriTimer: number; kuriEndTest: number;
     /** TBossMantaManager::TMantaBattleState::update, where it tests the all-Mantas-dead jingle's handle (in r0); gpMapObjManager */
     mantaJingleTest: number; gpMapObjManager: number;
     /** TShine's vtable and TShine::mUpSpeed (1 at boot; TShine::appearSimple leaves it 2 for the rest of the session) */
@@ -67,6 +67,7 @@ export const JP10: GameAddrs = {
     waterCalls: [0x8014AC84, 0x8014B5AC, 0x8014C0D4], emitPtDone: [0x80148DD0, 0x80149F90],
     pukuGenerateRead: 0x802ADF70, pukuSinkTest: 0x802AD13C,
     movieVtable: 0x803B48D8, movieThreadTest: 0x8010ACF4, demoJingleTest: 0x800EB480, jumpBaseControl: 0x801D4E6C,
+    kuriTimer: 0x802690B0, kuriEndTest: 0x80269118,
     heapAllocs: [[0x8000A04C, 0x8000A18C], [0x8000D520, 0x8000D5CC]],
     mantaJingleTest: 0x80322E18, gpMapObjManager: 0x8040A4D0,
     shineVtable: 0x803C11E4, shineUpSpeed: 0x80409030,
@@ -76,6 +77,10 @@ const SPC = { stepsToDo: 4, stepsLeft: 0xC, locked: 0x14 };   // TSpcInterp
 const APP = { director: 4, state: 8, prev: 0xA, cur: 0xE, next: 0x12, movie: 0x18, pads: 0x20, heap: 0x40 };
 const DIR = { demoFlags: 0x4E, pendingTime: 0x54, moveTicks: 0x58, ticks: 0x5C, state: 0x64, setupDone: 0x260 };
 const STATE_STAGE_EXIT_2 = 12;
+// THamuKuri: unk1A8 (the look-around timer), its parameters and mSLKyoroTimer's value in them; TLiveActor's current BCK, mAnmSoundPath and mPositionDelta
+const KURI = { timer: 0x1A8, params: 0x1F4, kyoroTimer: 0x440, bck: 0x15C, walk: 14, look: 4, soundPath: 0x84, step: 0x94, mactor: 0x74 };
+// MActor::mAnmBck; an MActorAnm's frame control: mEnd, mRate, mFrame
+const MACTOR_BCK = 0x0C, ANM = { end: 0x0C, rate: 0x10, frame: 0x14 };
 const RUN_ASSISTED = 1;   // a trace's run flags: Moonshine's practice session took part
 // TMarioGamePad: the scalar spans Moonshine compares (buttons, the two sticks, the meanings and analog state)
 const PAD_SPANS: [number, number][] = [[0x18, 0x30], [0x48, 0x10], [0x58, 0x10], [0xA8, 58]];
@@ -225,6 +230,38 @@ export class Replay {
         // recording says in which tick the dive ends (the actor's height at the recorder's next samples).
         cpu.hook(A.pukuGenerateRead, (c) => { const p = c.gpr[30]; if (this.phase === 'stage' && !mem.r32(p + 0x1DC) && !mem.r32(p + 0x1D0) && !mem.r32(p + 0x1D4) && !mem.r32(p + 0x1D8)) this.unsetPukus.add(p); return false; });
         cpu.hook(A.pukuSinkTest, (c) => { if (this.phase === 'stage' && this.unsetPukus.has(c.gpr[30])) this.pukuDives(c); return false; });
+        // A Goomba's look-around timer (THamuKuri::unk1A8, +0x1A8) is never set by its constructor. While it wanders,
+        // moveObject adds 1 to it each tick, and past mSLKyoroTimer (500) clears it and starts the look-around
+        // animation (BCK 4), in which the Goomba doesn't walk; the animation's end starts the walk again. On the
+        // console the timer starts at what the heap had there (the same Goomba's timer of an earlier attempt, as the
+        // recordings show: 391, 455, 252 in one stage), so its first look-arounds come when the recording says:
+        // - walking, it looks around in the tick after which the recorded Goomba stays where it is with its
+        //   animation's sound path (mAnmSoundPath, +0x84) cleared; from then on the timer is the game's own;
+        // - looking around already, a look-around starts the animation again. The animation advances once a frame, so
+        //   that shows as the frame in which it ends (the recorded Goomba walks again), and in what the Goombas
+        //   stacked on it do; which tick of the frame it was doesn't show, so the timer stays the recording's.
+        cpu.hook(A.kuriTimer, (c) => {
+            if (this.phase !== 'stage') return false;
+            const p = c.gpr[31];
+            let open = this.kuris.get(p);
+            if (open === undefined) {
+                open = true;
+                for (let k = 0; k < 4; k++) if (!this.unset(p, KURI.timer + k, mem.r8(p + KURI.timer + k))) open = false;
+                this.kuris.set(p, open);
+                if (open && !this.kuriSaid) { this.kuriSaid = true; this.log(`tick ${this.curTick}: a Goomba's look-around timer is the heap's leftovers (THamuKuri::unk1A8 is never set): when it first looks around is taken from the recording`); }
+            }
+            if (!open) return false;
+            const looks = this.kuriLooksAround(p);
+            // (the game adds 1 and compares with mSLKyoroTimer)
+            mem.w32(p + KURI.timer, looks ? mem.r32(mem.r32(p + KURI.params) + KURI.kyoroTimer) : 0);
+            if (looks === 1) this.kuris.set(p, false);
+            return false;
+        });
+        cpu.hook(A.kuriEndTest, (c) => {
+            const p = c.gpr[31];
+            if (this.phase === 'stage' && c.gpr[3] && this.kuris.get(p) && this.kuriStillLooks(p)) c.gpr[3] = 0;
+            return false;
+        });
         // A camera demo ends when its frames are over and the jingle that plays with it has ended (BGM handle 2 is
         // null again), or after 720 ticks. No sound runs here, so the handle is null at once. A Shine's appear demo
         // stops the world (only the Shine moves, Mario has no ticks), so the recording shows the tick the demo ends in:
@@ -387,7 +424,7 @@ export class Replay {
         if (i >= T.n || T.kind[i] !== Ev.STAGE) { this.issue('flow', `the game starts a stage where the trace has ${i >= T.n ? 'ended' : EV_NAMES[T.kind[i]]}`); return; }
         const st = T.stages[T.a[i]], w = st.words;
         this.iFlow = this.nextFlowFrom(i + 1);
-        this.stages++; this.stageTicks = 0; this.strict = false; this.stageName = ''; this.adopted.clear(); this.unsetPukus.clear(); this.jumpBases.clear();
+        this.stages++; this.stageTicks = 0; this.strict = false; this.stageName = ''; this.adopted.clear(); this.unsetPukus.clear(); this.jumpBases.clear(); this.kuris.clear(); this.kuriAgain.clear();
         // the new stage's heap holds the last stage's leftovers (and the movie's between them): a byte of a recorded
         // object that still holds its leftover at the object's first record was never written, as a zero is in the first stage
         this.heapBase = mem.ram.slice(head & 0x01FFFFFF, tail & 0x01FFFFFF); this.heapBaseAt = head; this.allocSnap.clear();
@@ -732,6 +769,80 @@ export class Replay {
         this.log(this.movieLoaded ? `frame ${T.frames[T.a[i0]].frame}: a movie of ${n} frames: its loading counts as done in its frame ${this.movieLoaded}, which ends it where the recording's ends` : `frame ${T.frames[T.a[i0]].frame}: a movie of ${n} frames: no loading time makes it end there with the recorded buttons`);
     }
     private unsetPukus = new Set<number>(); private pukuSaid = false; private jumpBases = new Set<number>();
+    /** the Goombas whose look-around timer has been read: true while it is still the heap's leftovers (see the hooks) */
+    private kuris = new Map<number, boolean>(); private kuriSaid = false;
+    private actorIdAt(ptr: number) { for (const [k, a] of this.actors) if (a.ptr === ptr) return k; return -1; }
+    /**
+     * Whether the Goomba at `p`, whose timer is leftovers, starts looking around in this tick, by the recording:
+     * 1 from its walk (the tick shows), 2 again while it looks around (only the frame shows), 0 not.
+     */
+    private kuriLooksAround(p: number): number {
+        const mem = this.m.mem, T = this.T, F = this.curFrameIndex, bck = mem.r32(p + KURI.bck);
+        if (bck !== KURI.look) this.kuriAgain.delete(p);
+        if (F + 1 >= T.frames.length) return 0;
+        const id = this.actorIdAt(p);
+        if (id < 0) return 0;
+        if (bck === KURI.look) {
+            let at = this.kuriAgain.get(p);
+            if (at === undefined) this.kuriAgain.set(p, at = this.kuriAgainFrame(p, id));
+            if (at !== F) return 0;
+            this.kuriAgain.set(p, -1);
+            return 2;
+        }
+        if (bck !== KURI.walk) return 0;
+        // (the Goomba's tick comes before Mario's: this is game tick ticks + 1. In the frame's last tick the next
+        // sample would be the same either way: then the first sample after another tick says)
+        let g = F + 1;
+        if (this.ticks + 1 >= T.frames[F + 1].tick) { g = F + 2; while (g < T.frames.length && T.frames[g].tick === T.frames[F + 1].tick) g++; }
+        // (it stays where it is but for what the ground and wall checks still move it, an ulp or so; a walking tick is a step on)
+        const sx = f32FromBits(mem.r32(p + KURI.step)), sz = f32FromBits(mem.r32(p + KURI.step + 8)), step2 = sx * sx + sz * sz;
+        const stays = (at: number) => {
+            const x = this.actorWordAhead(id, 0x10, at), z = this.actorWordAhead(id, 0x18, at);
+            if (x === null || z === null) return false;
+            const dx = f32FromBits(x) - f32FromBits(mem.r32(p + 0x10)), dz = f32FromBits(z) - f32FromBits(mem.r32(p + 0x18));
+            return dx * dx + dz * dz < step2 / 16;
+        };
+        if (!(step2 > 0) || !stays(F + 1) || (g !== F + 1 && !stays(g))) return 0;
+        return this.actorWordAhead(id, KURI.soundPath, g) === 0 ? 1 : 0;
+    }
+    /** the Goombas now looking around on a leftover timer: the frame in which the recording starts the animation again (-1: it doesn't) */
+    private kuriAgain = new Map<number, number>();
+    /**
+     * The look-around animation of the Goomba at `p` (recorded actor `id`) ends when its frame control says so, after
+     * a number of the once-a-frame steps. If the recorded Goomba's ends later than this one's will, it was started
+     * again on the way: in the frame that many steps before the recorded end.
+     */
+    private kuriAgainFrame(p: number, id: number): number {
+        const mem = this.m.mem, T = this.T, F = this.curFrameIndex, a = this.actors.get(id)!;
+        const ticking = (i: number) => i + 1 < T.frames.length && T.frames[i + 1].tick > T.frames[i].tick;
+        // the frame control of the actor's BCK: how many steps a fresh animation takes, and this one still does
+        const anm = mem.r32(mem.r32(p + KURI.mactor) + MACTOR_BCK), end = (mem.r16(anm + ANM.end) << 16) >> 16, rate = f32FromBits(mem.r32(anm + ANM.rate));
+        if (!(rate > 0)) return -1;
+        const steps = (frame: number) => { let n = 0; while (!(Math.fround(Math.fround(frame + rate) + Math.fround(0.1)) >= end) && n < 10000) { frame = Math.fround(frame + rate); n++; } return n; };
+        const whole = steps(0), left = steps(f32FromBits(mem.r32(anm + ANM.frame)));
+        // here it ends in the first tick of the frame after `left` more frames with ticks
+        let mine = F, n = left;
+        while (mine < T.frames.length && (n > 0 || !ticking(mine))) { if (ticking(mine)) n--; mine++; }
+        // the recording's: the last frame with ticks before the first sample that has the walk's sound path again
+        let v = a.dv.getUint32(KURI.soundPath), j = F + 1;
+        for (; j < T.frames.length && j < F + 2000; j++) {
+            const f = T.frames[j];
+            if (f.scene !== this.actorScene || (f.actorsGone && f.actorsGone.includes(id))) return -1;
+            if (f.actors) for (const r of f.actors) if (r.id === id) { if (r.created) return -1; for (let k = 0; k < r.word.length; k++) if (r.word[k] * 4 === KURI.soundPath) v = r.value[k]; }
+            if (v !== 0) break;
+        }
+        if (v === 0) return -1;
+        let theirs = j - 1; while (theirs > F && !ticking(theirs)) theirs--;
+        if (theirs <= mine) return -1;
+        let again = theirs; n = whole;
+        while (again > F && n > 0) { again--; if (ticking(again)) n--; }
+        return n === 0 ? again : -1;
+    }
+    /** whether the recorded Goomba at `p` goes on looking around through this tick (its animation here has ended) */
+    private kuriStillLooks(p: number): boolean {
+        const id = this.actorIdAt(p), F = this.curFrameIndex;
+        return id >= 0 && F + 1 < this.T.frames.length && this.actorWordAhead(id, KURI.soundPath, F + 1) === 0;
+    }
     /** the stage heap's free memory as the stage's setup began (null: zeros) */
     private heapBase: Uint8Array | null = null; private heapBaseAt = 0;
     /** each block the stage has allocated (up to 0x8000 bytes), as it was when the heap gave it out */
