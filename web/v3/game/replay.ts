@@ -45,7 +45,7 @@ export interface GameAddrs {
     /** TMarDirector::updateGameMode's test of the BGM handle a camera demo waits for (the handle in r3, the director in r31) */
     demoJingleTest: number;
     /** TJumpBase::control */
-    jumpBaseControl: number; kuriTimer: number; kuriEndTest: number;
+    jumpBaseControl: number; kuriTimer: number; kuriEndTest: number; cannonGoalRead: number;
     /** TBossMantaManager::TMantaBattleState::update, where it tests the all-Mantas-dead jingle's handle (in r0); gpMapObjManager */
     mantaJingleTest: number; gpMapObjManager: number;
     /** TShine's vtable and TShine::mUpSpeed (1 at boot; TShine::appearSimple leaves it 2 for the rest of the session) */
@@ -67,7 +67,7 @@ export const JP10: GameAddrs = {
     waterCalls: [0x8014AC84, 0x8014B5AC, 0x8014C0D4], emitPtDone: [0x80148DD0, 0x80149F90],
     pukuGenerateRead: 0x802ADF70, pukuSinkTest: 0x802AD13C,
     movieVtable: 0x803B48D8, movieThreadTest: 0x8010ACF4, demoJingleTest: 0x800EB480, jumpBaseControl: 0x801D4E6C,
-    kuriTimer: 0x802690B0, kuriEndTest: 0x80269118,
+    kuriTimer: 0x802690B0, kuriEndTest: 0x80269118, cannonGoalRead: 0x802DF0A4,
     heapAllocs: [[0x8000A04C, 0x8000A18C], [0x8000D520, 0x8000D5CC]],
     mantaJingleTest: 0x80322E18, gpMapObjManager: 0x8040A4D0,
     shineVtable: 0x803C11E4, shineUpSpeed: 0x80409030,
@@ -77,6 +77,15 @@ const SPC = { stepsToDo: 4, stepsLeft: 0xC, locked: 0x14 };   // TSpcInterp
 const APP = { director: 4, state: 8, prev: 0xA, cur: 0xE, next: 0x12, movie: 0x18, pads: 0x20, heap: 0x40 };
 const DIR = { demoFlags: 0x4E, pendingTime: 0x54, moveTicks: 0x58, ticks: 0x5C, state: 0x64, setupDone: 0x260 };
 const STATE_STAGE_EXIT_2 = 12;
+const CANNON_AIM = 0x248, SPINE_GOAL = 0xF8;   // TCannon::unk248; the point TSpineEnemy::setGoal writes (and again at +0x108)
+// The bytes of Mario and of the camera that nothing has written when their first record is taken: padding, and
+// what their constructors copy in from locals nobody set (the camera's three look-at records). Listed by
+// tests/uninit.ts (STACK=1 OBJECTS=1), the same in every stage tried; a later stage's are the console's leftovers
+// even where an earlier stage's happened to be equal.
+const UNSET_AT_FIRST: Record<string, [number, number][]> = {
+    mario: [[0xA, 0xB], [0xE, 0xF], [0x1E, 0x1F], [0x152, 0x153], [0x38A, 0x38B], [0x47E, 0x47F], [0x482, 0x483], [0x492, 0x493], [0x519, 0x51B], [0x521, 0x521], [0x525, 0x525], [0x52D, 0x52F]],
+    camera: [[0xA, 0xB], [0xE, 0xF], [0x1E, 0x1F], [0x26, 0x27], [0x66, 0x67], [0xAC, 0xB3], [0xE0, 0xE7], [0x114, 0x11B], [0x25A, 0x25B], [0x2CD, 0x2CF]],
+};
 // THamuKuri: unk1A8 (the look-around timer), its parameters and mSLKyoroTimer's value in them; TLiveActor's current BCK, mAnmSoundPath and mPositionDelta
 const KURI = { timer: 0x1A8, params: 0x1F4, kyoroTimer: 0x440, bck: 0x15C, walk: 14, look: 4, soundPath: 0x84, step: 0x94, mactor: 0x74 };
 // MActor::mAnmBck; an MActorAnm's frame control: mEnd, mRate, mFrame
@@ -260,6 +269,22 @@ export class Replay {
         cpu.hook(A.kuriEndTest, (c) => {
             const p = c.gpr[31];
             if (this.phase === 'stage' && c.gpr[3] && this.kuris.get(p) && this.kuriStillLooks(p)) c.gpr[3] = 0;
+            return false;
+        });
+        // Noki Bay's cannon aims a shot with setGoal(unk248) (TCannon::setKillerGoalPoint), and unk248 (+0x248) is only
+        // set as a shot is fired: its first shot aims at what the heap had there (on the console the point an earlier
+        // attempt's cannon left: the recorded goal stays the constructor's). The goal the recorded cannon has at the
+        // next sample is that point.
+        cpu.hook(A.cannonGoalRead, (c) => {
+            const p = c.gpr[31];
+            if (this.phase !== 'stage') return false;
+            for (let k = 0; k < 12; k++) if (!this.unset(p, CANNON_AIM + k, mem.r8(p + CANNON_AIM + k))) return false;
+            const id = this.actorIdAt(p), F = this.curFrameIndex;
+            if (id < 0) return false;
+            const goal = [0, 4, 8].map((k) => this.actorWordAhead(id, SPINE_GOAL + k, F + 1));
+            if (goal.some((w) => w === null)) return false;
+            goal.forEach((w, k) => mem.w32(p + CANNON_AIM + k * 4, w!));
+            this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: the cannon at ${hex(p)} aims its first shot at a point nothing has set (TCannon::unk248, the heap's leftovers): taken from the recording's goal (${goal.map((w) => f32FromBits(w!)).join(', ')})`);
             return false;
         });
         // A camera demo ends when its frames are over and the jingle that plays with it has ended (BGM handle 2 is
@@ -854,7 +879,11 @@ export class Replay {
      * holds what the stage heap had as the stage's setup began (zero in the first stage).
      */
     /** the bytes of each kind of recorded object (Mario, the camera, an actor's class) that were found unset at a first record */
-    private unsetSeen = new Map<string, Uint8Array>();
+    private unsetSeen = new Map<string, Uint8Array>(Object.entries(UNSET_AT_FIRST).map(([kind, ranges]) => {
+        const seen = new Uint8Array(0x600);
+        for (const [a, b] of ranges) seen.fill(1, a, b + 1);
+        return [kind, seen] as [string, Uint8Array];
+    }));
     /**
      * Whether byte `k` of a recorded object, which differs from its first record, is the heap's leftovers and so the
      * recording's to say: it is unset (see `unset`), or it was unset in an earlier object of the same kind. The second

@@ -4,7 +4,7 @@
 // that does more than copy an unset value (compares it, computes with it, uses it as an address) is listed,
 // with the block it came from. On the console such bytes hold what the session left there; here mostly zeros.
 // Run: node uninit.mjs <trace.msgt> [millions of instructions]   (env: FSTPAD, LOCKED, FROM=frame TO=frame to list only uses in those frames,
-// STACK=1, MAX=lines, SHINY=1)
+// STACK=1, MAX=lines, SHINY=1, OBJECTS=1 lists the unset bytes of Mario, the camera and FLUDD as the run stops)
 import { readFileSync } from 'node:fs';
 import { readTrace } from '../game/trace.ts';
 import { Replay, JP10 } from '../game/replay.ts';
@@ -217,6 +217,17 @@ try {
     while (cpu.count < end && (res = R.run(Math.min(200e6, end - cpu.count))) !== 'done') if ((wall && performance.now() - t0 > wall) || R.frames > TO) { res = 'stopped'; break; }
 } catch (e) { console.log('STOP', String(e)); }
 console.log(`${res}: ${R.frames} of ${T.frames.length} frames, ${R.ticks} ticks, ${R.issues.length} issue(s), ${allocs.length} allocations, ${((performance.now() - t0) / 1000).toFixed(0)} s`);
+// OBJECTS=1: which bytes of Mario, the camera and FLUDD are unset as the run stops (never written, or copies of unset bytes)
+if (process.env.OBJECTS) {
+    const ranges = (ptr: number, n: number) => {
+        const o = ptr & 0x01FFFFFF, out: string[] = [];
+        for (let k = 0; k < n; k++) if (shadow[o + k]) { let e = k; while (e + 1 < n && shadow[o + e + 1]) e++; out.push(e > k ? `+0x${k.toString(16)}..0x${e.toString(16)}` : `+0x${k.toString(16)}`); k = e; }
+        return out.join(' ') || 'none';
+    };
+    const mario = mem.r32(JP10.gpMarioOriginal), camera = mem.r32(JP10.gpCamera);
+    if (mario) { console.log(`Mario's unset bytes: ${ranges(mario, 0x574)}`); const fludd = mem.r32(mario + 0x3E4); if (fludd) console.log(`FLUDD's unset bytes: ${ranges(fludd, 0x1DBC)}`); }
+    if (camera) console.log(`the camera's unset bytes: ${ranges(camera, 0x350)}`);
+}
 // grouped by the function that uses the value and the block it came from
 interface Group { fn: string; kinds: Set<string>; origin: string; lo: number; hi: number; n: number; frame: number; tick: number; pcs: Set<number>; example: number }
 const groups = new Map<string, Group>();
