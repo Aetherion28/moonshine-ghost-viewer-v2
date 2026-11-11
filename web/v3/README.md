@@ -39,7 +39,9 @@ Taken from the recording, because the game itself can't know them:
 - Mario's occlusion bit (written from the GPU's draw-sync callback, at a time of its own) in `mFlag` and `mPrevFlag` at each tick, and the GPU reads Moonshine records (occlusion at the camera and at the silhouette; the bath water's height only in newer traces, observation bit 2);
 - the timing of the disc: how many frames a stage loads for, and the frame a stage ends on (the exit waits for the sound's wave data to come off the disc);
 - the size of the disc's file system table (it sets the arena's top): the replay boots, compares the stage heap's size with the recorded one, and boots again with the table padded by the difference (480 bytes for the traces at hand);
-- one Moonshine setting the trace doesn't record, **Shiny Shines**: it makes a collected Shine share the item manager's model instead of loading the blue one, so everything allocated after it sits lower. When Mario's address at his first record differs from the recording's, the replay boots again with it on.
+- one Moonshine setting the trace doesn't record, **Shiny Shines**: it makes a collected Shine share the item manager's model instead of loading the blue one, so everything allocated after it sits lower. When Mario's address at his first record differs from the recording's, the replay boots again with it on;
+- an event script's lock word: `TSpcInterp`'s constructor never writes `mLocked` (+0x14), so a script starts with whatever the console's heap had there: 0 (each update runs 0x20 instructions) or not (each runs to the script's `yield`), until the script calls `lock` or `unlock`. It starts as 0 here. `Replay.scriptDoubts` lists the scripts for which the word decided what an update did; when a replay parts from its recording after one, the drivers boot again with that script's word not 0 and keep the replay that follows further (Manta Storm's `appearmanta.sb` ran locked on the recording console: its demo starts the frame after the talk ends, not a frame later);
+- Mario's sound handle (`TMario::mSound`, +0x4E4) is not compared: which slot of the sound system his damage voice gets and when it ends is the sound hardware's doing, and no sound runs here. The game only starts and stops the sound through it.
 
 ## Where it stands (2026-11-10)
 
@@ -47,6 +49,10 @@ A recording counts as in step while every `rand()` call (caller and seed), every
 
 Whole recordings in step to their end: Ricco Harbor 3 (`a/2A1D8909_80000002`), Delfino Plaza (`…2D`, dolpic7), Bianco Hills 7 (`…34`), a Corona secret (`…15`, coro_ex1), a Noki secret (`…30`, mare_ex0).
 Still in step when the test's time limit cut them: Delfino Plaza (`…2F`, dolpic9), and Pinna Park 1 (`…0B`) through three stages (pinnaParco0, pinnaParco6, the Mecha-Bowser fight) with each stage's seed, flags, NPC phase and heap equal to the recording's at its start.
+
+The whole batch (124 recordings, 2026-11-10, after the texture-coordinate arithmetic below): 93 replay to their end, and 175,873 of 205,745 frames are in step (83 and 162,044 before it); none got worse.
+Manta Storm (`b/A7E1056F_80000013`, sirena0) is in step to frame 2,419 of 3,299 (tick 8,918) with the script's lock word and the sound handle handled as above; it stopped at frame 540 before. It stops on a `rand` call in `TPollutionLayer::action` (the goop).
+Four recordings stop with nothing reported where the run leaves its stage and enters it again (Pinna Park Beach 2 at frame 471, for one): a second stage isn't followed yet.
 
 What stops the others:
 - **the goop**: the game draws the goop map on the GPU (each layer's map through a fading texture environment, stamps blended over it, a model with vertex alpha under the gatekeeper, all copied back to the texture the collision code reads, pixels counted with `GXReadPixMetric`). `ppc/gx.ts` does those draws.

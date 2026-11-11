@@ -28,6 +28,9 @@ export interface GameAddrs {
     goopLayerDraw: number; goopObjDraw: [number, number];
     /** TMario::pulling, and the grab objects whose taking matrix their constructor leaves unset: [vtable, the matrix's offset] */
     marioPulling: number; unsetTakingMtx: [number, number][];
+    /** the event scripts' interpreters: TEventWatcher::launchScript and where it has the new interpreter (r29); TSpcInterp::update,
+     *  its step count (reached only while the lock word is 0) and the lock / unlock builtins */
+    launchScript: number; launchScriptInterp: number; spcUpdate: number; spcCountStep: number; spcLock: number; spcUnlock: number;
 }
 /** GMSJ01 revision 0 */
 export const JP10: GameAddrs = {
@@ -41,7 +44,9 @@ export const JP10: GameAddrs = {
     exitWaveRet: 0x800ECAB4,
     goopLayerDraw: 0x801ECF38, goopObjDraw: [0x801EE5B0, 0x2D4],
     marioPulling: 0x8013DD68, unsetTakingMtx: [[0x803E083C, 0x80], [0x803D75E4, 0x74]],   // TBGTakeHit (a tentacle), TBGBeakHit
+    launchScript: 0x800DC654, launchScriptInterp: 0x800DC6F0, spcUpdate: 0x80116F14, spcCountStep: 0x80116F88, spcLock: 0x8011C7CC, spcUnlock: 0x8011C6E8,
 };
+const SPC = { stepsToDo: 4, stepsLeft: 0xC, locked: 0x14 };   // TSpcInterp
 // offsets in the game's objects
 const APP = { director: 4, state: 8, prev: 0xA, cur: 0xE, next: 0x12, movie: 0x18, pads: 0x20, heap: 0x40 };
 const DIR = { moveTicks: 0x58, ticks: 0x5C, state: 0x64, setupDone: 0x260 };
@@ -55,6 +60,7 @@ const PAD_SUPPRESS = [0x18, 0x1C, 0x20, 0x30, 0xD0, 0xD4, 0xD8];
 const MARIO_PAD = 0x4FC, MARIO_WORK = 0x108;   // TMario::mGamePad, its TMarioControllerWork
 const TAKE_HELD = 0x6C, MARIO_STATUS = 0x7C, MARIO_FACE_ANGLE_Y = 0x96;   // TTakeActor::mHeldObject, TMario::mStatus, mFaceAngle.y
 const STATUS_PULLING = 0x560, STATUS_OIL_PULLING = 0x40561;
+const MARIO_SOUND = 0x4E4;   // TMario::mSound, the JAISound of his damage voice: only started and stopped
 const MARIO_FLAGS = 0x118;   // TMario::mFlags; bit 0 is MARIO_FLAG_OCCLUDED, written from the GPU's draw-sync callback
 
 export interface Issue { kind: string; frame: number; tick: number; text: string }
@@ -69,6 +75,8 @@ export interface ReplayOptions {
     fstPad?: number;
     /** Moonshine's Shiny Shines setting (not recorded: see `layoutDelta`) */
     shinyShines?: boolean;
+    /** event scripts (file names) whose interpreter starts with a lock word that isn't 0 (not recorded: see `scriptDoubts`) */
+    scriptsLocked?: string[];
 }
 
 const hex = (x: number) => (x >>> 0).toString(16).padStart(8, '0');
@@ -91,6 +99,14 @@ export class Replay {
      */
     layoutDelta = 0;
     fstPadUsed = 0;
+    scriptsLocked: string[] = [];
+    /**
+     * TSpcInterp's constructor never writes the lock word (+0x14), so an event script starts with whatever the
+     * console's heap had there: 0 (each update runs 0x20 instructions) or not (each runs to the script's yield),
+     * until the script calls lock or unlock. Listed here: the scripts for which that decided what an update did
+     * (it ran out of its 0x20, or ran past them), with the frame it first did. The trace doesn't record the word.
+     */
+    scriptDoubts: { script: string; frame: number; locked: boolean }[] = [];
     /** the stage heap's size here minus the recording's (0: the same arena) */
     heapDelta = 0;
     /** instructions at the stage's start and at its first frame after setup */
@@ -99,7 +115,7 @@ export class Replay {
     private strict = false;
     private curFrame: TraceFrame | null = null; private curTick = 0; private curTickIndex = -1; private between = 0;
     private observations = 0; private noWater = false;
-    private padAdopted = false; private adopted = new Set<string>();
+    private padAdopted = false; private adopted = new Set<string>(); private otherHandle = false;
     private frozenState = -1; private suppressed: number[] | null = null; private suppressedPad = 0;
     private stopOn: Set<string>; private maxIssues: number;
     private log: (s: string) => void;
@@ -132,6 +148,22 @@ export class Replay {
         cpu.hook(A.marioPerform, (c) => { if ((c.gpr[4] & 1) && this.phase === 'stage' && c.gpr[3] === m.mem.r32(A.gpMarioOriginal)) this.atTick(c.gpr[3], c.gpr[4]); return false; });
         cpu.hook(A.randRet, (c) => { if (this.phase === 'stage') this.atRand(c.lr); return false; });
         cpu.hook(A.marioPulling, (c) => { if (this.phase === 'stage') this.unsetTakingMtx(c.gpr[3]); return false; });
+        // the event scripts' lock words (see scriptDoubts)
+        this.scriptsLocked = opt.scriptsLocked ?? [];
+        const unset = new Map<number, string>(), locked = new Set(opt.scriptsLocked ?? []), mem = m.mem;
+        let script = '', steps = 0;
+        const doubt = (it: number, isLocked: boolean) => {
+            const name = unset.get(it)!; unset.delete(it);
+            this.scriptDoubts.push({ script: name, frame: this.curFrame ? this.curFrame.frame : 0, locked: isLocked });
+            this.log(`frame ${this.curFrame ? this.curFrame.frame : 0}: ${name}'s interpreter ${isLocked ? 'runs past' : 'stops at'} its 0x20 instructions on a lock word its constructor never set (taken as ${isLocked ? 'not 0' : '0'})`);
+        };
+        cpu.hook(A.launchScript, (c) => { script = ''; for (let a = c.gpr[4], b; (b = mem.r8(a)) && script.length < 64; a++) script += String.fromCharCode(b); return false; });
+        cpu.hook(A.launchScriptInterp, (c) => { const it = c.gpr[29]; if (it) { unset.set(it, script); mem.w32(it + SPC.locked, locked.has(script) ? 1 : 0); } return false; });
+        cpu.hook(A.spcLock, (c) => { unset.delete(c.gpr[3]); return false; });
+        cpu.hook(A.spcUnlock, (c) => { unset.delete(c.gpr[3]); return false; });
+        cpu.hook(A.spcUpdate, () => { steps = 0; return false; });
+        cpu.hook(A.spcCountStep, (c) => { const it = c.gpr[30]; if (unset.size && unset.has(it) && mem.r32(it + SPC.stepsLeft) === 1) doubt(it, false); return false; });
+        cpu.hook(A.spcCountStep - 12, (c) => { const it = c.gpr[30]; if (unset.size && unset.has(it) && mem.r32(it + SPC.locked) !== 0 && ++steps > mem.r32(it + SPC.stepsToDo)) doubt(it, true); return false; });
         // A stage ends when the screen has faded out and the sound's wave data has come off the disc: how long the
         // disc takes is the console's, so the answer is the recording's (did it leave after this frame?).
         cpu.hook(A.exitWaveRet, (c) => {
@@ -405,7 +437,7 @@ export class Replay {
             // recording's, in mFlag and in mPrevFlag (the copy each tick makes of it)
             for (const o of [MARIO_FLAGS + 3, MARIO_FLAGS + 7]) mem.w8(mario + o, (mem.r8(mario + o) & ~1) | (t.mario[o] & 1));
             this.marioChecked++;
-            this.compareBlob('mario', 'Mario', mario, t.marioPtr, t.mario);
+            this.compareBlob('mario', 'Mario', mario, t.marioPtr, t.mario, MARIO_SOUND);
         }
         if (t.camera && this.phase === 'stage') this.compareBlob('camera', 'the camera', mem.r32(this.A.gpCamera), t.cameraPtr, t.camera);
     }
@@ -441,9 +473,20 @@ export class Replay {
      * An object of the game against its record. At its first record, memory the game hasn't written yet (zero
      * on this freshly booted machine) holds whatever the console's heap had there: uninitialised memory is the
      * recording's to say, so those bytes are taken from it.
+     * `handle`: the offset of a sound handle. Which of the sound system's slots a new sound gets, and when the
+     * sound ends and its handle goes back to null, is the sound hardware's doing, and no sound runs here (ppc/hle.ts):
+     * the word is not compared (said once in the log, at the first difference).
      */
-    private compareBlob(kind: string, name: string, addr: number, recAddr: number, rec: Uint8Array) {
-        const n = rec.length, mine = this.m.mem.bytes(addr, n);
+    private compareBlob(kind: string, name: string, addr: number, recAddr: number, rec: Uint8Array, handle = -1) {
+        const n = rec.length, mem = this.m.mem;
+        let mine = mem.bytes(addr, n);
+        if (handle >= 0 && handle + 4 <= n) {
+            const h = mem.r32(addr + handle), hr = ((rec[handle] << 24) | (rec[handle + 1] << 16) | (rec[handle + 2] << 8) | rec[handle + 3]) >>> 0;
+            if (h !== hr) {
+                if (!this.otherHandle) { this.otherHandle = true; this.log(`frame ${this.curFrame ? this.curFrame.frame : 0} tick ${this.curTick}: ${name}'s sound handle is ${hex(h)}, the recording's ${hex(hr)}: which slot a sound gets and when it ends is the sound hardware's, which doesn't run here; not compared`); }
+                mine = mine.slice(); mine.set(rec.subarray(handle, handle + 4), handle);
+            }
+        }
         if (!this.adopted.has(kind)) {
             this.adopted.add(kind);
             const took: string[] = [];
@@ -486,4 +529,21 @@ export class Replay {
         this.issue('literal', `the game reads a GPU result at ${hex(caller)}; the trace's next is ${i >= T.n ? 'nothing' : `${EV_NAMES[T.kind[i]]} from ${hex(T.a[i])}`}`);
         return null;
     }
+}
+
+/**
+ * The next thing to try for a replay that parted from its recording: the same with the lock word of one event
+ * script the other way (the last script before the parting whose unset lock word decided something, see
+ * Replay.scriptDoubts). null: nothing left to try. The caller keeps the new replay only if it follows further.
+ */
+export function nextScriptLocks(R: Replay, tried: Set<string>): string[] | null {
+    if (!R.issues.length) return null;
+    const stop = R.issues[0].frame;
+    for (let i = R.scriptDoubts.length - 1; i >= 0; i--) {
+        const d = R.scriptDoubts[i];
+        if (d.frame > stop || tried.has(d.script)) continue;
+        tried.add(d.script);
+        return d.locked ? R.scriptsLocked.filter((n) => n !== d.script) : [...R.scriptsLocked, d.script];
+    }
+    return null;
 }
