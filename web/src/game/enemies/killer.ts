@@ -93,7 +93,7 @@ export class FlyEnemy extends WalkerEnemy {
     calcChaseParam() {
         const m = this.world.mario.pos;
         const toMario = new V3(fr(m.x - this.pos.x), fr(m.y - this.pos.y), fr(m.z - this.pos.z));
-        toMario.x = fr(toMario.x * 1.1); toMario.z = fr(toMario.z * 1.1);
+        toMario.x = fr(toMario.x * fr(1.1)); toMario.z = fr(toMario.z * fr(1.1));
         const goal = new V3(fr(this.pos.x + toMario.x), fr(this.pos.y + toMario.y), fr(this.pos.z + toMario.z));
         if (this.unk1A5) this.setGoalPath(new PathNode(null, goal));
         // (abs(): the int one)
@@ -149,7 +149,7 @@ FlyNerves.normalFly = nerve<FlyEnemy>('TNerveFlyEnemyNormalFly', (spine: FS) => 
         if (self.distToMarioSq < P.mSLChaseDist * P.mSLChaseDist) { spine.pushAfterCurrent(FlyNerves.chaseFly); return true; }
     }
     self.rot.x = fr(MsGetRotFromZaxis(self.vel).x);
-    const s = MsClamp(fr(1.05 * self.scale.x), 0, self.bodyScale);
+    const s = MsClamp(fr(fr(1.05) * self.scale.x), 0, self.bodyScale);
     self.scale.set(s, s, s);
     return false;
 });
@@ -178,9 +178,9 @@ FlyNerves.chaseFly = nerve<FlyEnemy>('TNerveFlyEnemyChaseFly', (spine: FS) => {
         const delta = self.posDelta.clone();
         delta.y = self.getGravityY();
         self.rot.x = fr(MsGetRotFromZaxis(delta).x);
-    } else self.rot.x = fr(self.rot.x * 0.99);
+    } else self.rot.x = fr(self.rot.x * fr(0.99));
     self.flyBehavior();
-    const s = MsClamp(fr(1.1 * self.scale.x), 0, self.bodyScale);
+    const s = MsClamp(fr(fr(1.1) * self.scale.x), 0, self.bodyScale);
     self.scale.set(s, s, s);
     return false;
 });
@@ -341,7 +341,7 @@ KillerNerves.explosion = nerve<Killer>('TNerveKillerExplosion', (spine: KS) => {
             }
         }
     }
-    if (self.unk190 < self.unk20C) self.unk190 = fr(self.unk190 * 1.3);
+    if (self.unk190 < self.unk20C) self.unk190 = fr(self.unk190 * fr(1.3));
     else {
         self.onHitFilter(HF.NO_COLLISION);
         if (self.checkCurAnmEnd(ANM_BCK)) {

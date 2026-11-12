@@ -176,7 +176,7 @@ export abstract class TMarioSim extends MarioSpecial {
                     return new V3(x, y, z);
                 });
                 const [p1, p2, p3] = P;
-                const avgY = fr((p1.y + p2.y + p3.y) / 3);
+                const avgY = fr(fr(fr(p1.y + p2.y) + p3.y) / 3);   // (fadds, fadds, fdivs: JP 0x80124B20)
                 const fwd = new V3(JMASSin(this.mFaceAngle.y), 0, JMASCos(this.mFaceAngle.y));
                 const v1 = V3.sub(p2, p1).fround(), v2 = V3.sub(p3, p2).fround();
                 // cross2(v2, v1) is v2 x v1 (JGVec3.hpp: cross2(a, b) = a x b), then TVec3::normalize
