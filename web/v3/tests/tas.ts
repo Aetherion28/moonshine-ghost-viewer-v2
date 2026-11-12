@@ -4,7 +4,8 @@
 // poll (Movie.h ControllerState: Start A B X Y Z Up Down / Left Right L R disc reset connected -, triggers L R, main
 // stick X Y, C stick X Y). Each PADRead gets the last poll before the current field ends. Env: OFFSET=n shifts the
 // movie by n polls (the game's timing against Dolphin's), LOG=1 prints every button change the game is given.
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { encodeGxFrame } from '../web/gxframe.ts';
 import { Machine } from '../ppc/machine.ts';
 import { installHle } from '../ppc/hle.ts';
 import { symbols } from './syms.ts';
@@ -53,7 +54,16 @@ const watch = () => {
     const ds = md ? mem.r8(md + 0x64) : -1;
     const f = (a: number) => { const v = new DataView(new ArrayBuffer(4)); v.setUint32(0, mem.r32(a)); return v.getFloat32(0).toFixed(1); };
     const mk = ma ? `mario ${f(ma + 0x10)},${f(ma + 0x14)},${f(ma + 0x18)} st ${mem.r32(ma + 0x7C).toString(16)}` : 'no mario';
-    if (STAGE4 >= 0 && stage4Field < 0 && ds === 4 && mem.r8(APP + 0xE) === 0) { stage4Field = M.fields; console.log(`  [field ${M.fields}] the stage's play begins: the movie from frame ${STAGE4}`); }
+    if (STAGE4 >= 0 && stage4Field < 0 && ds === 4 && mem.r8(APP + 0xE) === 0) {
+        stage4Field = M.fields; console.log(`  [field ${M.fields}] the stage's play begins: the movie from frame ${STAGE4}`);
+        // DUMP=<folder>: from here every video frame's GPU commands (web/gxframe.ts) for tests/gxview.mjs, DUMPN of them
+        if (process.env.DUMP) {
+            const out = process.env.DUMP, max = +(process.env.DUMPN || 6000); mkdirSync(out, { recursive: true });
+            let seq = 0;
+            M.hw.gx.onFrame = (fr) => { if (seq >= max) return; writeFileSync(`${out}/f_${String(seq).padStart(6, '0')}.gxf`, encodeGxFrame(fr)); if (++seq >= max) M.hw.gx.capture(false); };
+            M.hw.gx.capture(true);
+        }
+    }
     if (ma && (mem.r32(ma + 0x7C) & 0x1FF) === 0x102 && !shineSeen) { shineSeen = true; console.log(`  SHINE GET at movie frame ${STAGE4 >= 0 && stage4Field >= 0 ? (STAGE4 + (M.fields - stage4Field) / 2).toFixed(1) : (M.fields / 2).toFixed(1)}`); }
     const key = `dir ${ds} ${mk}`;
     if (key !== lastDir && (ds !== lastDs || M.fields % +(process.env.EVERY || 60) === 0)) { console.log(`  [movie frame ${(M.fields / 2).toFixed(1)}] ${key}`); lastDir = key; lastDs = ds; }
