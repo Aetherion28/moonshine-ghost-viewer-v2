@@ -28,7 +28,7 @@ import {
     marioSpeedY, marioGroundLevel, marioWaterGun, marioSwimming, sendToMario, inStreamCube, MapObjLibWave, vtxPosArray,
 } from './lib.js';
 
-const DEG = 0.017453294;
+const DEG = fr(0.017453294);
 
 // ---------------------------------------------------------------- TBigWindmill
 const sRadius = 2380, sSubZ = 150, sSpeed = fr(0.05), sAngleAdd = 0;
@@ -650,7 +650,8 @@ export class LeanBlock extends MapObjBase {
         normalize(v);
         // rotateVecByAxisY(axis, pi/2): TRotation3::setEular(0, a, 0).mult33 -- real
         // sinf/cosf(1.5707963705062866) rounded to f32, not Math.sin/cos of the 7-digit spelling.
-        const s = sinf(HALF_PI_F), c = cosf(HALF_PI_F);
+        // (the DOL's constant is 0x3FC90FDA, the source's 1.5707963f: one step under the f32 nearest pi/2, so its cosine is +7.5e-8)
+        const HALF_PI_SRC = fr(1.5707963), s = sinf(HALF_PI_SRC), c = cosf(HALF_PI_SRC);
         const ax = new V3(FMA(s, v.z, fr(c * v.x)), 0, FMS(c, v.z, fr(s * v.x)));
         // length = MsSqrtf(...) (frsqrte + one Newton step in double), not Math.sqrt.
         const len = MsSqrtf(fr(fr(v.x * v.x) + fr(v.z * v.z)));

@@ -106,7 +106,7 @@ const toMat4 = (m: Mtx) => mat4.fromValues(m[0], m[4], m[8], 0, m[1], m[5], m[9]
 
 /** TMapObjBase::makeRootMtxRotZ / RotY / RotX (sinf of the degrees; the Y offset taken off) */
 export function makeRootMtxRot(o: MapObjBase, axis: 'x' | 'y' | 'z'): Mtx {
-    const m = mtx(), a = fr(o.rot[axis] * 0.017453294), s = mslSinf(a), c = mslCosf(a);
+    const m = mtx(), a = fr(o.rot[axis] * fr(0.017453294)), s = mslSinf(a), c = mslCosf(a);
     if (axis === 'z') { m[0] = c; m[1] = -s; m[4] = s; m[5] = c; }
     else if (axis === 'y') { m[0] = c; m[2] = s; m[8] = -s; m[10] = c; }
     else { m[5] = c; m[6] = -s; m[9] = s; m[10] = c; }

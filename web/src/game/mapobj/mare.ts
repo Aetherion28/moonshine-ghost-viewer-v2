@@ -27,7 +27,7 @@ import { MsMtxSetTRS } from './objcol.js';
 import type { ItemManager } from './item.js';
 
 const STATE_UNK2 = 2;
-const DEG = 0.017453294;
+const DEG = fr(0.017453294);
 const sinf = (a: number) => fr(Math.sin(fr(a))), cosf = (a: number) => fr(Math.cos(fr(a)));
 
 // ---------------------------------------------------------------- TCogwheelScale

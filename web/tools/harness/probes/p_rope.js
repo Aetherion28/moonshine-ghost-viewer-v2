@@ -1,0 +1,3 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); const A = +process.env.LA, B = +process.env.LB; const h = (v) => { const f = new Float32Array([v]); return new Uint32Array(f.buffer)[0].toString(16).padStart(8, '0'); };
+  let b = null;
+  P.testPerform = (c) => { const r = o(c); if (st.qf >= A && st.qf <= B) { b = b || st.world.search('ボスワンワン'); if (b) console.log('SIM', st.qf, b.leash.rope.pts.map((p) => [p.prev.x, p.prev.y, p.prev.z, p.pos.x, p.pos.y, p.pos.z, p.vel.x, p.vel.y, p.vel.z].map(h).join(' ')).join(' | '), '| boss', h(b.pos.x), h(b.pos.y), h(b.pos.z), h(b.rot.y)); } return r; }; }

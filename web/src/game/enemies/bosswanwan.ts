@@ -483,8 +483,6 @@ export class BossWanwan extends SpineEnemy {
         // (the viewer's stand-in sits here too: the drawables match the two by this place)
         this.loadPos = BW_HEAD_START.clone();
         this.reset();
-        this.calcRootMatrix();
-        this.calcJoints();
         this.leash = new BWLeash(this, 15);
         this.picket = new BWPicket(this);
         this.picket.pos.set(BW_PICKET_START);
@@ -496,6 +494,9 @@ export class BossWanwan extends SpineEnemy {
         this.hits[1].initHitActor(AT.BOSS_UNKB, 3, HC.PLAYER | HC.ITEM, 300, 500, 270, 500);
         for (const h of this.hits) { this.world.addToGroup('敵グループ', h); h.offHitFilter(HF.NO_COLLISION); }
         this.scaledBodyRadius = 500;
+        // mMActor->calc() here, before any calcRootMatrix: the model's base matrix is still J3DModel's identity (scale 1), and
+        // no BCK is joined yet. The chain's first ticks take joint 5 from this calc (the first CalcAnim comes after them).
+        { const B = this.baseTR, I = mtx(); I[0] = I[5] = I[10] = 1; const sc = this.scale; this.baseTR = I; this.scale = new V3(1, 1, 1); this.calcJoints(); this.baseTR = B; this.scale = sc; }
         this.offLiveFlag(LF.ENABLE_CLIPPING);
         this.changeBck(BCK_WAIT);
         this.mactor!.setFromIndex(ANM_BRK, BRK_BODY);
@@ -506,7 +507,6 @@ export class BossWanwan extends SpineEnemy {
         this.colManager.setUpActiveCollisionTRS(this.pos, this.rot, this.scale);
         this.colManager.removeActiveCollision();
         this.mapCollision = this.colManager;
-        this.calcJoints();
     }
     /** getJointTransByIndex: joint i's place as the last calc left it */
     getJointTrans(i: number) {

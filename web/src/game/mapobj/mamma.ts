@@ -469,7 +469,8 @@ export class LeanMirror extends MapObjBase {
     calcCurrentMtx(m: Mtx) {
         const v = new V3(this.unk14C.x, 0, this.unk14C.z);
         // rotateVecByAxisY(axis, pi/2): real sinf/cosf(1.5707963705062866) rounded to f32.
-        const s = sinf(HALF_PI_F), c = cosf(HALF_PI_F);
+        // (the DOL's constant is 0x3FC90FDA, the source's 1.5707963f: one step under the f32 nearest pi/2, so its cosine is +7.5e-8)
+        const HALF_PI_SRC = fr(1.5707963), s = sinf(HALF_PI_SRC), c = cosf(HALF_PI_SRC);
         const axis = new V3(FMA(s, v.z, fr(c * v.x)), 0, FMS(c, v.z, fr(s * v.x)));
         // len = MsSqrtf(...) (frsqrte + one Newton step in double), not Math.sqrt.
         const len = MsSqrtf(fr(fr(this.unk14C.x * this.unk14C.x) + fr(this.unk14C.z * this.unk14C.z)));

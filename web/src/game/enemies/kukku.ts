@@ -144,7 +144,7 @@ export class Kukku extends SmallEnemy {
             // lie down flat on whatever the bird fell on
             const g = this.groundPlane;
             const up = g ? new V3(g.n[0], g.n[1], g.n[2]).normalize() : new V3(0, 1, 0);
-            const yaw = qEulerY(0.017453294 * this.rot.y);
+            const yaw = qEulerY(fr(0.017453294) * this.rot.y);
             const tilt = new Quat().setRotateFromTo(new V3(0, 1, 0), up, 1);
             tilt.mul(tilt.clone(), yaw);
             tilt.toMtx(this.baseTR, this.pos);
