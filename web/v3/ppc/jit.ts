@@ -82,7 +82,7 @@ const ADD = 0x6A, SUB = 0x6B, MUL = 0x6C, AND = 0x71, OR = 0x72, XOR = 0x73, SHL
     WRAP = 0xA7, EXT_S = 0xAC, EXT_U = 0xAD, ADD64 = 0x7C, MUL64 = 0x7E, AND64 = 0x83, XOR64 = 0x85, SHL64 = 0x86, SHRS64 = 0x87, SHRU64 = 0x88, EQZ64 = 0x50,
     FADD = 0xA0, FSUB = 0xA1, FMUL = 0xA2, FDIV = 0xA3, FABS = 0x99, FEQ = 0x61, FNE = 0x62, FLT = 0x63, FGT = 0x64, FGE = 0x66, OR64 = 0x84;
 // locals
-const A = 0, O = 1, X = 2, Y = 3, V = 4, T = 5, T2 = 6, FX = 7, FY = 8;
+const A = 0, O = 1, X = 2, Y = 3, V = 4, T = 5, T2 = 6, FX = 7, FY = 8, FA = 9, FC = 10, FP = 11;
 
 function section(id: number, body: number[]) { return [id, ...new Asm().u(body.length).b, ...body]; }
 function vec(items: number[][]) { return new Asm().u(items.length).b.concat(...items); }
@@ -299,6 +299,24 @@ export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => 
         a.k64(addr).set(T);
         if (cut) a.get(T).c64(-0x10000000n).op(AND64).op(0xBF);
         else a.get(T).c64(-0x8000000n).op(AND64).get(T).c64(0x8000000n).op(AND64).op(ADD64).op(0xBF);
+    };
+    /**
+     * One lane of a fused multiply-add, a * c + b (c with 25 bits: cEmit leaves it on the stack; sub: minus b) into
+     * local S as a double, and on the stack whether its rounding to single is the fused result (cpu.ts's madds):
+     *  - a is a single and c has 25 bits, so the product is exact in a double (and not so small that it isn't);
+     *  - the sum, rounded once to double, rounds to the same single as the exact sum unless it sits exactly halfway
+     *    between two singles (its low 29 bits are 0x10000000);
+     *  - the sum is an ordinary single's size or zero (a NaN, an overflow or a number near the smallest normal go
+     *    through the interpreter, like every case this leaves out).
+     */
+    const fused = (aAddr: number, cEmit: () => void, bAddr: number, sub: boolean, S: number) => {
+        a.kf(aAddr).set(FA); cEmit(); a.set(FC);
+        a.get(FA).get(FC).op(FMUL).set(FP);
+        a.get(FP).kf(bAddr).op(sub ? FSUB : FADD).set(S);
+        a.get(FA).get(FA).op(0xB6, 0xBB).op(FEQ);
+        a.get(FP).op(FABS).cf(1e-290).op(FGT).get(FA).cf(0).op(FEQ).op(OR).get(FC).cf(0).op(FEQ).op(OR).op(AND);
+        a.get(S).op(FABS).cf(2.4e-38).op(FGE).get(S).op(FABS).cf(3.0e38).op(FLT).op(AND).get(S).cf(0).op(FEQ).op(OR).op(AND);
+        a.get(S).op(0xBD).c64(0x1FFFFFFFn).op(AND64).c64(0x10000000n).op(0x52).op(AND);
     };
     /** stfs's word from FPR d (doubleToSingleBits in fpu.ts): the ordinary numbers and zeros inline */
     const stfsBits = (d: number) => {
@@ -531,6 +549,15 @@ export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => 
                     case 20: bin(FSUB); return resS(d, ra, rb, -1);
                     case 21: bin(FADD); return resS(d, ra, rb, -1);
                     case 25: a.kf(ps0(ra)); mul25(ps0(rc)); a.op(FMUL).set(FX); return resS(d, ra, -1, rc);
+                    case 28: case 29: case 30: case 31: {   // fmsubs, fmadds, fnmsubs, fnmadds
+                        const xo = (ins >>> 1) & 31, neg = xo >= 30;
+                        fused(ps0(ra), () => mul25(ps0(rc)), ps0(rb), !(xo & 1), FX);
+                        a.if_();
+                        a.get(FX).op(0xB6, 0xBB); if (neg) a.op(0x9A); a.set(FX);
+                        a.sf(ps0(d), () => a.get(FX)); a.sf(ps1(d), () => a.get(FX));
+                        a.else_().c(ins).call(F_OP59).end();
+                        return;
+                    }
                 }
                 else if (ins & 0x20) switch ((ins >>> 1) & 31) {
                     case 18: bin(FDIV); return resD(d, ra, rb, -1);
@@ -581,6 +608,17 @@ export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => 
                 case 12: a.kf(ps0(ra)); mul25(ps0(rc)); a.op(FMUL).set(FX); a.kf(ps1(ra)); mul25(ps0(rc), !laneRounds); a.op(FMUL).set(FY); return lanes(ra, -1, rc, ra | 32, -1, rc);   // ps_muls0
                 case 13: a.kf(ps0(ra)); mul25(ps1(rc)); a.op(FMUL).set(FX); a.kf(ps1(ra)); mul25(ps1(rc)); a.op(FMUL).set(FY); return lanes(ra, -1, rc | 32, ra | 32, -1, rc | 32);   // ps_muls1
                 case 10: a.kf(ps0(ra)).kf(ps1(rb)).op(FADD).set(FX); a.kf(ps1(rc)).set(FY); return lanes(ra, rb | 32, -1, rc | 32, -1, -1);   // ps_sum0
+                case 28: case 29: case 30: case 31: case 14: case 15: {   // ps_msub, ps_madd, ps_nmsub, ps_nmadd, ps_madds0, ps_madds1
+                    const x = xo & 31, sub = x === 28 || x === 30, neg = x === 30 || x === 31;
+                    fused(ps0(ra), () => mul25(x === 15 ? ps1(rc) : ps0(rc)), ps0(rb), sub, FX);
+                    fused(ps1(ra), () => (x === 14 ? mul25(ps0(rc), !laneRounds) : mul25(ps1(rc))), ps1(rb), sub, FY);
+                    a.op(AND).if_();
+                    a.get(FX).op(0xB6, 0xBB); if (neg) a.op(0x9A); a.set(FX);
+                    a.get(FY).op(0xB6, 0xBB); if (neg) a.op(0x9A); a.set(FY);
+                    a.sf(ps0(d), () => a.get(FX)); a.sf(ps1(d), () => a.get(FY));
+                    a.else_().c(ins).call(F_OP4).end();
+                    return;
+                }
                 case 11: a.kf(ps0(ra)).kf(ps1(rb)).op(FADD).set(FY); a.kf(ps0(rc)).set(FX); resL(d, 1, FY, ra, rb | 32, -1); resL(d, 0, FX, rc, -1, -1); return;   // ps_sum1
             }
             if (!(ins & 1)) switch (xo) {
@@ -614,5 +652,5 @@ export function compileBlock(dv: DataView, pc0: number, hooked: (pc: number) => 
     if (!ended) { k--; exit(() => a.c(pc)); k++; }
     if (loops) a.op(0x0B);
     if (a.nest !== 0) throw new Error('jit: unbalanced block');
-    return { pc: pc0, n: N, words: Uint32Array.from(words), body: [3, 5, I32, 2, I64, 2, F64, ...a.b, 0x0B], next };
+    return { pc: pc0, n: N, words: Uint32Array.from(words), body: [3, 5, I32, 2, I64, 5, F64, ...a.b, 0x0B], next };
 }
