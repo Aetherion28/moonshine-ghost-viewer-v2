@@ -68,7 +68,9 @@ export const LIVE_FLAG_MELT_ON_DEATH = LF.UNK10000;
 
 export class SmallEnemy extends SpineEnemy {
     unk150 = 0; unk154 = 1; unk158 = 1; currentBck = -1; sprayCooldown = 0; unk164 = 0; unk165 = false;
-    juiceBlock: any = null; coinId = -1; coin: any = null; unk184 = 0; unk185 = 0; unk188 = 1; unk18C = 0; unk190 = 1;
+    juiceBlock: any = null; coinId = -1; coin: any = null; unk184 = 0; unk185 = 0; unk188 = 1; unk18C = 0;
+    /** unk190: the constructor leaves it (the heap's: zeros, as v3 has them; reset() sets it) */
+    unk190 = 0;
     get P(): SmallParams { return this.getSaveParam(); }
     constructor(w: World, name = '') { super(w, name); }
     setMActorAndKeeper() { this.mactor = this.createMActor(0); }

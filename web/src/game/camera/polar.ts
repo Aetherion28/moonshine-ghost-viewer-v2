@@ -97,7 +97,9 @@ const isTowerMode = (m: number) => m === CM.TOWER_A || m === CM.TOWER_B || m ===
  * JP 1.0 and US divide by SMSGetGameVideoHeight (448 on an NTSC set), the later builds by
  * SMSGetGameRenderHeight (448; 360 on 3DAS, whose width is 640): the same value off 3DAS.
  */
-export const gameCameraAspect = () => V.GMSP01_NX ? fr(fr(640 * fr(0.9134614)) / 360) : fr(fr(660 * fr(0.9134614)) / 448);
+// (the DOL's constant is 0x3F69D89C, 0.91346145: one step above the f32 nearest the decomp's 0.9134614f; JP 0x8010D834)
+const ASPECT_K = fr(0.91346145);
+export const gameCameraAspect = () => V.GMSP01_NX ? fr(fr(640 * ASPECT_K) / 360) : fr(fr(660 * ASPECT_K) / 448);
 const isFollowMode = (m: number) => m === CM.FOLLOW || m === CM.FOLLOW_B || m === CM.FOLLOW_C || m === CM.FOLLOW_D || m === CM.FOLLOW_E;
 const isRailMode = (_m: number) => false;
 const isFixMode = (m: number) => (m >= CM.FIX_A && m <= CM.FIX_H) || m === CM.FIX_I;
