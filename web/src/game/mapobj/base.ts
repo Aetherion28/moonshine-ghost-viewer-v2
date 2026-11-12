@@ -520,7 +520,7 @@ export class MapObjBase extends LiveActor {
     /** loadHideObjInfo: event id, appear speed (x 0.06), appear Y speed (20 if negative), time (x 10, 1200 if none) */
     static loadHideObjInfo(s: Stream): [number, number, number, number] {
         const ev = s.s32();
-        const sp = fr(s.f32() * 0.06);
+        const sp = fr(s.f32() * fr(0.06));   // (0.06f)
         let ys = s.f32(); if (ys < 0) ys = 20;
         let t = s.s32(); t = t <= 0 ? 1200 : t * 10;
         return [ev, sp, ys, t];
