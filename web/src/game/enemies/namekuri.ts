@@ -9,7 +9,7 @@ import { V } from '../version.js';
 import { fr, V3, MsSin, MsCos, MsClamp, MsMtxSetRotRPH, mtx } from '../math.js';
 import { World, PathNode, LF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, LiveManager, LiveActor, SpineEnemy, MActor, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
-import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
+import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, SE_LF, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, WalkerNerves, Walker, walkerParams } from './walker.js';
 import { Launcher, LauncherManager } from './launcher.js';
 import { resetSRTV } from './generator.js';
@@ -240,12 +240,12 @@ export class NameKuri extends WalkerEnemy {
         const c = this.spine!.current;
         if (c !== SmallEnemyNerves.hitWaterJump && c !== SmallEnemyNerves.die && c !== NameKuriNerves.explosion) {
             this.spine!.pushNerve(SmallEnemyNerves.die);
-            if (!this.isAirborne()) this.onLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
+            if (!this.isAirborne()) this.onLiveFlag(SE_LF.MELT_ON_DEATH);
             this.onLiveFlag(LF.UNK20000);
         }
     }
     getGravityY() {
-        if (this.checkLiveFlag(LIVE_FLAG_MELT_ON_DEATH)) return 0.01;
+        if (this.checkLiveFlag(SE_LF.MELT_ON_DEATH)) return 0.01;
         if (this.spine!.current === NameKuriNerves.jumpAttack) return this.NP.mSLJumpAttackGravity;
         return this.gravity;
     }

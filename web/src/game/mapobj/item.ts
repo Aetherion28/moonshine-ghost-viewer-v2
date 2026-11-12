@@ -26,7 +26,7 @@ const COUNTS = new WeakMap<World, ItemCounts>();
 /** The collectibles taken so far (TFlagManager's counters, from the stage's start). */
 export function itemCounts(w: World): ItemCounts {
     let c = COUNTS.get(w);
-    if (!c) { c = { gold: 0, red: 0, blue: [], shines: [] }; COUNTS.set(w, c); }
+    if (!c) { c = { gold: 0, red: 0, blue: ((w as any).traceBlueCoins || []).slice(), shines: [] }; COUNTS.set(w, c); }   // (the blue coins the save had: getBlueCoinFlag)
     return c;
 }
 const tell = (w: World, kind: string, o: MapObjBase, extra: any = {}) => w.events.push({ t: w.tickCount, kind, data: { p: o.pos.clone(), name: o.name, ...extra } });

@@ -19,7 +19,7 @@ import { mat4 } from 'gl-matrix';
 import type { ANK1 } from '../../../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
 import { JointTransformInfo } from '../../../noclip/Common/JSYSTEM/J3D/J3DLoader.js';
 import { calcANK1JointAnimationTransform } from '../../../noclip/Common/JSYSTEM/J3D/J3DGraphAnimator.js';
-import { Skeleton, parseBCK, jointMatrices } from '../skeleton.js';
+import { Skeleton, parseBCK, jointMatricesExact } from '../skeleton.js';
 import type { World } from '../engine.js';
 import type { DemoBck, DemoView } from './polar.js';
 
@@ -89,7 +89,8 @@ class CameraBckDemo implements DemoBck {
         const A = this.anm;
         let posM: mat4, atM: mat4;
         if (this.sk) {
-            jointMatrices(this.sk, A, frame, IDENT, [1, 1, 1], this.mats);
+            // (J3DMtxCalc: the joints' rotations through J3D's sine table, j3dcalc.ts)
+            jointMatricesExact(this.sk, A, frame, IDENT as any, [1, 1, 1], this.mats);
             posM = this.mats[this.pos]; atM = this.mats[this.at];
         } else {
             // (no camera model: cam_interest the root, cam_position its child)

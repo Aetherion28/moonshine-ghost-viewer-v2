@@ -17,7 +17,7 @@ import { msVecMag2 } from '../vecops.js';
 import { fr, V3, MsSin, MsCos, MsClamp, MsMtxSetXYZRPH } from '../math.js';
 import { ANM_FRAME_RATE, World, LiveActor, LF, HF, HC, nerve, Spine, Stream, PathNode, ANM_BCK, HitActor, PSchema, MActor, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
-import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
+import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, SE_LF, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, WalkerNerves, walkerParams } from './walker.js';
 import { register } from '../scene.js';
 import { mapObjGlobals, newAndRegisterObj } from '../mapobj/base.js';
@@ -534,7 +534,7 @@ TelesaNerves.die = nerve<Telesa>('TNerveTelesaDie', (spine: S) => {
     }
     self.reduceFlyForce();
     if (self.checkCurAnmEnd(ANM_BCK) || self.unk184) {
-        self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
+        self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(SE_LF.MELT_ON_DEATH);
         self.holder = null;
         self.stopAnmSound();
         self.onHitFilter(HF.NO_COLLISION);

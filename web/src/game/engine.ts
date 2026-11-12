@@ -29,15 +29,10 @@ import { MapCollision, BGCheckData, IGNORE_WATER_SURFACE, IGNORE_WATER_THROUGH, 
 // ---------------------------------------------------------------- constants
 export const CUE_MOVE = 0x1, CUE_CALC_ANIM = 0x2, CUE_CALC_VIEW = 0x4, CUE_ENTRY = 0x200;
 
-export const LF = {
-    DEAD: 0x1, HIDDEN: 0x2, CLIPPED_OUT: 0x4, UNK8: 0x8, UNK10: 0x10, UNK20: 0x20, UNK40: 0x40, AIRBORNE: 0x80,
-    ENABLE_CLIPPING: 0x100, UNK200: 0x200, FORCE_SHADOW: 0x400, UNK800: 0x800, UNK1000: 0x1000, UNK2000: 0x2000,
-    // From here on the values are the US / PAL ones (VERSION_SELECT's default; GMSJ01's are half).
-    UNK4000: 0x8000, UNK8000: 0x10000, UNK10000: 0x20000, UNK20000: 0x40000, UNK40000: 0x80000, UNK80000: 0x100000,
-    UNK100000: 0x200000, UNK200000: 0x400000, UNK400000: 0x800000, UNK1000000: 0x2000000,
-    /** LIVE_FLAG_CALC_INT_FRAME: only PAL, JP 1.1 and 3D All-Stars (LiveActor.hpp) have it, the bit the US / PAL table leaves free */
-    CALC_INT_FRAME: 0x4000,
-};
+// (the live flags: version.ts, whose values follow the version as the decomp's VERSION_SELECT does)
+import { LF } from './version.js';
+import { setViewFrustumClipCheckPerspective, viewFrustumClipCheck } from './frustum.js';
+export { LF };
 export const HF = { NO_COLLISION: 0x1, NO_ATTACK: 0x2, NO_DAMAGE: 0x4 };
 export const MSG = {
     TRAMPLE: 0x0, HIP_DROP: 0x1, PUSH_UP: 0x2, SUPER_HIP_DROP: 0x3, TAKE: 0x4, ATTACH: 0x5, PUT: 0x6, THROWN: 0x7, DETACH: 0x8,
@@ -1750,6 +1745,8 @@ declare module './engine.js' {
         addToGroup(name: string, a: HitActor): void;
         inAreaCube(p: V3): boolean;
         inView(p: V3, r: number, far: number, near?: number): boolean;
+        /** TGraphics as the last frame's drawing left it: the camera's view matrix (C_MTXLookAt) and near plane, and gpCamera (Stage.runFrame) */
+        gfx: { view: Mtx; near: number; cam: { mFovy: number; mAspect: number } } | null;
         effect(kind: string, p: V3, s?: V3): void;
         /** TGCConsole2::startAppearBalloon(code, flag): the help balloon (told to the HUD) */
         balloon(code: number, flag: boolean): void;
@@ -1776,6 +1773,13 @@ World.prototype.makeCoinAppear = function (this: World, _c: any) { return null; 
 World.prototype.makeCoinAt = function (this: World, x: number, y: number, z: number) { this.events.push({ t: this.tickCount, kind: 'coin', data: { p: new V3(x, y, z) } }); return null; };
 /** ViewFrustumClipCheck against the frame's game camera (SetViewFrustumClipCheckPerspective's planes). */
 World.prototype.inView = function (this: World, p: V3, r: number, far: number, near?: number) {
+    // the game's: SetViewFrustumClipCheckPerspective(gpCamera's fovy and aspect, the near (the graphics' near
+    // plane unless given), far) and ViewFrustumClipCheck with the view matrix of the last frame's drawing (frustum.ts)
+    const g = this.gfx;
+    if (g) {
+        setViewFrustumClipCheckPerspective(g.cam.mFovy, g.cam.mAspect, near ?? g.near, far);
+        return viewFrustumClipCheck(g.view, p, r);
+    }
     const c = (this as any).clipCamera as { pos: number[]; quat: number[]; fovy: number; aspect: number; near: number } | null;
     if (!c) return true;
     // into view space: the inverse of the camera's rotation
@@ -1790,6 +1794,7 @@ World.prototype.inView = function (this: World, p: V3, r: number, far: number, n
     if (-(y + z * tv) * kv < -r || (y - z * tv) * kv < -r) return false;
     return true;
 };
+World.prototype.gfx = null;
 World.prototype.checkWater = function (this: World, h: ObjHitCheck) { if (this.water) this.water.checkHits(h); };
 /** TStrategy's groups by index (IDX). */
 export const GROUP_NAMES = ['マップグループ', '空グループ', 'マネージャーグループ', 'オブジェクトグループ', '落書きグループ', 'アイテムグループ', 'プレーヤーグループ', '敵グループ', 'ボスグループ', 'ＮＰＣグループ', '水パーティクルグループ', '初期化用グループ'];

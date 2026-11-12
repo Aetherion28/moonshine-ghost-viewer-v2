@@ -18,7 +18,7 @@ import { MTXRotAxisRad } from '../mapobj/lib.js';
 import { V } from '../version.js';
 import { World, HitActor, LF, HF, HC, MSG, nerve, Spine, Stream, CUE_MOVE, CUE_CALC_ANIM, SpineEnemy, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
-import { SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH } from './smallEnemy.js';
+import { SmallEnemyManager, SmallEnemyNerves, SE_LF } from './smallEnemy.js';
 import { WalkerEnemy, walkerParams } from './walker.js';
 import type { BGCheckData, WallCheck } from '../collision.js';
 import { SE } from '../sound.js';
@@ -326,7 +326,7 @@ AmiNokoNerves.die = nerve<AmiNoko>('TNerveAmiNokoDie', (spine: S) => {
         const d = V3.sub(self.pos, self.world.mario.pos);
         if (self.isDeadByWall() || !self.isAirborne() || d.length() > 10000) {
             self.onHitFilter(HF.NO_COLLISION);
-            self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LF.HIDDEN); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
+            self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LF.HIDDEN); self.offLiveFlag(SE_LF.MELT_ON_DEATH);
             self.holder = null;
             self.stopAnmSound();
             spine.reset();

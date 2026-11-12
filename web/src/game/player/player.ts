@@ -2022,6 +2022,8 @@ export interface IntroTiming {
     exShineGot?: boolean;
     /** a trace's first stage: the Shines its stage-start flag image has got (the save as recorded) */
     traceShines?: number[];
+    /** the trace's stage-start save: this stage's blue coins already got (runner.ts traceBlueCoinIds) */
+    traceBlueCoins?: number[];
     /** live play from the viewer's sleeping Mario: setMario lays him down asleep (sleepingStart) at this
      * phase (0..1) of sleep_wait instead of the stage's start; null: the stage's own start */
     sleepPhase?: number | null;

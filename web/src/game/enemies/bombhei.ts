@@ -19,7 +19,7 @@ import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
-import { SmallEnemyManager, rangeRand, LIVE_FLAG_MELT_ON_DEATH } from './smallEnemy.js';
+import { SmallEnemyManager, rangeRand, SE_LF } from './smallEnemy.js';
 import { WalkerEnemy, walkerParams } from './walker.js';
 import { msVecNormalize } from '../camera/lib.js';
 import { marioThrowPower, marioAngleY } from '../mapobj/lib.js';
@@ -287,7 +287,7 @@ BombHeiNerves.explosion = nerve<BombHei>('TNerveBombHeiExplosion', (spine: S) =>
     else if (self.checkCurAnmEnd(ANM_BCK)) {
         self.onHitFilter(HF.NO_COLLISION);
         self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8);
-        self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
+        self.offLiveFlag(SE_LF.MELT_ON_DEATH);
         self.holder = null;
         self.stopAnmSound();
         spine.reset();

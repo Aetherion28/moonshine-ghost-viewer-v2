@@ -45,7 +45,8 @@ import { CubeManager } from './mapwire.js';
 import type { StageFiles } from './scene.js';
 
 /** TBaseNPC's live flags (npc/base.ts LF_N: the US / PAL values) */
-const LF_N_DONT_TALK = LF.UNK10000, LF_N_SINK_BOTTOM = 0x1000000, LF_N_DONT_THROW = 0x40000000;
+// (TBaseNPC's version-dependent live flags, NpcBase.hpp)
+const LFN = { get DONT_TALK() { return LF.UNK10000; }, get SINK_BOTTOM() { return V.GMSJ01 ? 0x800000 : 0x1000000; }, get DONT_THROW() { return V.GMSJ01 ? 0x20000000 : 0x40000000; } };
 /** TBaseNPC::NPC_ACTION_DANCE */
 const NA_DANCE = 0x4;
 /** MARIO_STATUS_WAIT, MARIO_STATUS_FLAG_JUMPING */
@@ -260,8 +261,8 @@ const EV: Record<string, Ev> = {
     getNameRefHandle: (it, n) => { args(it, 1, n); it.pushInt(G(it).handles.get(search(it, it.pop().getDataString()))); },
     getNameRefName: (it, n) => { args(it, 1, n); const o = byHandle(it, it.pop()); it.pushStr(o ? o.name : ''); },
     getNPCType: (it, n) => { args(it, 1, n); let r = -1; const npc = getNameRefPtr(it, it.pop()); if (npc) r = (any(npc).actorType - AT.NPC_MONTE_M) | 0; it.pushInt(r); },
-    setFlagNPCDontTalk: (it, n) => { args(it, 2, n); const on = it.pop().getDataInt() !== 0; onLive(getNameRefPtr(it, it.pop()), LF_N_DONT_TALK, on); it.pushVoid(); },
-    setFlagNPCDontThrow: (it, n) => { args(it, 2, n); const on = it.pop().getDataInt() !== 0; onLive(getNameRefPtr(it, it.pop()), LF_N_DONT_THROW, on); it.pushVoid(); },
+    setFlagNPCDontTalk: (it, n) => { args(it, 2, n); const on = it.pop().getDataInt() !== 0; onLive(getNameRefPtr(it, it.pop()), LFN.DONT_TALK, on); it.pushVoid(); },
+    setFlagNPCDontThrow: (it, n) => { args(it, 2, n); const on = it.pop().getDataInt() !== 0; onLive(getNameRefPtr(it, it.pop()), LFN.DONT_THROW, on); it.pushVoid(); },
     setFlagNPCDead: (it, n) => { args(it, 2, n); const on = it.pop().getDataInt() !== 0; onLive(getNameRefPtr(it, it.pop()), LF.DEAD, on); it.pushVoid(); },
     isNearSameActors: (it, n) => {
         args(it, 3, n);
@@ -534,7 +535,7 @@ const NPC: Record<string, Ev> = {
     getAddressFromViewObjName: (it, n) => { args(it, 1, n); it.pushInt(G(it).handles.get(search(it, it.pop().getDataString()))); },
     checkCurNerve4Npc: (it, n) => checkNerve(it, n, false),
     checkLatestNerve4Npc: (it, n) => checkNerve(it, n, true),
-    isNpcSinkBottom: (it, n) => { args(it, 1, n); it.pushBool(checkLive(byHandle(it, it.pop()), LF_N_SINK_BOTTOM)); },
+    isNpcSinkBottom: (it, n) => { args(it, 1, n); it.pushBool(checkLive(byHandle(it, it.pop()), LFN.SINK_BOTTOM)); },
     isGameModeNormal: (it, n) => { args(it, 0, n); it.pushBool(!talkModeNow(W(it)) && !demoModeNow(W(it))); },
     __forceStartTalk: (it, n) => {
         args(it, 1, n);

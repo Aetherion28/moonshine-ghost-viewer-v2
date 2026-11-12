@@ -6,11 +6,12 @@
 // frame's last, and the goop's stamps after it.
 
 import { MSF } from './msflags.js';
+import { cMtxLookAt } from './frustum.js';
 import { DEMO_FLAG } from './talk.js';
-import { V3, srand } from './math.js';
+import { V3, srand, fr } from './math.js';
 import { traceFollowCtx, traceDirectorCtx } from './feedback.js';
 import {
-    World, Files, NameRef, Stream, parseSceneBin, SceneNode, ObjChara, HitActor, IDX, GROUP_NAMES, parseRails, GraphWeb, CUE_MOVE, CUE_CALC_ANIM,
+    World, Files, NameRef, Stream, parseSceneBin, SceneNode, ObjChara, HitActor, IDX, GROUP_NAMES, parseRails, GraphWeb, CUE_MOVE, CUE_CALC_ANIM, CUE_CALC_VIEW, CUE_ENTRY,
     LiveActor, shineIDofExStage, calcKeyCode,
 } from './engine.js';
 import { MapCollision, mapGridFromPayload, mapWarpFromPayload } from './collision.js';
@@ -47,6 +48,8 @@ export class Stage {
     world = new World();
     /** Every object made, in scene.bin's order. */
     objects: NameRef[] = [];
+    /** each loaded object's IdxGroup (its index in World.groups), for loadAfter's order */
+    private groupOf = new Map<NameRef, number>();
     /** Each object's scene.bin node. */
     nodeOf = new Map<NameRef, SceneNode>();
     camera: GameCamera | null = null;
@@ -86,6 +89,8 @@ export class Stage {
             for (let i = 0; i < 120; i++) w.flags.setFlag(MSF.SHINE_BASE + i, intro.traceShines.includes(i) ? 1 : 0);
             w.flags.setFlag(MSF.SHINE_COUNT, intro.traceShines.length);
         }
+        // and its blue coins of this stage (getBlueCoinFlag: a got one stays away, its NPC gives a 1-up instead)
+        if (intro && intro.traceBlueCoins) { for (const i of intro.traceBlueCoins) w.flags.setBlueCoinGot(map, i); (w as any).traceBlueCoins = intro.traceBlueCoins; }
         w.respawnShines = !!(intro && intro.respawnShines);
         w.marioPosIdx = intro && intro.marioPosIdx ? intro.marioPosIdx : 0;
         w.traceAlive = intro && intro.traceAlive ? intro.traceAlive : null;
@@ -132,7 +137,21 @@ export class Stage {
         this.walk(root, false);
         // the event group: a TEventWatcher per .sb of /common/sp and map/sp (eventwatcher.ts)
         installEventWatchers(w, files);
-        for (const o of this.objects) o.loadAfter();
+        // loadAfter down the scene's tree: an IdxGroup's (TViewObjPtrListT::loadAfter) runs over its list as it is
+        // then, so members added while it runs (the item manager's spare coins and bottles, newAndRegisterObj's
+        // initAndRegister) get theirs at the group's end
+        {
+            const done = new Set<NameRef>();
+            const endGroup = (g: number) => {
+                const list = w.groups[g] || [];
+                for (let i = 0; i < list.length; i++) { const a = list[i] as NameRef; if (!done.has(a)) { done.add(a); a.loadAfter(); } }
+            };
+            for (let i = 0; i < this.objects.length; i++) {
+                const o = this.objects[i]; done.add(o); o.loadAfter();
+                const g = this.groupOf.get(o) ?? -1;
+                if (g >= 0 && (i + 1 >= this.objects.length || (this.groupOf.get(this.objects[i + 1]) ?? -1) !== g)) endGroup(g);
+            }
+        }
         // TMarDirector::setup2: the event table's map objects get their event ids
         const evt = w.search('イベントテーブル') as any;
         if (evt && evt.list) evt.list.forEach((it: any, i: number) => { const obj = w.search(it.unk14) as any; if (obj) { obj.eventId = i & 0xFFFF; it.unk28 = obj; } });
@@ -189,6 +208,7 @@ export class Stage {
         this.nodeOf.set(o, n);
         // TViewObjPtrListT::load pushes a child before its load: what the load adds (a Fire Chomp's tail) comes after it
         if (group >= 0 && o instanceof HitActor) (w.groups[group] = w.groups[group] || []).push(o);
+        if (group >= 0) this.groupOf.set(o, group);
         try { o.load(new Stream(n.data)); }
         catch (e) { console.warn('[game] load', n.type, n.name, e); }
     }
@@ -302,10 +322,16 @@ export class Stage {
             if (this.pinWorld) this.pinWorld(this.qf);
             if (last) {
                 // PerformList CalcAnim
+                // (the managers' clipping in it reads the graphics' view matrix: the camera's of this frame,
+                // C_MTXLookAt(unk124, mUp, unk148), and its near plane)
+                if (P && P.simCamera) { const C: any = P.simCamera; w.gfx = { view: cMtxLookAt(C.unk124, C.mUp, C.unk148), near: fr(C.mNear), cam: C }; }
                 this.clip();
                 w.conductor.perform(CUE_CALC_ANIM);
                 // (TSplashManager's CUE_CALC_ANIM: move)
                 if (w.splashManager) w.splashManager.testPerform(CUE_CALC_ANIM);
+                // PerformList GX, 通常シーン描画ステージ: the conductor with CUE_CALC_VIEW | CUE_ENTRY (drawing; of the sim's
+                // objects only the NPC managers and NPCs act on it: LIVE_FLAG_UNK1000000)
+                for (const m of w.conductor.liveManagers) if ((m as any).takesEntryCue) m.testPerform(CUE_CALC_VIEW | CUE_ENTRY);
             }
             if (D && !last) D.changeState(this.qf);
         }

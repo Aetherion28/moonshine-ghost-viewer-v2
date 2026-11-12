@@ -81,7 +81,8 @@ const BCK_CLOSE = 2, BCK_DIE = 3, BCK_DIE_LOOP = 4, BCK_EAT_MISS = 5, BCK_BACK_B
     BCK_OPEN = 13, BCK_BREATH_IN = 14, BCK_APPEAR = 15, BCK_OUT_LOOP = 16, BCK_PAKU = 17, BCK_OUT_DAMAGED = 18, BCK_OUT_BROKEN = 19,
     BCK_TOOTH_FALL = 20, BCK_TOOTH_FALLEN = 21, BCK_TOOTH = 22;
 /** TBossEel::LIVE_FLAG_UNK10000: spinning the other way round */
-const LF_SPIN_REVERSE = LF.UNK10000;
+/** TBossEel's LIVE_FLAG_UNK10000: VERSION_SELECT(0x20000, GMSJ01(0x10000)) */
+const EEL_LF = { get SPIN_REVERSE() { return LF.UNK10000; } };
 
 // TBossEel's statics
 const mOpenRollSpeed = 0.3, mUseObjCollision = true, mForcePow = 10, mUseMapCollision = false;
@@ -963,7 +964,7 @@ function execSpin(e: BossEel) {
     const sp = chase(e.turnSpeed, P.mSLSpinMaxSpeed, P.mSLSpinAccel);
     e.turnSpeed = fr(sp);
     e.world.cameraShake?.keepShake(0x18, 1);
-    if (e.checkLiveFlag(LF_SPIN_REVERSE)) {
+    if (e.checkLiveFlag(EEL_LF.SPIN_REVERSE)) {
         e.rot.y = fr(e.rot.y - e.turnSpeed);
         if (e.rot.y <= 0) e.world.sound(SE.BS_UNG_ROLL, e.pos);
     } else {
@@ -972,7 +973,7 @@ function execSpin(e: BossEel) {
     }
     e.rot.y = MsWrap(e.rot.y, 0, 360);
 }
-const pickSpinDir = (e: BossEel) => { if (MsRandF() < 0.5) e.onLiveFlag(LF_SPIN_REVERSE); else e.offLiveFlag(LF_SPIN_REVERSE); };
+const pickSpinDir = (e: BossEel) => { if (MsRandF() < 0.5) e.onLiveFlag(EEL_LF.SPIN_REVERSE); else e.offLiveFlag(EEL_LF.SPIN_REVERSE); };
 EelNerves.firstSpin = nerve<BossEel>('TNerveBossEelFirstSpin', (spine: ES) => {
     const e = spine.body;
     if (spine.time === 0) { e.turnSpeed = 0; e.world.sound(SE.BS_UNG_ROLL, e.pos); e.setBckAnm(BCK_IN_LOOP); pickSpinDir(e); }
@@ -1013,7 +1014,7 @@ EelNerves.appear = nerve<BossEel>('TNerveBossEelAppear', (spine: ES) => {
         e.appearOffset = fr(e.appearOffset + fr(P.mSLAppearMoveDistY / duration));
         const sp = fr(e.turnSpeed * 0.98);
         e.turnSpeed = sp;
-        e.rot.y = fr(e.checkLiveFlag(LF_SPIN_REVERSE) ? e.rot.y - sp : e.rot.y + sp);
+        e.rot.y = fr(e.checkLiveFlag(EEL_LF.SPIN_REVERSE) ? e.rot.y - sp : e.rot.y + sp);
         e.rot.y = MsWrap(e.rot.y, 0, 360);
     } else if (e.checkCurAnmEnd(0)) {
         spine.pushAfterCurrent(EelNerves.outWait);

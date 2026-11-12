@@ -25,6 +25,28 @@ export const V = {
     pal50: false,
 };
 
+/**
+ * TLiveActor's live flags (Strategic/LiveActor.hpp). From UNK4000 on, VERSION_SELECT gives the US / PAL values
+ * and GMSJ01's are half of them (JP 1.0 has no CALC_INT_FRAME bit, so its later flags sit one bit lower):
+ * setVersion sets them.
+ */
+const LF_US = {
+    DEAD: 0x1, HIDDEN: 0x2, CLIPPED_OUT: 0x4, UNK8: 0x8, UNK10: 0x10, UNK20: 0x20, UNK40: 0x40, AIRBORNE: 0x80,
+    ENABLE_CLIPPING: 0x100, UNK200: 0x200, FORCE_SHADOW: 0x400, UNK800: 0x800, UNK1000: 0x1000, UNK2000: 0x2000,
+    UNK4000: 0x8000, UNK8000: 0x10000, UNK10000: 0x20000, UNK20000: 0x40000, UNK40000: 0x80000, UNK80000: 0x100000,
+    UNK100000: 0x200000, UNK200000: 0x400000, UNK400000: 0x800000, UNK1000000: 0x2000000,
+    /** LIVE_FLAG_CALC_INT_FRAME: only PAL, JP 1.1 and 3D All-Stars (LiveActor.hpp) have it, the bit the US / PAL table leaves free */
+    CALC_INT_FRAME: 0x4000,
+};
+export const LF = { ...LF_US };
+function setLiveFlags(jp10: boolean) {
+    for (const k of Object.keys(LF_US) as (keyof typeof LF_US)[]) {
+        const v = LF_US[k];
+        (LF as any)[k] = jp10 && k !== 'CALC_INT_FRAME' && v >= 0x8000 ? v >>> 1 : v;
+    }
+}
+setLiveFlags(true);
+
 /** Kept for the existing PAL-only call sites; prefer V. */
 export const VERSION = { id: 'GMSJ01', pal: false };
 
@@ -44,6 +66,7 @@ export function setVersion(id: GameVersion, o: { kr?: boolean; pal50?: boolean }
     V.GMSE01_KR = V.GMSE01 && !!o.kr;
     V.pal50 = (V.GMSP01 || V.GMSP01_NX) && !!o.pal50;
     VERSION.id = id; VERSION.pal = V.GMSP01;
+    setLiveFlags(V.GMSJ01);
 }
 
 /** The disc's own version (the boot.bin game ID; revision byte 0x07). */

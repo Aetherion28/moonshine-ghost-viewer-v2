@@ -17,7 +17,7 @@ import { fr, V3, Quat, mtx } from '../math.js';
 import { World, Stream, HitActor, LF, HF, MSG, ANM_BCK, nerve, Spine, Params, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
-import { SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH } from './smallEnemy.js';
+import { SmallEnemyManager, SmallEnemyNerves, SE_LF } from './smallEnemy.js';
 import { WalkerEnemy, walkerParams } from './walker.js';
 import { sendToMario } from '../mapobj/lib.js';
 import type { Rocket } from './rocket.js';
@@ -203,7 +203,7 @@ CoasterKillerNerves.explosion = nerve<CoasterKiller>('TNerveCoasterKillerExplosi
     else {
         self.onHitFilter(HF.NO_COLLISION);
         if (self.checkCurAnmEnd(ANM_BCK)) {
-            self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
+            self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(SE_LF.MELT_ON_DEATH);
             self.holder = null;
             spine.reset();
             spine.setNext(SmallEnemyNerves.die);

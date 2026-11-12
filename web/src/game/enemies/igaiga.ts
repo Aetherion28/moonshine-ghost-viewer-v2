@@ -10,7 +10,7 @@ import { msVecMag2 } from '../vecops.js';
 import { fr, V3, MsWrap, MsClamp, MsSin, MsRandF, MsGetRotFromZaxisY, MsIsInSight, MsMtxSetXYZRPH, MsMtxSetRotRPH, mtx, mtxMultVec, jgInvSqrt } from '../math.js';
 import { World, LF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, MActor, LiveActor, PathNode, CUE_CALC_ANIM, CUE_MOVE, SpineEnemy } from '../engine.js';
 import { AT } from '../actortypes.js';
-import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
+import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, SE_LF, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, walkerParams } from './walker.js';
 import { emitInfo, EmitInfo } from '../water.js';
 import { register } from '../scene.js';
@@ -453,7 +453,7 @@ export class Gorogoro extends RollEnemy {
         const s = this.spine!;
         if (s.current === GorogoroNerves.die) return;
         s.reset(); s.setNext(GorogoroNerves.die); s.pushAfterCurrent(s.default);
-        this.onLiveFlag(LF.UNK20000); this.onLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
+        this.onLiveFlag(LF.UNK20000); this.onLiveFlag(SE_LF.MELT_ON_DEATH);
     }
     behaveToWater(a: HitActor) {
         super.behaveToWater(a);
@@ -549,7 +549,7 @@ GorogoroNerves.die = nerve<Gorogoro>('TNerveGorogoroDie', (spine: SG) => {
     if (spine.time < 2) {
         self.onHitFilter(0x1);
         if (self.groundPlane.isWaterSurface() && !self.isAirborne()) self.generateEffectColumWater();
-        if (self.checkLiveFlag(LIVE_FLAG_MELT_ON_DEATH)) self.setMeltAnm();
+        if (self.checkLiveFlag(SE_LF.MELT_ON_DEATH)) self.setMeltAnm();
         else {
             (self.manager as GorogoroManager).requestPolluteModel(self.pos, self.scale);
             self.setDeadAnm();
@@ -557,7 +557,7 @@ GorogoroNerves.die = nerve<Gorogoro>('TNerveGorogoroDie', (spine: SG) => {
         }
     } else if (self.checkCurAnmEnd(ANM_BCK) || spine.time > 360) {
         self.onHitFilter(0x1);
-        self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LF.HIDDEN); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
+        self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LF.HIDDEN); self.offLiveFlag(SE_LF.MELT_ON_DEATH);
         self.holder = null;
         self.stopAnmSound();
         spine.reset();
@@ -566,7 +566,7 @@ GorogoroNerves.die = nerve<Gorogoro>('TNerveGorogoroDie', (spine: SG) => {
         self.genRandomItem();
         return true;
     }
-    if (self.checkLiveFlag(LIVE_FLAG_MELT_ON_DEATH)) self.walkBehavior(2, 0.5);
+    if (self.checkLiveFlag(SE_LF.MELT_ON_DEATH)) self.walkBehavior(2, 0.5);
     return false;
 });
 

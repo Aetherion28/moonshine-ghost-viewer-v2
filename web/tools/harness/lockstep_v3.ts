@@ -77,11 +77,45 @@ const hit = (a: number, n: number, v: number) => {
     say(`LS-WRITE tick ${curTick} +0x${(a - watching.lo + +('0x' + WATCH![2])).toString(16)} (${n} byte(s)) = 0x${(v >>> 0).toString(16)} by ${cpu.pc.toString(16)} ${who(cpu.pc)} (lr ${(cpu.lr >>> 0).toString(16)} ${who(cpu.lr)})`);
 };
 let curTick = 0, writes = 0;
+// LS_WATCHVAL=<hex word>: every 4-byte store of that value before the first tick (the stage's load), counted by the
+// storing function (run without the JIT until then): who set a field the comparer finds different from the start
+const WATCHVAL = process.env.LS_WATCHVAL ? parseInt(process.env.LS_WATCHVAL, 16) >>> 0 : null;
+const valHits = new Map<string, number>(), valAddr = new Map<number, string>();
+if (WATCHVAL !== null) {
+    cpu.jit = false;
+    // (the address of each such store, its function and caller: matched with the objects' fields at the first tick)
+    mem.w32 = (a: number, v: number) => {
+        if ((v >>> 0) === WATCHVAL) {
+            // the call chain: the back chain of stack frames from r1, each frame's saved lr at +4
+            const chain: string[] = [who(cpu.pc), who(cpu.lr)];
+            let sp = cpu.gpr[1] >>> 0;
+            for (let i = 0; i < 8; i++) { const nx = mem.r32(sp) >>> 0; if (nx < 0x80000000 || nx >= 0x81800000 || nx <= sp) break; chain.push(who(mem.r32(nx + 4) >>> 0)); sp = nx; }
+            valAddr.set(a >>> 0, chain.join(' < '));
+        }
+        w32(a, v);
+    };
+}
 // (lines for the comparer to print: a worker's own output is lost when it is stopped)
 const say = (text: string) => send({ log: text });
 const keyOf = (p: number, role: string, count: Map<string, number>) => { if (role !== 'actor') return role; const n = nameOf(p), k = count.get(n) || 0; count.set(n, k + 1); return `${n}#${k}`; };
+// LS_CALLS=<hex addr>,...: each call of those functions up to LS_CALLS_TO (default tick 12), with r3 and r4 (the
+// receiver and, for a perform, the cue) and the caller: the order the game runs things in
+const seenMtx = new Set<number>();
+if (process.env.LS_CALLS) {
+    const upto = +(process.env.LS_CALLS_TO || 12);
+    for (const a of process.env.LS_CALLS.split(',')) {
+        const addr = parseInt(a, 16) >>> 0;
+        cpu.hook(addr, (c: any) => { if (curTick <= upto && process.env.LS_CALLS_MTX && !seenMtx.has(curTick)) { seenMtx.add(curTick); const g = (c.gpr[3] >>> 0) + +process.env.LS_CALLS_MTX; const f: string[] = []; for (let i = 0; i < 12; i++) { const v = mem.r32(g + i * 4) >>> 0; f.push(new Float32Array(new Uint32Array([v]).buffer)[0].toPrecision(9)); } say(`LS-MTX ${curTick} ${f.join(' ')}`); }
+            if (curTick <= upto) say(`LS-CALL ${curTick} ${who(addr)} r3 ${(c.gpr[3] >>> 0).toString(16)} ${nameOf(c.gpr[3] >>> 0)} r4 0x${(c.gpr[4] >>> 0).toString(16)} from ${who(c.lr >>> 0)}`); return false; });
+    }
+}
 R.onTick = (tick) => {
     curTick = tick;
+    if (WATCHVAL !== null && valHits.size >= 0 && cpu.jit === false && !WATCH) {
+        const count = new Map<string, number>(), off = +('0x' + (process.env.LS_WATCHOFF || '0'));
+        for (const p of R.roster()) { const k = keyOf(p, 'actor', count), w = valAddr.get(p + off); if (w && mem.r32(p + off) === WATCHVAL) valHits.set(w, (valHits.get(w) || 0) + 1), say(`LS-VAL ${k} +0x${off.toString(16)} last stored by ${w}`); }
+        valHits.clear(); mem.w32 = w32; cpu.jit = true;
+    }
     if (WATCH) {
         const wt = +WATCH[0];
         if (tick === wt - 1) {

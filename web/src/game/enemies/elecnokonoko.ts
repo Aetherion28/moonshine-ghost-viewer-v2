@@ -23,7 +23,7 @@ import { fr, V3, MsIsInSight, MsRandF } from '../math.js';
 import { World, Stream, HitActor, SpineEnemy, PathNode, LF, HF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE, nerve, Spine, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
-import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
+import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, SE_LF, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, WalkerNerves, walkerParams } from './walker.js';
 import { EnemyAttachment } from './gesso.js';
 import { mapObjGlobals } from '../mapobj/base.js';
@@ -222,7 +222,7 @@ CarapaceNerves.ret = nerve<ElecCarapace>('TNerveElecCarapaceReturn', (spine: CS)
         host.catchIn();
     }
     if (spine.time < 20) host.catchIn();
-    if (host.isDeadByThunder()) { host.onLiveFlag(LIVE_FLAG_MELT_ON_DEATH); host.kill(); }
+    if (host.isDeadByThunder()) { host.onLiveFlag(SE_LF.MELT_ON_DEATH); host.kill(); }
     self.unk188 = fr(self.unk188 + host.unk1A0.mSLCarapaceSpinSpeed);
     if (self.unk188 > 360) self.unk188 = fr(self.unk188 - 360);
     self.pos.add(self.unk18C).fround();
@@ -343,7 +343,7 @@ export class ElecNokonoko extends WalkerEnemy {
     genRandomItem() {
         this.shell.kill();
         super.genRandomItem();
-        if (this.checkLiveFlag(LIVE_FLAG_MELT_ON_DEATH)) {
+        if (this.checkLiveFlag(SE_LF.MELT_ON_DEATH)) {
             const im = mapObjGlobals(this.world).itemManager as any, p = this.shell.pos;
             const o = im ? im.makeObjAppearAt(p.x, p.y, p.z, AT.COIN, true) : null;
             if (o) { o.vel.set(0, 20, 0); o.offLiveFlag(LF.UNK10); }

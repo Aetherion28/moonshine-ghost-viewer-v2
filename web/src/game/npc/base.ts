@@ -10,7 +10,7 @@
 // an NPC only goes into its talk nerve if something sets LF_N.UNK40000).
 
 import { MSF } from '../flags.js';
-import { anmFrameRate } from '../version.js';
+import { anmFrameRate, V } from '../version.js';
 import { fr, V3, MsRandF, MsRandI, MsWrap, MsClamp, MsGetRotFromZaxis, MsGetRotFromZaxisY, MsIsInSight, JMASSin, JMASCos, matan, s16, IConverge } from '../math.js';
 import { MsSqrtf, fmadd } from '../player/fmath.js';
 import { msVecMag2 } from '../vecops.js';
@@ -22,7 +22,7 @@ import { NPC_BAS_TABLES } from '../bastables.js';
 import { CLBDegToShortAngle, CLBRoundfS16, chaseSpeedF, chaseSpeedS, chaseFrameF, msVecNormalize, ratioI, twoDegS } from '../camera/lib.js';
 import { MsMtxSetRotRPH, mtx } from '../math.js';
 import { mat4 } from 'gl-matrix';
-import { newAndRegisterObjByEventID } from '../mapobj/item.js';
+import { newAndRegisterObjByEventID, itemCounts } from '../mapobj/item.js';
 import { mapObjGlobals, MapObjBase } from '../mapobj/base.js';
 import type { ItemManager } from '../mapobj/item.js';
 import { marioGroundLevel, marioTouchGround4cm, mapObjWave } from '../mapobj/lib.js';
@@ -41,13 +41,15 @@ export const NA = {
     UNK1: 0x1, UNK2: 0x2, DANCE: 0x4, RUN: 0x8, UNK10: 0x10, UNK20: 0x20, UNK40: 0x40, UNK80: 0x80, UNK100: 0x100, HAPPY: 0x200,
     UNK400: 0x400, UNK800: 0x800, UNK1000: 0x1000, UNK2000: 0x2000, BURNING: 0x4000,
 };
-/** The live flags NPC code uses past engine.ts's LF table (US / PAL values, as LF's are). */
+/** The live flags NPC code uses past engine.ts's LF table (each version's, as LF's are). */
 export const LF_N = {
-    UNK10000: LF.UNK10000, UNK20000: LF.UNK20000, UNK40000: LF.UNK40000, UNK80000: LF.UNK80000, UNK100000: LF.UNK100000,
-    UNK200000: LF.UNK200000, UNK400000: LF.UNK400000, UNK1000000: LF.UNK1000000,
-    UNK2000000: 0x4000000, UNK4000000: 0x8000000, UNK8000000: 0x10000000, UNK10000000: 0x20000000,
-    /** TBaseNPC::LIVE_FLAG_DONT_TALK, LIVE_FLAG_SINK_BOTTOM, LIVE_FLAG_DONT_THROW */
-    DONT_TALK: LF.UNK10000, SINK_BOTTOM: 0x1000000, DONT_THROW: 0x40000000,
+    get UNK10000() { return LF.UNK10000; }, get UNK20000() { return LF.UNK20000; }, get UNK40000() { return LF.UNK40000; },
+    get UNK80000() { return LF.UNK80000; }, get UNK100000() { return LF.UNK100000; }, get UNK200000() { return LF.UNK200000; },
+    get UNK400000() { return LF.UNK400000; }, get UNK1000000() { return LF.UNK1000000; },
+    get UNK2000000() { return V.GMSJ01 ? 0x2000000 : 0x4000000; }, get UNK4000000() { return V.GMSJ01 ? 0x4000000 : 0x8000000; },
+    get UNK8000000() { return V.GMSJ01 ? 0x8000000 : 0x10000000; }, get UNK10000000() { return V.GMSJ01 ? 0x10000000 : 0x20000000; },
+    /** TBaseNPC::LIVE_FLAG_DONT_TALK, LIVE_FLAG_SINK_BOTTOM, LIVE_FLAG_DONT_THROW (NpcBase.hpp, VERSION_SELECT) */
+    get DONT_TALK() { return LF.UNK10000; }, get SINK_BOTTOM() { return V.GMSJ01 ? 0x800000 : 0x1000000; }, get DONT_THROW() { return V.GMSJ01 ? 0x20000000 : 0x40000000; },
 };
 const T = AT;
 /** sinf of an f32 (the C library's, rounded) */
@@ -569,8 +571,8 @@ export class BaseNPC extends SpineEnemy {
         const burning = this.isNormalMonteM() && this.checkActionFlag(NA.BURNING);
         let b3 = true;
         if (coin === 2000 || coin === 200 || (coin >= 0 && coin < 50)) {
-            // (a blue coin already got: TFlagManager's blue coin flags; none in the sim yet)
-            const got = false;
+            // TFlagManager::getBlueCoinFlag(stage, coin): a blue coin already got gives a 1-up instead
+            const got = coin >= 0 && coin < 50 && itemCounts(this.world).blue.includes(coin);
             if (burning && got) { b3 = false; this.offActionFlag(NA.BURNING | NA.UNK80 | NA.RUN); }
             else { if (got) coin = 2000; this.coin = new NpcCoin(this, coin); }
         }

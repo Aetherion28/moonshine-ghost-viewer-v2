@@ -9,7 +9,7 @@
 import { fr, V3, MsWrap, MsGetRotFromZaxisY, MsMtxSetRotRPH, mtx, Mtx } from '../math.js';
 import { World, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, ANM_BCK, ANM_BTP, ANM_BRK, ANM_FRAME_RATE, HitActor, LiveManager } from '../engine.js';
 import { AT } from '../actortypes.js';
-import { SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
+import { SmallEnemyManager, SmallEnemyNerves, SE_LF, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, WalkerNerves, walkerParams } from './walker.js';
 import { emitInfo, EmitInfo } from '../water.js';
 import { register } from '../scene.js';
@@ -464,7 +464,7 @@ PopoNerves.explosion = nerve<Popo>('TNervePopoExplosion', (spine: S) => {
         self.explosionEffect();
     }
     if (spine.time > self.PP.mSLExplosionEmitTime) {
-        self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LF.HIDDEN); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
+        self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LF.HIDDEN); self.offLiveFlag(SE_LF.MELT_ON_DEATH);
         self.holder = null;
         spine.reset();
         spine.setNext(SmallEnemyNerves.die);

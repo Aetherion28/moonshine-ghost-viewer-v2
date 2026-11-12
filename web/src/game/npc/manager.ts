@@ -5,9 +5,9 @@
 
 import { isInOtherFastCube } from '../mapwire.js';
 import { fr } from '../math.js';
-import { World, Stream, EnemyManager, LiveManager, ObjManager, AnmData, LF } from '../engine.js';
+import { World, Stream, EnemyManager, LiveManager, ObjManager, AnmData, LF, CUE_ENTRY } from '../engine.js';
 import { register } from '../scene.js';
-import { BaseNPC, npcParams, condParams } from './base.js';
+import { BaseNPC, npcParams, condParams, LF_N } from './base.js';
 import { AT } from '../actortypes.js';
 
 /** Each manager class: its model file, the folder it's loaded from (createModelDataArrayBase) and where its animations are (createAnmData). */
@@ -53,6 +53,13 @@ export class NPCManager extends EnemyManager {
     getMActorAnmData() {
         if (!this.anmData) this.anmData = new AnmData(this.info.anm ? this.info.anm.toLowerCase() : this.folder(), this.world.files);
         return this.anmData;
+    }
+    /** the conductor's CUE_CALC_VIEW | CUE_ENTRY pass (Stage.runFrame) reaches the NPCs */
+    readonly takesEntryCue = true;
+    /** TNPCManager::perform: CUE_ENTRY marks every NPC (LIVE_FLAG_UNK1000000), which its own perform clears unless clipped out */
+    perform(cue: number) {
+        if (cue & CUE_ENTRY) for (const o of this.objs as BaseNPC[]) o.onLiveFlag(LF_N.UNK1000000);
+        super.perform(cue);
     }
     /** clipEnemies: one in another fast cube (its position + 75 up) is out, else the frustum (near unk54, the stage's far clip, radius unk3C; in Delfino Plaza at least 15000 in a demo or under ground) */
     clipActors() {

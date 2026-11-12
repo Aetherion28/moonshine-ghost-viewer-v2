@@ -24,7 +24,7 @@ import { fr, V3, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsGetRotFromZaxis, MsS
 import { ANM_FRAME_RATE, World, Stream, HitActor, LiveActor, SpineEnemy, PathNode, LF, HF, HC, MSG, ANM_BCK, MActor, nerve, Spine, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
-import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
+import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, SE_LF, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, walkerParams } from './walker.js';
 import { marioVel } from './koopa.js';
 import { mapObjGlobals } from '../mapobj/base.js';
@@ -345,7 +345,7 @@ KillerNerves.explosion = nerve<Killer>('TNerveKillerExplosion', (spine: KS) => {
     else {
         self.onHitFilter(HF.NO_COLLISION);
         if (self.checkCurAnmEnd(ANM_BCK)) {
-            self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
+            self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(SE_LF.MELT_ON_DEATH);
             self.holder = null;
             self.stopAnmSound();
             spine.reset();

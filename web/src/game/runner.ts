@@ -472,6 +472,8 @@ export function traceShadowMarioEvent(g: any, segment: number, area: number, epi
 }
 
 /** the Shine IDs (0..119) a recorded flag image has got */
+/** the stage's blue coins the recorded save has (TFlagManager::getBlueCoinFlag(area, 0..49)) */
+export function traceBlueCoinIds(f: FlagManager, area: number): number[] { const out: number[] = []; for (let i = 0; i < 50; i++) if (f.getBlueCoinFlag(area, i)) out.push(i); return out; }
 export function traceShineIds(f: FlagManager): number[] { const out: number[] = []; for (let i = 0; i < 120; i++) if (f.getShineFlag(i)) out.push(i); return out; }
 
 export function traceStageCarry(g: any, segment: number): { flags: FlagManager; prevArea: number } | null {
@@ -797,6 +799,7 @@ export class SimRunner {
                     const exId = shineIDofExStage(area);
                     if (exId !== 0xFF) intro.exShineGot = c.flags.getShineFlag(exId);
                     intro.traceShines = traceShineIds(c.flags);
+                    intro.traceBlueCoins = traceBlueCoinIds(c.flags, area);
                     const first = g.trace.ticks.find((t: any) => t.mario && t.mario.status >>> 0 !== 0x133F) as { mario: MarioView } | undefined;   // (past the stage's load pose: setMario's first)
                     if (area === 1 && first) {
                         intro.marioPosIdx = decideMarioPosIdx(traceStageCarry(g, segI)!.flags, area, c.prevArea).posIdx;

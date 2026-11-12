@@ -29,7 +29,7 @@ import { frsqrte } from '../math.js';
 import { msVecMag2 } from '../vecops.js';
 import { World, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, HitActor, LiveActor, TakeActor, SpineEnemy, AnmData, LiveManager, CUE_MOVE, CUE_CALC_ANIM, ANM_BCK, ANM_FRAME_RATE, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
-import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, LIVE_FLAG_MELT_ON_DEATH, rangeRand } from './smallEnemy.js';
+import { SmallEnemy, SmallEnemyManager, SmallEnemyNerves, SE_LF, rangeRand } from './smallEnemy.js';
 import { WalkerEnemy, WalkerNerves, walkerParams } from './walker.js';
 import { Launcher, LauncherManager } from './launcher.js';
 import { resetSRTV } from './generator.js';
@@ -81,10 +81,11 @@ export class HamuKuriManager extends SmallEnemyManager {
     }
     loadAfter() {
         super.loadAfter();
-        // (TMapObjBaseManager::newAndRegisterObj("mushroom1up"): items aren't simulated)
+        newAndRegisterObj(this.world, 'mushroom1up');
         this.unk60 = AT.FOOTBALL;
-        // gpMapObjManager's objects of that type: none here (map objects aren't simulated)
-        this.footballs = [];
+        // gpMapObjManager's objects of that type
+        const mm = mapObjGlobals(this.world).mapObjManager;
+        this.footballs = mm ? (mm.objs as LiveActor[]).filter((o) => o.isActorType(this.unk60)) : [];
     }
     createModelData() { this.createModelDataArray(['default.bmd']); }
     /** createAnmData: MActorAnmData::init("/scene/hamukurianm") */
@@ -424,7 +425,7 @@ HamuNerves.wallDie = nerve<HamuKuri>('TNerveHamuKuriWallDie', (spine: S) => {
     } else {
         const wait = self.hmgr.unk5C;
         if (self.checkCurAnmEnd(ANM_BCK) && spine.time > wait + self.mactor!.getFrameCtrl(ANM_BCK)!.end) {
-            self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.onLiveFlag(LF.UNK20000); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
+            self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.onLiveFlag(LF.UNK20000); self.offLiveFlag(SE_LF.MELT_ON_DEATH);
             self.holder = null;
             self.stopAnmSound();
             spine.reset(); spine.setNext(SmallEnemyNerves.die); spine.pushAfterCurrent(spine.default);

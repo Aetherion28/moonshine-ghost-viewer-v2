@@ -64,7 +64,8 @@ export class SmallEnemyManager extends EnemyManager {
     getHolder(i: number) { for (let k = 0; k < this.getActiveObjNum(); ++k) if (k !== i && (this.objs[k] as SmallEnemy).checkLiveFlag(LF.CLIPPED_OUT)) return this.objs[k] as SmallEnemy; return null; }
 }
 
-export const LIVE_FLAG_MELT_ON_DEATH = LF.UNK10000;
+/** TSmallEnemy::SE_LF.MELT_ON_DEATH: VERSION_SELECT(0x20000, GMSJ01(0x10000)), LF.UNK10000's bit */
+export const SE_LF = { get MELT_ON_DEATH() { return LF.UNK10000; } };
 
 export class SmallEnemy extends SpineEnemy {
     unk150 = 0; unk154 = 1; unk158 = 1; currentBck = -1; sprayCooldown = 0; unk164 = 0; unk165 = false;
@@ -124,7 +125,7 @@ export class SmallEnemy extends SpineEnemy {
         this.bodyRadius = P.mSLBodyRadius; this.wallRadius = P.mSLWallRadius; this.headHeight = P.mSLHeadHeight;
         this.scaledBodyRadius = fr(this.bodyScale * this.bodyRadius * 15);
         this.resetHitPoints();
-        this.offLiveFlag(LF.DEAD); this.offLiveFlag(LF.UNK20000); this.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH); this.offLiveFlag(LF.HIDDEN);
+        this.offLiveFlag(LF.DEAD); this.offLiveFlag(LF.UNK20000); this.offLiveFlag(SE_LF.MELT_ON_DEATH); this.offLiveFlag(LF.HIDDEN);
         if (P.mSLGenerateOnlyDead) this.offLiveFlag(LF.UNK800); else this.onLiveFlag(LF.UNK800);
         this.tracer.prev = -1;
         this.goToShortestNextGraphNode();
@@ -430,7 +431,7 @@ export const SmallEnemyNerves = {
                 self.onHitFilter(HF.NO_COLLISION);
                 if (self.groundPlane.isWaterSurface() && !self.isAirborne()) self.generateEffectColumWater();
             }
-            if (self.checkLiveFlag(LIVE_FLAG_MELT_ON_DEATH)) self.setMeltAnm();
+            if (self.checkLiveFlag(SE_LF.MELT_ON_DEATH)) self.setMeltAnm();
             else {
                 if (self.unk150 & 0x20) {
                     const man = self.manager as SmallEnemyManager;
@@ -445,7 +446,7 @@ export const SmallEnemyNerves = {
         if ((self.checkCurAnmEnd(ANM_BCK) && spine.time > wait + self.mactor!.getFrameCtrl(ANM_BCK)!.end) || spine.time > 360 || self.unk184 !== 0) {
             self.genRandomItem();
             self.onHitFilter(HF.NO_COLLISION);
-            self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LF.HIDDEN); self.offLiveFlag(LIVE_FLAG_MELT_ON_DEATH);
+            self.onLiveFlag(LF.DEAD); self.onLiveFlag(LF.UNK8); self.offLiveFlag(LF.HIDDEN); self.offLiveFlag(SE_LF.MELT_ON_DEATH);
             self.holder = null;
             spine.reset();
             spine.setNext(SmallEnemyNerves.die);

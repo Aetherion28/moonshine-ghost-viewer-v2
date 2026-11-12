@@ -258,6 +258,8 @@ export class FlagManager {
         const st = FlagManager.stageOf(area); blueCoin &= 0xFF; if (blueCoin >= 50) blueCoin = 0;
         return this.getFlag(MSF.BLUE_COIN_BASE + (st - 1) * 50 + blueCoin) !== 0;
     }
+    /** the blue coin's flag alone (a recorded save's: its count is the save's own) */
+    setBlueCoinGot(area: number, blueCoin: number) { this.setFlag(MSF.BLUE_COIN_BASE + (FlagManager.stageOf(area) - 1) * 50 + (blueCoin & 0xFF), 1); }
     /** setBlueCoinFlag(area, blueCoin) */
     setBlueCoinFlag(area: number, blueCoin: number) {
         const st = FlagManager.stageOf(area); blueCoin &= 0xFF; if (blueCoin >= 50) blueCoin = 0;
