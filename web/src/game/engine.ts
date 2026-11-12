@@ -1138,6 +1138,8 @@ export class SpineEnemy extends LiveActor {
     unk128 = 0; unk12C = 0; unk130 = 0;
     distToMarioSq = 0; unk138: BGCheckData | null = null;
     hitPoints = 1; marchSpeed = 1; turnSpeed = 5; bodyScale = 1; wallRadius = 1;
+    /** TSpineEnemy::getWallRadius: mBodyScale * mWallRadius */
+    getWallRadius() { return Math.fround(this.bodyScale * this.wallRadius); }
     constructor(world: World, name = '') { super(world, name); this.spine = new Spine(this); }
     get mgr() { return this.manager as EnemyManager | null; }
     /** TSpineEnemy::getSaveParam: the manager's parameters (its TSpineEnemyParams subclass, read). */
@@ -1239,7 +1241,8 @@ export class SpineEnemy extends LiveActor {
     doShortCut() {
         if (this.goalStack.length <= 0) return;
         if (vLen(V3.sub(this.goal.point(), this.pos)) < fr(this.getBodyRadius())) { if (this.goalStack.length) this.goal = this.popGoal(); return; }
-        const node = this.popGoal();
+        // (mGoalPath.peek(): the stack keeps it)
+        const node = this.goalStack[this.goalStack.length - 1];
         const d = V3.sub(node.point(), this.pos);
         if (d.x === 0 && d.y === 0 && d.z === 0) d.x = 1;
         jgNormalize(d); d.scale(this.marchSpeed).add(this.pos);

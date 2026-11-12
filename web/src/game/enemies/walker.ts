@@ -64,7 +64,7 @@ export class Walker {
             e.groundHeight = h; e.groundPlane = d;
         }
         const f31 = n.y;
-        const r: WallCheck = { center: [n.x, n.y + e.getHeadHeight(), n.z], radius: e.wallRadius, maxResults: 4, flags: 0, results: [] };
+        const r: WallCheck = { center: [n.x, n.y + e.getHeadHeight(), n.z], radius: e.getWallRadius(), maxResults: 4, flags: 0, results: [] };
         if (!w.isTouchedWallsAndMoveXZ(r)) { this.walls.length = 0; this.unk14 = 0; this.unk24 = 0; e.unk138 = null; }
         else {
             let wall: BGCheckData | null = null;
@@ -81,19 +81,19 @@ export class Walker {
                     const a0 = lv.clone(); a0.y = 0;
                     if (a0.dot(side) > 0) this.unk14 = 2; else { side.scale(-1); this.unk14 = 1; }
                     let far = calcFarthestVertex(wall, e.pos, side);
-                    let q = e.pos.clone().add(side.clone().scale(e.wallRadius * 2 + far));
+                    let q = e.pos.clone().add(side.clone().scale(fr(fr(e.getWallRadius() * 2) + far)));
                     const qp = { x: q.x, z: q.z };
-                    if (w.isTouchedOneWallAndMoveXZ(qp, q.y + e.getHeadHeight(), e.wallRadius)) {
+                    if (w.isTouchedOneWallAndMoveXZ(qp, q.y + e.getHeadHeight(), e.getWallRadius())) {
                         const back = side.clone().scale(-1);
                         far = calcFarthestVertex(wall, e.pos, back);
-                        q = e.pos.clone().add(back.clone().scale(e.wallRadius * 2 + far));
+                        q = e.pos.clone().add(back.clone().scale(fr(fr(e.getWallRadius() * 2) + far)));
                         const qp2 = { x: q.x, z: q.z };
-                        if (!w.isTouchedOneWallAndMoveXZ(qp2, q.y + e.getHeadHeight(), e.wallRadius)) side.scale(-1);
+                        if (!w.isTouchedOneWallAndMoveXZ(qp2, q.y + e.getHeadHeight(), e.getWallRadius())) side.scale(-1);
                     }
                 } else if (this.unk14 === 1) side.scale(-1);
                 const far = calcFarthestVertex(wall, e.pos, side);
-                const k = e.wallRadius * 2 + far;
-                const goal = e.pos.clone().sub(N.clone().scale(e.wallRadius)).add(side.clone().scale(k));
+                const k = fr(fr(e.getWallRadius() * 2) + far);
+                const goal = e.pos.clone().sub(N.clone().scale(e.getWallRadius())).add(side.clone().scale(k));
                 if (!e.goalStack.length) { e.pushGoal(e.goal); e.goal = new PathNode(null, goal); }
                 else e.goal = new PathNode(null, goal);
             }
