@@ -8,7 +8,7 @@
 import { MSF } from './msflags.js';
 import { DEMO_FLAG } from './talk.js';
 import { V3, srand } from './math.js';
-import { traceFollowCtx } from './feedback.js';
+import { traceFollowCtx, traceDirectorCtx } from './feedback.js';
 import {
     World, Files, NameRef, Stream, parseSceneBin, SceneNode, ObjChara, HitActor, IDX, GROUP_NAMES, parseRails, GraphWeb, CUE_MOVE, CUE_CALC_ANIM,
     LiveActor, shineIDofExStage, calcKeyCode,
@@ -242,7 +242,8 @@ export class Stage {
             if (P && tick > 0) P.padTick();
             // STATE_PAUSE_MENU (and the guide, the card save, the reset): the tick runs without CUE_MOVE and
             // CUE_CALC_ANIM (mMoveTickCount stays), only the console and the director's movement
-            const noMove = !!D && NO_MOVE_STATES.has(D.state);
+            const rec = traceDirectorCtx.at ? traceDirectorCtx.at(this.qf) : null;
+            const noMove = !!D && (NO_MOVE_STATES.has(D.state) || (rec !== null && NO_MOVE_STATES.has(rec)));
             if (!noMove) w.moveTickCount++;
             w.tickCount++;
             this.qf++;

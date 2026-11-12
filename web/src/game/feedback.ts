@@ -161,6 +161,19 @@ export function traceSessionByTick(S: { qf: number[]; bytes: Uint8Array[] } | un
 }
 
 
+
+/** The director's recorded state (the frame records' TMarDirector state; mstrghost.ts trace.director) at a stage tick: a
+ *  change is listed at the tick before it. The sim's director takes the recording's frozen states (pause, card save, the
+ *  guide, a reset: NO_MOVE_STATES) from here (only Mario is simulated). */
+export const traceDirectorCtx: { at: ((t: number) => number | null) | null } = { at: null };
+export function traceDirectorByTick(D: { count: number; qf: Int32Array; state: Int32Array }, base: number) {
+    return (t: number): number | null => {
+        const q = base + t;
+        let lo = 0, hi = D.count;
+        while (lo < hi) { const m = (lo + hi) >> 1; if (D.qf[m] <= q) lo = m + 1; else hi = m; }
+        return lo ? D.state[lo - 1] : null;
+    };
+}
 /**
  * Following the recorded actors (the user's direction, 2026-11-12: only Mario is simulated, everything else may come
  * from the recording). At each frame's start every sim actor of the conductor's managers takes its recorded place,
@@ -216,6 +229,7 @@ export class TraceFeeds {
     actor: ((key: number, x: number, z: number, d: number) => [number, number, number] | null) | null = null;
     session: ((field: SessionField) => number | null) | null = null;
     follow: ((actors: Iterable<any>, keyOf: (a: any) => number) => void) | null = null;
+    director: ((t: number) => number | null) | null = null;
     constructor(g: any, q0: number, qfNow: () => number, off: { feedback?: boolean; status?: boolean; rng?: boolean; actor?: boolean; session?: boolean; follow?: boolean } = {}) {
         const T = g && g.trace;
         if (!T) return;
@@ -228,15 +242,16 @@ export class TraceFeeds {
         if (!off.actor && T.actors && T.actors.count) this.actor = traceActorsByTick(T.actors, q0 + g.header.startQf, qfNow);
         // the recorded actors' places at each frame's start (only Mario is simulated)
         if (!off.follow && T.actors && T.actors.count) this.follow = traceActorFollow(T.actors, q0 + g.header.startQf, qfNow);
+        if (!off.follow && T.director && T.director.count) this.director = traceDirectorByTick(T.director, q0 + g.header.startQf);
         // Moonshine's settings as the runner changed them (the Ricco fruit machine: mapobj/ricco.ts)
         if (!off.session) this.session = traceSessionByTick(T.session, q0, qfNow);
     }
     install() {
         feedbackCtx.take = this.feedback ? this.feedback.take : null;
-        traceStatusCtx.at = this.status; traceRngCtx.next = this.rng; traceActorCtx.at = this.actor; sessionCtx.at = this.session; traceFollowCtx.apply = this.follow;
+        traceStatusCtx.at = this.status; traceRngCtx.next = this.rng; traceActorCtx.at = this.actor; sessionCtx.at = this.session; traceFollowCtx.apply = this.follow; traceDirectorCtx.at = this.director;
     }
     static clear() {
         feedbackCtx.take = null;
-        traceStatusCtx.at = null; traceRngCtx.next = null; traceActorCtx.at = null; sessionCtx.at = null; traceFollowCtx.apply = null;
+        traceStatusCtx.at = null; traceRngCtx.next = null; traceActorCtx.at = null; sessionCtx.at = null; traceFollowCtx.apply = null; traceDirectorCtx.at = null;
     }
 }
