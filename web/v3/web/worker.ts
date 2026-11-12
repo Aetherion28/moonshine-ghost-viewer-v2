@@ -3,12 +3,16 @@
 //
 // To the worker:   { type: 'start', trace: ArrayBuffer, disc: DiscSource, slice?: instructions a slice }
 //                  { type: 'cancel' }
-//                  (live: true asks for the game's state at every frame as well)
+//                  (live: true asks for the game's state at every frame as well; gx: true for what the game sends
+//                  its GPU, each video frame of a stage)
 // From the worker: { type: 'progress', ... } (VerifyProgress), { type: 'done', report: VerifyReport },
 //                  with live: { type: 'intro', ... } (VerifyIntro) once, { type: 'live', ... } (LiveBatch) before each progress
+//                  with gx: { type: 'gxframe', ... } (GxFrame, gxframe.ts) for each video frame, its buffers handed over
 import { openDiscSource } from './discs.ts';
 import { verify, type VerifyProgress, type VerifyReport, type VerifyIntro, type LiveSample } from './verify.ts';
 export type { VerifyProgress, VerifyReport, VerifyIntro } from './verify.ts';
+import type { GxFrame } from './gxframe.ts';
+export type { GxFrame } from './gxframe.ts';
 
 /** the game's state over the frames since the last batch: Mario and the camera six numbers a frame, the actors three each from `actorAt[k]` to `actorAt[k + 1]` */
 export interface LiveBatch { type: 'live'; attempt: number; frames: Int32Array; ticks: Int32Array; mario: Float32Array; camera: Float32Array; actorAt: Uint32Array; actors: Float32Array }
@@ -25,6 +29,13 @@ function flush() {
     b.actorAt[n] = at; pending = [];
     out.postMessage(b, [b.frames.buffer, b.ticks.buffer, b.mario.buffer, b.camera.buffer, b.actorAt.buffer, b.actors.buffer]);
 }
+/** A frame of GPU commands goes as it is: its bytes are in two buffers (the stream, the patches) and the registers' three. */
+function postGx(f: GxFrame) {
+    const bufs = new Set<ArrayBufferLike>([f.fifo.buffer]);
+    for (const p of f.patches) bufs.add(p.data.buffer);
+    if (f.regs) { bufs.add(f.regs.cp.buffer); bufs.add(f.regs.bp.buffer); bufs.add(f.regs.xf.buffer); }
+    out.postMessage(f, [...bufs] as Transferable[]);
+}
 let cancelled = false, running = false;
 
 self.onmessage = (ev: MessageEvent) => {
@@ -36,5 +47,6 @@ self.onmessage = (ev: MessageEvent) => {
         slice: m.slice || 50e6, progress: (p) => { flush(); post(p); }, cancelled: () => cancelled, breathe: () => new Promise((res) => setTimeout(res, 0)),
         intro: m.live ? post : undefined,
         live: m.live ? (s, attempt) => { if (attempt !== pendingAttempt) { flush(); pendingAttempt = attempt; } pending.push(s); } : undefined,
+        gx: m.gx ? postGx : undefined,
     }).then((report) => { flush(); post({ type: 'done', report }); }).finally(() => { running = false; });
 };

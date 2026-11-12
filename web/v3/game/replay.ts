@@ -14,6 +14,7 @@ import { f32FromBits } from '../ppc/fpu.js';
 import { TB_DIV } from '../ppc/cpu.js';
 import { Ev, EV_NAMES, IN, MARIO_BYTES, NO_NPC_PHASE, type TraceObject, type Trace, type TraceFrame, type TracePad, type TraceTick } from './trace.js';
 import { Moonshine, ARENA_RESERVE, type Region } from './moonshine.js';
+import type { GxFrame } from '../web/gxframe.js';
 
 export interface GameAddrs {
     region: Region;
@@ -166,6 +167,11 @@ export interface ReplayOptions {
     onFrame?: (frame: number) => void;
     /** told of every block the heaps give out (a tool's: tests/uninit.ts) */
     onAlloc?: (ptr: number, size: number) => void;
+    /**
+     * given what the game sends its GPU, video frame by video frame, while a stage is played (web/gxframe.ts: a page
+     * that draws it). The first frame carries the GPU's registers and every piece of memory it reads.
+     */
+    onGxFrame?: (f: GxFrame) => void;
 }
 
 const hex = (x: number) => (x >>> 0).toString(16).padStart(8, '0');
@@ -224,7 +230,7 @@ export class Replay {
     npcPhaseTaken: number | undefined;
     /** played with Dolphin's float rule (see `ReplayOptions.dolphin`) */
     dolphin = false;
-    private tvForced = false; private onFrame: ((frame: number) => void) | undefined;
+    private tvForced = false; private onFrame: ((frame: number) => void) | undefined; private gxWanted = false;
     /** `ReplayOptions.follow`, and how often each kind of state was put in from the recording */
     follow = false; taken: Record<string, number> = {};
     /** the disc is another version of the game than the recording's (only with `follow`) */
@@ -250,6 +256,7 @@ export class Replay {
         if (opt.stopOnActors) this.stopOn.add('actor');
         this.fstPadUsed = opt.fstPad ?? 0; this.selectHoldUsed = opt.selectHold ?? 0; this.npcPhaseTaken = opt.npcPhase;
         this.dolphin = cpu.laneRounds = !!opt.dolphin; this.onFrame = opt.onFrame;
+        if (opt.onGxFrame) { const to = opt.onGxFrame; this.gxWanted = true; m.hw.gx.onFrame = (f) => { f.frame = this.frames; f.tick = this.ticks; to(f); }; }
         this.recA = opt.recorded && opt.recorded !== A ? opt.recorded : A; this.otherVersion = this.recA !== A; this.follow = !!opt.follow || this.otherVersion;
         // (the console's TV format is the recording's: a PAL game on an NTSC console runs at NTSC's rate)
         m.load(dol, disc, this.fstPadUsed, T.stages[0].words[14]);
@@ -525,7 +532,7 @@ export class Replay {
         this.log(`[${kind}] frame ${f ? f.frame : 0} tick ${this.curTick}: ${text}`);
         if (this.stopOn.has(kind) || this.issues.length >= this.maxIssues) this.stop();
     }
-    private stop() { this.phase = 'done'; this.m.cpu.brk = true; }
+    private stop() { this.phase = 'done'; this.m.cpu.brk = true; this.m.hw.gx.capture(false); }
 
     // ---------------------------------------------------------------- the trace's cursors
     private isCall(i: number) { const k = this.T.kind[i]; return k === Ev.RAND || k === Ev.LIT; }
@@ -640,6 +647,7 @@ export class Replay {
             // uninitialised memory is taken from it (compareBlob).
             mem.ram.fill(0, head & 0x01FFFFFF, tail & 0x01FFFFFF);
             this.phase = 'stage'; this.countAtStage = this.m.cpu.count;
+            if (this.gxWanted) this.m.hw.gx.capture(true);
             this.observations = st.observations;
             this.iFlow = this.nextFlowFrom(st.ev + 1); this.iCall = this.nextCallFrom(st.ev + 1);
             return;

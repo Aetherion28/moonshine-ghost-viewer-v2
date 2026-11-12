@@ -23,6 +23,8 @@ export interface GxHost {
     unsupported(what: string): void;
 }
 
+import type { GxFrame, GxPatch } from '../web/gxframe.js';
+
 export const EFB_W = 640, EFB_H = 528;
 const fr = Math.fround;
 
@@ -54,6 +56,8 @@ interface Layout {
     pos: Attr | null; tex: (Attr | null)[];
     /** the two colours: offset, how (0 none), format (0 RGB565, 1 RGB8, 2 RGBX8, 3 RGBA4, 4 RGBA6, 5 RGBA8) */
     col: { off: number; how: number; fmt: number }[];
+    /** the attributes given as an index into an array: offset, how (2 an 8-bit index, 3 a 16-bit one), the array (0 positions, 1 normals, 2 and 3 colours, 4.. texture coordinates), the bytes of one element */
+    idx: { off: number; how: number; array: number; size: number }[];
 }
 /** how: 1 direct, 2 an 8-bit index, 3 a 16-bit index; fmt 0 u8, 1 s8, 2 u16, 3 s16, 4 f32 */
 interface Attr { off: number; how: number; comps: number; fmt: number; frac: number; array: number }
@@ -64,6 +68,30 @@ const COLOR_SIZE = [2, 3, 4, 2, 3, 4];
 /** a vertex on the screen: gx, gy its place on the rasteriser's grid (1/SUB pixel); x, y the same in pixels */
 interface Vtx { x: number; y: number; gx: number; gy: number; z: number; w: number; s: Float64Array; t: Float64Array; q: Float64Array; c: Float64Array }
 const newVtx = (): Vtx => ({ x: 0, y: 0, gx: 0, gy: 0, z: 0, w: 1, s: new Float64Array(8), t: new Float64Array(8), q: new Float64Array(8), c: new Float64Array(8) });
+
+/** a display list's primitives as last scanned for the largest index of each indexed attribute (-1: none) */
+interface ListScan { size: number; sum: number; prims: { lay: Layout; p: number; count: number; max: Int32Array }[] }
+/** what a capture keeps (Gx.capture) */
+interface Capture {
+    /** the stream's bytes from position `start` on: the frame so far */
+    buf: Uint8Array; len: number; start: number;
+    /** a frame is being collected (capturing starts at a frame's start); the command just run was the copy to the display */
+    live: boolean; ended: boolean;
+    /** the receiver has nothing: the next frame carries the registers and everything it reads */
+    fresh: boolean; regs: GxFrame['regs'];
+    /** where in the frame the command being run starts */
+    at: number;
+    /** the frame's patches so far: their bytes, and four numbers each (at, the address, where in pbuf, how many bytes) */
+    pbuf: Uint8Array; plen: number; pat: number[];
+    /** RAM as words, and what the receiver has of it; per block of 32 bytes the frame it was last compared in (0: the receiver doesn't have it) */
+    ram32: Uint32Array; mirror: Uint32Array; stamp: Uint32Array; epoch: number;
+    /** the ranges compared in this frame, by their start: their end */
+    seen: Map<number, number>;
+    lists: Map<number, ListScan>; list: ListScan | null; listPrim: number;
+    /** the texture images the texture environment takes now (worked out again after a BP load) */
+    texDirty: boolean; texN: number; texAt: Int32Array; texLen: Int32Array;
+    max: Int32Array;
+}
 
 export class Gx {
     cp = new Uint32Array(256);
@@ -127,6 +155,7 @@ export class Gx {
     }
     /** FIFO bytes, in order (a 32-byte burst of the write-gather pipe) */
     feed(b: Uint8Array, off: number, n: number) {
+        if (this.cap) this.capPush(b, off, n);
         if (this.skip) { const k = Math.min(this.skip, n); this.skip -= k; this.pos += k; off += k; n -= k; if (!n) return; }
         if (this.accLen === 0) {
             // (the usual case: whole commands in the burst)
@@ -155,10 +184,11 @@ export class Gx {
                 const count = (b[p + 1] << 8) | b[p + 2], lay = this.layout(cmd & 7), total = 3 + count * lay.size;
                 if (p + total > end) {
                     if (inList) { this.warn('a display list ends inside a primitive'); return end; }
-                    if (!this.raster) { this.skip = total - (end - p); this.commands++; return end; }
+                    if (!this.raster && !this.cap) { this.skip = total - (end - p); this.commands++; return end; }
                     break;
                 }
                 this.commands++;
+                if (this.cap) this.capPrim(lay, count, b, p + 3, inList ? -1 : base + p);
                 if (this.raster) { if (this.rec) this.rec(b.subarray(p, p + total), true); this.draw(cmd & 0xF8, count, lay, b, p + 3); }
                 p += total; continue;
             }
@@ -177,6 +207,7 @@ export class Gx {
                     if (p + 5 > end) return p;
                     const index = (b[p + 1] << 8) | b[p + 2], v = (b[p + 3] << 8) | b[p + 4], n = (v >>> 12) + 1, addr = v & 0xFFF, arr = 12 + ((cmd - 0x20) >> 3);
                     const src = (this.cp[0xA0 + arr] & 0x03FFFFFF) + index * (this.cp[0xB0 + arr] & 0xFF);
+                    if (this.cap) this.capRead(src, 4 * n, true, inList ? -1 : base + p);
                     if (this.rec && (this.raster || this.recAll)) { const c = new Uint8Array(5 + 4 * n); c[0] = 0x10; c[2] = n - 1; c[3] = addr >> 8; c[4] = addr; c.set(this.ram.subarray(src, src + 4 * n), 5); this.rec(c, this.raster); }
                     for (let i = 0; i < n; i++) this.xfLoad(addr + i, r32(this.ram, src + 4 * i));
                     p += 5; continue;
@@ -185,11 +216,23 @@ export class Gx {
                     if (p + 9 > end) return p;
                     const addr = r32(b, p + 1) & 0x03FFFFFF, size = r32(b, p + 5);
                     if (inList) this.warn('a display list calls another');
-                    else if (addr + size <= this.ram.length) this.run(this.ram, addr, addr + size, true);
+                    else if (addr + size <= this.ram.length) {
+                        if (this.cap) this.capList(addr, size, base + p);
+                        this.run(this.ram, addr, addr + size, true);
+                        if (this.cap) this.cap.list = null;
+                    }
                     p += 9; continue;
                 }
                 case 0x44: case 0x48: p++; continue;   // metrics, invalidate the vertex cache
-                case 0x61: if (p + 5 > end) return p; if (this.rec && (this.raster || this.recAll)) this.rec(b.subarray(p, p + 5), this.raster); this.bpLoad(r32(b, p + 1)); p += 5; continue;
+                case 0x61: {
+                    if (p + 5 > end) return p;
+                    if (this.rec && (this.raster || this.recAll)) this.rec(b.subarray(p, p + 5), this.raster);
+                    const C = this.cap;
+                    if (C) { C.texDirty = true; if (!inList) C.at = base + p - C.start; }
+                    this.bpLoad(r32(b, p + 1)); p += 5;
+                    if (C && C.ended) { C.ended = false; if (!inList) this.capEnd(base + p); }
+                    continue;
+                }
             }
             this.warn(`an unknown GX command 0x${cmd.toString(16)}${inList ? ' in a display list' : ''}`);
             return end;
@@ -208,7 +251,14 @@ export class Gx {
             case 0x45: this.bp[reg] = v; if (v & 2) this.host.finish(); return;
             case 0x47: this.bp[reg] = v; this.host.token(v & 0xFFFF, false); return;
             case 0x48: this.bp[reg] = v; this.host.token(v & 0xFFFF, true); return;
-            case 0x52: this.bp[reg] = v; if (this.raster) { this.copy(v); if (this.stopAfterCopy) { this.raster = false; this.stopAfterCopy = false; } } return;
+            case 0x52: {
+                this.bp[reg] = v;
+                const drawn = this.raster;
+                if (drawn) { this.copy(v); if (this.stopAfterCopy) { this.raster = false; this.stopAfterCopy = false; } }
+                if (this.cap) this.capCopy(v, drawn);
+                return;
+            }
+            case 0x65: this.bp[reg] = v; if (this.cap) this.capRead((this.bp[0x64] << 5) & 0x01FFFFFF, ((v >>> 10) & 0x7FF) * 32, true, -1); return;
             case 0x57: this.bp[reg] = v; this.blendQuads = 0; return;
             case 0xE0: case 0xE1: case 0xE2: case 0xE3: case 0xE4: case 0xE5: case 0xE6: case 0xE7: {
                 // a TEV register (RA, BG): signed 11-bit colours; with bit 23, the constant colours
@@ -218,6 +268,176 @@ export class Gx {
             }
         }
         this.bp[reg] = v;
+    }
+
+    // ---------------------------------------------------------------- capture (for a page that draws: web/gxframe.ts)
+    /** each video frame's commands and the memory they read, while capturing (the frame and tick numbers are the caller's to fill in) */
+    onFrame: ((f: GxFrame) => void) | null = null;
+    private cap: Capture | null = null;
+    /**
+     * Capturing: from the next copy to the display on, the stream's bytes are kept frame by frame (a frame ends with
+     * its copy to the display) together with the parts of RAM its commands read that the receiver doesn't have yet
+     * or that changed since it got them, and each frame goes to `onFrame`. The first frame carries the registers.
+     * (It may be turned off from inside `onFrame`, not on.)
+     */
+    capture(on: boolean) {
+        if (!on) { this.cap = null; return; }
+        if (this.cap) return;
+        const ram = this.ram;
+        if (ram.byteOffset & 3) throw new Error('capture needs RAM on a word boundary');
+        this.cap = {
+            buf: new Uint8Array(1 << 18), len: 0, start: this.pos + this.accLen, live: false, ended: false, fresh: true, regs: undefined, at: 0,
+            pbuf: new Uint8Array(1 << 22), plen: 0, pat: [],
+            ram32: new Uint32Array(ram.buffer, ram.byteOffset, ram.length >>> 2), mirror: new Uint32Array(ram.length >>> 2), stamp: new Uint32Array(ram.length >>> 5), epoch: 1,
+            seen: new Map(), lists: new Map(), list: null, listPrim: 0, texDirty: true, texN: 0, texAt: new Int32Array(8), texLen: new Int32Array(8), max: new Int32Array(16),
+        };
+    }
+    /** The receiver starts from nothing again: the next frame to begin carries the registers and every range it reads. */
+    forget() { if (this.cap) this.cap.fresh = true; }
+
+    private capPush(b: Uint8Array, off: number, n: number) {
+        const C = this.cap!;
+        if (C.len + n > C.buf.length) { const a = new Uint8Array(Math.max(C.len + n, C.buf.length * 2)); a.set(C.buf.subarray(0, C.len)); C.buf = a; }
+        const buf = C.buf, at = C.len;
+        if (n <= 64) for (let i = 0; i < n; i++) buf[at + i] = b[off + i]; else buf.set(b.subarray(off, off + n), at);
+        C.len += n;
+    }
+    /** The copy to the display ends a frame: the stream up to position `end` is the frame's. */
+    private capEnd(end: number) {
+        const C = this.cap!, n = end - C.start;
+        if (C.live) {
+            const data = C.pbuf.slice(0, C.plen), pat = C.pat, patches: GxPatch[] = [];
+            for (let i = 0; i < pat.length; i += 4) patches.push({ at: pat[i], addr: pat[i + 1], data: data.subarray(pat[i + 2], pat[i + 2] + pat[i + 3]) });
+            const f: GxFrame = { type: 'gxframe', frame: 0, tick: 0, fifo: C.buf.slice(0, n), patches };
+            if (C.regs) { f.regs = C.regs; C.regs = undefined; }
+            C.plen = 0; pat.length = 0;
+            if (this.onFrame) this.onFrame(f);
+            if (this.cap !== C) return;
+        }
+        C.buf.copyWithin(0, n, C.len); C.len -= n; C.start = end;
+        C.live = true; C.epoch++; C.seen.clear(); C.texDirty = true;
+        if (C.fresh) {
+            C.fresh = false; C.stamp.fill(0); C.lists.clear();
+            // (the registers as they stand before the frame's first command. A TEV register number holds two things,
+            // told apart by bit 23 of what is loaded: after the 256 BP words come 0xE0..0xE7 as last loaded without it
+            // (the colour registers), then with it (the constant colours))
+            const bp = new Uint32Array(272);
+            bp.set(this.bp);
+            for (let k = 0; k < 2; k++) for (let i = 0; i < 4; i++) {
+                const v = k ? this.konst : this.tevReg, o = i * 4, to = 256 + k * 8 + i * 2;
+                bp[to] = (v[o] & 0x7FF) | ((v[o + 3] & 0x7FF) << 12) | (k << 23);
+                bp[to + 1] = (v[o + 2] & 0x7FF) | ((v[o + 1] & 0x7FF) << 12) | (k << 23);
+            }
+            C.regs = { cp: this.cp.slice(), bp, xf: this.xfw.slice() };
+        }
+    }
+    /**
+     * The commands read RAM from a, len bytes: the blocks of 32 bytes the receiver doesn't have as they are now
+     * become patches (runs of them, with up to two unchanged blocks between). A block compared earlier in the frame
+     * is taken as unchanged, unless `always`. cmdPos: the stream position of the command, or -1 for the one already
+     * noted (inside a display list: its call). Returns a sum of the blocks' bytes (with `always`).
+     */
+    private capRead(a: number, len: number, always: boolean, cmdPos: number): number {
+        const C = this.cap!;
+        if (!C.live) return 0;
+        if (cmdPos >= 0) C.at = cmdPos - C.start;
+        const r = C.ram32, m = C.mirror, st = C.stamp, ep = C.epoch;
+        let b = a >>> 5, e = (a + len + 31) >>> 5, h = 0, from = -1, to = 0;
+        if (e > st.length) e = st.length;
+        for (; b < e; b++) {
+            const s = st[b], w = b << 3;
+            if (s === ep && !always) continue;
+            st[b] = ep;
+            if (always) for (let i = w; i < w + 8; i++) h = Math.imul(h ^ r[i], 0x01000193);
+            if (s !== 0 && r[w] === m[w] && r[w + 1] === m[w + 1] && r[w + 2] === m[w + 2] && r[w + 3] === m[w + 3] && r[w + 4] === m[w + 4] && r[w + 5] === m[w + 5] && r[w + 6] === m[w + 6] && r[w + 7] === m[w + 7]) continue;
+            if (from >= 0 && b - to > 2) { this.capPatch(from, to); from = -1; }
+            if (from < 0) from = b;
+            to = b + 1;
+        }
+        if (from >= 0) this.capPatch(from, to);
+        return h;
+    }
+    /** blocks from..to as a patch for the command being run */
+    private capPatch(from: number, to: number) {
+        const C = this.cap!, a = from << 5, n = (to - from) << 5, pat = C.pat, k = pat.length;
+        C.mirror.set(C.ram32.subarray(from << 3, to << 3), from << 3);
+        if (C.plen + n > C.pbuf.length) { const g = new Uint8Array(Math.max(C.plen + n, C.pbuf.length * 2)); g.set(C.pbuf.subarray(0, C.plen)); C.pbuf = g; }
+        C.pbuf.set(this.ram.subarray(a, a + n), C.plen);
+        // (one that goes on where the last one ended, for the same command: one patch)
+        if (k && pat[k - 4] === C.at && pat[k - 3] + pat[k - 1] === 0x80000000 + a) pat[k - 1] += n;
+        else pat.push(C.at, 0x80000000 + a, C.plen, n);
+        C.plen += n;
+    }
+    /** a display list is called: its bytes, and its primitives' scans if it is as it was */
+    private capList(addr: number, size: number, cmdPos: number) {
+        const C = this.cap!;
+        if (!C.live) return;
+        const sum = this.capRead(addr, size, true, cmdPos);
+        let L = C.lists.get(addr);
+        if (!L || L.size !== size || L.sum !== sum) C.lists.set(addr, L = { size, sum, prims: [] });
+        C.list = L; C.listPrim = 0;
+    }
+    /** a primitive (its vertices at b[p]; cmdPos -1 inside a display list): the arrays its indexes reach into, and the textures it is drawn with */
+    private capPrim(L: Layout, count: number, b: Uint8Array, p: number, cmdPos: number) {
+        const C = this.cap!;
+        if (!C.live) return;
+        if (cmdPos >= 0) C.at = cmdPos - C.start;
+        const idx = L.idx, seen = C.seen;
+        if (idx.length) {
+            let max = C.max;
+            const list = cmdPos < 0 ? C.list : null;
+            if (list) {
+                // (a list that is as it was last time, drawn with the same vertex format: the indexes are the same)
+                const k = C.listPrim++;
+                let e = list.prims[k];
+                if (!e || e.lay !== L || e.p !== p || e.count !== count) { e = list.prims[k] = { lay: L, p, count, max: new Int32Array(idx.length) }; scanIndexes(L, count, b, p, e.max); }
+                max = e.max;
+            } else scanIndexes(L, count, b, p, max);
+            const cp = this.cp;
+            for (let j = 0; j < idx.length; j++) {
+                if (max[j] < 0) continue;
+                const at = idx[j], base = cp[0xA0 + at.array] & 0x03FFFFFF, stride = cp[0xB0 + at.array] & 0xFF, end = base + max[j] * stride + (stride > at.size ? stride : at.size);
+                const was = seen.get(base);
+                if (was === undefined || was < end) { this.capRead(base, end - base, false, -1); seen.set(base, end); }
+            }
+        }
+        if (C.texDirty) this.capTextures();
+        for (let k = 0; k < C.texN; k++) {
+            const a = C.texAt[k], end = a + C.texLen[k], was = seen.get(a);
+            if (was === undefined || was < end) { this.capRead(a, end - a, false, -1); seen.set(a, end); }
+        }
+    }
+    /** The texture images a primitive drawn now samples: those of the maps the texture environment's stages and the indirect stages take. */
+    private capTextures() {
+        const C = this.cap!, bp = this.bp, limit = this.ram.length;
+        C.texDirty = false;
+        let maps = 0, k = 0;
+        for (let st = 0, n = ((bp[0] >>> 10) & 15) + 1; st < n; st++) { const order = bp[0x28 + (st >> 1)] >>> ((st & 1) * 12); if (order & 0x40) maps |= 1 << (order & 7); }
+        for (let i = 0, n = (bp[0] >>> 16) & 7; i < n; i++) maps |= 1 << ((bp[0x27] >>> (i * 6)) & 7);
+        for (let i = 0; maps >> i; i++) {
+            if (!(maps & (1 << i))) continue;
+            const base = i < 4 ? i : 0x20 + (i - 4), m0 = bp[0x80 + base], i0 = bp[0x88 + base], w = (i0 & 0x3FF) + 1, h = ((i0 >>> 10) & 0x3FF) + 1;
+            // (with mipmaps: the levels up to the largest the mode allows, as far as the size goes)
+            const levels = (m0 >>> 5) & 3 ? Math.min(32 - Math.clz32(Math.max(w, h)), ((((bp[0x84 + base] >>> 8) & 0xFF) + 15) >> 4) + 1) : 1;
+            const a = (bp[0x94 + base] << 5) & 0x03FFFFFF, len = texBytes((i0 >>> 20) & 15, w, h, levels);
+            if (len && a + len <= limit) { C.texAt[k] = a; C.texLen[k] = len; k++; }
+        }
+        C.texN = k;
+    }
+    /**
+     * A copy out of the frame buffer. To the display: the frame's last command. To a texture: when it was made here
+     * (drawn) the texture's memory is new, and its next use sends it; when not, the memory is what it was and the
+     * receiver's own copy stands for it, so it counts as had (until the game writes there).
+     */
+    private capCopy(ctl: number, drawn: boolean) {
+        const C = this.cap!;
+        if (ctl & 0x4000) { C.ended = true; return; }
+        if (!C.live) return;
+        const bp = this.bp, f = (ctl >>> 3) & 15, half = (ctl >>> 9) & 1, st = C.stamp;
+        const a = (bp[0x4B] << 5) & 0x03FFFFFF, n = texBytes(COPY_AS[(f >> 1) + (f & 1) * 8], ((bp[0x4A] & 0x3FF) + 1) >> half, (((bp[0x4A] >>> 10) & 0x3FF) + 1) >> half, 1);
+        const b = a >>> 5, e = Math.min((a + n + 31) >>> 5, st.length);
+        if (drawn) { st.fill(0, b, e); C.seen.clear(); }
+        else { C.mirror.set(C.ram32.subarray(b << 3, e << 3), b << 3); st.fill(C.epoch, b, e); }
     }
 
     // ---------------------------------------------------------------- vertex formats
@@ -236,9 +456,11 @@ export class Gx {
         const txIdx = new Int8Array(8).fill(-1);
         const pnIdx = lo & 1 ? off++ : -1;
         for (let i = 0; i < 8; i++) if (lo & (2 << i)) txIdx[i] = off++;
+        const idx: Layout['idx'] = [];
         const attr = (how: number, comps: number, fmt: number, frac: number, array: number): Attr | null => {
             if (!how) return null;
             const at: Attr = { off, how, comps, fmt, frac, array };
+            if (how !== 1) idx.push({ off, how, array, size: comps * COMP_SIZE[Math.min(fmt, 4)] });
             off += how === 1 ? comps * COMP_SIZE[Math.min(fmt, 4)] : how - 1;
             return at;
         };
@@ -246,13 +468,13 @@ export class Gx {
         {   // the normal: 3 components, or 9 (with its tangents); three indexes when the format says so
             const how = (lo >>> 11) & 3, nbt = (a >>> 9) & 1, fmt = (a >>> 10) & 7;
             if (how === 1) off += (nbt ? 9 : 3) * COMP_SIZE[Math.min(fmt, 4)];
-            else if (how) off += (how - 1) * (nbt && (a >>> 31) ? 3 : 1);
+            else if (how) for (let i = 0, n = nbt && (a >>> 31) ? 3 : 1; i < n; i++) { idx.push({ off, how, array: 1, size: (nbt ? 9 : 3) * COMP_SIZE[Math.min(fmt, 4)] }); off += how - 1; }
         }
         const col: { off: number; how: number; fmt: number }[] = [];
         for (let i = 0; i < 2; i++) {
             const how = (lo >>> (13 + 2 * i)) & 3, fmt = Math.min((a >>> (14 + 4 * i)) & 7, 5);
             col.push({ off, how, fmt });
-            if (how === 1) off += COLOR_SIZE[fmt]; else if (how) off += how - 1;
+            if (how === 1) off += COLOR_SIZE[fmt]; else if (how) { idx.push({ off, how, array: 2 + i, size: COLOR_SIZE[fmt] }); off += how - 1; }
         }
         const tex: (Attr | null)[] = [];
         const tf = [[a, 21, a, 22, a, 25], [b, 0, b, 1, b, 4], [b, 9, b, 10, b, 13], [b, 18, b, 19, b, 22], [b, 27, b, 28, c, 0], [c, 5, c, 6, c, 9], [c, 14, c, 15, c, 18], [c, 23, c, 24, c, 27]];
@@ -260,7 +482,7 @@ export class Gx {
             const f = tf[i];
             tex.push(attr((hi >>> (2 * i)) & 3, (f[0] >>> f[1]) & 1 ? 2 : 1, (f[2] >>> f[3]) & 7, (f[4] >>> f[5]) & 31, 4 + i));
         }
-        L = { size: off, pnIdx, txIdx, pos, tex, col };
+        L = { size: off, pnIdx, txIdx, pos, tex, col, idx };
         this.layouts.set(key, L);
         return this.layNow[vat] = L;
     }
@@ -828,6 +1050,34 @@ const SUB = 12, MID = 6;
 const ORIGIN = 342 * SUB;
 const F32 = new Float32Array(1), F32W = new Uint32Array(F32.buffer);
 const r32 = (b: Uint8Array, p: number) => ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0;
+/** the bytes of a texture image: its format, its size, how many levels (0: no such format) */
+function texBytes(fmt: number, w: number, h: number, levels: number) {
+    let n = 0;
+    for (let l = 0; l < levels; l++) {
+        switch (fmt) {
+            case 0: case 8: case 14: n += ((w + 7) >> 3) * ((h + 7) >> 3) * 32; break;   // I4, C4, CMPR: 8 x 8 texels a block of 32 bytes
+            case 1: case 2: case 9: n += ((w + 7) >> 3) * ((h + 3) >> 2) * 32; break;   // I8, IA4, C8: 8 x 4
+            case 3: case 4: case 5: case 10: n += ((w + 3) >> 2) * ((h + 3) >> 2) * 32; break;   // IA8, RGB565, RGB5A3, C14X2: 4 x 4
+            case 6: n += ((w + 3) >> 2) * ((h + 3) >> 2) * 64; break;   // RGBA8
+            default: return 0;
+        }
+        w = Math.max(w >> 1, 1); h = Math.max(h >> 1, 1);
+    }
+    return n;
+}
+/** a frame buffer copy's format as the texture format with as many bytes (the copy's numbering: 7 to 10 one channel, 11 and 12 two) */
+const COPY_AS = [0, 1, 2, 3, 4, 5, 6, 1, 1, 1, 1, 3, 3, -1, -1, -1];
+/** The largest index of each indexed attribute over a primitive's vertices at b[p] (-1: none; a position index of all ones skips its vertex). */
+function scanIndexes(L: Layout, count: number, b: Uint8Array, p: number, max: Int32Array) {
+    const idx = L.idx, size = L.size;
+    for (let j = 0; j < idx.length; j++) {
+        const at = idx[j];
+        let q = p + at.off, mx = -1;
+        if (at.how === 2) { const none = at.array === 0 ? 0xFF : -1; for (let i = 0; i < count; i++, q += size) { const v = b[q]; if (v > mx && v !== none) mx = v; } }
+        else { const none = at.array === 0 ? 0xFFFF : -1; for (let i = 0; i < count; i++, q += size) { const v = (b[q] << 8) | b[q + 1]; if (v > mx && v !== none) mx = v; } }
+        max[j] = mx;
+    }
+}
 /** the constant fractions a stage can select: 8/8 ... 1/8 */
 const KFRAC = [255, 223, 191, 159, 128, 96, 64, 32];
 const SCALE_L = [0, 1, 2, 0], SCALE_R = [0, 0, 0, 1], BIAS = [0, 128, -128, 0];

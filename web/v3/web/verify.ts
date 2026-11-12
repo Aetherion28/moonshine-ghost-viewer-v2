@@ -7,6 +7,7 @@ import { nextScriptLocks, followsFurther, partedInArithmetic, Replay, type Issue
 export type { LiveSample } from '../game/replay.ts';
 import { versionOf, symOf, VERSIONS } from '../game/versions.ts';
 import type { OpenedDisc } from './discs.ts';
+import type { GxFrame } from './gxframe.ts';
 
 export interface VerifyProgress {
     type: 'progress';
@@ -67,6 +68,8 @@ export interface VerifyHost {
     intro?(i: VerifyIntro): void;
     /** the game's state at each frame of a stage, as the replay goes (`Replay.liveSample`) */
     live?(s: LiveSample, attempt: number): void;
+    /** what the game sends its GPU, each video frame of a stage (gxframe.ts). An attempt that boots the game again starts over: its first frame carries the registers. */
+    gx?(f: GxFrame): void;
 }
 export interface VerifyIntro {
     type: 'intro';
@@ -112,6 +115,7 @@ export async function verify(traceBuf: ArrayBuffer, open: () => OpenedDisc, host
         const make = (fstPad: number, shinyShines = false, scriptsLocked: string[] = [], whole = false, selectHold = 0) => new Replay(D.dol, D.make(), T!, V.addrs, symOf(V), {
             log: (s) => { log.push(s); if (log.length > 40) log.shift(); }, fstPad, shinyShines, scriptsLocked, selectHold, dolphin, npcPhase, stopOnActors, recorded: VT.addrs, tried: whole ? undefined : tried,
             onFrame: host.live ? () => { const s = R.liveSample(); if (s) host.live!(s, attempt); } : undefined,
+            onGxFrame: host.gx ? (f) => host.gx!(f) : undefined,
         });
         let R = make(0), attempt = 1, shiny = false;
         // one attempt: slices of the machine's time, with a breath between them for messages (cancel)
