@@ -15,7 +15,7 @@ const srv = http.createServer((q, s) => {
     s.writeHead(200, { 'content-type': types[extname(p)] || 'application/octet-stream' }); s.end(readFileSync(p));
 });
 await new Promise((r) => srv.listen(0, r));
-const b = await chromium.launch();
+const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
 const pg = await b.newPage({ viewport: { width: 1320, height: 900 }, deviceScaleFactor: shots ? 2 : 1, colorScheme: process.env.LIGHT ? 'light' : 'dark' });
 pg.on('console', (m) => { if (m.type() === 'error') console.log('[page error]', m.text().slice(0, 300)); });
 pg.on('pageerror', (e) => console.log('[pageerror]', String(e).slice(0, 300)));

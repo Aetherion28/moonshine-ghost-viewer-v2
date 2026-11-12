@@ -75,6 +75,11 @@ ul.jobs { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6p
 .view { padding: 10px 14px 0; }
 canvas { display: block; width: 100%; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
 #map { aspect-ratio: 16 / 10; }
+#game { aspect-ratio: 640 / 448; background: #000; }
+.note { color: var(--muted); font-size: 12.5px; min-height: 18px; padding-top: 6px; }
+.tabs { display: inline-flex; margin: 10px 14px 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.tab { appearance: none; border: 0; background: var(--raised); padding: 5px 14px; cursor: pointer; font-weight: 550; color: var(--muted); }
+.tab[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 #height { height: 84px; margin-top: 8px; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: 12.5px; padding: 8px 14px 0; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
@@ -150,9 +155,18 @@ footer { margin-top: 22px; color: var(--faint); font-size: 12.5px; }
     </div>
     <div class="main">
       <section class="panel stage">
-        <div class="empty" id="empty"><b>Nothing playing yet</b>The game's own Mario, camera and actors show here, top-down, as a recording plays.</div>
+        <div class="empty" id="empty"><b>Nothing playing yet</b>The game shows here as a recording plays: its own picture, drawn from the commands it sends its graphics chip, and a map of Mario, the camera and the actors.</div>
         <div id="live" hidden>
           <div class="stagehead"><span class="title" id="stageTitle"></span><span class="meta" id="stageMeta"></span></div>
+          <div class="tabs" role="group" aria-label="View">
+            <button class="tab" id="tabGame" aria-pressed="true">Game</button>
+            <button class="tab" id="tabMap" aria-pressed="false">Map</button>
+          </div>
+          <div class="view" id="gameWrap">
+            <canvas id="game" width="640" height="448"></canvas>
+            <div class="note" id="gameNote"></div>
+          </div>
+          <div id="mapWrap" hidden>
           <div class="view">
             <canvas id="map"></canvas>
             <canvas id="height"></canvas>
@@ -163,6 +177,7 @@ footer { margin-top: 22px; color: var(--faint); font-size: 12.5px; }
             <span><i style="background:var(--camera)"></i>camera</span>
             <span><i style="background:var(--actor)"></i>actors</span>
             <button class="btn small" id="wide" style="margin-left:auto">Whole stage</button>
+          </div>
           </div>
           <div class="transport">
             <button class="btn small" id="playback" disabled>Replay</button>

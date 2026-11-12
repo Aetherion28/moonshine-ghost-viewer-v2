@@ -1,6 +1,8 @@
 // The MSGT viewer's page: the user picks a disc and recordings, each recording is played in a worker
 // (../web/worker.ts) and the page shows the game's state as it goes and the result.
 import type { VerifyProgress, VerifyReport, VerifyIntro, LiveBatch } from '../web/worker.ts';
+import type { GxFrame } from '../web/gxframe.ts';
+import { GxRenderer } from './gx/renderer.ts';
 
 type DiscSource = { iso: File } | { folder: { path: string; file: File }[] };
 interface Sample { frame: number; tick: number; mario: Float32Array; camera: Float32Array; actors: Float32Array }
@@ -8,6 +10,8 @@ interface Job {
     id: number; file: File; state: 'queued' | 'running' | 'done';
     worker: Worker | null; progress: VerifyProgress | null; intro: VerifyIntro | null; report: VerifyReport | null;
     samples: Sample[]; attempt: number; cursor: number; follow: boolean; playing: boolean; playFrom: number; playAt: number;
+    /** the GPU's frames so far (each builds on the ones before), their size, and whether the worker was asked for them */
+    gx: GxFrame[]; gxBytes: number; gxAsked: boolean; gxFull: boolean;
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -64,7 +68,7 @@ function setFolder(files: File[]) {
 function addTraces(files: File[]) {
     for (const file of files) {
         if (!/\.msgt$/i.test(file.name) || jobs.some((j) => j.file.name === file.name && j.file.size === file.size)) continue;
-        jobs.push({ id: nextId++, file, state: 'queued', worker: null, progress: null, intro: null, report: null, samples: [], attempt: 0, cursor: 0, follow: true, playing: false, playFrom: 0, playAt: 0 });
+        jobs.push({ id: nextId++, file, state: 'queued', worker: null, progress: null, intro: null, report: null, samples: [], attempt: 0, cursor: 0, follow: true, playing: false, playFrom: 0, playAt: 0, gx: [], gxBytes: 0, gxAsked: false, gxFull: false });
     }
     if (!selected && jobs.length) selected = jobs[0];
     refresh();
@@ -101,6 +105,9 @@ function jobState(j: Job): [string, string] {
 // ---------------------------------------------------------------- running
 function startJob(job: Job) {
     job.state = 'running'; job.progress = null; job.report = null; job.intro = null; job.samples = []; job.attempt = 0; job.cursor = 0; job.follow = true; job.playing = false;
+    job.gx = []; job.gxBytes = 0; job.gxFull = false;
+    // (the GPU's frames are big: asked for the recording being watched, or for every one when they play one at a time)
+    job.gxAsked = !!renderer && (job === selected || !selected || selected.state === 'done' || +($<HTMLSelectElement>('parallel').value) === 1);
     const w = job.worker = new Worker('worker.js?v=' + BUILD);
     const fail = (text: string) => {
         job.report = { result: 'error', inStep: false, followed: false, taken: {}, summary: text, stageName: '', area: 0, episode: 0, frames: 0, totalFrames: 0, ticks: 0, totalTicks: 0, marioChecked: 0, calls: 0, literals: 0, shimCalls: 0, padCorrections: 0, issues: [], unsupported: [], shinyShines: false, dolphin: false, fstPad: 0, disc: '', instructions: 0, seconds: 0, log: [] };
@@ -109,16 +116,23 @@ function startJob(job: Job) {
     const finish = () => { w.terminate(); job.worker = null; job.state = 'done'; refresh(); pump(); };
     w.onerror = (e) => fail(e.message || 'The replay could not start.');
     w.onmessage = (ev: MessageEvent) => {
-        const m = ev.data as VerifyProgress | VerifyIntro | LiveBatch | { type: 'done'; report: VerifyReport };
+        const m = ev.data as VerifyProgress | VerifyIntro | LiveBatch | GxFrame | { type: 'done'; report: VerifyReport };
         if (m.type === 'intro') job.intro = m;
         else if (m.type === 'live') {
             if (m.attempt !== job.attempt) { job.attempt = m.attempt; job.samples = []; job.cursor = 0; job.follow = true; }
             for (let k = 0; k < m.frames.length; k++) job.samples.push({ frame: m.frames[k], tick: m.ticks[k], mario: m.mario.subarray(k * 6, k * 6 + 6), camera: m.camera.subarray(k * 6, k * 6 + 6), actors: m.actors.subarray(m.actorAt[k], m.actorAt[k + 1]) });
         }
+        else if (m.type === 'gxframe') {
+            // (a frame with the registers starts over: the game was booted again)
+            if (m.regs && job.gx.length) { job.gx = []; job.gxBytes = 0; job.gxFull = false; if (shown === job) shown = null; }
+            if (job.gxFull) return;
+            job.gx.push(m); job.gxBytes += m.fifo.length + m.patches.reduce((a, p) => a + p.data.length, 0);
+            if (job.gxBytes > GX_BUDGET) job.gxFull = true;
+        }
         else if (m.type === 'progress') { job.progress = m; refreshJobs(); }
         else if (m.type === 'done') { job.report = m.report; finish(); }
     };
-    job.file.arrayBuffer().then((trace) => w.postMessage({ type: 'start', trace, disc, live: true, slice: 16e6 }, [trace]), () => fail('The recording could not be read.'));
+    job.file.arrayBuffer().then((trace) => w.postMessage({ type: 'start', trace, disc, live: true, gx: job.gxAsked, slice: 16e6 }, [trace]), () => fail('The recording could not be read.'));
     refresh();
 }
 function pump() {
@@ -195,6 +209,25 @@ function showResult() {
     panel.hidden = false;
 }
 
+// ---------------------------------------------------------------- the game's picture
+// The GPU's frames build on each other, so the renderer has played a job's frames from its first up to `fed`;
+// showing an earlier frame, or another job, starts it over.
+const GX_BUDGET = 1200 * 2 ** 20;
+let renderer: GxRenderer | null = null, shown: Job | null = null, fed = 0, view: 'game' | 'map' = 'map';
+function drawGame(j: Job, s: Sample | undefined) {
+    if (!renderer || view !== 'game') return;
+    if (shown !== j) { renderer.reset(); shown = j; fed = 0; }
+    // the last GPU frame that belongs to the frame the slider is on
+    let want = j.gx.length - 1;
+    if (s && !(j.follow && !j.playing)) { want = -1; for (let k = Math.min(j.gx.length - 1, fed + 4000); k >= 0; k--) if (j.gx[k].frame <= s.frame) { want = k; break; } }
+    if (want < fed - 1) { renderer.reset(); fed = 0; }
+    const t0 = performance.now();
+    while (fed <= want && performance.now() - t0 < 24) renderer.frame(j.gx[fed++]);
+    const note = $('gameNote');
+    const text = !j.gxAsked ? 'The picture is drawn for the recording that was selected when Play was pressed.' : !j.gx.length ? (j.state === 'running' ? 'Waiting for the stage…' : '') : fed <= want ? `Catching up: frame ${fed} of ${want + 1}` : j.gxFull ? 'The picture stops here: this recording is longer than the page keeps.' : '';
+    if (note.textContent !== text) note.textContent = text;
+}
+
 // ---------------------------------------------------------------- the live view
 let colors: Record<string, string> = {};
 function readColors() { const cs = getComputedStyle(document.documentElement); for (const k of ['mario', 'camera', 'actor', 'path', 'grid', 'muted', 'text', 'accent', 'line']) colors[k] = cs.getPropertyValue('--' + k).trim(); }
@@ -245,7 +278,8 @@ function draw() {
         + cell('Mario X', s ? s.mario[0].toFixed(2) : '–') + cell('Mario Y', s ? s.mario[1].toFixed(2) : '–') + cell('Mario Z', s ? s.mario[2].toFixed(2) : '–')
         + cell('Speed', s ? s.mario[4].toFixed(3) : '–') + cell('Status', s ? '0x' + (s.mario[5] >>> 0).toString(16).toUpperCase().padStart(8, '0') : '–')
         + cell('Actors', s ? num(s.actors.length / 3) : '–') + (j.state === 'running' && speed ? cell('Pace', `${speed.toFixed(2)}× real time`) : '');
-    drawMap(j, s); drawHeight(j, s);
+    drawGame(j, s);
+    if (view === 'map') { drawMap(j, s); drawHeight(j, s); }
 }
 function drawMap(j: Job, s: Sample | undefined) {
     const { g, w, h } = fit($<HTMLCanvasElement>('map')), i = j.intro;
@@ -320,6 +354,15 @@ function init() {
     };
     $('stop').onclick = () => { wanted = false; for (const j of jobs) if (j.worker) j.worker.postMessage({ type: 'cancel' }); refresh(); };
     $<HTMLInputElement>('scrub').oninput = (e) => { const j = selected; if (!j) return; const v = +(e.target as HTMLInputElement).value; j.playing = false; j.cursor = v; j.follow = v >= j.samples.length - 1; };
+    const setView = (v: 'game' | 'map') => {
+        view = v;
+        $('gameWrap').hidden = v !== 'game'; $('mapWrap').hidden = v !== 'map';
+        $('tabGame').setAttribute('aria-pressed', String(v === 'game')); $('tabMap').setAttribute('aria-pressed', String(v === 'map'));
+    };
+    try { renderer = new GxRenderer($<HTMLCanvasElement>('game')); } catch { renderer = null; }
+    if (renderer) setView('game'); else { $('tabGame').hidden = true; setView('map'); }
+    $('tabGame').onclick = () => setView('game');
+    $('tabMap').onclick = () => setView('map');
     $('wide').onclick = () => { wide = !wide; $('wide').textContent = wide ? 'Follow the path' : 'Whole stage'; };
     $('playback').onclick = () => {
         const j = selected; if (!j) return;
