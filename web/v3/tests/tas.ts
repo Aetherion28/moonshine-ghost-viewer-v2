@@ -10,32 +10,42 @@ import { Machine } from '../ppc/machine.ts';
 import { installHle } from '../ppc/hle.ts';
 import { symbols } from './syms.ts';
 import { jpDisc, JP_DOL, loadBytes } from './jpdisc.ts';
+import { threads } from './debug.ts';
 
 const S = symbols();
 const M = new Machine(), cpu = M.cpu, mem = M.mem;
 M.load(loadBytes(JP_DOL), jpDisc());
+// DOLPHIN=1: Dolphin's float rule (the TAS was made in Dolphin; `Cpu.laneRounds`)
+if (process.env.DOLPHIN) cpu.laneRounds = true;
 installHle(M, (n) => S.byName.get(n), { report: (t) => { if (process.env.GAMELOG) process.stdout.write('[game] ' + t); } });
 
 const dtm = readFileSync(process.argv[2]);
 const POLLS = (dtm.length - 0x100) >> 3;
 const poll = (i: number) => dtm.subarray(0x100 + 8 * i, 0x108 + 8 * i);
 const OFFSET = +(process.env.OFFSET || 0), STAGE4 = +(process.env.STAGE4 || -1);
-let stage4Field = -1;
+let stage4Field = -1, stage4Reads = 0;
 // Dolphin's ControllerState to the SDK's PADStatus (12 bytes: buttons, stick x y, C x y, triggers L R, analog A B, err)
 const BITS: [number, number, number][] = [[0, 0x01, 0x1000], [0, 0x02, 0x100], [0, 0x04, 0x200], [0, 0x08, 0x400], [0, 0x10, 0x800], [0, 0x20, 0x10],
     [0, 0x40, 0x8], [0, 0x80, 0x4], [1, 0x01, 0x1], [1, 0x02, 0x2], [1, 0x04, 0x40], [1, 0x08, 0x20]];
-let reads = 0, lastButtons = -1;
+let reads = 0, lastButtons = -1, lastReadField = -1;
+// SEED=n: srand's argument (the game seeds rand with OSGetTick at boot, Application.cpp; Dolphin's tick then isn't v3's)
+cpu.hook(S.byName.get('srand')!, (c) => { console.log(`srand(${c.gpr[3] >>> 0}) at instruction ${cpu.count}, field ${M.fields}`); if (process.env.SEED) c.gpr[3] = +process.env.SEED >>> 0; return false; });
 const PADRead = S.byName.get('PADRead')!;
 cpu.hook(PADRead, (c) => {
     const p = c.gpr[3];
     for (let i = 0; i < 48; i++) mem.w8(p + i, 0);
     for (let ch = 1; ch < 4; ch++) mem.w8(p + ch * 12 + 10, 0xFF);   // PAD_ERR_NO_CONTROLLER
     // STAGE4=<movie frame>: from the first frame of the stage's play (TMarDirector state 4) the movie is read from that frame on
-    const k = Math.min(POLLS - 1, Math.max(0, stage4Field >= 0 ? STAGE4 * 6 + (M.fields - stage4Field) * 3 + 2 + OFFSET : M.fields * 3 + 2 + OFFSET));
+    // BYREAD=1: one game frame (six polls) per pad read from the stage on, as if the game never lagged
+    let k = Math.min(POLLS - 1, Math.max(0, stage4Field >= 0 ? (process.env.BYREAD ? STAGE4 * 6 + (reads - stage4Reads) * 6 + 5 + OFFSET : STAGE4 * 6 + (M.fields - stage4Field) * 3 + 2 + OFFSET) : M.fields * 3 + 2 + OFFSET));
+    // SHIFT2=n AFTER2=<movie frame>: from that movie frame on, n more polls (the game's later part against Dolphin's)
+    if (process.env.SHIFT2 && k >= +(process.env.AFTER2 || 0) * 6) k = Math.min(POLLS - 1, k + +process.env.SHIFT2);
     const s = poll(k);
     let b = 0; for (const [byte, bit, pad] of BITS) if (s[byte] & bit) b |= pad;
     mem.w16(p, b); mem.w8(p + 2, s[4] - 128); mem.w8(p + 3, s[5] - 128); mem.w8(p + 4, s[6] - 128); mem.w8(p + 5, s[7] - 128);
-    mem.w8(p + 6, s[2]); mem.w8(p + 7, s[3]);
+    if (!process.env.NOTRIG) { mem.w8(p + 6, s[2]); mem.w8(p + 7, s[3]); }
+    if (stage4Field >= 0 && process.env.LAG && lastReadField >= 0 && M.fields - lastReadField !== 2) console.log(`  lag: read ${reads - stage4Reads} came ${M.fields - lastReadField} fields after the last`);
+    lastReadField = M.fields;
     reads++;
     if (process.env.LOG && b !== lastButtons) console.log(`  field ${M.fields} poll ${k} (movie frame ${(k / 6).toFixed(1)}) buttons ${b.toString(16)}`);
     lastButtons = b;
@@ -55,7 +65,7 @@ const watch = () => {
     const f = (a: number) => { const v = new DataView(new ArrayBuffer(4)); v.setUint32(0, mem.r32(a)); return v.getFloat32(0).toFixed(1); };
     const mk = ma ? `mario ${f(ma + 0x10)},${f(ma + 0x14)},${f(ma + 0x18)} st ${mem.r32(ma + 0x7C).toString(16)}` : 'no mario';
     if (STAGE4 >= 0 && stage4Field < 0 && ds === 4 && mem.r8(APP + 0xE) === 0) {
-        stage4Field = M.fields; console.log(`  [field ${M.fields}] the stage's play begins: the movie from frame ${STAGE4}`);
+        stage4Field = M.fields; stage4Reads = reads; console.log(`  [field ${M.fields}] the stage's play begins: the movie from frame ${STAGE4}`);
         // DUMP=<folder>: from here every video frame's GPU commands (web/gxframe.ts) for tests/gxview.mjs, DUMPN of them
         if (process.env.DUMP) {
             const out = process.env.DUMP, max = +(process.env.DUMPN || 6000); mkdirSync(out, { recursive: true });
@@ -67,6 +77,8 @@ const watch = () => {
     if (ma && (mem.r32(ma + 0x7C) & 0x1FF) === 0x102 && !shineSeen) { shineSeen = true; console.log(`  SHINE GET at movie frame ${STAGE4 >= 0 && stage4Field >= 0 ? (STAGE4 + (M.fields - stage4Field) / 2).toFixed(1) : (M.fields / 2).toFixed(1)}`); }
     const key = `dir ${ds} ${mk}`;
     if (key !== lastDir && (ds !== lastDs || M.fields % +(process.env.EVERY || 60) === 0)) { console.log(`  [movie frame ${(M.fields / 2).toFixed(1)}] ${key}`); lastDir = key; lastDs = ds; }
+    // STACKAT=<field>[,<field>...]: every OS thread with its call stack then
+    if (process.env.STACKAT && process.env.STACKAT.split(',').map(Number).includes(M.fields)) console.log(`THREADS at field ${M.fields}\n` + threads(M, S));
     M.after(M.hw.field, watch);
 };
 M.after(M.hw.field, watch);
