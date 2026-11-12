@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); let done = false;
+  P.testPerform = (c) => { if (!done && st.world && st.world.hitCheck) { const H = st.world.hitCheck; const f = H.waterHitAt.bind(H); H.waterHitAt = (p, ar, ah, er) => { const r = f(p, ar, ah, er); if (st.qf >= 2584 && st.qf <= 2592 && p.x < -1500 && p.x > -2200) console.log('WH', st.qf, st.world.moveTickCount, p.x, p.y, p.z, ar, ah, er, H.getTableIndex(p, er).join('-'), r && r.name); return r; }; done = true; } return o(c); }; }

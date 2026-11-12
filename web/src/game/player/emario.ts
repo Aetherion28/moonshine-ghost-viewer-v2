@@ -890,7 +890,7 @@ export class TEMario extends SpineEnemy {
         if (cue & CUE_MOVE) {
             this.pos.set(em.pos); this.rot.set(em.rot); this.scale.set(em.scale);
             this.attackRadius = em.attackRadius; this.attackHeight = em.attackHeight;
-            this.damageRadius = em.damageRadius; this.damageHeight = em.damageHeight;
+            this.damageRadius = em.damageRadius; this.damageHeight = em.damageHeight; this.calcEntryRadius();
             this.calcEntryRadius();
         }
     }

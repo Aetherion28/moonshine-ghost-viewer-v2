@@ -97,7 +97,7 @@ export class IceBlock extends MapObjBase {
         this.emit('IceBlockA'); this.emit('IceBlockB');
         this.offHitFilter(HF.NO_COLLISION);
         const sc = this.scale;
-        this.damageRadius = fr(sc.x * 80); this.damageHeight = fr(sc.y * 250);
+        this.damageRadius = fr(sc.x * 80); this.damageHeight = fr(sc.y * 250); this.calcEntryRadius();
         if (sc.y < fr(IceBlock.mAutoMeltScale * this.initialScale.y)) {
             const k = IceBlock.mMeltSpeedAuto;
             sc.x = fr(sc.x - k); sc.y = fr(sc.y - k); sc.z = fr(sc.z - k);

@@ -186,9 +186,10 @@ export class Stage {
         w.register(o);
         this.objects.push(o);
         this.nodeOf.set(o, n);
+        // TViewObjPtrListT::load pushes a child before its load: what the load adds (a Fire Chomp's tail) comes after it
+        if (group >= 0 && o instanceof HitActor) (w.groups[group] = w.groups[group] || []).push(o);
         try { o.load(new Stream(n.data)); }
         catch (e) { console.warn('[game] load', n.type, n.name, e); }
-        if (group >= 0 && o instanceof HitActor) (w.groups[group] = w.groups[group] || []).push(o);
     }
 
     /**

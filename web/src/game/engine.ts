@@ -14,7 +14,7 @@ import { FlagManager } from './flags.js';
 import { SplineRail } from './spline.js';
 import { psVecMag } from './camera/lib.js';
 import { vDot, vNormMs, vCross, msVecMag2, vLen, jgSqrt, vSq } from './vecops.js';
-import { fmadd as FMA_, fnmsub as FNMS_ } from './player/fmath.js';
+import { fmadd as FMA_, fnmsub as FNMS_, frsqrte as FRSQRTE_ } from './player/fmath.js';
 import { jgNormalize, frsqrte } from './math.js';
 import { sessionSetting, SessionField } from './feedback.js';
 import { rngCtx, fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsIsInSight, matan, MsRandF, sqDist, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, psMtxMultVec, psMtxInverse, MsMtxSetTRS, SMSCalcJumpVelocityY } from './math.js';
@@ -280,8 +280,9 @@ export class HitActor extends Actor {
     receiveMessage(_sender: HitActor, _msg: number): boolean { return false; }
     calcEntryRadius() {
         const r = Math.max(this.attackRadius, this.damageRadius), h = Math.max(this.attackHeight, this.damageHeight);
-        const d = r * r + h * h;
-        this.entryRadius = d > 0 ? 1.4142135 * Math.sqrt(d) : 0;
+        // JP 0x8011D8E4: fmadds, then d * frsqrte(d) (the estimate alone) rounded to f32
+        const d = FMA_(r, r, fr(h * h));
+        this.entryRadius = d > 0 ? fr(fr(1.4142135) * fr(d * FRSQRTE_(d))) : 0;
     }
     initHitActor(type: number, max: number, filter: number, ar: number, ah: number, dr: number, dh: number) {
         this.actorType = type | 0; this.colCapacity = max; this.collisions = [];

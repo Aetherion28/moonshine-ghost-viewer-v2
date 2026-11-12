@@ -9,10 +9,11 @@
 // The ropes of the bridge and the swinging boards are GX strips the game draws itself (drawRopes,
 // drawRopeBetweenBoards, TSwingBoard::draw); they aren't drawn here.
 
+import { sinf as mslSinf, cosf as mslCosf } from '../math.js';
 import { V } from '../version.js';
 import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, MsRandF, MsMtxSetXYZRPH, jgInvSqrt } from '../math.js';
-import { fmadd as FMA, fmsub as FMS } from '../player/fmath.js';
+import { fmadd as FMA, fmsub as FMS, fmadd, fnmsub } from '../player/fmath.js';
 import { vNormMs } from '../vecops.js';
 import { World, Stream, NameRef, HitActor, LF, HF, MSG } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -28,7 +29,7 @@ const STATE_UNK2 = 2, STATE_UNK3 = 3, STATE_UNK4 = 4;
 /** sinf / cosf of an f32, rounded to f32 (the game's calls of the C library) */
 /** 3.14f */
 const PI_314 = fr(3.14);
-const sinf = (a: number) => fr(Math.sin(fr(a))), cosf = (a: number) => fr(Math.cos(fr(a)));
+const sinf = (a: number) => mslSinf(fr(a)), cosf = (a: number) => mslCosf(fr(a));   // (MSL's: math.ts)
 
 // ---------------------------------------------------------------- TMapObjMonteRoot
 export class MapObjMonteRoot extends MapObjBase {
@@ -73,11 +74,12 @@ export class HangingBridgeBoard extends LeanBlock {
         if (this.marioIsOn()) { this.push(H.mMarioAccelY); this.pushNeighbor(H.mMarioAccelY); }
         if (this.marioHipAttack()) { this.push(H.mMarioHipDropAccelY); this.pushNeighbor(H.mMarioHipDropAccelY); }
         this.pos.y = fr(this.pos.y + this.vel.y);
-        this.vel.y = fr(this.vel.y + fr(H.mReturnAccelRate * fr(this.initialPos.y - this.pos.y)));
+        this.vel.y = fmadd(H.mReturnAccelRate, fr(this.initialPos.y - this.pos.y), this.vel.y);   // (fmadds: JP 0x801CCD44)
         this.vel.y = fr(this.vel.y * H.mSpeedDownRate);
         const m = this.rootMtx(), w = this.bridge ? this.bridge.unk3C : 0;
-        this.ropes[0].set(fr(this.pos.x - fr(m[0] * w)), fr(70 + fr(this.pos.y - fr(m[4] * w))), fr(this.pos.z - fr(m[8] * w)));
-        this.ropes[1].set(fr(this.pos.x + fr(m[0] * w)), fr(70 + fr(this.pos.y + fr(m[4] * w))), fr(this.pos.z + fr(m[8] * w)));
+        // (JP 0x801CCD68: each a fnmsubs / fmadds)
+        this.ropes[0].set(fnmsub(m[0], w, this.pos.x), fr(70 + fnmsub(m[4], w, this.pos.y)), fnmsub(m[8], w, this.pos.z));
+        this.ropes[1].set(fmadd(m[0], w, this.pos.x), fr(70 + fmadd(m[4], w, this.pos.y)), fmadd(m[8], w, this.pos.z));
     }
     calcDefaultMtx() {
         const rx = makeRootMtxRot(this, 'x'), ry = makeRootMtxRot(this, 'y');
@@ -270,7 +272,8 @@ export class SwingBoard extends MapObjBase {
         if (this.marioIsOn() && g.emitting) {
             const e = g.mtx, d = new V3(-e[0], 0, -e[8]);
             const m = this.rootMtx();
-            this.unk144 = fr(this.unk144 + fr(this.unk140 * fr(fr(fr(m[2] * d.x) + fr(m[6] * d.y)) + fr(m[10] * d.z))));
+            // (JP 0x801CAAF4: (m6 * 0 + m2 * dx) + m10 * dz, then into the speed, each a fmadds)
+            this.unk144 = fmadd(this.unk140, fmadd(m[10], d.z, fmadd(m[2], d.x, fr(m[6] * d.y))), this.unk144);
         }
     }
     control() {
@@ -279,7 +282,7 @@ export class SwingBoard extends MapObjBase {
         const S = SwingBoard;
         this.unk13C = fr(this.unk13C + this.unk144);
         const old = this.unk144;
-        this.unk144 = fr(this.unk144 - fr(this.unk13C * S.mReturnAccelRate));
+        this.unk144 = fnmsub(this.unk13C, S.mReturnAccelRate, this.unk144);   // (fnmsubs)
         if (Math.abs(this.unk144) > this.unk148) this.unk144 = fr(this.unk144 * S.mSpeedDownRate);
         if (fr(old * this.unk144) <= 0) this.world.sound(this.unk144 > 0 ? SE.OBJ_SWING1 : SE.OBJ_SWING2, this.pos);
         this.rot.x = -this.unk13C;
@@ -290,9 +293,10 @@ export class SwingBoard extends MapObjBase {
         r[8] = 0; r[9] = sn; r[10] = cs; r[11] = 0;
         const m = mtx();
         MTXConcat(this.unk14C, r, m);
-        this.pos.x = fr(this.initialPos.x - fr(m[1] * this.unk138));
-        this.pos.y = fr(fr(this.unk138 + this.initialPos.y) - fr(m[5] * this.unk138));
-        this.pos.z = fr(this.initialPos.z - fr(m[9] * this.unk138));
+        // (JP 0x801CACF4: each a fnmsubs)
+        this.pos.x = fnmsub(m[1], this.unk138, this.initialPos.x);
+        this.pos.y = fnmsub(m[5], this.unk138, fr(this.unk138 + this.initialPos.y));
+        this.pos.z = fnmsub(m[9], this.unk138, this.initialPos.z);
         // (the model's root matrix: its scale stays as getAnmMtx(0) had it)
         m[3] = this.pos.x; m[7] = this.pos.y; m[11] = this.pos.z;
         setRootMtx(this, m);
