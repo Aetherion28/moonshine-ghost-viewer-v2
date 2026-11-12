@@ -250,7 +250,7 @@ export class Igaiga extends RollEnemy {
         // Newton step), not Math.hypot's full-precision sqrt.
         const sq = fr(fr(x * x) + fr(z * z));
         const speed = sq > 0 ? fr(sq * jgInvSqrt(sq)) : sq;
-        this.unk194 = fr(this.unk194 + 4 * fr(speed / fr(this.bodyRadius * this.unk1CC * this.unk1E4)));
+        this.unk194 = fr(this.unk194 + 4 * fr(speed / fr(fr(this.bodyRadius * this.unk1CC) * this.unk1E4)));
         if (this.unk1B4) { ++this.unk1B4; if (this.unk1B4 > this.unk1B8) this.unk1B4 = 0; }
         if (!this.isAirborne() && this.groundPlane && this.groundPlane.actor) (this.groundPlane.actor as HitActor).receiveMessage(this, MSG.ATTACK);
         if (this.unk138 && this.unk138.actor) (this.unk138.actor as HitActor).receiveMessage(this, MSG.ATTACK);

@@ -88,7 +88,7 @@ export class SmallEnemy extends SpineEnemy {
         this.bodyScale = rangeRand(P.scaleLow, P.scaleHigh);
         this.unk154 = this.bodyScale;
         this.bodyRadius = P.mSLBodyRadius; this.wallRadius = P.mSLWallRadius; this.headHeight = P.mSLHeadHeight;
-        this.scaledBodyRadius = fr(this.bodyScale * this.bodyRadius * 15);
+        this.scaledBodyRadius = fr(fr(this.bodyScale * this.bodyRadius) * 15);
         const s = this.bodyScale;
         this.initHitActor(0, 5, HC.PLAYER | HC.ENEMY | HC.BOSS, P.mSLAttackRadius * s, P.mSLAttackHeight * s, P.mSLDamageRadius * s, P.mSLDamageHeight * s);
         this.groundPlane = this.world.illegal;
@@ -123,7 +123,7 @@ export class SmallEnemy extends SpineEnemy {
         this.bodyScale = rangeRand(P.scaleLow, P.scaleHigh);
         this.unk190 = this.unk154 = this.bodyScale;
         this.bodyRadius = P.mSLBodyRadius; this.wallRadius = P.mSLWallRadius; this.headHeight = P.mSLHeadHeight;
-        this.scaledBodyRadius = fr(this.bodyScale * this.bodyRadius * 15);
+        this.scaledBodyRadius = fr(fr(this.bodyScale * this.bodyRadius) * 15);
         this.resetHitPoints();
         this.offLiveFlag(LF.DEAD); this.offLiveFlag(LF.UNK20000); this.offLiveFlag(SE_LF.MELT_ON_DEATH); this.offLiveFlag(LF.HIDDEN);
         if (P.mSLGenerateOnlyDead) this.offLiveFlag(LF.UNK800); else this.onLiveFlag(LF.UNK800);

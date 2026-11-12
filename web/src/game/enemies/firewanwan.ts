@@ -295,9 +295,9 @@ export class FireWanwanTailHit extends TakeActor {
     }
     calcApartPow() {
         const P = this.owner.PF;
-        const k = fr(P.mTailApartPowRate * this.rubber.getLength() / P.mSLFlySpeed);
+        const k = fr(fr(P.mTailApartPowRate * this.rubber.getLength()) / P.mSLFlySpeed);
         const c = k < 0 ? 0 : k > 1 ? 1 : k;
-        return fr(c * c * P.mSLFlySpeed);
+        return fr(fr(c * c) * P.mSLFlySpeed);
     }
     getTakingMtx() { return this.unk74; }
     moveRequest(p: V3) {

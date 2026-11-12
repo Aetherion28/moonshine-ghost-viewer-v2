@@ -521,6 +521,7 @@ export class ItemManager extends MapObjBaseManager {
     newAndRegisterCoinReal() { const c = new Coin(this.world, 'コイン'); c.initAndRegister('coin'); return c; }
     /** newAndRegisterCoin: a blue coin (event < 50), the pool's stand-in (100) or a red coin (200) */
     newAndRegisterCoin(id: number): Coin | null {
+        id = id >>> 0;   // (TItemManager::newAndRegisterCoin(u32): an enemy's -1 is no coin)
         let r: Coin | null;
         if (id < 0x32) r = newAndRegisterObj(this.world, 'coin_blue') as Coin;
         else if (id === 100) r = this.unk78;
@@ -593,6 +594,7 @@ OBJ_MAKERS.unique = (w, name) => {
 };
 /** newAndRegisterObjByEventID: what a hidden object holds (coins by event id, a Shine by name: 777). */
 export function newAndRegisterObjByEventID(w: World, id: number, name: string): MapObjBase | null {
+    id = id >>> 0;   // (a u32: an event id of -1 is no blue coin)
     // TItemManager::newAndRegisterCoin (static: only event 100 needs gpItemManager, its unk78)
     const im = mapObjGlobals(w).itemManager as ItemManager | null;
     let c: Coin | null | undefined;

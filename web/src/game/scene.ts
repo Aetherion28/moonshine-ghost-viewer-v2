@@ -137,19 +137,25 @@ export class Stage {
         this.walk(root, false);
         // the event group: a TEventWatcher per .sb of /common/sp and map/sp (eventwatcher.ts)
         installEventWatchers(w, files);
-        // loadAfter down the scene's tree: an IdxGroup's (TViewObjPtrListT::loadAfter) runs over its list as it is
-        // then, so members added while it runs (the item manager's spare coins and bottles, newAndRegisterObj's
-        // initAndRegister) get theirs at the group's end
+        // loadAfter down the scene's tree. TStrategy::loadAfter runs its groups by index (map, sky, managers, objects,
+        // graffiti, items, player, enemies, ...), not in the file's order, and each IdxGroup's (TViewObjPtrListT) runs
+        // over its list as it is then, so members added while it runs (the item manager's spare coins and bottles,
+        // the hidden objects' items: newAndRegisterObj's initAndRegister) get theirs too
         {
             const done = new Set<NameRef>();
-            const endGroup = (g: number) => {
-                const list = w.groups[g] || [];
-                for (let i = 0; i < list.length; i++) { const a = list[i] as NameRef; if (!done.has(a)) { done.add(a); a.loadAfter(); } }
-            };
-            for (let i = 0; i < this.objects.length; i++) {
-                const o = this.objects[i]; done.add(o); o.loadAfter();
-                const g = this.groupOf.get(o) ?? -1;
-                if (g >= 0 && (i + 1 >= this.objects.length || (this.groupOf.get(this.objects[i + 1]) ?? -1) !== g)) endGroup(g);
+            const visit = (o: NameRef) => { if (!done.has(o)) { done.add(o); o.loadAfter(); } };
+            let strategyDone = false;
+            for (const o of this.objects) {
+                if (!this.groupOf.has(o)) { visit(o); continue; }
+                if (strategyDone) continue;
+                strategyDone = true;
+                for (let g = 0; g < 16; g++) {
+                    const list = w.groups[g] || [];
+                    for (let i = 0; i < list.length; i++) visit(list[i] as NameRef);
+                    // (members the sim keeps outside the group's list)
+                    for (const m of this.objects) if (this.groupOf.get(m) === g) visit(m);
+                    for (let i = 0; i < list.length; i++) visit(list[i] as NameRef);
+                }
             }
         }
         // TMarDirector::setup2: the event table's map objects get their event ids
