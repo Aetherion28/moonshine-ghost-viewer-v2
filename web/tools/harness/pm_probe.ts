@@ -1,3 +1,4 @@
+import { startLockstep } from './lockstep_lib.ts';
 import { goopGpuDebug } from "../../src/game/goopgpu.js";
 import { Skeleton } from "../../src/game/skeleton.js";
 import { concat } from "../../src/game/j3dcalc.js";
@@ -107,7 +108,8 @@ if (process.env.RNGCMP) {
   Object.defineProperty(rngCtx, 'roll', { configurable: true, get() { return (who: any) => { const v = inner ? inner(who) : null; if (v === null) mine(who); else k++; return v; }; }, set(f: any) { inner = f; } });
 }
 const P = st.player!;
-(globalThis as any).__st = st; (globalThis as any).__trace = g.trace; (globalThis as any).__q0 = q0; (globalThis as any).__calcKeyCode = calcKeyCode; (globalThis as any).__concat = concat; (globalThis as any).__goopDbg = goopGpuDebug; (globalThis as any).__Skeleton = Skeleton; (globalThis as any).__P = P; (globalThis as any).__rngCtx = rngCtx; (globalThis as any).__R = g.trace ? g.trace.rng : null; (globalThis as any).__q0 = q0; (globalThis as any).__randState = randState; if (process.env.PJS) { for (const f of process.env.PJS.split(",")) (0, eval)(require("fs").readFileSync(f, "utf8")); }
+(globalThis as any).__st = st; (globalThis as any).__trace = g.trace; (globalThis as any).__q0 = q0; (globalThis as any).__calcKeyCode = calcKeyCode; (globalThis as any).__concat = concat; (globalThis as any).__goopDbg = goopGpuDebug; (globalThis as any).__Skeleton = Skeleton; (globalThis as any).__P = P; (globalThis as any).__rngCtx = rngCtx; (globalThis as any).__R = g.trace ? g.trace.rng : null; (globalThis as any).__q0 = q0; (globalThis as any).__randState = randState; if (process.env.LOCKSTEP) startLockstep(process.argv[3], st, P, randState);
+if (process.env.PJS) { for (const f of process.env.PJS.split(",")) (0, eval)(require("fs").readFileSync(f, "utf8")); }
 if (process.env.SIMWQ) { const [a, b] = process.env.SIMWQ.split('-').map(Number); const W: any = (st.world as any).water; if (W) { const o = W.emitRequest.bind(W); W.emitRequest = (e: any) => { const r = o(e); if (st.qf >= a && st.qf <= b) console.log('SIMW', st.qf, 'gun', (P as any).mWaterGun.getCurrentNozzle().mGunAngle, (P as any).mWaterGun.getCurrentNozzle().mWaistAngle, 'ret', r, 'num', e.num, 'type', e.type, 'pos', [...e.pos].map((x: number) => x.toFixed(5)).join(','), 'dir', [...e.dir].map((x: number) => x.toFixed(6)).join(','), 'pow', (+e.pow).toFixed(4), 'alive', e.alive, 'att', e.attack, 'dirTr', e.dirTremble, 'powTr', e.powTremble, 'size', e.size, 'sizeTr', e.sizeTremble, 'flag', e.flag, 'v', e.v); return r; }; } }
 if (process.env.PIN) { const R: any = { firstPinQf: -1, pinCount: 0 }; st.pinMario = (SimRunner.prototype as any).pinToRecording.call(R, g, q0, P); if (process.env.PINW) st.pinWorld = (SimRunner.prototype as any).pinActorsToRecording.call(R, g, q0, st); process.on("exit", () => console.log("PIN first", R.firstPinQf, "count", R.pinCount)); }
 if (process.env.ACTCMP) (globalThis as any).__actcmp(st, g, q0, +process.env.ACTCMP);

@@ -237,7 +237,11 @@ export function parseSceneBin(b: Uint8Array): SceneNode {
 
 // ---------------------------------------------------------------- name refs
 export class NameRef {
-    name = ''; keyCode = 0;
+    name = '';
+    /** JDrama::TNameRef::mKeyCode: the constructor's calcKeyCode of the name (kept in step with the name here) */
+    private _kc = 0; private _kcName: string | null = null;
+    get keyCode() { if (this._kcName !== this.name) { this._kc = calcKeyCode(this.name); this._kcName = this.name; } return this._kc; }
+    set keyCode(v: number) { this._kc = v & 0xFFFF; this._kcName = this.name; }
     constructor(name = '') { this.name = name; }
     /** (The scene loader has read the class and name already.) */
     load(_s: Stream) { }
