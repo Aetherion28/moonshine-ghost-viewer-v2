@@ -77,7 +77,7 @@ M.after(M.hw.field, occWatch);
 // is rasterised at that one pixel (ppc/gx.ts probeAt). NOPROBE=1 leaves the reads at 0 (Mario always hidden).
 {
     const A = JP10, gx = M.hw.gx;
-    cpu.hook(A.goopLayerDraw, () => { gx.mark(M.hw.streamPos(), true, true); return false; });
+    if (!process.env.NOGOOP) cpu.hook(A.goopLayerDraw, () => { gx.mark(M.hw.streamPos(), true, true); return false; });
     cpu.hook(A.goopObjDraw[0], () => { gx.mark(M.hw.streamPos(), true); return false; });
     for (let a = A.goopObjDraw[0]; a < A.goopObjDraw[0] + A.goopObjDraw[1]; a += 4) if (mem.r32(a) === 0x4E800020) cpu.hook(a, () => { gx.mark(M.hw.streamPos(), false); return false; });
     if (!process.env.NOPROBE) {
@@ -135,6 +135,17 @@ const watch = () => {
         if ((M.fields - stage4Field) % 60 === 0) gks.length = 0;
         if (!gks.length) for (let a = 0x80400000; a < 0x81800000; a += 4) if (mem.r32(a) === 0x803DFDF4) gks.push(a);
         console.log(`  gk frame ${(M.fields - stage4Field) / 2}: ` + gks.map((g) => `${g.toString(16)} wake ${mem.r16(g + 0x17C) << 16 >> 16} hit ${mem.r32(g + 0x154) | 0}`).join(' | ') + ` | mario ${mk}`);
+    }
+    // FIXES=stage:frame:kind,...: corrections where the run parts from the TAS's own (the video's) at that stage frame.
+    //   gkwake: the gatekeeper with the highest wake counter wakes (TBiancoGateKeeper::unk17C = 255)
+    if (process.env.FIXES && stage4Field >= 0 && (M.fields - stage4Field) % 2 === 0) for (const f of process.env.FIXES.split(',')) {
+        const [fs, ff, kind] = f.split(':');
+        if (+fs !== stageNo || +ff !== (M.fields - stage4Field) / 2) continue;
+        if (kind === 'gkwake') {
+            let best = 0, bw = -1;
+            for (let a = 0x80400000; a < 0x81800000; a += 4) if (mem.r32(a) === 0x803DFDF4) { const w = mem.r16(a + 0x17C) << 16 >> 16; if (w > bw) { bw = w; best = a; } }
+            if (best) { mem.w16(best + 0x17C, 0xFF); mem.w16(best + 0x17E, 0x10); console.log(`  FIX stage ${fs} frame ${ff}: gatekeeper ${best.toString(16)} woken (its counter was ${bw})`); }
+        }
     }
     const key = `dir ${ds} ${mk}`;
     if (key !== lastDir && (ds !== lastDs || M.fields % +(process.env.EVERY || 60) === 0)) { console.log(`  [movie frame ${(M.fields / 2).toFixed(1)}] ${key}`); lastDir = key; lastDs = ds; }
