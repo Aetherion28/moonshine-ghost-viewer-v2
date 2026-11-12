@@ -613,9 +613,11 @@ export abstract class MarioMove extends MarioBase {
         this.mWaterRipplePos.set(this.pos.x, this.mFloorPosition.z, this.pos.z);
         const nowIn = this.checkFlag(MF.IN_ANY_WATER);
         if (nowIn !== wasIn) { if (wasIn && !nowIn) this.mWetWaterParticleTimer = 120; this.effect(nowIn ? 'intoWater' : 'outOfWater'); }
-        if (this.isUnderWater()) {
+        if (this.isUnderWater() || this.checkFlag(MF.HELMET_FLW_CAMERA)) {
             const prev = this.mAir;
-            this.mAir = fr(this.mAir - this.mSwimParams.mAirDec);
+            // (MarioMove.cpp: with the diving helmet (isWearingHelm) mAirDecDive, and none while taken)
+            if ((this.mCapModel & 2) !== 0) { if (this.mStatus !== S.TAKEN) this.mAir = fr(this.mAir - this.mSwimParams.mAirDecDive); }
+            else this.mAir = fr(this.mAir - this.mSwimParams.mAirDec);
             if (Math.trunc(prev) !== Math.trunc(this.mAir)) this.mInvincibilityFrames = s16(this.unk55C);
             if (this.mAir < 1) { this.mAir = 0; this.loserExec(); this.changePlayerStatus(S.SWIM_DOWN, 0, false); }
         } else { this.mAir = fr(this.mAir + this.mSwimParams.mAirInc); if (this.mAir >= this.mMaxAir) this.mAir = this.mMaxAir; }
