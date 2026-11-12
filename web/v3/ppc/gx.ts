@@ -104,6 +104,15 @@ export class Gx {
 
     /** rasterise the primitives that come (else they are skipped) */
     raster = false;
+    /**
+     * The probe: when it gives a pixel, the primitives not rasterised otherwise are rasterised at that pixel only, so
+     * that a read of the frame buffer there (GXPeekARGB / GXPeekZ: Mario's occlusion test) gets what the console's
+     * would. Triangles with a corner behind the eye are left out (no clipping here).
+     */
+    probeAt: (() => { x: number; y: number } | null) | null = null;
+    private probing = false;
+    private probeX = 0;
+    private probeY = 0;
     /** the embedded frame buffer: RGBA, 8 bits each */
     efb = new Uint8Array(EFB_W * EFB_H * 4);
     /** the pixel engine's counter of 2 x 2 pixel groups that reached the blender (GXReadPixMetric multiplies by 4) */
@@ -186,12 +195,16 @@ export class Gx {
                 const count = (b[p + 1] << 8) | b[p + 2], lay = this.layout(cmd & 7), total = 3 + count * lay.size;
                 if (p + total > end) {
                     if (inList) { this.warn('a display list ends inside a primitive'); return end; }
-                    if (!this.raster && !this.cap) { this.skip = total - (end - p); this.commands++; return end; }
+                    if (!this.raster && !this.cap && !this.probeAt) { this.skip = total - (end - p); this.commands++; return end; }
                     break;
                 }
                 this.commands++;
                 if (this.cap) this.capPrim(lay, count, b, p + 3, inList ? -1 : base + p);
                 if (this.raster) { if (this.rec) this.rec(b.subarray(p, p + total), true); this.draw(cmd & 0xF8, count, lay, b, p + 3); }
+                else if (this.probeAt) {
+                    const at = this.probeAt();
+                    if (at && at.x >= 0 && at.y >= 0 && at.x < EFB_W && at.y < EFB_H) { this.probeX = at.x; this.probeY = at.y; this.probing = true; this.draw(cmd & 0xF8, count, lay, b, p + 3); this.probing = false; }
+                }
                 p += total; continue;
             }
             this.commands++;
@@ -257,6 +270,7 @@ export class Gx {
                 this.bp[reg] = v;
                 const drawn = this.raster;
                 if (drawn) { this.copy(v); if (this.stopAfterCopy) { this.raster = false; this.stopAfterCopy = false; } }
+                else if (this.probeAt && (v & 0x800)) this.clear();
                 if (this.cap) this.capCopy(v, drawn);
                 return;
             }
@@ -623,6 +637,7 @@ export class Gx {
 
     // ---------------------------------------------------------------- the rasteriser
     private triangle(a: Vtx, b: Vtx, c: Vtx) {
+        if (this.probing && !(a.w > 0 && b.w > 0 && c.w > 0)) return;
         this.trianglesDrawn++;
         // (every triangle sent counts one group in the blender's counter, whatever it covers: the game takes it off again)
         this.blendQuads++;
@@ -650,6 +665,7 @@ export class Gx {
         const sl = Math.max(0, ((bp[0x20] >>> 12) & 0x7FF) - xoff - 342), st = Math.max(0, (bp[0x20] & 0x7FF) - yoff - 342);
         const sr = Math.min(EFB_W, ((bp[0x21] >>> 12) & 0x7FF) - xoff - 341), sb = Math.min(EFB_H, (bp[0x21] & 0x7FF) - yoff - 341);
         minx = Math.max(minx, sl); maxx = Math.min(maxx, sr); miny = Math.max(miny, st); maxy = Math.min(maxy, sb);
+        if (this.probing) { minx = Math.max(minx, this.probeX); maxx = Math.min(maxx, this.probeX + 1); miny = Math.max(miny, this.probeY); maxy = Math.min(maxy, this.probeY + 1); }
         if (minx >= maxx || miny >= maxy) return;
         this.setupPixel();
         // slopes: each interpolated value as a plane over the screen, from vertex 0 (the rounded positions)
@@ -891,7 +907,8 @@ export class Gx {
         } else if (bm & 2) this.warn('logic operations');
         if (this.pixelTrace) this.pixelTrace(`px ${x},${y} uv ${this.uv[0]},${this.uv[1]} ${this.uv[2]},${this.uv[3]} src ${sr},${sa} dst ${efb[o]} -> ${nr}`);
         if (bm & 8) { efb[o] = nr; efb[o + 1] = ng; efb[o + 2] = nb; }
-        if (bm & 0x10) efb[o + 3] = na;
+        // (the destination alpha, BP 0x42, is taken only by the probe: the goop passes were measured without it)
+        if (bm & 0x10) efb[o + 3] = this.probing && (bp[0x42] & 0x100) ? bp[0x42] & 0xFF : na;
         return true;
     }
     /** The texture environment and the alpha test for the pixel set up (this.uv, this.ras): the colour into this.out; false if the alpha test fails. preset: this.texel is the texture's sample already. */
@@ -1063,7 +1080,13 @@ export class Gx {
             }
             if (this.copyTrace) this.copyTrace((bp[0x4B] << 5) & 0x03FFFFFF, sx, sy, sw, sh);
         } else this.warn('a frame buffer copy to the display while rasterising');
-        if (ctl & 0x800) {
+        if (ctl & 0x800) this.clear();
+    }
+    /** the clear after a copy (BP 0x52 bit 11) of the copy's rectangle */
+    private clear() {
+        {
+            const bp = this.bp, efb = this.efb;
+            const sx = bp[0x49] & 0x3FF, sy = (bp[0x49] >>> 10) & 0x3FF, sw = (bp[0x4A] & 0x3FF) + 1, sh = ((bp[0x4A] >>> 10) & 0x3FF) + 1;
             // the clear: colour 0x4F (alpha, red) and 0x50 (green, blue), where the blender's updates are on
             const bm = bp[0x41], cr = bp[0x4F] & 0xFF, ca = (bp[0x4F] >>> 8) & 0xFF, cb = bp[0x50] & 0xFF, cg = (bp[0x50] >>> 8) & 0xFF;
             for (let y = sy; y < sy + sh && y < EFB_H; y++) for (let x = sx; x < sx + sw && x < EFB_W; x++) {

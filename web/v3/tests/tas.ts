@@ -11,18 +11,26 @@ import { installHle } from '../ppc/hle.ts';
 import { symbols } from './syms.ts';
 import { jpDisc, JP_DOL, loadBytes } from './jpdisc.ts';
 import { threads } from './debug.ts';
+import { dolphinFma } from '../ppc/fpu.ts';
+import { JP10 } from '../game/replay.ts';
 
 const S = symbols();
 const M = new Machine(), cpu = M.cpu, mem = M.mem;
 M.load(loadBytes(JP_DOL), jpDisc());
 // DOLPHIN=1: Dolphin's float rule (the TAS was made in Dolphin; `Cpu.laneRounds`)
 if (process.env.DOLPHIN) cpu.laneRounds = true;
+// DFMA=1: Dolphin's double-rounded single multiply-add (ppc/fpu.ts dolphinFma)
+if (process.env.DFMA) dolphinFma.on = true;
 installHle(M, (n) => S.byName.get(n), { report: (t) => { if (process.env.GAMELOG) process.stdout.write('[game] ' + t); } });
 
 const dtm = readFileSync(process.argv[2]);
 const POLLS = (dtm.length - 0x100) >> 3;
 const poll = (i: number) => dtm.subarray(0x100 + 8 * i, 0x108 + 8 * i);
-const OFFSET = +(process.env.OFFSET || 0), STAGE4 = +(process.env.STAGE4 || -1);
+// STAGE4=a,b,...: the movie frame where each stage's play (TMarDirector state 4) begins in Dolphin, stage by stage
+// (a frame followed by g: from the stage's first gameplay field instead, where the application's area changes)
+const OFFSET = +(process.env.OFFSET || 0), STAGE_SPEC = (process.env.STAGE4 || '').split(',').filter((x) => x);
+const STAGES = STAGE_SPEC.map((x) => parseFloat(x)), STAGE_AT_GAME = STAGE_SPEC.map((x) => x.endsWith('g'));
+let STAGE4 = STAGES.length ? STAGES[0] : -1, stageNo = -1, stageArea = '';
 let stage4Field = -1, stage4Reads = 0;
 // Dolphin's ControllerState to the SDK's PADStatus (12 bytes: buttons, stick x y, C x y, triggers L R, analog A B, err)
 const BITS: [number, number, number][] = [[0, 0x01, 0x1000], [0, 0x02, 0x100], [0, 0x04, 0x200], [0, 0x08, 0x400], [0, 0x10, 0x800], [0, 0x20, 0x10],
@@ -52,9 +60,50 @@ cpu.hook(PADRead, (c) => {
     c.gpr[3] = 0; c.pc = c.lr; return true;
 });
 
+// OCC=0|1: Mario's occlusion probe (TMario::drawSyncCallback's GXPeekARGB) forced visible (0) or hidden (1); OCCLOG=1 lists its changes
+let occLast = -1;
+cpu.hook(S.byName.get('GXPeekARGB')!, (c) => {
+    if (process.env.OCCLOG && stage4Field >= 0) { /* logged after the read: see below */ }
+    peeks++; if (process.env.OCCLOG && peeks < 20 && stage4Field >= 0) console.log(`  peek ${c.gpr[3]},${c.gpr[4]}`);
+    if (process.env.OCC === undefined) return false;
+    mem.w32(c.gpr[5], process.env.OCC === '0' ? 0x10000000 : 0xFF000000); c.pc = c.lr; return true;
+});
+let dsc = 0, peeks = 0;
+cpu.hook(S.byName.get('drawSyncCallback__6TMarioFUs')!, (c) => { dsc++; if (process.env.OCCLOG && stage4Field >= 0 && dsc % 50 === 0) { const t = c.gpr[3] >>> 0, f = (a: number) => { const v = new DataView(new ArrayBuffer(4)); v.setUint32(0, mem.r32(a)); return v.getFloat32(0).toFixed(1); }; console.log(`  drawSync this ${t.toString(16)} unk114 ${mem.r16(t + 0x114).toString(16)} screen ${f(t + 0x450)},${f(t + 0x454)} flag ${mem.r32(t + 0x118).toString(16)} (arg ${c.gpr[4]})`); } return false; });
+const occWatch = () => { const ma = mem.r32(0x8040A378); if (process.env.OCCLOG && ma && stage4Field >= 0) { const o = mem.r32(ma + 0x118) & 1; if (o !== occLast) { console.log(`  occluded ${o} at stage frame ${((M.fields - stage4Field) / 2).toFixed(1)}`); occLast = o; } } M.after(M.hw.field, occWatch); };
+M.after(M.hw.field, occWatch);
+// The GPU work the game's logic reads back (as game/replay.ts does): the goop maps drawn and copied on the GPU, and
+// Mario's occlusion test, a read of the frame buffer's alpha at his place (TMario::drawSyncCallback): every primitive
+// is rasterised at that one pixel (ppc/gx.ts probeAt). NOPROBE=1 leaves the reads at 0 (Mario always hidden).
+{
+    const A = JP10, gx = M.hw.gx;
+    cpu.hook(A.goopLayerDraw, () => { gx.mark(M.hw.streamPos(), true, true); return false; });
+    cpu.hook(A.goopObjDraw[0], () => { gx.mark(M.hw.streamPos(), true); return false; });
+    for (let a = A.goopObjDraw[0]; a < A.goopObjDraw[0] + A.goopObjDraw[1]; a += 4) if (mem.r32(a) === 0x4E800020) cpu.hook(a, () => { gx.mark(M.hw.streamPos(), false); return false; });
+    if (!process.env.NOPROBE) {
+        const pt = { x: 0, y: 0 }, fv = new DataView(new ArrayBuffer(4));
+        const f = (a: number) => { fv.setUint32(0, mem.r32(a)); return fv.getFloat32(0); };
+        gx.probeAt = () => {
+            const ma = mem.r32(A.gpMarioOriginal); if (!ma) return null;
+            const x = f(ma + 0x450), y = f(ma + 0x454);
+            if (!(x >= 0 && y >= 0)) return null;
+            pt.x = x >>> 0 & 0xFFFF; pt.y = y >>> 0 & 0xFFFF; return pt;
+        };
+        M.hw.efbPeek = (addr) => {
+            const x = (addr >>> 2) & 0x3FF, y = (addr >>> 12) & 0x3FF;
+            if (x >= 640 || y >= 528) return 0;
+            if (addr & 0x400000) return gx.zbuf[y * 640 + x];
+            const o = (y * 640 + x) * 4, e = gx.efb;
+            return ((e[o + 3] << 24) | (e[o] << 16) | (e[o + 1] << 8) | e[o + 2]) >>> 0;
+        };
+    }
+}
+let gxWarn = new Set<string>();
+M.hw.gxUnsupported = (what) => { if (!gxWarn.has(what)) { gxWarn.add(what); if (process.env.GXWARN) console.log(`  gpu: ${what}`); } };
 // the application's state (TApplication gpApplication, JP 0x803E6000), reported as it changes
 const APP = 0x803E6000;
-let lastApp = '', lastDir = '', lastDs = -2, shineSeen = false;
+const gks: number[] = [];
+let lastGm = -2, lastApp = '', lastDir = '', lastDs = -2, shineSeen = false;
 const watch = () => {
     const st = mem.r8(APP + 8), dir = mem.r32(APP + 4), cur = [mem.r8(APP + 0xE), mem.r8(APP + 0xF)], next = [mem.r8(APP + 0x12), mem.r8(APP + 0x13)];
     const k = `app state ${st} director ${dir ? S.who(mem.r32(dir)) : '-'} area ${cur} next ${next}`;
@@ -64,10 +113,13 @@ const watch = () => {
     const ds = md ? mem.r8(md + 0x64) : -1;
     const f = (a: number) => { const v = new DataView(new ArrayBuffer(4)); v.setUint32(0, mem.r32(a)); return v.getFloat32(0).toFixed(1); };
     const mk = ma ? `mario ${f(ma + 0x10)},${f(ma + 0x14)},${f(ma + 0x18)} st ${mem.r32(ma + 0x7C).toString(16)}` : 'no mario';
-    if (STAGE4 >= 0 && stage4Field < 0 && ds === 4 && mem.r8(APP + 0xE) === 0) {
+    const areaKey = `${mem.r8(APP + 0xE)},${mem.r8(APP + 0xF)}`;
+    if (STAGES.length && stageNo + 1 < STAGES.length && (STAGE_AT_GAME[stageNo + 1] ? st === 5 : ds === 4) && mem.r8(APP + 0xE) !== 15 && areaKey !== stageArea) {
+        stageArea = areaKey; STAGE4 = STAGES[++stageNo];
         stage4Field = M.fields; stage4Reads = reads; console.log(`  [field ${M.fields}] the stage's play begins: the movie from frame ${STAGE4}`);
         // DUMP=<folder>: from here every video frame's GPU commands (web/gxframe.ts) for tests/gxview.mjs, DUMPN of them
-        if (process.env.DUMP) {
+        // (DUMPSTAGE=n: from the n-th stage's start instead of the first's)
+        if (process.env.DUMP && stageNo === +(process.env.DUMPSTAGE || 0)) {
             const out = process.env.DUMP, max = +(process.env.DUMPN || 6000); mkdirSync(out, { recursive: true });
             let seq = 0;
             M.hw.gx.onFrame = (fr) => { if (seq >= max) return; writeFileSync(`${out}/f_${String(seq).padStart(6, '0')}.gxf`, encodeGxFrame(fr)); if (++seq >= max) M.hw.gx.capture(false); };
@@ -75,6 +127,15 @@ const watch = () => {
         }
     }
     if (ma && (mem.r32(ma + 0x7C) & 0x1FF) === 0x102 && !shineSeen) { shineSeen = true; console.log(`  SHINE GET at movie frame ${STAGE4 >= 0 && stage4Field >= 0 ? (STAGE4 + (M.fields - stage4Field) / 2).toFixed(1) : (M.fields / 2).toFixed(1)}`); }
+    // the director's game mode (mGameMode +0x124: talk, demo) as it changes, with the stage's frame
+    const gm = md ? mem.r8(md + 0x124) : -1;
+    if (gm !== lastGm) { lastGm = gm; console.log(`  game mode ${gm} at stage frame ${stage4Field >= 0 ? ((M.fields - stage4Field) / 2).toFixed(1) : '-'} (stage ${stageNo})`); }
+    // GK=<stage>: the gatekeepers' wake counter (TBiancoGateKeeper::unk17C) and water hit timer (unk154) per frame
+    if (process.env.GK && stageNo === +process.env.GK && stage4Field >= 0 && (M.fields - stage4Field) % 2 === 0) {
+        if ((M.fields - stage4Field) % 60 === 0) gks.length = 0;
+        if (!gks.length) for (let a = 0x80400000; a < 0x81800000; a += 4) if (mem.r32(a) === 0x803DFDF4) gks.push(a);
+        console.log(`  gk frame ${(M.fields - stage4Field) / 2}: ` + gks.map((g) => `${g.toString(16)} wake ${mem.r16(g + 0x17C) << 16 >> 16} hit ${mem.r32(g + 0x154) | 0}`).join(' | ') + ` | mario ${mk}`);
+    }
     const key = `dir ${ds} ${mk}`;
     if (key !== lastDir && (ds !== lastDs || M.fields % +(process.env.EVERY || 60) === 0)) { console.log(`  [movie frame ${(M.fields / 2).toFixed(1)}] ${key}`); lastDir = key; lastDs = ds; }
     // STACKAT=<field>[,<field>...]: every OS thread with its call stack then
@@ -86,4 +147,5 @@ M.after(M.hw.field, watch);
 const secs = +(process.argv[3] || 100);
 const t0 = performance.now();
 try { M.run(secs * 486e6); } catch (e) { console.log('STOP', String(e)); }
+console.log(`drawSyncCallback ${dsc} times, GXPeekARGB ${peeks}`);
 console.log(`ran ${(cpu.count / 486e6).toFixed(1)} s of game time in ${((performance.now() - t0) / 1000).toFixed(1)} s; fields ${M.fields}; pad reads ${reads}`);

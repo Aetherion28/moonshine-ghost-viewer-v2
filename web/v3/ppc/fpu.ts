@@ -51,7 +51,10 @@ export function fmaD(a: number, c: number, b: number): number {
     return r;
 }
 /** a * c + b rounded once to single */
+/** Dolphin's single multiply-add (its JIT of 2016): the sum rounded to double, then to single (a TAS made there) */
+export const dolphinFma = { on: false };
 export function fmaS(a: number, c: number, b: number): number {
+    if (dolphinFma.on) return fr(a * c + b);
     const d = fmaD(a, c, b), r = fr(d);
     if (tail === 0 || r === d || r !== r || r === Infinity || r === -Infinity) return r;
     // d was rounded from the exact value; if d sits exactly halfway between two singles, the
