@@ -19,7 +19,7 @@ import { AT } from '../actortypes.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { NPC_BAS_TABLES } from '../bastables.js';
-import { CLBDegToShortAngle, CLBRoundfS16, chaseSpeedF, chaseSpeedS, chaseFrameF, msVecNormalize, ratioI, twoDegS } from '../camera/lib.js';
+import { CLBDegToShortAngle, CLBRoundfS16, chaseSpeedF, chaseSpeedS, chaseFrameF, msVecNormalize, ratioI, ratioF, lerpF, twoDegS } from '../camera/lib.js';
 import { MsMtxSetRotRPH, mtx } from '../math.js';
 import { mat4 } from 'gl-matrix';
 import { newAndRegisterObjByEventID, itemCounts } from '../mapobj/item.js';
@@ -708,8 +708,9 @@ export class BaseNPC extends SpineEnemy {
                     if (this.checkActionFlag(NA.BURNING)) { const m = this.P.mSLSmokeRunMagnif; hi = fr(hi * m); top = fr(top * m); }
                 } else { hi = fr(Q.mSLMaxWalkAnmRate * rate); top = Q.mMaxMarchSpeed; }
                 const v = d > top ? top : d;
-                const t = MsClamp(fr(fr(v - Q.mSLMinMarchSpeed) / fr(top - Q.mSLMinMarchSpeed)), 0, 1);
-                let r = fr(lo + fr(t * fr(hi - lo)));
+                // (CLBCalcRatio and CLBLinearInbetween, out of line in the DOL: JP 0x8016A640 / 0x8016A634)
+                const t = MsClamp(ratioF(Q.mSLMinMarchSpeed, top, v), 0, 1);
+                let r = lerpF(lo, hi, t);
                 if (this.collisions.length !== 0) r = hi;
                 this.unk1D0 = chaseDecreaseT(this.unk1D0, r, this.P.mMoveWalkAnmRateChase, 0)[0];
                 a.setFrameRate(this.unk1D0, ANM_BCK);
