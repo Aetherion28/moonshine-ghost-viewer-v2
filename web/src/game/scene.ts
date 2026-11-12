@@ -8,9 +8,10 @@
 import { MSF } from './msflags.js';
 import { DEMO_FLAG } from './talk.js';
 import { V3, srand } from './math.js';
+import { traceFollowCtx } from './feedback.js';
 import {
     World, Files, NameRef, Stream, parseSceneBin, SceneNode, ObjChara, HitActor, IDX, GROUP_NAMES, parseRails, GraphWeb, CUE_MOVE, CUE_CALC_ANIM,
-    LiveActor, shineIDofExStage,
+    LiveActor, shineIDofExStage, calcKeyCode,
 } from './engine.js';
 import { MapCollision, mapGridFromPayload, mapWarpFromPayload } from './collision.js';
 import { MarioProxy, MarioTrack } from './mario.js';
@@ -233,6 +234,7 @@ export class Stage {
         else (w.mario as MarioProxy).track = track;
         // (gpCamera exists from the stage's load: before the first CalcAnim's clip, a trace's movement sees the sim's camera, the game's there)
         if (!w.clipCamera && this.simClipFallback && P) w.clipCamera = simClipCamera(P.simCamera);
+        if (traceFollowCtx.apply) traceFollowCtx.apply((function* () { for (const m of w.conductor.liveManagers) for (const a of (m.objs || [])) yield a; })(), (a) => a.keyCode || calcKeyCode(a.name));
         for (let tick = 0; tick < 4; tick++) {
             const last = tick === 3;
             // (the changeState after the last tick of the frame before runs here, after the pad's read)

@@ -160,6 +160,49 @@ export function traceSessionByTick(S: { qf: number[]; bytes: Uint8Array[] } | un
     };
 }
 
+
+/**
+ * Following the recorded actors (the user's direction, 2026-11-12: only Mario is simulated, everything else may come
+ * from the recording). At each frame's start every sim actor of the conductor's managers takes its recorded place,
+ * rotation, scale and speed: the recorder samples the roster once a frame, before the frame's ticks (ghost_trace.cpp),
+ * so a record labelled L is the state after tick L - 1. An actor is paired once with a recorded object (the same name
+ * key, the nearest within 80, each recorded object once) and keeps that object's records.
+ */
+export const traceFollowCtx: { apply: ((actors: Iterable<any>, keyOf: (a: any) => number) => void) | null } = { apply: null };
+export function traceActorFollow(A: TraceActorsLike, base: number, qfNow: () => number) {
+    const byQf = new Map<number, number[]>();
+    for (let i = 0; i < A.count; i++) { const q = A.qf[i]; (byQf.get(q) || byQf.set(q, []).get(q)!).push(i); }
+    const pairOf = new Map<any, number>(), taken = new Set<number>();
+    return (actors: Iterable<any>, keyOf: (a: any) => number) => {
+        const L = byQf.get(base + qfNow() - 1);
+        if (!L) return;
+        const byId = new Map<number, number>();
+        for (const i of L) byId.set(A.id[i], i);
+        for (const a of actors) {
+            if (!a || !a.pos) continue;
+            let i: number | undefined;
+            const id = pairOf.get(a);
+            if (id !== undefined) i = byId.get(id);
+            else {
+                const key = keyOf(a) & 0xFFFF;
+                let best = -1, bd = 80;
+                for (const j of L) {
+                    if (A.key[j] !== key || taken.has(A.id[j])) continue;
+                    const e = Math.hypot(A.pos[j * 3] - a.pos.x, A.pos[j * 3 + 2] - a.pos.z);
+                    if (e < bd) { bd = e; best = j; }
+                }
+                if (best < 0) continue;
+                pairOf.set(a, A.id[best]); taken.add(A.id[best]); i = best;
+            }
+            if (i === undefined) continue;
+            a.pos.set(A.pos[i * 3], A.pos[i * 3 + 1], A.pos[i * 3 + 2]);
+            if (a.rot) a.rot.set(A.rot[i * 3], A.rot[i * 3 + 1], A.rot[i * 3 + 2]);
+            if (a.scale) a.scale.set(A.scale[i * 3], A.scale[i * 3 + 1], A.scale[i * 3 + 2]);
+            if (A.extent[i] >= 0xF4 && a.vel) a.vel.set(A.vel[i * 3], A.vel[i * 3 + 1], A.vel[i * 3 + 2]);
+        }
+    };
+}
+interface TraceActorsLike { count: number; qf: Int32Array; id: Uint32Array; key: Uint16Array; extent: Uint16Array; pos: Float32Array; rot: Float32Array; scale: Float32Array; vel: Float32Array }
 /**
  * Every recorded value the sim reads from a trace while it plays one (the GPU feedback, Mario's recorded
  * status, the rolls by RNG state, the actors by tick, Moonshine's settings), built for one stage and put
@@ -172,7 +215,8 @@ export class TraceFeeds {
     rng: ((state: number) => number | null) | null = null;
     actor: ((key: number, x: number, z: number, d: number) => [number, number, number] | null) | null = null;
     session: ((field: SessionField) => number | null) | null = null;
-    constructor(g: any, q0: number, qfNow: () => number, off: { feedback?: boolean; status?: boolean; rng?: boolean; actor?: boolean; session?: boolean } = {}) {
+    follow: ((actors: Iterable<any>, keyOf: (a: any) => number) => void) | null = null;
+    constructor(g: any, q0: number, qfNow: () => number, off: { feedback?: boolean; status?: boolean; rng?: boolean; actor?: boolean; session?: boolean; follow?: boolean } = {}) {
         const T = g && g.trace;
         if (!T) return;
         // the GPU results (the camera's read of Mario's occlusion, Bowser's bath-water height)
@@ -182,15 +226,17 @@ export class TraceFeeds {
         // the rolls by RNG state (uninitialised memory a recorded roll gives away: enemies/tobipuku.ts)
         if (!off.rng && T.rng && T.rng.count) this.rng = traceRngByState(T.rng);
         if (!off.actor && T.actors && T.actors.count) this.actor = traceActorsByTick(T.actors, q0 + g.header.startQf, qfNow);
+        // the recorded actors' places at each frame's start (only Mario is simulated)
+        if (!off.follow && T.actors && T.actors.count) this.follow = traceActorFollow(T.actors, q0 + g.header.startQf, qfNow);
         // Moonshine's settings as the runner changed them (the Ricco fruit machine: mapobj/ricco.ts)
         if (!off.session) this.session = traceSessionByTick(T.session, q0, qfNow);
     }
     install() {
         feedbackCtx.take = this.feedback ? this.feedback.take : null;
-        traceStatusCtx.at = this.status; traceRngCtx.next = this.rng; traceActorCtx.at = this.actor; sessionCtx.at = this.session;
+        traceStatusCtx.at = this.status; traceRngCtx.next = this.rng; traceActorCtx.at = this.actor; sessionCtx.at = this.session; traceFollowCtx.apply = this.follow;
     }
     static clear() {
         feedbackCtx.take = null;
-        traceStatusCtx.at = null; traceRngCtx.next = null; traceActorCtx.at = null; sessionCtx.at = null;
+        traceStatusCtx.at = null; traceRngCtx.next = null; traceActorCtx.at = null; sessionCtx.at = null; traceFollowCtx.apply = null;
     }
 }
