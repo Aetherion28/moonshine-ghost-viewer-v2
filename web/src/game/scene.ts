@@ -231,6 +231,8 @@ export class Stage {
         const w = this.world, P = this.player, D = this.director;
         if (P) { P.track = track; P.padRead(pad); }
         else (w.mario as MarioProxy).track = track;
+        // (gpCamera exists from the stage's load: before the first CalcAnim's clip, a trace's movement sees the sim's camera, the game's there)
+        if (!w.clipCamera && this.simClipFallback && P) w.clipCamera = simClipCamera(P.simCamera);
         for (let tick = 0; tick < 4; tick++) {
             const last = tick === 3;
             // (the changeState after the last tick of the frame before runs here, after the pad's read)
@@ -317,7 +319,9 @@ export class Stage {
         w.fludd.emit(m.fludd, m.pos, m.vel, !!(m.fludd as any).burst);
     }
     /** The managers' and conductor's clipping, against the frame's game camera (else all in view). */
-    private clip() { this.world.clipCamera = this.camera ?? (this.liveClip && this.player ? simClipCamera(this.player.simCamera) : null); }
+    /** a trace's frames without a recorded camera (the stage's first): the sim's camera, which is the game's there (gpCamera at its load) */
+    simClipFallback = false;
+    private clip() { this.world.clipCamera = this.camera ?? ((this.liveClip || this.simClipFallback) && this.player ? simClipCamera(this.player.simCamera) : null); }
 
     /** Run up to QF q (frames are whole: the frame holding q). */
     runTo(q: number, track: MarioTrack | null, budgetFrames = Infinity, pad: ((qf: number) => PadStatus | null) | null = null) {
@@ -347,7 +351,7 @@ function simClipCamera(C: any): GameCamera | null {
     else if (m00 > m11 && m00 > m22) { const S = Math.sqrt(1 + m00 - m11 - m22) * 2; qw = (yz - zy) / S; qx = 0.25 * S; qy = (yx + xy) / S; qz = (zx + xz) / S; }
     else if (m11 > m22) { const S = Math.sqrt(1 + m11 - m00 - m22) * 2; qw = (zx - xz) / S; qx = (yx + xy) / S; qy = 0.25 * S; qz = (zy + yz) / S; }
     else { const S = Math.sqrt(1 + m22 - m00 - m11) * 2; qw = (xy - yx) / S; qx = (zx + xz) / S; qy = (zy + yz) / S; qz = 0.25 * S; }
-    return { pos: [p.x, p.y, p.z], quat: [qx, qy, qz, qw], fovy: C.fovy || 50, aspect: (640 * 0.9134614) / 448, near: 10 };
+    return { pos: [p.x, p.y, p.z], at: [a.x, a.y, a.z], quat: [qx, qy, qz, qw], fovy: C.fovy || 50, aspect: (640 * 0.9134614) / 448, near: 10 };
 }
 declare module './engine.js' { interface World { clipCamera: GameCamera | null; } }
 World.prototype.clipCamera = null;

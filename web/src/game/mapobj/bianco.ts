@@ -56,8 +56,10 @@ export class BigWindmill extends MapObjBase {
         let angle = fr(this.rot.z + sAngleAdd);
         for (const b of this.blocks) {
             const m = Float64Array.from(b.rootMtx());
-            m[3] = fr(this.pos.x + fr(sRadius * fr(Math.cos(fr(DEG * angle)))));
-            m[7] = fr(fr(this.pos.y + fr(sRadius * fr(Math.sin(fr(DEG * angle))))) - this.yOffset);
+            // (JP 0x8019F698: MSL cosf / sinf, each fmadds onto the place)
+            const a = fr(DEG * angle);
+            m[3] = FMA(sRadius, cosf(a), this.pos.x);
+            m[7] = fr(FMA(sRadius, sinf(a), this.pos.y) - this.yOffset);
             m[11] = fr(this.pos.z - sSubZ);
             setRootMtx(b, m);
             b.pos.set(m[3], m[7], m[11]);

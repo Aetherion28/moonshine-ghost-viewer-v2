@@ -1,0 +1,2 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P);
+  P.testPerform = (c) => { const r = o(c); if (st.qf >= +process.env.LA && st.qf <= +process.env.LB) { const g = st.world.groups; for (const L of g) for (const a of (L || [])) if (a && /尻尾/.test(a.name || '')) console.log('TAIL', st.qf, a.name, a.pos.x, a.pos.y, a.pos.z, a.attackRadius, a.damageRadius, a.damageHeight, (a.hitFilter>>>0).toString(16), a.actorType.toString(16), a.entryRadius); } return r; }; }

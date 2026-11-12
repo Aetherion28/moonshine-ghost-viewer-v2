@@ -1,0 +1,3 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); const A = +process.env.LA, B = +process.env.LB;
+  P.testPerform = (c) => { const r = o(c); if (st.qf >= A && st.qf <= B) { const M = st.world.mario;
+    console.log('MCOL', st.qf, M.collisions.length, M.collisions.map(a => `${a.name}@${a.pos.x.toFixed(1)},${a.pos.y.toFixed(1)},${a.pos.z.toFixed(1)} d${a.damageRadius}/${a.damageHeight} a${a.attackRadius}/${a.attackHeight} e${a.entryRadius}`).join(' | '), 'M', M.pos.x.toFixed(1), M.pos.y.toFixed(1), M.pos.z.toFixed(1), 'Ma', M.attackRadius, M.attackHeight, M.damageRadius, M.damageHeight, M.entryRadius); } return r; }; }

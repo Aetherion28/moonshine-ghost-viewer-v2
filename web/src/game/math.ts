@@ -238,6 +238,16 @@ export function frsqrte(v: number): number {
     ibuf[0] = exp | (BigInt(e[0] + e[1] * (i % 2048)) << 26n);
     return fbuf[0];
 }
+
+/** MSL _inv_sqrtf (JP 0x80086D60): three Newton steps from frsqrte */
+export function mslInvSqrtf(x: number) {
+    if (x <= 0) return x === 0 ? Infinity : NaN;
+    let e = fr(frsqrte(x));
+    for (let i = 0; i < 3; i++) e = fr(fr(0.5 * e) * FNMS(x, fr(e * e), 3));
+    return e;
+}
+/** MSL acosf (JP 0x80086DD0): pi/2 - atanf(x * _inv_sqrtf(1 - x*x)) */
+export const mslAcosf = (x: number) => fr(1.5707963705062866 - mslAtanf(fr(x * mslInvSqrtf(FNMS(x, x, 1)))));
 /** MsSqrtf (MathUtil.hpp): frsqrte and one Newton step in double, then frsp; 0 for x <= 0. */
 export function MsSqrtfHW(x: number): number {
     if (!(x > 0)) return x;

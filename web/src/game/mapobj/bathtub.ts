@@ -28,17 +28,9 @@ import { V } from '../version.js';
 import { fr, V3, Mtx, mtx, Quat, matan, MsMtxSetRotRPH, JMASSin, JMASCos, s16 } from '../math.js';
 import { jgSqrt } from '../vecops.js';
 import { fmadd, fmsub, fnmsub, invSqrtJ, frsqrte } from '../player/fmath.js';
-import { sinf, cosf, mslAtanf, mslAtan2f } from '../math.js';
+import { sinf, cosf, mslAtanf, mslAtan2f, mslAcosf } from '../math.js';
 const EPS = 3.814697265625e-06, DEG2RAD_F = 0.01745329238474369;
-/** MSL _inv_sqrtf (JP 0x80086D60): three Newton steps */
-function invSqrtf3(x: number) {
-    if (x <= 0) return x === 0 ? Infinity : NaN;
-    let e = fr(frsqrte(x));
-    for (let i = 0; i < 3; i++) e = fr(fr(0.5 * e) * fnmsub(x, fr(e * e), 3));
-    return e;
-}
-/** MSL acosf (JP 0x80086DD0): pi/2 - atanf(x * _inv_sqrtf(1 - x*x)) */
-const acosfMsl = (x: number) => fr(1.5707963705062866 - mslAtanf(fr(x * invSqrtf3(fnmsub(x, x, 1)))));
+const acosfMsl = mslAcosf;
 /** TBathtubData::unk18 is the tub's rotation transposed (calcBathtubData, JP 0x801D2450): T[r][c] = root[c][r].
  *  bathLocal: T times p - mPos (the tub's frame), each row T[r][1] dy, then T[r][0] dx, then T[r][2] dz, fused */
 export function bathLocal(T: Mtx | Float64Array | number[], o: V3, p: V3) {

@@ -211,7 +211,7 @@ export class FireWanwanTailHit extends TakeActor {
         (this.owner.manager as FireWanwanManager).unk64 = 1;
         this.curTailLength = this.rubber.getLength();
         this.prevTailLength = this.curTailLength;
-        this.moveRequest(this.pos);
+        this.moveRequest(a.pos);
     }
     behaveApart() {
         this.rubber.fixTail = false;

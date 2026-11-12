@@ -10,7 +10,7 @@
 //
 // TMapObjSoundGroup (the waves' sound along a rail, from the camera's place) isn't ported.
 
-import { fr, V3, MsSin, MsWrap, MsRandF, MsMtxSetXYZRPH, mtx, Mtx } from '../math.js';
+import { fr, V3, sinf, MsSin, MsWrap, MsRandF, MsMtxSetXYZRPH, mtx, Mtx } from '../math.js';
 import { World, NameRef, Actor, HitActor, Stream, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -164,7 +164,7 @@ export class MapObjGrassManager extends NameRef {
     perform(cue: number) {
         if (!(cue & CUE_CALC_ANIM)) return;
         let t = 0;
-        for (let i = 0; i < 10; i++) { this.unk20[i] = fr(MapObjGrassManager.mSwingWidth * fr(Math.sin(fr(this.unk18 + t)))); this.unk24[i] = this.unk20[i]; t = fr(t + fr(0.2)); }
+        for (let i = 0; i < 10; i++) { this.unk20[i] = fr(MapObjGrassManager.mSwingWidth * sinf(fr(this.unk18 + t))); this.unk24[i] = this.unk20[i]; t = fr(t + fr(0.2)); }
         this.unk18 = fr(this.unk18 + MapObjGrassManager.mSwingSpeed);
         if (this.unk18 > fr(3.14159 * 2)) this.unk18 = 0;
         for (const g of this.groups) g.calc();

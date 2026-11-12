@@ -868,6 +868,7 @@ export class SimRunner {
         const st = this.stage!;
         const track = this.track(inp, segI);
         const t0 = performance.now();
+        st.simClipFallback = !!(g && g.trace);
         while (st.qf + 4 <= want) {
             st.camera = this.camera(inp, q0 + st.qf + 4, segI);
             rngCtx.roll = this.rng ? this.rng.roll : null; rngCtx.node = this.rng ? this.rng.node : null;

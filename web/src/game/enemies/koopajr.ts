@@ -23,7 +23,7 @@
 // light type, and the flag manager's life count (see appearShineKiller).
 
 import { V } from '../version.js';
-import { mslSinf, mslCosf } from '../math.js';
+import { mslSinf, mslCosf, sinf, cosf } from '../math.js';
 import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, Quat, MsMtxSetRotRPH, MsMtxSetXYZRPH, MsRandF, matan, jgInvSqrt } from '../math.js';
 import { jgSqrt } from '../vecops.js';
@@ -111,7 +111,7 @@ export class DirectionCalc {
         return fr(c - step);
     }
     makeDirection(v: V3) { this.unk0 = fr(Math.atan2(v.x, v.z)); }
-    calcDirectionVector() { return new V3(fr(Math.sin(this.unk0)), 0, fr(Math.cos(this.unk0))); }
+    calcDirectionVector() { return new V3(sinf(this.unk0), 0, cosf(this.unk0)); }
     absDirection(d: number) { this.unk0 = MsWrapMod(this.unk0, 0, fr(2 * PI)); const c = this.unk0; return Math.abs(fr(c - nearerDirection(c, d))); }
     static d2r(deg: number) { return fr(fr(deg * PI) / 180); }
     static r2d(rad: number) { return fr(fr(180 * rad) / PI); }
@@ -468,8 +468,8 @@ export class KoopaJrSubmarine extends SpineEnemy {
         if (this.mWaveAmplitude <= 0) this.mWavePhase = 0;
         this.mWavePhase = MsWrapFmodf(fr(this.mWavePhase + P.mSLWavePhaseVelocity), 0, TWO_PI);
     }
-    getSwingAngle() { return fr(this.mSwingAmplitude * fr(Math.sin(this.mSwingPhase))); }
-    getWaveAngle() { return fr(this.mWaveAmplitude * fr(Math.sin(this.mWavePhase))); }
+    getSwingAngle() { return fr(this.mSwingAmplitude * sinf(this.mSwingPhase)); }
+    getWaveAngle() { return fr(this.mWaveAmplitude * sinf(this.mWavePhase)); }
     bind() {
         const next = this.pos.clone().add(this.posDelta).add(this.vel);
         this.posDelta.set(V3.sub(next, this.pos));

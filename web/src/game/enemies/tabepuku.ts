@@ -10,7 +10,8 @@
 //
 // Not here: the bubble particles (emitEffects), the anm sounds (pukupuku_*.bas).
 
-import { fr, V3, Quat, MsRandF, MsGetRotFromZaxisY } from '../math.js';
+import { fr, V3, Quat, MsRandF, MsGetRotFromZaxisY, jgInvSqrt, frsqrte, sinf, cosf, mslAtan2f, mslAcosf } from '../math.js';
+import { fmadd as FMA, fmsub as FMS, fnmsub as FNMS } from '../player/fmath.js';
 import { World, Stream, HitActor, TakeActor, LF, HF, MSG, ANM_BCK, ANM_FRAME_RATE, nerve, Spine, PathNode, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -27,7 +28,7 @@ const TABEPUKU_PARAMS = {
 } satisfies PSchema;
 
 /** JGeometry::TUtil<f32>::epsilon / epsilonEquals */
-const EPS = 3.81469727e-6;
+const EPS = fr(3.81469727e-6);
 const epsilonEquals = (a: number, b: number, e: number) => -e <= b - a && b - a <= e;
 const PI_F = fr(Math.PI);
 
@@ -66,7 +67,9 @@ export class TPHitActor extends HitActor {
     /** updateTerrainCollsion: hung below the fish (and below Mario while it carries him) */
     updateTerrainCollsion() {
         const o = this.owner;
-        const up = qYDir(o.quat);
+        // (JP 0x8034AC18: getYDir fused, the centre fmadds, then + 0 * depth or the fused -1 * depth)
+        const { x: qx, y: qy, z: qz, w: qw } = o.quat;
+        const up = new V3(FMS(2, fr(qx * qy), fr(2 * fr(qw * qz))), FNMS(2, fr(qz * qz), FNMS(2, fr(qx * qx), 1)), FMA(2, fr(qy * qz), fr(2 * fr(qw * qx))));
         let depth = fr(0.6666667 * this.attackHeight);
         this.height = this.attackHeight;
         this.radius = this.attackRadius;
@@ -76,14 +79,14 @@ export class TPHitActor extends HitActor {
             this.radius = fr(this.radius + o.held.damageRadius);
         }
         const h = fr(0.5 * this.attackHeight);
-        const c = new V3(fr(o.pos.x + fr(up.x * h)), fr(o.pos.y + fr(up.y * h)), fr(o.pos.z + fr(up.z * h)));
-        const p = new V3(fr(c.x + fr(0 * depth)), fr(c.y + fr(-1 * depth)), fr(c.z + fr(0 * depth)));
-        this.posDelta.set(V3.sub(p, this.pos));
+        const z0 = fr(0 * depth);
+        const p = new V3(fr(FMA(up.x, h, o.pos.x) + z0), FMA(-1, depth, FMA(up.y, h, o.pos.y)), fr(FMA(up.z, h, o.pos.z) + z0));
+        this.posDelta.set(V3.sub(p, this.pos).fround());
         this.pos.set(p);
     }
     bind() {
         const o = this.owner;
-        const next = this.pos.clone().add(this.posDelta).add(o.vel).add(o.posDelta);
+        const next = this.pos.clone().add(this.posDelta).fround().add(o.vel).fround().add(o.posDelta).fround();
         const [h, d] = o.world.checkGroundIgnoreWaterSurface(next.x, fr(next.y + this.height), next.z);
         this.groundPlane = d;
         this.groundHeight = fr(h + 1);
@@ -92,8 +95,9 @@ export class TPHitActor extends HitActor {
             // push off steep ground along its normal
             const n = new V3(d.n[0], d.n[1], d.n[2]);
             const g = new V3(next.x, this.groundHeight, next.z);
-            const push = fr(1 - fr(fr(n.dot(next)) - fr(n.dot(g))));
-            if (push > 0) next.set(fr(next.x + fr(n.x * push)), fr(next.y + fr(n.y * push)), fr(next.z + fr(n.z * push)));
+            const d1 = FMA(n.z, next.z, FMA(n.x, next.x, fr(n.y * next.y))), d2 = FMA(n.z, next.z, FMA(n.x, next.x, fr(n.y * g.y)));
+            const push = fr(1 - fr(d1 - d2));
+            if (push > 0) next.set(FMA(n.x, push, next.x), FMA(n.y, push, next.y), FMA(n.z, push, next.z));
             next.y = this.groundHeight;
         } else this.airborne = true;
         // stay under the water surface
@@ -101,7 +105,7 @@ export class TPHitActor extends HitActor {
         const r: WallCheck = { center: [next.x, next.y, next.z], radius: this.radius, maxResults: 1, flags: 0, results: [] };
         const touched = o.world.isTouchedWallsAndMoveXZ(r);
         next.x = r.center[0]; next.z = r.center[2];
-        this.posDelta.set(V3.sub(next, this.pos));
+        this.posDelta.set(V3.sub(next, this.pos).fround());
         this.touchedWall = touched;
         this.pos.set(next);
     }
@@ -225,23 +229,55 @@ export class TabePuku extends SmallEnemy {
         if (this.touchedWall || this.isTouchedPlane() || this.PT.mDragLength < V3.sub(this.goal104.point(), this.pos).length()) { this.detach(); return true; }
         return false;
     }
+    /** swimTo (JP 0x80349564), in the ROM's order: the direction normalized, TQuat4::setRotate from (0, 0, 1), the slerp
+     *  (both quaternions normalized, the dot fused y, x, z, w, MSL acosf / sinf) and the result normalized */
     swimTo(target: V3) {
-        const dir = target.clone();
-        if (epsilonEquals(0, target.squared(), EPS)) { this.setMomentumFromQuat(); return; }
-        dir.normalize();
-        let rot: Quat;
-        const cosAngle = dir.dot(new V3(0, 0, 1));
-        if (epsilonEquals(-1, cosAngle, EPS)) rot = qEulerY(PI_F);
-        else rot = new Quat().setRotateFromTo(new V3(0, 0, 1), dir, 1);
-        this.quat.slerp(this.quat.clone(), rot, this.PT.mTurnSlerpRate);
-        this.quat.normalize();
+        const tx = target.x, ty = target.y, tz = target.z;
+        const sq = fr(fr(fr(tx * tx) + fr(ty * ty)) + fr(tz * tz));
+        if (epsilonEquals(0, sq, EPS)) { this.setMomentumFromQuat(); return; }
+        let nx = 0, ny = 0, nz = 0;
+        if (sq > EPS) { const k = fr(1 * jgInvSqrt(sq)); nx = fr(tx * k); ny = fr(ty * k); nz = fr(tz * k); }
+        const c = FMA(nz, 1, FMA(nx, 0, fr(ny * 0)));
+        let rx: number, ry: number, rz: number, rw: number;
+        if (epsilonEquals(-1, c, EPS)) { const h = fr(0.5 * PI_F); rx = 0; ry = sinf(h); rz = 0; rw = cosf(h); }
+        else {
+            const f2 = fr(0 * nz), f6 = fr(0 * ny), f7 = fr(0 * nx);
+            const cy = FMS(1, nx, f2), cx = FNMS(1, ny, f2), cz = fr(f6 - f7);
+            const l2 = FMA(cz, cz, FMA(cx, cx, fr(cy * cy)));
+            let len = l2;
+            if (l2 > 0) { const g = fr(frsqrte(l2)); len = fr(l2 * fr(fr(0.5 * g) * FNMS(l2, fr(g * g), 3))); }
+            if (len <= EPS) { rx = 0; ry = 0; rz = 0; rw = 1; }
+            else {
+                const ang = mslAtan2f(len, FMA(1, nz, fr(f7 + f6))), h = fr(1 * fr(0.5 * ang)), k = fr(sinf(h) / len);
+                rx = fr(cx * k); ry = fr(cy * k); rz = fr(cz * k); rw = cosf(h);
+            }
+        }
+        const t = this.PT.mTurnSlerpRate, q = this.quat;
+        const unit = (x: number, y: number, z: number, w: number): number[] => {
+            const d = FMA(w, w, FMA(z, z, FMA(x, x, fr(y * y))));
+            if (d <= EPS) return [0, 0, 0, 0];
+            const k = fr(1 * jgInvSqrt(d)); return [fr(x * k), fr(y * k), fr(z * k), fr(w * k)];
+        };
+        const A = unit(q.x, q.y, q.z, q.w), B = unit(rx, ry, rz, rw);
+        let d = FMA(A[3], B[3], FMA(A[2], B[2], FMA(A[0], B[0], fr(A[1] * B[1])))), flip = false;
+        if (d < 0) { d = -d; flip = true; }
+        let k0: number, k1: number;
+        if (fr(1 - d) <= EPS) { k0 = fr(1 - t); k1 = t; }
+        else { const th = mslAcosf(d), st = sinf(th); k0 = fr(sinf(fr(fr(1 - t) * th)) / st); k1 = fr(sinf(fr(t * th)) / st); }
+        if (flip) k1 = -k1;
+        let x = FMA(k0, A[0], fr(k1 * B[0])), y = FMA(k0, A[1], fr(k1 * B[1])), z = FMA(k0, A[2], fr(k1 * B[2])), w = FMA(k0, A[3], fr(k1 * B[3]));
+        const n = fr(fr(fr(fr(x * x) + fr(y * y)) + fr(z * z)) + fr(w * w));
+        if (n <= EPS) { x = y = z = w = 0; }
+        else { const k = fr(1 * jgInvSqrt(n)); x = fr(x * k); y = fr(y * k); z = fr(z * k); w = fr(w * k); }
+        q.x = x; q.y = y; q.z = z; q.w = w;
         this.setMomentumFromQuat();
     }
-    /** setMomentumFromQuat: forwards, the water slowing it down */
+    /** setMomentumFromQuat (inlined in swimTo): the quaternion's Z axis (fused) times the march speed, plus the speed times the water's friction */
     setMomentumFromQuat() {
-        const f = this.quat.getZDir().scale(this.marchSpeed);
-        const v = this.vel.clone().scale(this.PT.mWaterFric).add(f);
-        this.vel.set(v);
+        const { x, y, z, w } = this.quat, m = this.marchSpeed;
+        const zx = FMA(2, fr(x * z), fr(2 * fr(w * y))), zy = FMS(2, fr(y * z), fr(2 * fr(w * x))), zz = FNMS(2, fr(y * y), FNMS(2, fr(x * x), 1));
+        const fx = fr(zx * m), fy = fr(zy * m), fz = fr(zz * m), k = this.PT.mWaterFric, v = this.vel;
+        v.set(fr(fr(v.x * k) + fx), fr(fr(v.y * k) + fy), fr(fr(v.z * k) + fz));
         this.rot.y = MsGetRotFromZaxisY(v);
     }
     detach() { this.world.mario.receiveMessage(this, MSG.DETACH); this.held = null; }
