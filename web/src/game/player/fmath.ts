@@ -39,7 +39,14 @@ export const fsub = (a: number, b: number) => fr(a - b);
 /** fdivs */
 export const fdiv = (a: number, b: number) => fr(a / b);
 /** fmadds: a * b + c */
-export function fmadd(a: number, b: number, c: number) { const [h, l] = fusedSum(a, b, c); return roundF32(h, l); }
+export function fmadd(a: number, b: number, c: number) {
+    const [h, l] = fusedSum(a, b, c);
+    // (FPSCR[NI], which the GameCube's OS sets: a result under the smallest normal single is a zero of its sign, not a denormal.
+    // Seen in the game's memory: a drop's ground speed, times 0.93 a tick, ends at 0x00000000, not at a denormal)
+    if (h < MIN_NORMAL_F32 && h > -MIN_NORMAL_F32 && h !== 0) return h * 0;
+    return roundF32(h, l);
+}
+const MIN_NORMAL_F32 = 1.1754943508222875e-38;
 /** fmsubs: a * b - c */
 export const fmsub = (a: number, b: number, c: number) => fmadd(a, b, -c);
 /** fnmsubs: c - a * b */

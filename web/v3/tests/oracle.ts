@@ -10,6 +10,7 @@
 //          vt:<text>:<off>:<len>     the same for every object of such a class (found at <from>)
 //          water                     every live drop of the water manager, every tick (slot, life, flags, attack,
 //                                    place, speed, size, type, as hex words)
+//          goop                      every goop layer's map, every tick printed (GOOP <tick> <index> <address> <class> <log2 w> <log2 h> <threshold> <base64>)
 //   Offsets and lengths are hex. Each word is printed as hex and, where it looks like one, as a float.
 //   env: FSTPAD (default 480), EVERY=n print every nth tick, CHANGED=1 print a line only when it differs from the last
 import { readFileSync } from 'node:fs';
@@ -60,15 +61,27 @@ function setUp() {
             watch.push({ label: `${q[0]}`, addr, len: parseInt(q[1], 16), last: '', path });
         }
         else if (w === 'water') water = true;
+        else if (q[0] === 'goop') goop = byVt('PollutionLayer');
         else console.log(`? ${w}`);
     }
 }
-let done = false, water = false;
+let done = false, water = false, goop: number[] | null = null;
 R.onTick = (tick) => {
     if (tick < from || done) return;
     if (!watch) setUp();
-    if (tick > to || (!watch!.length && !water)) { done = true; return; }
+    if (tick > to || (!watch!.length && !water && !goop)) { done = true; return; }
     if ((tick - from) % every) return;
+    if (goop) {
+        // every goop layer's map (the I8 texture's bytes as the game holds them): GOOP <tick> <index> <address> <class> <log2 width> <log2 height> <threshold> <base64>
+        let k = 0;
+        for (const p of goop) {
+            const map = mem.r32(p + 0x54), lw = mem.r32(p + 0x64), lh = mem.r32(p + 0x68);
+            if (map < 0x80003000 || map >= 0x81800000 || lw > 12 || lh > 12) continue;
+            const n = (((1 << lw) + 7) >> 3) * (((1 << lh) + 3) >> 2) * 32, b = Buffer.alloc(n);
+            for (let i = 0; i < n; i++) b[i] = mem.r8(map + i);
+            console.log(`GOOP ${tick} ${k++} ${hex(p)} ${cls(p)} ${lw} ${lh} ${mem.r8(p + 0x50)} ${b.toString('base64')}`);
+        }
+    }
     if (water) {
         // every live drop of TModelWaterManager: slot, life, flags, attack, place, speed, size, type, the actor and ground it holds
         const W = mem.r32(0x8040A3C8), n = mem.r16(W + 0x12), fw = (a: number) => hex(mem.r32(a));

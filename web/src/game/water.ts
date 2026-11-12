@@ -44,9 +44,9 @@ type WTPType = { mExtension: number; mMagnify: number; mCleanSize: number; mGrav
 const SLOT_NUM = 256;
 const rand11 = () => fr(((rand() & 0xFF) - 128) / 128);
 /** gWaterManagerPlaneInfo: friction, fall, vanish speed (water-slip planes, others). */
-const PLANE = { frSlip: 0.93, fallSlip: -3, vanSlip: 2, fr: 0.7, fall: -1, van: 1 };
+const PLANE = { frSlip: fr(0.93), fallSlip: -3, vanSlip: 2, fr: fr(0.7), fall: -1, van: 1 };   // (f32 constants: the DOL loads them with lfs)
 /** unk5D88 */
-const K = [0.5, 0.35, 0.5, 10000, 0.2, 0, 2.5, 1, 0.3, 0.5, 0.8, 0.3, 0.08];
+const K = [0.5, 0.35, 0.5, 10000, 0.2, 0, 2.5, 1, 0.3, 0.5, 0.8, 0.3, 0.08].map(fr);
 
 export class Water {
     count = 0;
