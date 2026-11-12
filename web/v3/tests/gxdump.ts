@@ -52,5 +52,5 @@ const enough = () => noCap ? R.frames >= first + count : seq >= count;
 while (!enough() && (res = R.run(20e6)) !== 'done');
 const dt = (performance.now() - t0) / 1000;
 if (R.heapDelta) console.log(`the stage heap is ${R.heapDelta} bytes off the recording's: run again with FSTPAD=${R.fstPadUsed + R.heapDelta}`);
-console.log(`${R.stageName}: ${seq} frame(s) written to ${outDir} (${(bytes / 1e6).toFixed(1)} MB: ${(fifoBytes / 1e6).toFixed(1)} MB of commands, ${(patchBytes / 1e6).toFixed(1)} MB of memory), the replay at frame ${R.frames} of ${T.frames.length}${lastFrame >= 0 ? `, the last video frame in replay frame ${lastFrame}` : ''}; ${R.issues.length} issue(s); ${dt.toFixed(1)} s`);
+console.log(`${R.stageName}: ${seq} frame(s) written to ${outDir} (${(bytes / 1e6).toFixed(1)} MB: ${(fifoBytes / 1e6).toFixed(1)} MB of commands, ${(patchBytes / 1e6).toFixed(1)} MB of memory), the replay at frame ${R.frames} of ${T.frames.length}${lastFrame >= 0 ? `, the last video frame in replay frame ${lastFrame}` : ''}; ${R.issues.length} issue(s); copies' hash ${R.m.hw.gx.copyHash.toString(16)} (${R.m.hw.gx.copies} copies); ${dt.toFixed(1)} s`);
 process.exit(seq || noCap ? 0 : 1);

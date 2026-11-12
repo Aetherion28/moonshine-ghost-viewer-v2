@@ -110,6 +110,8 @@ export class Gx {
     blendQuads = 0;
     // statistics
     commands = 0; drawn = 0; copies = 0; trianglesDrawn = 0;
+    /** a running hash of every texel the frame buffer copies wrote to memory (for tests: two builds must agree) */
+    copyHash = 0;
     private warned = new Set<string>();
     /** what is rasterised and copied, as it happens (debugging) */
     trace: ((s: string) => void) | null = null;
@@ -671,7 +673,7 @@ export class Gx {
             const d31 = f3 - f1, d21 = f2 - f1;
             S[i] = f1; S[i + 1] = -(d31 * -ey12 - d21 * ey31) / dden; S[i + 2] = -(ex31 * d21 + ex12 * d31) / dden;
         };
-        const gens = (bp[0] & 15), ras = this.ras;
+        const gens = (bp[0] & 15), ras = this.ras, proj = this.xfw;
         slope(w0, w1, w2, 0);
         // Texture coordinates without perspective, as a Wii works them out (measured, tools/hwprobe: stamps with the
         // texture up to 1024 times across, 2026-11-10). Each of vertices 1 and 2 has a weight that is 0 on the edge
@@ -733,32 +735,50 @@ export class Gx {
         // (with one intensity texture as the only thing that changes from pixel to pixel, the environment's result is a function of one byte: kept)
         const memo = !varying && this.memoMap !== -1;
         if (memo) this.memoState.fill(0);
+        // (nothing changes from pixel to pixel when no stage takes a coordinate this triangle makes: the environment's result is worked out once)
+        const same = !memo && !varying && this.texStale;
+        this.sameState = 0;
+        let needW = false;
+        if (gens) { if (!flat) needW = true; else for (let g = 0; g < gens; g++) if (proj[0x1040 + g] & 2) needW = true; }
         // half-edge constants, corrected for the fill convention (top-left)
         let C1 = DY12 * X1 - DX12 * Y1, C2 = DY23 * X2 - DX23 * Y2, C3 = DY31 * X3 - DX31 * Y3;
         if (DY12 < 0 || (DY12 === 0 && DX12 > 0)) C1++;
         if (DY23 < 0 || (DY23 === 0 && DX23 > 0)) C2++;
         if (DY31 < 0 || (DY31 === 0 && DX31 > 0)) C3++;
         let CY1 = C1 + DX12 * (miny * SUB) - DY12 * (minx * SUB), CY2 = C2 + DX23 * (miny * SUB) - DY23 * (minx * SUB), CY3 = C3 + DX31 * (miny * SUB) - DY31 * (minx * SUB);
-        const uv = this.uv, proj = this.xfw;
+        const uv = this.uv;
         // the groups of 2 x 2 pixels this triangle put through the blender
         const qw = (EFB_W >> 1) + 1, seen = this.quadSeen;
         const qx0 = minx >> 1, qx1 = (maxx - 1) >> 1, qy0 = miny >> 1, qy1 = (maxy - 1) >> 1;
         for (let qy = qy0; qy <= qy1; qy++) seen.fill(0, qy * qw + qx0, qy * qw + qx1 + 1);
+        // (the flat coordinates' differences from vertex 0, in 1/64 texel)
+        const fs0 = this.fs0, fs1 = this.fs1, fs2 = this.fs2, ft0 = this.ft0, ft1 = this.ft1, ft2 = this.ft2, gflat = this.gflat;
+        for (let g = 0; g < gens; g++) {
+            gflat[g] = flat && !(proj[0x1040 + g] & 2) ? 1 : 0;
+            fs0[g] = v0.s[g] * 64; ft0[g] = v0.t[g] * 64;
+            fs1[g] = v1.s[g] * 64 - fs0[g]; fs2[g] = v2.s[g] * 64 - fs0[g]; ft1[g] = v1.t[g] * 64 - ft0[g]; ft2[g] = v2.t[g] * 64 - ft0[g];
+        }
+        const v0gx = v0.gx, v0gy = v0.gy, width = maxx - minx;
         for (let y = miny; y < maxy; y++) {
-            let CX1 = CY1, CX2 = CY2, CX3 = CY3;
-            for (let x = minx; x < maxx; x++) {
+            // the pixels of this row inside the three edges: each edge's value falls by its FDY a pixel, and must be over 0
+            let k0 = 0, k1 = width;
+            if (FDY12 > 0) { const k = Math.ceil(CY1 / FDY12); if (k < k1) k1 = k; } else if (FDY12 < 0) { const k = Math.floor(CY1 / FDY12) + 1; if (k > k0) k0 = k; } else if (CY1 <= 0) k1 = 0;
+            if (FDY23 > 0) { const k = Math.ceil(CY2 / FDY23); if (k < k1) k1 = k; } else if (FDY23 < 0) { const k = Math.floor(CY2 / FDY23) + 1; if (k > k0) k0 = k; } else if (CY2 <= 0) k1 = 0;
+            if (FDY31 > 0) { const k = Math.ceil(CY3 / FDY31); if (k < k1) k1 = k; } else if (FDY31 < 0) { const k = Math.floor(CY3 / FDY31) + 1; if (k > k0) k0 = k; } else if (CY3 <= 0) k1 = 0;
+            let CX1 = CY1 - FDY12 * k0, CX2 = CY2 - FDY23 * k0, CX3 = CY3 - FDY31 * k0;
+            const my = fr(midY + (y - vy0)), dy = my, ddy = y + 0.5 - gy1, ty = y * SUB + 6 - v0gy;
+            for (let x = minx + k0, xe = minx + k1; x < xe; x++) {
                 if (CX1 > 0 && CX2 > 0 && CX3 > 0) {
-                    const mx = fr(midX + (x - vx0)), my = fr(midY + (y - vy0)), dx = mx, dy = my, ddx = x + 0.5 - gx1, ddy = y + 0.5 - gy1;
-                    const invW = fr(1 / fr(fr(S[0] + fr(S[1] * dx)) + fr(S[2] * dy)));
+                    const mx = fr(midX + (x - vx0)), dx = mx, ddx = x + 0.5 - gx1;
+                    const invW = needW ? fr(1 / fr(fr(S[0] + fr(S[1] * dx)) + fr(S[2] * dy))) : 0;
                     // (the two weights here, the pixel's middle counted from vertex 0 in 1/12 pixel)
-                    const tx = x * SUB + 6 - v0.gx, ty = y * SUB + 6 - v0.gy, L1 = a1 * tx + b1 * ty, L2 = a2 * tx + b2 * ty;
+                    const tx = x * SUB + 6 - v0gx, L1 = a1 * tx + b1 * ty, L2 = a2 * tx + b2 * ty;
                     for (let g = 0; g < gens; g++) {
                         const o = 3 + g * 9;
-                        if (flat && !(proj[0x1040 + g] & 2)) {
+                        if (gflat[g]) {
                             // (in 1/64 texel; one exactly on a 64th comes out one lower: 24,944 such pixels measured)
-                            const s0 = v0.s[g] * 64, t0 = v0.t[g] * 64;
-                            uv[g * 2] = Math.ceil(s0 + ((v1.s[g] * 64 - s0) * L1 + (v2.s[g] * 64 - s0) * L2) / wN) - 1;
-                            uv[g * 2 + 1] = Math.ceil(t0 + ((v1.t[g] * 64 - t0) * L1 + (v2.t[g] * 64 - t0) * L2) / wN) - 1;
+                            uv[g * 2] = Math.ceil(fs0[g] + (fs1[g] * L1 + fs2[g] * L2) / wN) - 1;
+                            uv[g * 2 + 1] = Math.ceil(ft0[g] + (ft1[g] * L1 + ft2[g] * L2) / wN) - 1;
                             continue;
                         }
                         let pr = invW;
@@ -776,7 +796,7 @@ export class Gx {
                         if (v < 0n) { CX1 -= FDY12; CX2 -= FDY23; CX3 -= FDY31; continue; }
                         z = v > 0xFFFFFFn ? 0xFFFFFF : Number(v);
                     } else if (zOn) { z = Math.trunc(fr(fr(S[104] + fr(S[105] * mx)) + fr(S[106] * my))); z = z < 0 ? 0 : z > 0xFFFFFF ? 0xFFFFFF : z; }
-                    if (this.pixel(x, y, z, memo)) { const qi = (y >> 1) * qw + (x >> 1); if (!seen[qi]) { seen[qi] = 1; this.blendQuads++; } }
+                    if (this.pixel(x, y, z, memo, same)) { const qi = (y >> 1) * qw + (x >> 1); if (!seen[qi]) { seen[qi] = 1; this.blendQuads++; } }
                 }
                 CX1 -= FDY12; CX2 -= FDY23; CX3 -= FDY31;
             }
@@ -784,6 +804,8 @@ export class Gx {
         }
     }
     private slopes = new Float64Array(110);
+    private fs0 = new Float64Array(8); private fs1 = new Float64Array(8); private fs2 = new Float64Array(8);
+    private ft0 = new Float64Array(8); private ft1 = new Float64Array(8); private ft2 = new Float64Array(8); private gflat = new Uint8Array(8);
     private zQ = [0n, 0n, 0n, 0n];
     private uv = new Int32Array(16);
     private quadSeen = new Uint8Array(((EFB_W >> 1) + 1) * ((EFB_H >> 1) + 1));
@@ -800,6 +822,8 @@ export class Gx {
     /** the one texture map and coordinate every textured stage takes, an intensity texture (-1: not so; -2: no stage takes a texture) */
     private memoMap = -1; private memoCoord = 0;
     private memoState = new Uint8Array(256); private memoOut = new Int32Array(256 * 4);
+    /** every textured stage takes a coordinate that isn't generated (so what it samples stays as it was) */
+    private texStale = false; private sameState = 0; private sameOut = new Int32Array(4);
     private texInfo: { addr: number; w: number; h: number; fmt: number; wrapS: number; wrapT: number; linear: boolean; mixed: boolean }[] = [];
     /** what stays the same over a triangle */
     private setupPixel() {
@@ -811,7 +835,8 @@ export class Gx {
             this.texInfo[i] = { addr: (i3 << 5) & 0x03FFFFFF, w: (i0 & 0x3FF) + 1, h: ((i0 >>> 10) & 0x3FF) + 1, fmt: (i0 >>> 20) & 15, wrapS: m0 & 3, wrapT: (m0 >>> 2) & 3, linear: (m0 & 0x10) !== 0, mixed: ((m0 >>> 4) & 1) !== ((m0 >>> 7) & 1) || ((m0 >>> 5) & 3) !== 0 };
         }
         this.chanUsed[0] = this.chanUsed[1] = false;
-        let map = -2, coord = 0;
+        let map = -2, coord = 0, stale = true;
+        const gens = bp[0] & 15;
         for (let st = 0; st < this.stages; st++) {
             const order = bp[0x28 + (st >> 1)] >>> ((st & 1) * 12), chan = (order >>> 7) & 7;
             if (chan < 2) {
@@ -820,10 +845,11 @@ export class Gx {
             }
             if (order & 0x40) {
                 const m = order & 7, c = (order >>> 3) & 7;
+                if (c < gens) stale = false;
                 if (map === -2 && this.texInfo[m].fmt < 2) { map = m; coord = c; } else if (map !== m || coord !== c) map = -1;
             }
         }
-        this.memoMap = map; this.memoCoord = coord;
+        this.memoMap = map; this.memoCoord = coord; this.texStale = stale;
         if (bp[0] & 0x70000) this.warn('indirect textures');
         if (bp[1] !== 0x666666 || bp[2] !== 0x666666 || bp[3] !== 0x666666 || bp[4] !== 0x666666) this.warn('sample locations that are not the middle of the pixel (anti-aliasing)');
         if (bp[0x43] & 7) this.warn('a frame buffer that is not 8 bits a colour');
@@ -832,7 +858,7 @@ export class Gx {
     private texel = new Int32Array(4);
     private out = new Int32Array(4);
     /** One pixel through the depth test, the texture environment, the alpha test and the blender; true if it reached the blender. */
-    private pixel(x: number, y: number, z: number, memo: boolean): boolean {
+    private pixel(x: number, y: number, z: number, memo: boolean, same: boolean): boolean {
         const bp = this.bp, O = this.out, zm = bp[0x40], pi = y * EFB_W + x;
         const early = (bp[0x43] & 0x40) !== 0;
         if ((zm & 1) && early) { if (!alphaPass(z, this.zbuf[pi], (zm >>> 1) & 7)) return false; if (zm & 0x10) { this.zbuf[pi] = z; if (this.zOwner) this.zOwner[pi] = this.trianglesDrawn; } }
@@ -843,6 +869,11 @@ export class Gx {
             if (!this.memoState[v]) { const t = this.texel; t[0] = t[1] = t[2] = t[3] = v; this.memoState[v] = this.tev(true) ? 1 : 2; M[k] = O[0]; M[k + 1] = O[1]; M[k + 2] = O[2]; M[k + 3] = O[3]; }
             if (this.memoState[v] === 2) return false;
             O[0] = M[k]; O[1] = M[k + 1]; O[2] = M[k + 2]; O[3] = M[k + 3];
+        } else if (same) {
+            const M = this.sameOut;
+            if (!this.sameState) { this.sameState = this.tev(false) ? 1 : 2; M[0] = O[0]; M[1] = O[1]; M[2] = O[2]; M[3] = O[3]; }
+            if (this.sameState === 2) return false;
+            O[0] = M[0]; O[1] = M[1]; O[2] = M[2]; O[3] = M[3];
         } else if (!this.tev(false)) return false;
         if ((zm & 1) && !early) { if (!alphaPass(z, this.zbuf[pi], (zm >>> 1) & 7)) return false; if (zm & 0x10) { this.zbuf[pi] = z; if (this.zOwner) this.zOwner[pi] = this.trianglesDrawn; } }
         const sr = O[0], sg = O[1], sb = O[2], sa = O[3];
@@ -1012,6 +1043,7 @@ export class Gx {
                     if (ex >= EFB_W || ey >= EFB_H) continue;
                     const z = zb[ey * EFB_W + ex], o = dst + ((y >> 2) * bw + (x >> 2)) * 64 + ((y & 3) * 4 + (x & 3)) * 2;
                     ram[o] = 0xFF; ram[o + 1] = z >>> 16; ram[o + 32] = (z >>> 8) & 0xFF; ram[o + 33] = z & 0xFF;
+                    this.copyHash = (Math.imul(this.copyHash, 16777619) ^ z) >>> 0;
                 }
             } else if (ch < 0) { this.warn(`a frame buffer copy to format ${fmt}`); }
             else {
@@ -1026,6 +1058,7 @@ export class Gx {
                         v = (prev * wp + cur * wc + next * wn) >> 6; if (v > 255) v = 255;
                     }
                     ram[dst + ((y >> 2) * bw + (x >> 3)) * 32 + (y & 3) * 8 + (x & 7)] = v;
+                    this.copyHash = (Math.imul(this.copyHash, 16777619) ^ v) >>> 0;
                 }
             }
             if (this.copyTrace) this.copyTrace((bp[0x4B] << 5) & 0x03FFFFFF, sx, sy, sw, sh);
