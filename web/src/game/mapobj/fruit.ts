@@ -13,7 +13,7 @@
 import { MSF } from '../flags.js';
 import { fr, V3, Mtx, mtx, MsRandF, matan, MsMtxSetXYZRPH, sqDist } from '../math.js';
 import { jgSqrt, vSq } from '../vecops.js';
-import { fmadd, fmadd as FMA } from '../player/fmath.js';
+import { fmadd, fmadd as FMA, fmsub as FMS, fnmsub as FNMS } from '../player/fmath.js';
 import { World, Stream, HitActor, TakeActor, LF, HF, MSG, ANM_BCK, ANM_BTP, MActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -23,7 +23,7 @@ import type { WallCheck } from '../collision.js';
 import { MapObjBase, MapObjBaseManager, MOF, STATE_DEAD, STATE_NORMAL, OBJ_MAKERS, mapObjGlobals } from './base.js';
 import { MapObjGeneral, GS } from './general.js';
 import './item.js';
-import { MTXConcat, rotationSetRotate, setRootMtx, getWaterSpeed, getVerticalVecToTargetXZ, marioSpeedY, marioHeld } from './lib.js';
+import { normalize, MTXConcat, rotationSetRotate, setRootMtx, getWaterSpeed, getVerticalVecToTargetXZ, marioSpeedY, marioHeld } from './lib.js';
 
 const ABS = Math.abs;
 export const isHideObj = (a: HitActor) => [AT.HELP_ACTOR, AT.KOOPA_JR_SIGN_M, AT.CHIP_SHINE, AT.SIGN_CIRCLE, AT.SIGN_CROSS, AT.SIGN_TRIANGLE, AT.STAR_SIGN, AT.MAP_OBJ_TREE_SCALE]
@@ -128,8 +128,9 @@ export class MapObjBall extends MapObjGeneral {
         const w = this.world, mv = marioVel(w);
         const d = new V3(fr(a.pos.x - this.pos.x), 0, fr(a.pos.z - this.pos.z));
         const r = this.isActorType(AT.WATERMELON) ? fr(this.attackRadius + a.damageRadius) : this.damageRadius;
-        if (r * r < d.x * d.x + d.z * d.z) return;
-        if (d.x !== 0 && d.z !== 0) { const l = Math.sqrt(d.x * d.x + d.z * d.z); d.x = fr(d.x / l); d.z = fr(d.z / l); }
+        // (JP 0x801BC31C: the squares unfused, MsVECNormalize, the velocity updates fused as below)
+        if (fr(r * r) < fr(fr(d.x * d.x) + fr(d.z * d.z))) return;
+        if (d.x !== 0 && d.z !== 0) d.set(normalize(d));
         const c = this.ph(0xC);
         if (a.isActorType(AT.MARIO)) {
             if (!this.checkMapObjFlag(MOF.UNK2000000)) {
@@ -137,29 +138,29 @@ export class MapObjBall extends MapObjGeneral {
                     this.vel.y = fr(this.vel.y + this.unk150);
                     if (!this.isActorType(AT.WATERMELON)) w.sound(SE.MA_KICK_DRIAN, this.pos);
                 } else this.vel.y = fr(this.vel.y + this.unk154);
-                this.vel.x = fr(this.vel.x + fr(fr(this.unk148 * mv.x) - fr(d.x * this.unk14C)));
-                this.vel.z = fr(this.vel.z + fr(fr(this.unk148 * mv.z) - fr(d.z * this.unk14C)));
+                this.vel.x = fr(this.vel.x + FMS(this.unk148, mv.x, fr(d.x * this.unk14C)));
+                this.vel.z = fr(this.vel.z + FMS(this.unk148, mv.z, fr(d.z * this.unk14C)));
                 a.receiveMessage(this, MSG.ATTACK);
             }
         } else {
-            const ap = fr(this.vel.dot(d));
+            const ap = FMA(this.vel.z, d.z, FMA(this.vel.x, d.x, fr(this.vel.y * d.y)));
             if (ap >= 0 && ABS(this.vel.x) > c && ABS(this.vel.z) > c) {
-                this.vel.x = fr(this.vel.x - fr((1 + this.unk16C) * fr(d.x * ap)));
+                this.vel.x = FNMS(fr(1 + this.unk16C), fr(d.x * ap), this.vel.x);
                 this.vel.y = fr(this.vel.y + this.unk168);
-                this.vel.z = fr(this.vel.z - fr((1 + this.unk16C) * fr(d.z * ap)));
+                this.vel.z = FNMS(fr(1 + this.unk16C), fr(d.z * ap), this.vel.z);
                 a.receiveMessage(this, MSG.UNK10);
                 if (!this.isActorType(AT.WATERMELON)) w.sound(SE.IT_DRIAN_BOUND, this.pos);
             } else {
-                this.vel.x = fr(this.vel.x - fr(d.x * this.unk164));
+                this.vel.x = FNMS(d.x, this.unk164, this.vel.x);
                 this.vel.y = fr(this.vel.y + this.unk168);
-                this.vel.z = fr(this.vel.z - fr(d.z * this.unk164));
+                this.vel.z = FNMS(d.z, this.unk164, this.vel.z);
             }
         }
-        if (a.isActorType(AT.MARIO) && !this.checkMapObjFlag(MOF.UNK2000000) && this.vel.y < 0 && w.mario.pos.y + 130 < this.pos.y + this.bodyRadius) {
-            this.vel.y = fr(-this.unk160 * this.vel.y);
-            this.vel.x = fr(this.vel.x + fr(this.unk158 * mv.x));
-            this.vel.y = fr(this.vel.y + fr(this.unk15C * marioSpeedY(w)));
-            this.vel.z = fr(this.vel.z + fr(this.unk158 * mv.z));
+        if (a.isActorType(AT.MARIO) && !this.checkMapObjFlag(MOF.UNK2000000) && this.vel.y < 0 && fr(130 + w.mario.pos.y) < fr(this.pos.y + this.bodyRadius)) {
+            this.vel.y = fr(this.unk160 * -this.vel.y);
+            this.vel.x = FMA(this.unk158, mv.x, this.vel.x);
+            this.vel.y = FMA(this.unk15C, marioSpeedY(w), this.vel.y);
+            this.vel.z = FMA(this.unk158, mv.z, this.vel.z);
             if (!this.isActorType(AT.WATERMELON)) w.sound(SE.MA_KICK_DRIAN, this.pos);
         }
         this.unk194 = 10;

@@ -40,7 +40,7 @@ export interface StageFiles extends Files {
 }
 
 /** The game camera of a frame (the ghost's camera record): for clipping, as the game's camera does it. */
-export interface GameCamera { pos: [number, number, number]; /** world-from-view rotation (x, y, z, w) */ quat: [number, number, number, number]; fovy: number; aspect: number; near: number; }
+export interface GameCamera { pos: [number, number, number]; /** a trace's look-at point (gpCamera->unk148; pos is unk124) */ at?: [number, number, number]; /** world-from-view rotation (x, y, z, w) */ quat: [number, number, number, number]; fovy: number; aspect: number; near: number; }
 
 export class Stage {
     world = new World();

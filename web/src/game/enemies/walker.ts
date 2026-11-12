@@ -147,12 +147,12 @@ export class WalkerEnemy extends SmallEnemy {
         this.setGoalPath(new PathNode(this.world.mario));
     }
     walkBehavior(kind: number, k: number) {
-        const f = k * this.unk158, P = this.PW;
+        const f = fr(k * this.unk158), P = this.PW;
         switch (kind) {
-            case 0: this.zigzagToCurPathNode(this.marchSpeed * f, this.turnSpeed * f, P.mSLZigzagCycle, P.mSLZigzagAngle); break;
-            case 1: case 2: this.walkToCurPathNode(this.marchSpeed * f, this.turnSpeed * f, 0); break;
-            case 3: this.walkToCurPathNode(0, this.turnSpeed * f, 0); break;
-            case 4: this.walkToCurPathNode(this.marchSpeed * f, 0, 0); break;
+            case 0: this.zigzagToCurPathNode(fr(this.marchSpeed * f), fr(this.turnSpeed * f), P.mSLZigzagCycle, P.mSLZigzagAngle); break;
+            case 1: case 2: this.walkToCurPathNode(fr(this.marchSpeed * f), fr(this.turnSpeed * f), 0); break;
+            case 3: this.walkToCurPathNode(0, fr(this.turnSpeed * f), 0); break;
+            case 4: this.walkToCurPathNode(fr(this.marchSpeed * f), 0, 0); break;
         }
     }
     behaveToFindMario() {

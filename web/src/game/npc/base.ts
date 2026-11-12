@@ -1494,7 +1494,8 @@ export class BaseNPC extends SpineEnemy {
             if (cam) {
                 // the angle from gpCamera's eye (unk124) to its target (unk148): the view's forward
                 const e = new V3(cam.pos[0], cam.pos[1], cam.pos[2]), [qx, qy, qz, qw] = cam.quat;
-                const fx = -2 * (qx * qz + qw * qy), fz = -(1 - 2 * (qx * qx + qy * qy));
+                // matan(unk148.z - unk124.z, unk148.x - unk124.x): a trace's target and eye (else the view's forward)
+                const fx = cam.at ? fr(cam.at[0] - cam.pos[0]) : -2 * (qx * qz + qw * qy), fz = cam.at ? fr(cam.at[2] - cam.pos[2]) : -(1 - 2 * (qx * qx + qy * qy));
                 const yaw = fr(s16(matan(fz, fx)) * fr(360 / 65536));
                 if (!MsIsInSight(e, yaw, this.pos, fr(far + 500), 120, 800)) { this.updateSquareToMario(); run = false; }
             }

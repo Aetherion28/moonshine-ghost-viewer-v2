@@ -1022,7 +1022,7 @@ export class SimRunner {
         if (!f) return null;
         const c = f(inp.ghost, t, seg);
         if (!c) return null;
-        return { pos: c.pos, quat: c.quat, fovy: c.fov, aspect: (640 * 0.9134614) / 448, near: 10 };
+        return { pos: c.pos, at: c.at, quat: c.quat, fovy: c.fov, aspect: (640 * 0.9134614) / 448, near: 10 };
     }
 
     /** The simulated objects the viewer draws, with their placement in scene.bin (type, position). */

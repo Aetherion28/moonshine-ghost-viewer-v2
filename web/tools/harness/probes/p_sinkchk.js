@@ -1,0 +1,3 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); const A = +process.env.LA, B = +process.env.LB; let b = null, last = '';
+  P.testPerform = (c) => { if (!b) for (const m of st.world.conductor.liveManagers) for (const a of (m.objs || [])) if (a && a.name === process.env.NAME) { b = a; const f = b.changeNerveProc.bind(b); b.changeNerveProc = () => { if (st.qf >= A && st.qf <= B) { const s = `${b.sink && b.sink.unk0}/${b.sink && b.sink.unk4} lat ${b.latest() && b.latest().name} can ${b.isNerveCanGoToSink()} air ${b.isAirborne()} lf ${(b.liveFlag>>>0).toString(16)} act ${b.actionFlag ?? ''}`; console.log('SK', st.qf, s); } return f(); }; }
+    return o(c); }; }

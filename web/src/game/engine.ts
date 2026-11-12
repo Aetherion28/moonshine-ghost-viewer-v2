@@ -1231,9 +1231,9 @@ export class SpineEnemy extends LiveActor {
         const target = fr(a + MsGetRotFromZaxisY(V3.sub(this.goal.point(), this.pos)));
         const diff = MsAngleDiff(target, this.rot.y);
         let r: number;
-        // (the game's code reads its minimum turn radius before setting it in one branch: walkToCurPathNode's rule here)
+        // (JP 0x8024E378..0x8024E444: within twice the minimum turn radius the whole difference is turned at once)
         if (dist > fr(2 * this.calcMinimumTurnRadius(speed, turn))) r = diff > 0 ? Math.min(diff, turn) : Math.max(diff, -turn);
-        else { const ts = this.calcTurnSpeedToReach(speed, fr(dist * 0.5)); r = diff > 0 ? Math.min(diff, ts) : Math.max(diff, -ts); }
+        else r = diff;
         this.rot.y = MsWrap(fr(this.rot.y + r), 0, 360);
         this.posDelta.add(new V3(fr(speed * MsSin(this.rot.y)), 0, fr(speed * MsCos(this.rot.y))));
         if (Math.abs(fr(dist - this.unk12C)) < 100) this.unk128 += 1; else { this.unk128 = 0; this.unk12C = dist; }

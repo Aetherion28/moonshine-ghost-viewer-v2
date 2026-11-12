@@ -178,7 +178,7 @@ for (let fr = 0; fr < end; fr++) {
     console.log('cmpk', st.qf, 'u258', C.unk258, 'rend', rend.toFixed(2), 'rec', ry.toFixed(2), 'dr', s16f(ry - rend).toFixed(2), 'du', s16f(ry - C.unk258).toFixed(2), 'dpos', dp.toFixed(2), 'mode', C.mMode, C.isNowInbetween() ? 'inb' : '', C.isDemoCamera() ? 'demo' : ''); }
   FEEDS.install();
   // the actors clip against the recorded game camera, as runner.ts SimRunner.camera (NOCLIP=1: no clipping)
-  if (!process.env.NOCLIP) { const c = ctx.ghostCameraAt(g, q0 + st.qf + 4, 0); (st as any).camera = c ? { pos: c.pos, quat: c.quat, fovy: c.fov, aspect: (640 * 0.9134614) / 448, near: 10 } : null; }
+  if (!process.env.NOCLIP) { const c = ctx.ghostCameraAt(g, q0 + st.qf + 4, 0); (st as any).camera = c ? { pos: c.pos, at: c.at, quat: c.quat, fovy: c.fov, aspect: (640 * 0.9134614) / 448, near: 10 } : null; }
   st.runFrame(track as any, pad(st.qf + (process.env.PADOFF ? +process.env.PADOFF : g.trace ? 0 : 4)));
   TraceFeeds.clear();
   if (process.env.BWLOG && st.frame % 15 === 0) { const bw: any = (st.objects as any[]).find((o) => o.constructor.name === 'BossWanwan'); if (bw) { const M: any = st.world.mario; const f = (v: any) => [v.x|0, v.y|0, v.z|0].join(','); console.log('bw', st.qf, 'hp', bw.hitPoints, 'staked', bw.unk17C, 'n', bw.spine.getLatestNerve().name.slice(8), 'pos', f(bw.pos), 'pk', f(bw.picket.pos), bw.picket.isTaken() ? 'TAKEN' : '', '| mario', f(M.pos), 'st', (M.mStatus|0).toString(16), 'spray', M.mWaterGun ? M.mWaterGun.isEmitting() : '', 'gh', s0(st.qf)); } }

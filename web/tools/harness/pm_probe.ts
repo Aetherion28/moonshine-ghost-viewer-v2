@@ -186,7 +186,7 @@ for (let fr = 0; fr < end; fr++) {
   feedbackCtx.take = FB ? FB.take : null;
   traceStatusCtx.at = TS; traceRngCtx.next = TR; traceActorCtx.at = TA; sessionCtx.at = TSES;
   // the actors clip against the recorded game camera, as runner.ts SimRunner.camera (NOCLIP=1: no clipping)
-  if (!process.env.NOCLIP) { const c = ctx.ghostCameraAt(g, q0 + st.qf + 4, 0); (st as any).camera = c ? { pos: c.pos, quat: c.quat, fovy: c.fov, aspect: (640 * 0.9134614) / 448, near: 10 } : null; }
+  if (!process.env.NOCLIP) { const c = ctx.ghostCameraAt(g, q0 + st.qf + +(process.env.CAMOFF ?? 4), 0); (st as any).camera = c ? { pos: c.pos, at: c.at, quat: c.quat, fovy: c.fov, aspect: (640 * 0.9134614) / 448, near: 10 } : null; }
   st.runFrame(track as any, pad(st.qf + (process.env.PADOFF ? +process.env.PADOFF : g.trace ? 0 : 4)));
   feedbackCtx.take = null;
   traceStatusCtx.at = null; traceRngCtx.next = null; traceActorCtx.at = null; sessionCtx.at = null;
