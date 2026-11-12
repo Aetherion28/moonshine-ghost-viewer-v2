@@ -511,7 +511,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
       <div class="discLine">Disc: <span class="discInfo" id="discInfo">none loaded</span> <span class="discInfo" id="padInfo" hidden></span> <span class="discInfo" id="padRec" hidden></span></div>
       <label title="The game's HUD from the disc (life meter, coins, Shines, blue and red coins, FLUDD's tank) and the stage's opening words"><input type="checkbox" id="optHud" checked disabled> Show HUD</label>
-      <label title="With a replay (.msgt). Play recording: the game's own code plays Mario from his controller inputs, and every tick he is put where the trace recorded him, so the stage reacts to exactly what happened. Simulate: the game's code alone, from the inputs (where it drifts from the trace is shown here). Recorded positions: Mario follows his recorded positions and animation. A .smsghost always plays its recorded positions and animation."><select id="optReplayMode" disabled><option value="record" selected>Play recording</option><option value="sim">Simulate</option><option value="positions">Recorded positions</option></select> <span class="discInfo" id="replayInfo"></span></label>
+      <label title="With a replay (.msgt). Play recording: the game's own code plays Mario from his controller inputs, and every tick he is put where the trace recorded him, so the stage reacts to exactly what happened. Recorded positions: Mario follows his recorded positions and animation. A .smsghost always plays its recorded positions and animation."><select id="optReplayMode" disabled><option value="record" selected>Play recording</option><option value="positions">Recorded positions</option></select> <span class="discInfo" id="replayInfo"></span></label>
       <label id="v3VerifyRow" hidden title="With a replay (.msgt, the newest format) and the Japanese 1.0 disc: the game's own program from your disc is run in this browser on the recorded controller inputs, and every recorded random-number call, frame and record of Mario is compared with what the game does. It takes about as long as the recording, or a few times that."><button type="button" id="v3Verify" class="linkBtn">Verify with the game's code</button> <span class="discInfo" id="v3VerifyInfo"></span></label>
       <label title="When the input replay drifts more than a unit from the ghost, Mario follows the ghost's own position and animation until the ghost next stands on the ground, then the inputs take over again from there."><input type="checkbox" id="optSnap" checked> Snap Mario back to the ghost</label>
       <label title="Read the game from an extracted game folder instead of a disc image"><button type="button" id="pickFolder" class="linkBtn">Use an extracted game folder…</button></label>
@@ -10040,8 +10040,10 @@ void main() {
     const main = splitOn() ? followGhost : ghosts.find((g) => g.data && g.marker && g.marker.parent);
     return main ? { t, ghost: main.data, api: { ...RAW, ghostCameraAt: typeof ghostCameraAt === 'function' ? ghostCameraAt : undefined } } : null;
   }
-  // the replay mode (Play recording / Simulate / Recorded positions) onto a layer's SimRunner
+  // the replay mode (Play recording / Recorded positions) onto a layer's SimRunner
   function applyReplayMode(sim) {
+    // (a saved choice of the removed Simulate option reads as Play recording)
+    if ($('optReplayMode').value !== 'positions' && $('optReplayMode').value !== 'record') $('optReplayMode').value = 'record';
     const v = $('optReplayMode').value;
     // a tool-assisted run plays its recording only (its recorded positions), whatever the mode
     const tas = isTasRun(mainGhostData());
