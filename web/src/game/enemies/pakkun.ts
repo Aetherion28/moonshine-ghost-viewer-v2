@@ -9,6 +9,8 @@ import {
     World, SpineEnemy, PathNode, LF, HF, HC, MSG, nerve, Spine, Stream, ANM_BCK, HitActor, LiveActor, IDX, CUE_MOVE, CUE_CALC_ANIM,
 } from '../engine.js';
 import { AT } from '../actortypes.js';
+import { fmadd } from '../player/fmath.js';
+import { msVecNormalize } from '../camera/lib.js';
 import { SmallEnemy, SmallEnemyManager, smallParams, SmallEnemyNerves, SmallParams } from './smallEnemy.js';
 import { emitInfo, EmitInfo } from '../water.js';
 import { register } from '../scene.js';
@@ -109,13 +111,13 @@ export class Pakkun extends SmallEnemy {
     createPakkunSmoke(p: V3) { this.world.sound(SE.EN_PAKKUN_SEED_SINK, p); this.world.effect('pakkunSmoke', p); }
     onShootLiner(dir: V3) {
         const goal = this.pos.clone();
-        goal.x += 200 * dir.x; goal.z += 200 * dir.z;
+        goal.x = fmadd(200, dir.x, goal.x); goal.z = fmadd(200, dir.z, goal.z);   // (fmadds: JP 0x8027BB20)
         this.setGoalPath(new PathNode(null, goal));
         this.unk198 = 0;
         if (dir.x === 0 && dir.y === 0 && dir.z === 0) dir.x += 1;
-        dir.normalize();
+        msVecNormalize(dir, dir);   // (MsVECNormalize: JP 0x8027BBD8)
         const sp = this.unk1A0.mSLSeedSpeedS;
-        dir.x *= sp; dir.y = -5; dir.z *= sp;
+        dir.x = fr(dir.x * sp); dir.y = -5; dir.z = fr(dir.z * sp);
         this.unk194.vel.set(dir);
     }
     onShootCurve(goal: V3) {
@@ -166,7 +168,7 @@ export class StayPakkun extends Pakkun {
     setDeadAnm() { this.setBckAnm(PAKKUN_ANM.DOWN); }
     genRandomItem() {
         const m = this.manager as PakkunManager;
-        this.unk1A4.set(this.pos); this.unk1A4.y += 100;
+        this.unk1A4.set(this.pos); this.unk1A4.y = fr(this.unk1A4.y + 100);
         if (m.unk64 && this.world.water) { m.unk64.pos = [this.unk1A4.x, this.unk1A4.y, this.unk1A4.z]; this.world.water.emitRequest(m.unk64); }
         // a big water bottle if FLUDD is under a quarter full, else 3 coins (the tank isn't recorded: coins)
         this.unk18C = 3;
@@ -268,14 +270,15 @@ export class PakkunSeed extends SpineEnemy {
     behaveToHitGround() {
         if (Math.abs(this.vel.y) < 1 || this.groundPlane.isWaterSurface()) {
             this.unk168 = 1; this.offLiveFlag(LF.AIRBORNE); this.vel.set(0, -0.3, 0); this.rebirth();
-        } else if (this.unk150 === SEED_SHOOT) { this.vel.x *= 0.8; this.vel.z *= 0.8; this.vel.y = 0.1 * Math.abs(this.vel.y); }
-        else { this.vel.x *= 0.4; this.vel.z *= 0.4; this.vel.y = 0.4 * Math.abs(this.vel.y); }
+        } else if (this.unk150 === SEED_SHOOT) { this.vel.x = fr(this.vel.x * fr(0.8)); this.vel.z = fr(this.vel.z * fr(0.8)); this.vel.y = fr(fr(0.1) * Math.abs(this.vel.y)); }
+        else { this.vel.x = fr(this.vel.x * fr(0.4)); this.vel.z = fr(this.vel.z * fr(0.4)); this.vel.y = fr(fr(0.4) * Math.abs(this.vel.y)); }
     }
     behaveToHitWall(g: BGCheckData) {
-        const r = -(1.5 * (this.vel.x * g.n[0] + this.vel.y * g.n[1] + this.vel.z * g.n[2]));
-        this.vel.x += r * g.n[0]; this.vel.y += r * g.n[1];
+        // (JP 0x8027B434: the dot fused z, x over y; the reflection fused into each part)
+        const r = -fr(1.5 * fmadd(this.vel.z, g.n[2], fmadd(this.vel.x, g.n[0], fr(this.vel.y * g.n[1]))));
+        this.vel.x = fmadd(r, g.n[0], this.vel.x); this.vel.y = fmadd(r, g.n[1], this.vel.y);
         if (this.unk150 === SEED_SHOOT) this.vel.y = -5;
-        this.vel.z += r * g.n[2];
+        this.vel.z = fmadd(r, g.n[2], this.vel.z);
         this.unk16C!.unk1B0 = 1;
     }
     getNowGravity() {
@@ -317,7 +320,7 @@ export class PakkunSeed extends SpineEnemy {
             if (this.pos.y > this.groundHeight + 20) this.rot.x = MsGetRotFromZaxis(this.vel).x;
         } else {
             this.unk170 = MsClamp(this.unk170 + 5, 0, 360);
-            this.rot.x *= 0.8;
+            this.rot.x = fr(this.rot.x * fr(0.8));
         }
     }
     calcRootMatrix() { this.world.sound(SE.EN_PAKKUN_SEED_FLY, this.pos, { hold: holdKey(this, 'fly') }); this.calcRootMatrixBasic(); }

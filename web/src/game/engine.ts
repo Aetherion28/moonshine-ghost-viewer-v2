@@ -738,7 +738,7 @@ export class LiveActor extends TakeActor {
             } else {
                 const v = psMtxMultVec(this.groundMtx(this.groundActor), this.ridePos).sub(this.pos);
                 this.posDelta.add(v);
-                if (this.unkE8 >= 2) { this.rotDelta.y += MsAngleDiff(this.groundActor.rot.y, this.groundActorYaw); this.groundActorYaw = this.groundActor.rot.y; }
+                if (this.unkE8 >= 2) { this.rotDelta.y = fr(this.rotDelta.y + MsAngleDiff(this.groundActor.rot.y, this.groundActorYaw)); this.groundActorYaw = this.groundActor.rot.y; }
             }
         } else this.groundActor = null;
     }

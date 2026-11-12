@@ -155,7 +155,7 @@ export class AnimalManagerBase extends EnemyManager {
     /** clipEnemies: in the camera's view (near mViewClipNear, far mSLViewClipFar, radius unk3C). */
     clipActors() {
         for (const a of this.objs as LiveActor[]) {
-            const p = a.pos.clone(); p.y += 75;
+            const p = a.pos.clone(); p.y = fr(p.y + 75);
             if (a.checkLiveFlag(LF.UNK2000) && isInOtherFastCube(this.world, p)) a.onLiveFlag(LF.CLIPPED_OUT);
             else if (this.world.inView(a.pos, this.clipRadius, this.viewClipFar)) a.offLiveFlag(LF.CLIPPED_OUT);
             else a.onLiveFlag(LF.CLIPPED_OUT);

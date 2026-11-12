@@ -49,7 +49,7 @@ class FlowerCoinUnit {
 export class SamboLeaf extends LiveActor {
     unk44 = false; vel38 = new V3(); rot20 = new V3();
     constructor(w: World, public mgr: SamboFlowerManager) { super(w, 'サンボリーフ'); this.manager = mgr; this.mactor = this.createMActorByName('leaf.bmd'); this.manager = null; }
-    generate(p: V3) { this.pos.set(p); this.pos.y += 10; this.unk44 = true; }
+    generate(p: V3) { this.pos.set(p); this.pos.y = fr(this.pos.y + 10); this.unk44 = true; }
     perform(cue: number) {
         if (!this.unk44) return;
         if (cue & CUE_MOVE) {
@@ -363,7 +363,7 @@ export class SamboHead extends WalkerEnemy {
         j.y = this.unk194.mSLHitJumpSpY;
         if (c !== HeadNerves.hitWater) this.spine!.pushNerve(HeadNerves.hitWater); else j.add(v);
         this.vel.set(j);
-        this.pos.y += 2;
+        this.pos.y = fr(this.pos.y + 2);
         this.onLiveFlag(LF.AIRBORNE);
     }
     attackToMario() {
@@ -429,7 +429,7 @@ HeadNerves.attack = nerve<SamboHead>('TNerveSamboHeadAttack', (spine: SS) => {
             goal.normalize();
             goal.x = goal.x * P.mSLMoveDist + self.pos.x; goal.z = goal.z * P.mSLMoveDist + self.pos.z; goal.y = self.pos.y;
             self.vel.set(self.calcVelocityToJumpToY(goal, P.mSLJumpSp, self.getGravityY()));
-            self.pos.y += 2;
+            self.pos.y = fr(self.pos.y + 2);
             self.onLiveFlag(LF.AIRBORNE);
             self.setBckAnm(8);
         } else self.unk19C++;
@@ -457,7 +457,7 @@ HeadNerves.hitWater = nerve<SamboHead>('TNerveSamboHeadHitWater', (spine: SS) =>
     if (spine.time === 0) { self.setBckAnm(5); self.unk1A0.set(self.vel); }
     if (self.isHitWallInBound()) {
         self.unk1AC = 0;
-        if (self.unk1B0) self.rot.y += 180;
+        if (self.unk1B0) self.rot.y = fr(self.rot.y + 180);
         spine.reset(); spine.setNext(HeadNerves.hitWall); spine.pushAfterCurrent(HeadNerves.hitWall);
         return true;
     }
@@ -470,7 +470,7 @@ HeadNerves.hitWater = nerve<SamboHead>('TNerveSamboHeadHitWater', (spine: SS) =>
     if (self.checkCurAnmEnd(ANM_BCK) && self.isBckAnm(6)) {
         const r = P.mSLHitJumpSpRateXZ;
         self.setBckAnm(6);
-        self.unk1A0.x *= r; self.unk1A0.z *= r; self.unk1A0.y = 0;
+        self.unk1A0.x = fr(self.unk1A0.x * r); self.unk1A0.z = fr(self.unk1A0.z * r); self.unk1A0.y = 0;
         self.vel.set(self.unk1A0);
         self.pos.y = self.groundHeight;
         self.offLiveFlag(LF.AIRBORNE);

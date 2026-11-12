@@ -154,7 +154,7 @@ export class MarioProxy extends TakeActor {
         if (this.diving) { a.receiveMessage(this, MSG.PUNCH); a.receiveMessage(this, MSG.TRAMPLE); }
         if (this.fludd && this.fludd.nozzle === 0 && this.emitted) {
             const wa = this.w.water!.staticHitActor;
-            wa.pos.set(this.pos); wa.pos.y += 80; wa.unk68 = 0;
+            wa.pos.set(this.pos); wa.pos.y = fr(wa.pos.y + 80); wa.unk68 = 0;
             a.receiveMessage(wa, MSG.SPRAYED_BY_WATER);
         }
     }
