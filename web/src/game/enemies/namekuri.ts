@@ -58,7 +58,7 @@ export class Spider {
         if (n.y <= h) { n.y = h; e.vel.set(0, 0, 0); e.offLiveFlag(LF.AIRBORNE); e.offLiveFlag(LF.UNK8000); }
         else e.onLiveFlag(LF.AIRBORNE);
         e.groundHeight = h; e.groundPlane = d;
-        const r: WallCheck = { center: [n.x, n.y + e.getHeadHeight(), n.z], radius: e.wallRadius, maxResults: 1, flags: 0, results: [] };
+        const r: WallCheck = { center: [n.x, n.y + e.getHeadHeight(), n.z], radius: e.getWallRadius(), maxResults: 1, flags: 0, results: [] };
         const touched = w.isTouchedWallsAndMoveXZ(r);
         const c = new V3(r.center[0], r.center[1], r.center[2]);
         // (f29 is left unset when a wall is touched from behind: taken as 0)
@@ -81,7 +81,7 @@ export class Spider {
                 e.vel.set(0, 0, 0);
                 this.unkC = wall; e.unk138 = wall;
                 this.unk8 = 0x3C;
-                c.sub(N.scale(e.wallRadius * this.wallAttachRate));
+                c.sub(N.scale(fr(e.getWallRadius() * this.wallAttachRate)));
                 this.wallAttachRate = fr(this.wallAttachRate + 1 / 60);
                 if (this.wallAttachRate > 1) this.wallAttachRate = 1;
             }

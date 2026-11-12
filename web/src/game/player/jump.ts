@@ -40,6 +40,7 @@ export abstract class MarioJump extends MarioRun {
     setJumpingAttackArea() {
         if (this.mVel.y < 0) { this.attackRadius = this.mDeParams.mTrampleRadius; this.attackHeight = this.mDeParams.mAttackHeight; }
         else { this.attackRadius = this.mDeParams.mPushupRadius; this.attackHeight = this.mDeParams.mPushupHeight; }
+        this.calcEntryRadius();
     }
     /** doJumping's rocket boost (MarioJump.cpp:89): mWaterGun->isEmitting() (no water gun: false) */
     gunCanSpray() { const G = (this as any).mWaterGun; return !!G && G.isEmitting(); }
@@ -389,7 +390,7 @@ export abstract class MarioJump extends MarioRun {
                     if (160 + (this.pos.y + lift) < this.mFloorPosition.x) { this.pos.y = fr(this.pos.y + lift / 4); this.unk104 = this.pos.y; }
                 }
                 this.setPlayerVelocity(0);
-                this.attackRadius = 0;
+                this.attackRadius = 0; this.calcEntryRadius();
                 this.setAnimation(A.HIPSR, 1);
                 this.mStatusTimer += 1;
                 if (this.mStatusTimer >= 60) { this.mStatusTimer = 0; this.mStatusState = 2; }
@@ -404,7 +405,7 @@ export abstract class MarioJump extends MarioRun {
                 this.mStatusTimer += 1;
                 if (this.mStatusTimer > this.mJumpParams.mSuperHipAttackCt) this.mStatusState = 3;
                 this.mVel.y = this.mStatusState === 2 ? this.mJumpParams.mHipAttackSpeedY : this.mJumpParams.mSuperHipAttackSpeedY;
-                this.attackRadius = this.mDeParams.mHipdropRadius; this.attackHeight = this.mDeParams.mAttackHeight;
+                this.attackRadius = this.mDeParams.mHipdropRadius; this.attackHeight = this.mDeParams.mAttackHeight; this.calcEntryRadius();
                 const r = this.jumpProcess(0);
                 if (r === 1) {
                     if (this.isMario()) this.world.cameraShake?.startShake(this.mStatusState === 2 ? 0 : 0x27, 1);

@@ -469,7 +469,7 @@ export class Gorogoro extends RollEnemy {
             const [, roof] = this.world.checkRoof(this.pos.x, this.pos.y + this.headHeight, this.pos.z);
             if (roof && isMill(roof.actor)) { roof.actor.turnByEnemy(this, roof); super.walkBehavior(kind, fr(0.3 * k)); return; }
             if (this.unk138 && this.unk138.actor) {
-                const r = { center: [this.pos.x, this.pos.y + this.headHeight, this.pos.z] as [number, number, number], radius: this.wallRadius, maxResults: 4, flags: 0, results: [] as any[] };
+                const r = { center: [this.pos.x, this.pos.y + this.headHeight, this.pos.z] as [number, number, number], radius: this.getWallRadius(), maxResults: 4, flags: 0, results: [] as any[] };
                 if (this.world.isTouchedWallsAndMoveXZ(r)) {
                     for (const wall of r.results) if (wall && isMill(wall.actor)) wall.actor.turnByEnemy(this, wall);
                     super.walkBehavior(kind, fr(0.2 * k)); return;

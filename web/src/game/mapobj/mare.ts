@@ -14,6 +14,7 @@
 // setAnmSound) and the cork's drawObject (only its sound and spray). MuddyBoat (also in this TU) is
 // in corona.ts. MareGate isn't in this TU.
 
+import { sinf as mslSinf, cosf as mslCosf } from '../math.js';
 import { fr, V3, mtx, MsMtxSetRotRPH, mtxMultVec } from '../math.js';
 import { World, Stream, Actor, HitActor, TakeActor, HF, LF, MSG, ANM_BCK, CUE_CALC_ANIM } from '../engine.js';
 import { AT } from '../actortypes.js';
@@ -28,7 +29,7 @@ import type { ItemManager } from './item.js';
 
 const STATE_UNK2 = 2;
 const DEG = fr(0.017453294);
-const sinf = (a: number) => fr(Math.sin(fr(a))), cosf = (a: number) => fr(Math.cos(fr(a)));
+const sinf = (a: number) => mslSinf(fr(a)), cosf = (a: number) => mslCosf(fr(a));   // (MSL's: math.ts)
 
 // ---------------------------------------------------------------- TCogwheelScale
 /** One of the balance's two pans (cogwheel_plate / cogwheel_pot). */

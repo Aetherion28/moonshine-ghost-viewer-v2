@@ -216,7 +216,7 @@ export abstract class MarioSpecial extends MarioSwim {
     kickRoof() {
         this.setAnimation(A.LADDER_HANG_KICK, 1);
         this.attackRadius = this.mAttackParamsKickRoof.mRadius;
-        this.attackHeight = this.mAttackParamsKickRoof.mHeight;
+        this.attackHeight = this.mAttackParamsKickRoof.mHeight; this.calcEntryRadius();
         if (this.isLast1AnimeFrame()) { this.mInput &= ~2; return this.changePlayerStatus(S.WAIT_ROOF, 0, false); }
         return 0;
     }
@@ -480,7 +480,7 @@ export abstract class MarioSpecial extends MarioSwim {
         }
         this.setAnimation(A.FENCE_PUNCH, 1);
         this.attackRadius = this.mAttackParamsFencePunch.mRadius;
-        this.attackHeight = this.mAttackParamsFencePunch.mHeight;
+        this.attackHeight = this.mAttackParamsFencePunch.mHeight; this.calcEntryRadius();
         this.offHitFilter(HF.NO_ATTACK);
         this.mModelFaceAngle = this.mFaceAngle.y;
         if (this.getMotionFrameCtrl().checkPass(5)) {

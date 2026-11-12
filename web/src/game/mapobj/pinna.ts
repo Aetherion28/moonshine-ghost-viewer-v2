@@ -24,7 +24,8 @@
 
 import { MSF } from '../flags.js';
 import { mat4 } from 'gl-matrix';
-import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH, MsRandF } from '../math.js';
+import { fr, V3, Mtx, mtx, MsMtxSetXYZRPH, MsRandF, sinf, cosf } from '../math.js';
+import { fmadd } from '../player/fmath.js';
 import { World, Stream, HitActor, LF, HF, HC, MSG, ANM_BCK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, MActor } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { register } from '../scene.js';
@@ -71,7 +72,10 @@ export class FerrisWheel extends MapObjBase {
     unk138 = 0;
     unk13C: MapObjBase[] = [];
     unk140 = 0;
+    /** the joints' matrices of the model's last calc (CalcAnim) */
+    private calcJ: Mtx[] | null = null;
     constructor(w: World, name = '観覧車') { super(w, name); }
+    modelCalcRoot() { super.modelCalcRoot(); this.calcJ = anmMtxs(this); }
     /** becomeCalmlyCallback (the demo camera's: 0 as it starts) */
     static becomeCalmlyCallback(wheel: FerrisWheel, p2: number) {
         if (p2 === 0) {
@@ -88,8 +92,9 @@ export class FerrisWheel extends MapObjBase {
             else this.state = STATE_NORMAL;
         }
         if (this.unk140 > ANM_FRAME_RATE() / 4) this.world.sound(SE.OBJ_MAHRE_GATE_LIGHT, this.pos);
-        // (the joints as the last calc left them: before the frame moves on)
-        const J = anmMtxs(this);
+        // (the joints as the model's last calc left them: getAnmMtx changes only at CalcAnim, once a frame, so
+        // the gondolas stand still for the frame's four ticks)
+        const J = this.calcJ || anmMtxs(this);
         const fc = this.mactor ? this.mactor.getFrameCtrl(ANM_BCK) : null;
         if (fc) fc.frame = fr(fc.frame + this.unk140);
         for (let i = 0; i < this.unk138; ++i) {
@@ -116,6 +121,8 @@ export class FerrisWheel extends MapObjBase {
         const W = this.world;
         const fast = !V.GMSJ01 && !V.GMSE01 ? (W.map === 13 && W.stage === 2) || (W.map === 5 && W.stage === 4) : W.stage === 2;
         this.unk140 = fast ? 10 : ANM_FRAME_RATE() / 4;
+        // (initMapObj's getModel()->calc(): the joints at the BCK's first frame until the first CalcAnim)
+        if (!this.calcJ) this.calcJ = anmMtxs(this);
     }
 }
 
@@ -126,11 +133,12 @@ export class HorizontalViking extends MapObjBase {
     unk138 = 0; unk13C = 0; unk140 = 0; unk144 = 0; unk148 = 0;
     constructor(w: World, name = '') { super(w, name); }
     updateTrans() {
-        const a = fr(3.14 * fr(this.unk148 / 180));
-        const sin = fr(Math.sin(a));
-        this.pos.x = fr(fr(this.unk138 * sin) + this.initialPos.x);
-        const cos = fr(Math.cos(a));
-        this.pos.y = fr(this.yOffset + fr(fr(this.unk138 * fr(1 - cos)) + this.initialPos.y));
+        // (JP 0x801AE254: MSL sinf / cosf, each sum one fmadds)
+        const a = fr(fr(3.14) * fr(this.unk148 / 180));
+        const sin = sinf(a);
+        this.pos.x = fmadd(this.unk138, sin, this.initialPos.x);
+        const cos = cosf(a);
+        this.pos.y = fr(this.yOffset + fmadd(this.unk138, fr(1 - cos), this.initialPos.y));
     }
     moveNormal() {
         switch (this.state) {

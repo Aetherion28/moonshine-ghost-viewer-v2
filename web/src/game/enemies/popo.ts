@@ -328,7 +328,7 @@ export class Popo extends WalkerEnemy {
             const [h, d] = this.world.checkGround(this.pos.x, this.pos.y + this.headHeight, this.pos.z);
             this.groundHeight = h; this.groundPlane = d;
             if (this.pos.y <= this.groundHeight + 30 || (Math.abs(this.vel.x) < 1 && Math.abs(this.vel.z) < 1)) this.spine!.pushNerve(PopoNerves.explosion);
-            const r: WallCheck = { center: [this.pos.x, this.pos.y, this.pos.z], radius: this.unk198 * this.wallRadius, maxResults: 1, flags: 0, results: [] };
+            const r: WallCheck = { center: [this.pos.x, this.pos.y, this.pos.z], radius: fr(this.unk198 * this.getWallRadius()), maxResults: 1, flags: 0, results: [] };
             if (this.world.isTouchedWallsAndMoveXZ(r)) this.spine!.pushNerve(PopoNerves.explosion);
             else if (this.spine!.current === PopoNerves.fly) super.bind();
         } else super.bind();

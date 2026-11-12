@@ -86,7 +86,7 @@ export abstract class MarioMove extends MarioBase {
         return 0;
     }
     canBendBody() { const a = this.mStatus & 0x1FF; return !((a >= 0x14B && a <= 0x14F) || (a >= 0x140 && a <= 0x143)); }
-    setNormalAttackArea() { this.attackRadius = this.mDeParams.mHoldRadius; this.attackHeight = this.mDeParams.mAttackHeight; }
+    setNormalAttackArea() { this.attackRadius = this.mDeParams.mHoldRadius; this.attackHeight = this.mDeParams.mAttackHeight; this.calcEntryRadius(); }
     setPlayerVelocity(v: number) {
         this.mForwardVel = fr(v);
         this.mSlideVelX = fr(this.mForwardVel * JMASSin(this.mFaceAngle.y));

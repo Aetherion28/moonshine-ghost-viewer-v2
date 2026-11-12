@@ -6,6 +6,7 @@
 // the stream cubes (gpCubeStream over tables.bin's 流れキューブテーブル) and the Mario queries
 // (SMS_GetMario*, TWaterGun) as the Mario the stage has can answer them.
 
+import { fmadd as fmaddX } from '../player/fmath.js';
 import { mat4 } from 'gl-matrix';
 import { fr, V3, Mtx, mtx, MsSin, MsCos, MsRandF, sinf, cosf, HALF_PI_F, mslSinf, mslCosf, jgNormalize } from '../math.js';
 import { fmadd as FMA, fmsub as FMS, fnmsub as FNMS } from '../player/fmath.js';
@@ -50,7 +51,8 @@ export function MTXConcat(a: Mtx, b: Mtx, out: Mtx) {
     for (let i = 0; i < 3; i++) {
         const a0 = a[i * 4], a1 = a[i * 4 + 1], a2 = a[i * 4 + 2];
         for (let j = 0; j < 4; j++) {
-            let v = fr(fr(fr(b[j] * a0) + b[4 + j] * a1) + b[8 + j] * a2);
+            // (each ps_madds rounds once: an exact fused multiply-add, not a double sum rounded to single)
+            let v = fmaddX(b[8 + j], a2, fmaddX(b[4 + j], a1, fr(b[j] * a0)));
             if (j === 3) v = fr(a[i * 4 + 3] + v);
             r[i * 4 + j] = v;
         }

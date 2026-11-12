@@ -21,6 +21,7 @@
 import { fr, V3, Quat, Mtx, mtx, MsRandF, MsSin, MsCos, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, jgInvSqrt } from '../math.js';
 import { mslSinf, mslCosf } from '../math.js';
 import { vSq } from '../vecops.js';
+import { fmadd, fmsub, fnmsub } from '../player/fmath.js';
 import { World, HitActor, TakeActor, LiveActor, FrameCtrl, LF, HF, MSG, nerve, Spine, Stream, ANM_BCK, ANM_BTK, ANM_FRAME_RATE, CUE_MOVE, CUE_CALC_ANIM, FC_ONCE, PathNode, PSchema } from '../engine.js';
 import { AT } from '../actortypes.js';
 import { SmallEnemy, SmallEnemyManager, smallParams } from './smallEnemy.js';
@@ -45,7 +46,7 @@ const FIREWANWAN_PARAMS = {
 export const cBodyColorOnFire = [400, -50, -100, 0], cBodyColorOnCool = [-50, -50, 50, 0], cBodyColorOnSilver = [260, 260, 270, 0];
 
 const EPS = 3.81469727e-6;   // TUtil<f32>::epsilon
-const PI = 3.1415927, HALF_PI = 1.5707964;
+const PI = fr(3.1415927), HALF_PI = fr(1.5707964);
 const velocityMinY = -40;
 const isZero = (v: V3) => vSq(v) <= EPS;
 /** TVec3::setLength (0x801251d0): scale by len * inv_sqrt(squared()) (frsqrte + one Newton step) */
@@ -55,6 +56,17 @@ const qEulerY = (a: number) => new Quat(0, mslSinf(fr(0.5 * fr(a))), 0, mslCosf(
 function qRotate(q: Quat, v: V3) {
     const p = new Quat().mul(new Quat().mul(q, new Quat(v.x, v.y, v.z, 0)), new Quat(-q.x, -q.y, -q.z, q.w));
     return new V3(fr(p.x), fr(p.y), fr(p.z));
+}
+/** bindBody's point (JP 0x8029B7FC..0x8029B8E0): TQuat4::setEulerY(angle) rotating (0, 0, d), inlined, added to cur */
+function bindOffset(cur: V3, angle: number, d: number) {
+    const h = fr(0.5 * angle), s = mslSinf(h), c = mslCosf(h), Z = 0, N = -0, N2 = fr(N * Z);
+    const f5 = fr(c * Z), f0 = fmadd(N, d, Z), f7 = fr(s * Z), f6 = fr(f5 + f0), f3 = fmsub(s, d, Z);
+    const f2 = fr(Z - f7), f0b = fr(N2 - f7), f5b = fr(f5 + f3), f9 = fr(f6 * N);
+    const f7b = fnmsub(Z, d, f0b), f8 = -s, f0c = fr(f6 * c), f6b = fmadd(c, d, f2);
+    const f2b = fmadd(f5b, c, f9), f0d = fmadd(f5b, Z, f0c), f10 = fr(f7b * N);
+    const f3b = fnmsub(f6b, f8, f2b), f2c = fmadd(f6b, N, f0d), f0e = fmsub(f5b, f8, f9);
+    const x = fr(f10 + f3b), y = fmadd(f7b, f8, f2c), z = fr(f10 + fmadd(f6b, c, f0e));
+    return new V3(fr(cur.x + x), fr(cur.y + y), fr(cur.z + z));
 }
 function isAntiparallel(a: V3, b: V3) { const k = fr(a.dot(b) - -1); return -EPS <= k && k <= EPS; }
 const s16 = (v: number) => (Math.trunc(v) << 16) >> 16;
@@ -104,7 +116,7 @@ export class TailRubber {
         const next = V3.add(n.pos, n.vel);
         let [h] = this.w.checkGround(next.x, next.y + 40, next.z);
         h = fr(fr(h + 1) + 20);
-        if (next.y <= 0.05 + h) { n.vel.zero(); next.y = h; }
+        if (next.y <= fr(fr(0.05) + h)) { n.vel.zero(); next.y = h; }
         this.w.isTouchedOneWallAndMoveXZ(next, next.y + 40, 20);
         n.vel.set(V3.sub(next, n.pos)).fround();
     }
@@ -232,7 +244,7 @@ export class FireWanwanTailHit extends TakeActor {
     }
     perform(cue: number) {
         const P = this.owner.PF;
-        this.damageRadius = P.mTailEndColRange;
+        this.damageRadius = P.mTailEndColRange; this.calcEntryRadius();
         if (cue & CUE_MOVE) this.movementBody(this.owner.getTailPos());
         this.performNodes(cue);
         {
@@ -291,7 +303,7 @@ export class FireWanwanTailHit extends TakeActor {
     moveRequest(p: V3) {
         const n = p.clone();
         const [h] = this.world.checkGround(n.x, n.y + 100, n.z);
-        if (n.y <= 0.05 + h) n.y = fr(h + 1);
+        if (n.y <= fr(fr(0.05) + h)) n.y = fr(h + 1);
         n.y = fr(n.y + 50);
         this.world.isTouchedOneWallAndMoveXZ(n, n.y, 70);
         this.rubber.nodes[4].pos.set(n);
@@ -433,11 +445,11 @@ export class FireWanwan extends SmallEnemy {
     doEscape() {
         this.sprayedAnm();
         if (this.checkCurAnmEnd(0)) this.setBckAnm(BCK_DAMAGE);
-        this.walkToCurPathNode(this.marchSpeed * this.PF.mEscapeSpeedRate, this.turnSpeed, 0);
+        this.walkToCurPathNode(fr(this.marchSpeed * this.PF.mEscapeSpeedRate), this.turnSpeed, 0);
     }
     doAttack() {
         if (this.sprayCooldown !== 0) { const a = this.mactor!; if (!a.checkCurBckFromIndex(BCK_HIT)) a.setBckFromIndex(BCK_HIT); }
-        else this.walkToCurPathNode(this.marchSpeed * this.PF.mAttackSpeedRate, this.turnSpeed, 0);
+        else this.walkToCurPathNode(fr(this.marchSpeed * this.PF.mAttackSpeedRate), this.turnSpeed, 0);
         if (this.checkCurAnmEnd(0)) this.setBckAnm(BCK_RUN);
         return this.isMissMario();
     }
@@ -690,33 +702,32 @@ export class FireWanwan extends SmallEnemy {
             this.world.sound(SE.EN_WANWAN_REFLECT, this.pos);
         }
         if (this.isFlying() && !this.checkLiveFlag(LF.AIRBORNE)) {
-            this.vel.scale(P.mAirFric);
-            this.vel.y = fr(this.vel.y * -0.05);
+            this.vel.scale(P.mFloorFric).fround();
+            this.vel.y = fr(this.vel.y * fr(-0.05));
             this.vel.fround();
         }
     }
     bindBody(out: V3, normals: V3, step: V3) {
         let num = 0;
-        const r = fr(this.wallRadius * 0.27676865);
+        const r = fr(this.wallRadius * fr(0.27676865));
         out.zero(); normals.zero();
         const cur = this.pos.clone();
         let air = true;
         for (let i = 0; i < 8; ++i) {
-            const off = qRotate(qEulerY(fr(i * HALF_PI)), new V3(0, 0, fr(this.wallRadius - r)));
-            const point = V3.add(cur, off);
+            const point = bindOffset(cur, fr(i * HALF_PI), fr(this.wallRadius - r));
             const rec: WallCheck = { center: [0, 0, 0], radius: 0, maxResults: 4, flags: 0, results: [] };
             const bps = this.bindPoint(point, step, r, rec);
             air = air && this.isAirborne();
-            cur.add(V3.sub(bps, step)).fround();
+            cur.add(V3.sub(bps, step).fround()).fround();
             for (const w of rec.results) normals.add(new V3(w.n[0], w.n[1], w.n[2]));
             num += rec.results.length;
         }
-        out.set(V3.sub(cur, this.pos).add(step)).fround();
+        out.set(V3.sub(cur, this.pos).fround().add(step)).fround();
         if (air) this.onLiveFlag(LF.AIRBORNE); else this.offLiveFlag(LF.AIRBORNE);
         return num;
     }
     bindPoint(point: V3, step: V3, radius: number, rec: WallCheck): V3 {
-        const a = V3.add(point, step);
+        const a = V3.add(point, step).fround();
         const w = this.world;
         const ground = (x: number, y: number, z: number) => this.checkLiveFlag(LF.UNK1000) ? w.checkGroundIgnoreWaterSurface(x, y, z) : w.checkGround(x, y, z);
         let [gh, g] = ground(a.x, a.y + this.headHeight, a.z) as [number, BGCheckData];
@@ -728,17 +739,19 @@ export class FireWanwan extends SmallEnemy {
         }
         this.groundHeight = gh;
         this.groundPlane = g;
-        if (a.y <= gh + 0.05) {
+        if (a.y <= fr(gh + fr(0.05))) {
             if (g.isIllegal()) { this.reset(); return step.clone(); }
             this.offLiveFlag(LF.AIRBORNE);
             if (this.isFlying() || this.isDefeat()) {
                 const n = new V3(g.n[0], g.n[1], g.n[2]);
-                const f = fr(1 - (n.dot(a) - n.dot(new V3(a.x, gh, a.z))));
-                if (f > 0) a.set(scaleAdd(f, a, n));
+                // JP 0x8029B64C: the dots fused y, x, z; the push one fmadds a component
+                const d1 = fmadd(n.z, a.z, fmadd(n.x, a.x, fr(n.y * a.y))), d2 = fmadd(n.z, a.z, fmadd(n.x, a.x, fr(n.y * gh)));
+                const f = fr(1 - fr(d1 - d2));
+                if (f > 0) a.set(fmadd(n.x, f, a.x), fmadd(n.y, f, a.y), fmadd(n.z, f, a.z));
             } else a.y = fr(gh + 1);
         } else this.onLiveFlag(LF.AIRBORNE);
         this.checkWalls(a, rec, radius);
-        return V3.sub(a, point);
+        return V3.sub(a, point).fround();
     }
     checkWalls(p: V3, out: WallCheck, radius: number): boolean {
         const r: WallCheck = { center: [p.x, p.y + radius, p.z], radius, maxResults: 4, flags: 0, results: [] };
@@ -852,7 +865,7 @@ FireWanwanNerves.die = nerve<FireWanwan>('TNerveFireWanwanDie', (spine: S) => {
         self.damageHeight = fr(self.damageHeight - 250);
         self.calcEntryRadius();
     }
-    self.vel.x = fr(self.vel.x * 0.9); self.vel.z = fr(self.vel.z * 0.9);
+    self.vel.x = fr(self.vel.x * fr(0.9)); self.vel.z = fr(self.vel.z * fr(0.9));
     self.world.sound(SE.EN_WANWAN_AFTER, self.pos);
     return false;
 });

@@ -122,7 +122,8 @@ export class MameGesso extends WalkerEnemy {
     getGravityY() {
         const c = this.spine!.current;
         let g = this.gravity;
-        if (c === MameNerves.object) g = this.M.mSLJumpWanderGravityY;
+        // (the DOL compares with the nerve the jump wander runs in: r13-0x6294, JP 0x80274150; the decomp names it TNerveMameGessoObject)
+        if (c === MameNerves.jumpWander) g = this.M.mSLJumpWanderGravityY;
         if (c === MameNerves.thrown) g = this.M.mSLThrownGravityY;
         return g;
     }
