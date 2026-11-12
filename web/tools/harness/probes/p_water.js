@@ -1,0 +1,4 @@
+// every live drop of the sim's water manager per tick, in the oracle's `water` format (LA, LB: the ticks)
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); const A = +process.env.LA, B = +process.env.LB;
+  const F = new Float32Array(1), U = new Uint32Array(F.buffer); const h = (v) => { F[0] = v; return U[0].toString(16).padStart(8, '0'); }; const x = (v, n) => (v >>> 0).toString(16).padStart(n, '0').slice(-n);
+  P.testPerform = (c) => { const r = o(c); if (st.qf >= A && st.qf <= B) { const W = st.world.water, rows = []; for (let i = 0; i < W.count; i++) rows.push(`${i} ${h(W.life[i])} ${x(W.flag[i], 4)} ${x(W.attack[i], 4)} ${h(W.pos[i].x)} ${h(W.pos[i].y)} ${h(W.pos[i].z)} ${h(W.vel[i].x)} ${h(W.vel[i].y)} ${h(W.vel[i].z)} ${h(W.size[i])} ${x(W.type[i], 2)}`); console.log(`${st.qf} WATER ${W.count} ${rows.join(' | ')}`); } return r; }; }

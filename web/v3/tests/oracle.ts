@@ -8,6 +8,8 @@
 //          @<address>:<len>          <len> bytes of memory at a hex address, every tick; @<address>>74>4+20:<len> follows
 //                                    pointers first (>off: the pointer at +off; +off: add)
 //          vt:<text>:<off>:<len>     the same for every object of such a class (found at <from>)
+//          water                     every live drop of the water manager, every tick (slot, life, flags, attack,
+//                                    place, speed, size, type, as hex words)
 //   Offsets and lengths are hex. Each word is printed as hex and, where it looks like one, as a float.
 //   env: FSTPAD (default 480), EVERY=n print every nth tick, CHANGED=1 print a line only when it differs from the last
 import { readFileSync } from 'node:fs';
@@ -57,15 +59,23 @@ function setUp() {
             const path = parts.slice(1).map((t) => [t[0], parseInt(t.slice(1), 16)] as [string, number]);
             watch.push({ label: `${q[0]}`, addr, len: parseInt(q[1], 16), last: '', path });
         }
+        else if (w === 'water') water = true;
         else console.log(`? ${w}`);
     }
 }
-let done = false;
+let done = false, water = false;
 R.onTick = (tick) => {
     if (tick < from || done) return;
     if (!watch) setUp();
-    if (tick > to || !watch!.length) { done = true; return; }
+    if (tick > to || (!watch!.length && !water)) { done = true; return; }
     if ((tick - from) % every) return;
+    if (water) {
+        // every live drop of TModelWaterManager: slot, life, flags, attack, place, speed, size, type, the actor and ground it holds
+        const W = mem.r32(0x8040A3C8), n = mem.r16(W + 0x12), fw = (a: number) => hex(mem.r32(a));
+        const rows: string[] = [];
+        for (let i = 0; i < n; i++) rows.push(`${i} ${fw(W + 0x14 + 4 * i)} ${hex(mem.r16(W + 0x414 + 2 * i), 4)} ${hex(mem.r16(W + 0x614 + 2 * i), 4)} ${fw(W + 0x814 + 12 * i)} ${fw(W + 0x818 + 12 * i)} ${fw(W + 0x81C + 12 * i)} ${fw(W + 0x1414 + 12 * i)} ${fw(W + 0x1418 + 12 * i)} ${fw(W + 0x141C + 12 * i)} ${fw(W + 0x2014 + 4 * i)} ${hex(mem.r8(W + 0x2414 + i), 2)}`);
+        console.log(`${tick} WATER ${n} ${rows.join(' | ')}`);
+    }
     for (const w of watch!) {
         const parts: string[] = [];
         let base = w.addr;
