@@ -74,8 +74,11 @@ class PartModel extends LiveActor {
     }
     perform() { }
     drawn() { return this.visible(); }
-    /** getModel()->getAnmMtx(j) */
-    anmMtx(j: number) { return m4ToMtx(this.mactor!.anmMtx(j, this.baseTR, this.scale)); }
+    /** the joints' matrices of the model's last calc (MActor::calcAnm at CalcAnim: frameUpdate, then the model's calc) */
+    private partMtx: Mtx[] | null = null;
+    calcPart() { const all = this.mactor!.anmMtxAll(this.baseTR, this.scale); this.partMtx = all ? all.map((m) => m4ToMtx(m)) : null; }
+    /** getModel()->getAnmMtx(j): as the last calc left it */
+    anmMtx(j: number) { return this.partMtx && this.partMtx[j] ? this.partMtx[j].slice() as Mtx : m4ToMtx(this.mactor!.anmMtx(j, this.baseTR, this.scale)); }
 }
 
 /** TCannonDom: a barrel on one of the cannon's joints (nullA-C). */
@@ -99,7 +102,7 @@ export class CannonDom {
             MTXConcat(m, r, m);   // (into the cannon's joint matrix itself: the game's)
             this.model.baseTR.set(m);
         }
-        if (cue & CUE_CALC_ANIM) this.model.mactor!.frameUpdate();
+        if (cue & CUE_CALC_ANIM) { this.model.mactor!.frameUpdate(); this.model.calcPart(); }
     }
     setBckAnm(i: number) { this.model.mactor!.setBckFromIndex(i); }
 }
@@ -125,7 +128,7 @@ export class Chorobei extends HitActor {
             m[7] = fr(m[7] + this.unk7C);
             this.model.baseTR.set(m);
             this.pos.set(m[3], fr(m[7] - 150), m[11]);
-            this.mactor.frameUpdate();
+            this.mactor.frameUpdate(); this.model.calcPart();
         }
     }
     setBckAnm(i: number) { this.mactor.setBckFromIndex(i); }

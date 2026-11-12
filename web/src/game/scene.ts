@@ -270,7 +270,10 @@ export class Stage {
             if (w.pollution) w.pollution.move(w.mario.pos);
             // the wave (TMapObjWave::perform)
             { const wv: any = (w as any).mapObjWave; if (wv) wv.perform(CUE_MOVE); }
-            w.conductor.perform(CUE_MOVE);
+            // (PerformList.cpp: a movement entry takes CUE_MOVEMENT_GATE_A / _B too; the director clears gate A on
+            // odd mMoveTickCount and gate B when bit 1 is set, so the cue is exactly CUE_MOVE one tick in four:
+            // TCannon's sway steps then)
+            w.conductor.perform(CUE_MOVE | (w.moveTickCount & 1 ? 0 : 0x1000) | (w.moveTickCount & 2 ? 0 : 0x2000));
             // the manager group: the wires
             if (w.mapWires) w.mapWires.perform(CUE_MOVE);
             // (the drift check of the tick before: a trace's record is Mario as his perform begins, so with the gates' pushes in)
