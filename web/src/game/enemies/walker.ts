@@ -21,7 +21,7 @@ const velocityMinY = -40;
 const isEnemyThrough = (d: BGCheckData) => d.bgType === 0x801 || d.bgType === 0x402;
 
 function calcFarthestVertex(d: BGCheckData, p: V3, dir: V3) {
-    const diffs = [d.p1, d.p2, d.p3].map((q) => new V3(q[0] - p.x, 0, q[2] - p.z));
+    const diffs = [d.p1, d.p2, d.p3].map((q) => new V3(fr(q[0] - p.x), 0, fr(q[2] - p.z)));
     let first = true, f7 = 0;
     for (const v of diffs) if (v.dot(dir) > 0) { const s = v.squared(); if (first) { first = false; f7 = s; } else if (f7 < s) f7 = s; }
     // calcFarthestVertex (walker.cpp): "yet another copy of the standard sqrt but without the
@@ -41,7 +41,7 @@ export class Walker {
         if (e.isAirborne()) {
             const v = e.vel.clone();
             n.add(v);
-            v.y -= e.getGravityY();
+            v.y = fr(v.y - e.getGravityY());
             if (v.y < velocityMinY) v.y = velocityMinY;
             e.vel.set(v);
         }
@@ -125,7 +125,7 @@ export class WalkerEnemy extends SmallEnemy {
             this.vel.x = fr(f * MsSin(this.rot.y)); this.vel.z = fr(f * MsCos(this.rot.y));
             this.spine!.pushNerve(SmallEnemyNerves.jump);
             this.onLiveFlag(LF.AIRBORNE);
-            this.pos.y += 5;
+            this.pos.y = fr(this.pos.y + 5);
         }
     }
     attackToMario() {

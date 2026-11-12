@@ -115,8 +115,8 @@ export class BoidLeader {
         for (const b of B) {
             const f = this.calcForces(b);
             if (!(f.squared() <= 1.1920929e-7)) {
-                if (f.y < -0.01) { b.rot.x += this.pitchSpeed; if (b.rot.x > this.maxPitch) b.rot.x = this.maxPitch; }
-                else if (f.y > 0.01) { b.rot.x -= this.pitchSpeed; if (b.rot.x < -this.maxPitch) b.rot.x = -this.maxPitch; }
+                if (f.y < -0.01) { b.rot.x = fr(b.rot.x + this.pitchSpeed); if (b.rot.x > this.maxPitch) b.rot.x = this.maxPitch; }
+                else if (f.y > 0.01) { b.rot.x = fr(b.rot.x - this.pitchSpeed); if (b.rot.x < -this.maxPitch) b.rot.x = -this.maxPitch; }
                 else b.rot.x = fr(b.rot.x * 0.98);
                 const target = MsGetRotFromZaxisY(f);
                 let diff = MsAngleDiff(target, b.rot.y);
@@ -208,7 +208,7 @@ export abstract class Realoid extends SpineEnemy {
             const m = this.createMActorByName(model);
             this.leader.boids[i].pos.set(p);
             this.actors.push(this.createRealoidActor(m));
-            p.y += 10;
+            p.y = fr(p.y + 10);
         }
     }
     clipBoids() {

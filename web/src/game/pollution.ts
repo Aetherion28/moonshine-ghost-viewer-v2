@@ -5,6 +5,9 @@
 // countTexDegree, in the frame's draw lists) and copies the result back over the texture; here
 // the same TEV and blend maths run on the CPU over the same texel layout (GX I8 tiles).
 
+import { drawLayerGpu, gpuModelOf, stampFormatOk, type StampTex, type GpuModel } from './goopgpu.js';
+import { concat } from './j3dcalc.js';
+import { fmadd } from './player/fmath.js';
 import { V } from './version.js';
 import { MsRandF } from './math.js';
 import type { Files, MActor } from './engine.js';
@@ -25,7 +28,7 @@ export const FLAG_CAN_SPREAD = 0x1, FLAG_DECAY = 0x2;
 const TPollutionLayer_mAreaMinRate = fr(0.7);
 
 /** A GX texture's texels as intensity + alpha (I4, I8, IA4, IA8), row-major. */
-export interface Img { w: number; h: number; i: Uint8Array; a: Uint8Array; }
+export interface Img { w: number; h: number; i: Uint8Array; a: Uint8Array; /** the image as the file has it, for the GPU (goopgpu.ts) */ raw?: StampTex; }
 export function decodeGX(fmt: number, w: number, h: number, d: Uint8Array, o: number): Img | null {
     const I = new Uint8Array(w * h), A = new Uint8Array(w * h);
     const blocks = (bw: number, bh: number, px: (x: number, y: number) => void) => {
@@ -45,7 +48,10 @@ export function decodeGX(fmt: number, w: number, h: number, d: Uint8Array, o: nu
 }
 export function parseBTI(b: Uint8Array): Img | null {
     const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
-    return decodeGX(b[0], v.getUint16(2), v.getUint16(4), b, v.getUint32(0x1C));
+    const img = decodeGX(b[0], v.getUint16(2), v.getUint16(4), b, v.getUint32(0x1C));
+    // (ResTIMG: wrap S / T at 6 / 7, the filters at 0x14 / 0x15, the image at 0x1C)
+    if (img) img.raw = { fmt: b[0], w: img.w, h: img.h, data: b.subarray(v.getUint32(0x1C)), wrapS: b[6], wrapT: b[7], min: b[0x14], mag: b[0x15] };
+    return img;
 }
 
 /** A BMD's TEX1 texture 0: its format, size and data (TPollutionLayer::getTexResource). */
@@ -258,6 +264,20 @@ export class Layer {
     /** drawTexStamp / doTask: each stamp a quad of its shape, where the depth map is within unk48 of the stamp's. */
     private stamps() {
         const P = this.pos, M = this.map;
+        // through the GPU's own arithmetic when every stamp in use has its image as the file holds it
+        const S = this.tasks.map((tasks, type) => ({ tasks, img: this.mgr.stampTex[type], clean: this.mgr.stampKind(type) === 0 })).filter((q) => q.tasks.length && q.img);
+        const models = this.modelTasks;
+        if (!S.length && !models.length) return;
+        if (S.every((q) => q.img!.raw && stampFormatOk(q.img!.raw.fmt)) && models.every((t) => t.m.gpu)) {
+            // the view (makeWorldToPollutionMtx) times each draw matrix, as viewCalc concatenates them
+            const s = P.inv, V = [s, 0, 0, fr(-this.minX * s), 0, 0, s, fr(-this.minZ * s), 0, 0, 0, 0];
+            const md = models.map((t) => ({ gm: t.m.gpu!, draw: t.rows.map((r) => concat(V, r, new Array(12))) }));
+            drawLayerGpu(M, P.lw, P.lh, (x, z) => P.index(x, z), P.depth, this.unk48, md, S.map((q) => ({ tex: q.img!.raw!, clean: q.clean, tasks: q.tasks })),
+                { step: (this.flags & FLAG_DECAY) ? 2 : this.changeDelta, threshold: this.changeThreshold });
+            this.gpuDone = true;
+            return;
+        }
+        for (const t of models) drawModelStamp(this, t);
         for (let type = 0; type < this.tasks.length; type++) {
             const list = this.tasks[type], img = this.mgr.stampTex[type];
             if (!img || !list.length) continue;
@@ -296,13 +316,14 @@ export class Layer {
      * (offLayer): nothing's drawn, and the pass's EFB copy (TEfbCtrlTex, clearing what it copies to
      * black) puts back a black texture: see countPixels.
      */
+    private gpuDone = false;
     countTexDegree() {
         if (!this.counterOn) { this.map.fill(0); this.dirty = true; return; }
         // drawPollutionLayer: the faded texture, drawn 1:1 into the EFB, counted (GXReadPixMetric's
         // clr_pixels_in: the pixels past the alpha test GREATER 0, i.e. the texels the fade leaves
         // above 0) before the frame's stamps go on
         this.mCounter = pixMetric(this.fade(), 2);
-        for (const t of this.modelTasks) drawModelStamp(this, t);
+        this.gpuDone = false;
         this.stamps();
         if (this.modelTasks.length) this.cleanProhibitArea();
         this.dirty = true;
@@ -335,8 +356,8 @@ interface SMat {
     tex: Img | null; wrapS: number; wrapT: number; texMtx: mat4 | null; texSrc: number;
     blend: { mode: number; src: number; dst: number }; atest: { ca: number; ra: number; op: number; cb: number; rb: number }; colorUpdate: boolean;
 }
-interface SModel { shapes: { mat: number; groups: SGroup[] }[]; mats: SMat[]; drw: { kind: number; joint: number; env: number }[]; env: { j: number; w: number }[][]; invBind: mat4[]; }
-interface ModelTask { m: SModel; draw: mat4[]; }
+interface SModel { gpu: GpuModel | null; shapes: { mat: number; groups: SGroup[] }[]; mats: SMat[]; drw: { kind: number; joint: number; env: number }[]; env: { j: number; w: number }[][]; invBind: mat4[]; }
+interface ModelTask { m: SModel; draw: mat4[]; /** the draw matrices as the game's J3DModel has them (rows, 12 words) */ rows: number[][]; }
 
 const modelCache = new Map<Uint8Array, SModel | null>();
 const col = (c: { r: number; g: number; b: number; a: number }) => [c.r, c.g, c.b, c.a].map((v) => Math.max(0, Math.min(255, Math.round(v * 255))));
@@ -409,8 +430,10 @@ function loadStampModel(b: Uint8Array): SModel | null {
                 return { pos, slot, clr: readAttr(lay, lvd.vertexBuffers, VertexAttributeInput.CLR0, n, 4), uv: readAttr(lay, lvd.vertexBuffers, VertexAttributeInput.TEX01, n, 2), idx, mtxTable: mg.useMtxTable } as SGroup;
             }),
         }));
+        let gpu: GpuModel | null = null;
+        try { gpu = gpuModelOf(b, bmd); } catch (e) { console.warn('[game] stamp model (GPU)', e); }
         r = {
-            shapes, mats,
+            gpu, shapes, mats,
             drw: bmd.drw1.matrixDefinitions.map((d: any) => ({ kind: d.kind, joint: d.jointIndex ?? -1, env: d.envelopeIndex ?? -1 })),
             env: bmd.evp1.envelopes.map((e: any) => e.weightedBones.map((w: any) => ({ j: w.jointIndex, w: w.weight }))),
             invBind: bmd.evp1.inverseBinds,
@@ -465,6 +488,31 @@ function sampleTex(img: Img, s: number, t: number, wrapS: number, wrapT: number)
     return [Math.round(I), Math.round(A)];
 }
 
+/**
+ * The draw matrices as J3DModel has them (rows, 12 words): a joint's matrix, or an envelope's
+ * (calcWeightEnvelopeMtx: each joint's matrix times its inverse bind, weighted and summed in its
+ * paired-single order: per row, columns 0-1 and 2-3 as pairs, every multiply-add fused).
+ */
+function drawRows(m: SModel, joints: mat4[]): number[][] {
+    const rows = (j: mat4) => [j[0], j[4], j[8], j[12], j[1], j[5], j[9], j[13], j[2], j[6], j[10], j[14]];
+    return m.drw.map((d) => {
+        if (d.kind === DRW1MatrixKind.Joint) return rows(joints[d.joint] || mat4.create());
+        const out = new Array(12).fill(0);
+        for (const w of m.env[d.env] || []) {
+            const W = rows(joints[w.j] || mat4.create()), I = rows(m.invBind[w.j]), wt = fr(w.w);
+            for (let r = 0; r < 3; r++) {
+                const a0 = W[r * 4], a1 = W[r * 4 + 1], a2 = W[r * 4 + 2], a3 = W[r * 4 + 3];
+                for (let c = 0; c < 4; c++) {
+                    // W x I: (I0c a0 + I1c a1) + I2c a2, and for the last column + 1 x a3 (column 2: + 0 x a2)
+                    let v = fmadd(I[8 + c], a2, fmadd(I[4 + c], a1, fr(I[c] * a0)));
+                    if (c === 3) v = fmadd(1, a3, v); else if (c === 2) v = fmadd(0, a2, v);
+                    out[r * 4 + c] = fmadd(v, wt, out[r * 4 + c]);
+                }
+            }
+        }
+        return out;
+    });
+}
 /** The model's draw matrices (DRW1): a joint's matrix, or an envelope's weighted joints x inverse binds. */
 function drawMatrices(m: SModel, joints: mat4[]): mat4[] {
     const tmp = mat4.create();
@@ -865,7 +913,7 @@ export class Pollution {
                 if (!joints) return;
             }
             this.modelTaskNum++;
-            L.modelTasks.push({ m, draw: drawMatrices(m, joints!) });
+            L.modelTasks.push({ m, draw: drawMatrices(m, joints!), rows: drawRows(m, joints!) });
         }
     }
     isPolluted(x: number, y: number, z: number) { for (const L of this.layers) if (L.isPolluted(x, y, z)) return true; return false; }

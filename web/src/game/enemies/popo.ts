@@ -371,7 +371,7 @@ export class Popo extends WalkerEnemy {
         if (this.unk198 > 1) this.unk198 = fr(this.unk198 * 0.9);
         const man = this.manager as PopoManager, I = man.unk68;
         if (!I || !this.world.water) return;
-        const p = this.pos.clone(); p.y += 100;
+        const p = this.pos.clone(); p.y = fr(p.y + 100);
         // (the game flips the shared emit info's direction, and shrinks its count, for good)
         if (this.spine!.time % 2 === 0) I.dir = [I.dir[0], -I.dir[1], I.dir[2]];
         let num = fr(I.num * (this.unk198 / this.PP.mSLWaterScaleMax));

@@ -16,6 +16,7 @@ import { psVecMag } from './camera/lib.js';
 import { vDot, vNormMs, vCross, msVecMag2, vLen, jgSqrt, vSq } from './vecops.js';
 import { fmadd as FMA_, fnmsub as FNMS_ } from './player/fmath.js';
 import { jgNormalize, frsqrte } from './math.js';
+import { sessionSetting, SessionField } from './feedback.js';
 import { rngCtx, fr, V3, Mtx, mtx, MsWrap, MsAngleDiff, MsGetRotFromZaxisY, MsSin, MsCos, MsClamp, MsIsInSight, matan, MsRandF, sqDist, MsMtxSetRotRPH, MsMtxSetXYZRPH, mtxMultVec, mtxInverse, psMtxMultVec, psMtxInverse, MsMtxSetTRS, SMSCalcJumpVelocityY } from './math.js';
 import type { MarioProxy } from './mario.js';
 import type { PlayerMario } from './player/player.js';
@@ -737,7 +738,7 @@ export class LiveActor extends TakeActor {
             } else {
                 const v = psMtxMultVec(this.groundMtx(this.groundActor), this.ridePos).sub(this.pos);
                 this.posDelta.add(v);
-                if (this.unkE8 >= 2) { this.rotDelta.y += MsAngleDiff(this.groundActor.rot.y, this.groundActorYaw); this.groundActorYaw = this.groundActor.rot.y; }
+                if (this.unkE8 >= 2) { this.rotDelta.y = fr(this.rotDelta.y + MsAngleDiff(this.groundActor.rot.y, this.groundActorYaw)); this.groundActorYaw = this.groundActor.rot.y; }
             }
         } else this.groundActor = null;
     }
@@ -747,7 +748,7 @@ export class LiveActor extends TakeActor {
         if (this.checkLiveFlag(LF.UNK10)) return;
         if (this.binder) { this.binder.bind(this); return; }
         const next = this.pos.clone().add(this.posDelta).add(this.vel);
-        this.vel.y -= this.getGravityY();
+        this.vel.y = fr(this.vel.y - this.getGravityY());
         if (this.vel.y < -40) this.vel.y = -40;
         const [h, d] = this.checkLiveFlag(LF.UNK1000) ? this.world.checkGroundIgnoreWaterSurface(next.x, next.y + this.headHeight, next.z) : this.world.checkGround(next.x, next.y + this.headHeight, next.z);
         this.groundPlane = d; this.groundHeight = h + 1;
@@ -1083,6 +1084,49 @@ export class PathNode {
 }
 
 /** A random graph choice, or the node a Moonshine RNG control picked for the object there instead (the ghost's tape). */
+// ---- Moonshine's pattern selector (pattern_selector.cpp; the tables are its kChompletPaths, kBossPaths and Petey's path)
+const CHOMPLET_PATHS: [number, number[]][] = [
+    [0x2132, [0x45, 0x20, 0x20, 0xFF]], [0x1D32, [0xFF, 0x62, 0x1C, 0xFF]], [0x2630, [0x50, 0x25, 0x25, 0x25]], [0x2130, [0xFF, 0x45, 0x20, 0x20]],
+    [0x1D30, [0xFF, 0xFF, 0x62, 0x1C]], [0x0831, [0x51, 0x07, 0x07, 0xFF]], [0x0231, [0xFF, 0x36, 0x01, 0xFF]],
+];
+const BOSS_PATHS = [0x1E, 0x6E, 0x20];
+const PETEY_PATH = [1, 2, 3, 10, 3, 4, 7, 8, 12, 10, 8, 4, 16, 3, 11, 12, 9, 3];
+/** selectedNode: the node a chosen pattern gives a Chomplet (ファイアーわんわん 0..2) or the Chain Chomp, taken without a roll; -1: none */
+function moonshineSelectedNode(e: SpineEnemy, current: number, previous: number): number {
+    if (!sessionSetting(SessionField.PATTERN_SELECTOR)) return -1;
+    const cls = e.constructor.name.replace(/^_/, '');
+    if (cls === 'BossWanwan') {
+        if (previous !== -1) return -1;
+        const pattern = sessionSetting(SessionField.PATTERN_0) ?? 0;
+        return pattern >= 1 && pattern <= 3 ? BOSS_PATHS[pattern - 1] : -1;
+    }
+    if (cls !== 'FireWanwan') return -1;
+    // (the name's 20th byte in Shift-JIS: nine two-byte letters, a space, the digit)
+    const m = /^ファイアーわんわん ([0-2])/.exec(e.name);
+    if (!m) return -1;
+    const digit = 0x30 + +m[1];
+    const pattern = sessionSetting((SessionField.PATTERN_0 + (digit === 0x32 ? 0 : digit === 0x30 ? 1 : 2)) as SessionField) ?? 0;
+    if (pattern < 1 || pattern > 4) return -1;
+    const key = ((current & 0xFF) << 8) | digit;
+    for (const [k, next] of CHOMPLET_PATHS) if (k === key) return next[pattern - 1] === 0xFF ? -1 : next[pattern - 1];
+    return -1;
+}
+/** the node that replaces the roll's result (the roll is still made): Petey's route, the blue-coin bird's pattern; -1: none */
+function moonshineReplacedNode(e: SpineEnemy, g: GraphWeb, current: number, previous: number): number {
+    const cls = e.constructor.name.replace(/^_/, ''), w = e.world;
+    if (sessionSetting(SessionField.PETEY_ROUTE) && w.map === 2 && (w as any).episode === 4 && cls === 'BossPakkun')
+        return current >= 0 && current < PETEY_PATH.length ? PETEY_PATH[current] : -1;
+    const pattern = sessionSetting(SessionField.GELATO_BLUE_BIRD_PATTERN) ?? 0;
+    if (pattern < 1 || pattern > 4 || previous !== -1 || e.actorType !== (0x00800001 | 0)) return -1;
+    if (current < 0 || current >= g.count) return -1;
+    const coin = (e as any).item;
+    if (!coin || coin.actorType !== (0x20000010 | 0)) return -1;
+    // (blueBirdSlot: the name's last digit, nonzero -> 1; with no digit, a hash of its Shift-JIS bytes: left as 0 here)
+    const d = /(\d)(?!.*\d)/.exec(e.name), slot = d ? (d[1] !== '0' ? 1 : 0) : 0;
+    const c = g.nodes[current].conns;
+    if (c.length !== 2) return -1;
+    return c[((pattern - 1) >> (1 - slot)) & 1];
+}
 function overrideNode(i: number) { const n = rngCtx.node ? rngCtx.node(rngCtx.cur) : null; return n !== null && n >= 0 ? n : i; }
 
 // ---------------------------------------------------------------- TSpineEnemy
@@ -1221,7 +1265,17 @@ export class SpineEnemy extends LiveActor {
     goToRandomNextGraphNode() {
         const t = this.tracer, g = t.graph!;
         if (t.cur < 0) t.setTo(g.findNearestNodeIndex(this.pos, -1));
-        else t.moveTo(overrideNode(g.getRandomNextIndex(t.cur, t.prev, -1)));
+        else {
+            // Moonshine replaces this function (susamuneGoToRandomNextGraphNode, pattern_selector.cpp): with a pattern chosen
+            // in its menu, a Chomplet's or the Chain Chomp's next node is taken without the game's roll; Petey's route and
+            // Gelato's blue-coin bird keep the roll and replace its result. The settings are the trace's session record.
+            const pick = moonshineSelectedNode(this, t.cur, t.prev);
+            if (pick >= 0) t.moveTo(pick);
+            else {
+                const rolled = g.getRandomNextIndex(t.cur, t.prev, -1), kept = moonshineReplacedNode(this, g, t.cur, t.prev);
+                t.moveTo(overrideNode(kept >= 0 ? kept : rolled));
+            }
+        }
         this.setGoalPathFromGraph(); this.unk128 = 0; this.unk12C = 0;
     }
     goToRandomEscapeGraphNode() {

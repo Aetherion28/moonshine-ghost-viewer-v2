@@ -464,10 +464,11 @@ export function psMtxInverse(m: Mtx, out: Mtx = new Float64Array(12)): boolean {
 
 /** SMSCalcJumpVelocityY */
 export function SMSCalcJumpVelocityY(desired: V3, initial: V3, vy: number, g: number, minY: number) {
-    let y = initial.y, ticks = 1;
-    for (let s = vy; ; ) { y += s; if (s < 0 && y <= desired.y) break; s -= g; if (s < minY) s = minY; ++ticks; }
-    const k = 1 / ticks;
-    return new V3((desired.x - initial.x) * k, vy, (desired.z - initial.z) * k);
+    // (all in f32, as the DOL has it: JP 0x800C5920)
+    let y = fr(initial.y), ticks = 1;
+    for (let s = fr(vy); ; ) { y = fr(y + s); if (s < 0 && y <= desired.y) break; s = fr(s - g); if (s < minY) s = minY; ++ticks; }
+    const k = fr(1 / ticks);
+    return new V3(fr(k * fr(desired.x - initial.x)), vy, fr(k * fr(desired.z - initial.z)));
 }
 
 /** JGeometry::TQuat4<f32> */

@@ -133,7 +133,7 @@ export class PoiHana extends WalkerEnemy {
     bind() {
         if (this.spine!.current === PoiHanaNerves.trapped && this.isAirborne() && this.vel.y > 0) {
             this.pos.add(this.vel);
-            this.vel.y -= this.getGravityY();
+            this.vel.y = fr(this.vel.y - this.getGravityY());
             if (this.vel.y < velocityMinY) this.vel.y = velocityMinY;
             return;
         }

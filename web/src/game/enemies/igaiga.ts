@@ -16,6 +16,7 @@ import { emitInfo, EmitInfo } from '../water.js';
 import { register } from '../scene.js';
 import type { AreaCylinderManager } from './bosspakkun.js';
 import { SE } from '../soundids.js';
+import { condParams } from '../npc/base.js';
 import { holdKey } from '../sound.js';
 
 /** TRollEnemySaveLoadParams */
@@ -65,7 +66,9 @@ export class PolluteModelManager {
     constructor(public w: World, file: string, owner: LiveActor, bck: number) { for (let i = 0; i < 5; i++) this.models.push(new PolluteModel(w, file, owner, bck)); }
     perform(cue: number) {
         if (cue & CUE_CALC_ANIM) {
-            for (const m of this.models) if (m.unk5D) m.unk5C = this.w.inView(m.pos, 100, 5000) ? 0 : 1;
+            // (SetViewFrustumClipCheckPerspective with gpConductor's mEnemyFarClip, radius 100)
+            const far = condParams(this.w).mEnemyFarClip;
+            for (const m of this.models) if (m.unk5D) m.unk5C = this.w.inView(m.pos, 100, far) ? 0 : 1;
         }
         for (const m of this.models) m.perform(cue);
     }

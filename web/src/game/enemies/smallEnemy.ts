@@ -3,6 +3,7 @@
 // then its coins / items, then dead until the manager brings it back), juice turns it into a
 // block (TNerveSmallEnemyChange: it rides the block, then comes out of it).
 
+import { msVecNormalize } from '../camera/lib.js';
 import { fr, V3, MsRandF, MsSin, MsCos, matan, MsClamp, mtx, MsMtxSetRotRPH, psMtxMultVec } from '../math.js';
 import { fmadd } from '../player/fmath.js';
 import { vNormMs } from '../vecops.js';
@@ -201,9 +202,9 @@ export class SmallEnemy extends SpineEnemy {
         for (const col of this.collisions.slice()) {
             if (col.isActorType(AT.MARIO)) { this.attackToMario(); continue; }
             if (!this.isCollidMove(col)) continue;
-            const d = new V3(this.pos.x - col.pos.x, this.pos.y - col.pos.y, this.pos.z - col.pos.z);
+            const d = V3.sub(this.pos, col.pos);
             if (d.x === 0 && d.y === 0 && d.z === 0) d.x += 1;
-            d.normalize().scale(this.marchSpeed * 3 * this.unk158);
+            msVecNormalize(d, d); d.scale(fr(fr(this.marchSpeed * 3) * this.unk158));   // (MsVECNormalize; f32 products)
             this.posDelta.set(d);
         }
         this.bind();
@@ -403,9 +404,9 @@ export class SmallEnemy extends SpineEnemy {
     }
     behaveToHitOthers(a: HitActor) {
         if (!this.isCollidMove(a)) return;
-        const d = new V3(this.pos.x - a.pos.x, this.pos.y - a.pos.y, this.pos.z - a.pos.z);
+        const d = V3.sub(this.pos, a.pos);
         if (d.x === 0 && d.y === 0 && d.z === 0) d.x += 1;
-        d.normalize().scale(this.marchSpeed * 3 * this.unk158);
+        msVecNormalize(d, d); d.scale(fr(fr(this.marchSpeed * 3) * this.unk158));   // (MsVECNormalize; f32 products)
         this.posDelta.set(d);
     }
     perform(cue: number) {

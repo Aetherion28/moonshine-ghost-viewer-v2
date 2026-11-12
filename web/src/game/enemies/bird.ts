@@ -92,7 +92,7 @@ export class AnimalBird extends SpineEnemy {
         this.scaledBodyRadius = 35;
     }
     initParams() {
-        this.homePos.set(this.pos); this.homePos.y += 90;
+        this.homePos.set(this.pos); this.homePos.y = fr(this.homePos.y + 90);
         this.homeRot.set(this.rot);
         this.resetHitPoints();
         this.waterproofTimer = 0; this.floatingTimer = 0; this.walkDir = 1;
@@ -216,7 +216,7 @@ export class AnimalBird extends SpineEnemy {
         const v = quatRotate(SMS_Eular2Quat(this.rot), new V3(0, 0, march));
         // getting sprayed slows it down and pushes it toward the ground
         v.scale(1 - this.getWaterDamageRate());
-        v.y -= this.getWaterPowerY();
+        v.y = fr(v.y - this.getWaterPowerY());
         this.posDelta.set(v).fround();
     }
     doWalk() {

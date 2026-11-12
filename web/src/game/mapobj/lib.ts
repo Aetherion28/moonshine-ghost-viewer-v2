@@ -148,6 +148,9 @@ export function vtxPosCount(b: Uint8Array | null): number {
     let o = 0x20;
     while (o + 8 <= b.length) {
         const tag = String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]), size = v.getUint32(o + 4);
+        // J3DVertexData::mVtxNum is the model file's own count (J3DModelInfoBlock::mVtxNum, INF1 + 0x10), not the position
+        // array's size: the array is padded to 32 bytes, so its size can be a few vertices more
+        if (tag === 'INF1') return v.getUint32(o + 0x10);
         if (tag === 'VTX1') {
             const fmt = o + v.getUint32(o + 8);
             const offs: number[] = [];

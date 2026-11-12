@@ -66,7 +66,7 @@ export class TelesaManager extends SmallEnemyManager {
     setFlagOutOfCube() {
         for (const t of this.objs as Telesa[]) {
             if (t.unk150 & 0x40) continue;
-            const p = t.pos.clone(); p.y += 75;
+            const p = t.pos.clone(); p.y = fr(p.y + 75);
             if (this.world.inAreaCube(p)) t.offLiveFlag(LF.UNK200); else t.onLiveFlag(LF.UNK200);
         }
     }
@@ -190,10 +190,10 @@ export class Telesa extends WalkerEnemy {
         if (c === TelesaNerves.freeze || c === TelesaNerves.imitate) return;
         const m = this.world.mario.pos;
         const d = new V3(this.pos.x - m.x, this.unk184 ? 30 : 2, this.pos.z - m.z);
-        this.pos.y += 2;
+        this.pos.y = fr(this.pos.y + 2);
         d.normalize();
         let k = 5;
-        if (this.unk184) { k = this.PT.mSLTelesaPowerByWater; this.pos.y += 30; }
+        if (this.unk184) { k = this.PT.mSLTelesaPowerByWater; this.pos.y = fr(this.pos.y + 30); }
         this.vel.set(d.scale(k)).fround();
         this.onLiveFlag(LF.AIRBORNE);
         if (this.fadeState !== FADE_STATE_VISIBLE && this.fadeState !== FADE_STATE_FADE_IN) this.fadeState = FADE_STATE_FADE_IN;
@@ -230,7 +230,7 @@ export class Telesa extends WalkerEnemy {
     bind() {
         if (this.checkLiveFlag(LF.UNK10)) return;
         const n = this.pos.clone();
-        n.y -= this.curFlyHeight + this.flyBobOffsetY;
+        n.y = fr(n.y - fr(this.curFlyHeight + this.flyBobOffsetY));
         n.add(this.posDelta).add(this.vel);
         this.vel.y = fr(this.vel.y - this.getGravityY());
         if (this.vel.y < -40) this.vel.y = -40;
@@ -250,7 +250,7 @@ export class Telesa extends WalkerEnemy {
             if (dying) n.y = this.groundHeight;
         } else this.onLiveFlag(LF.AIRBORNE);
         this.posDelta.set(V3.sub(n, this.pos));
-        this.posDelta.y += this.curFlyHeight + this.flyBobOffsetY;
+        this.posDelta.y = fr(this.posDelta.y + fr(this.curFlyHeight + this.flyBobOffsetY));
     }
     isReachedToGoal() {
         const t = V3.sub(this.goal104.point(), this.pos); t.y = 0;

@@ -161,7 +161,7 @@ export class BeeHive extends Realoid {
     bind() {
         if (this.checkLiveFlag(LF.UNK10)) return;
         const next = this.pos.clone().add(this.posDelta).add(this.vel);
-        this.vel.y -= this.getGravityY();
+        this.vel.y = fr(this.vel.y - this.getGravityY());
         if (this.vel.y < -40) this.vel.y = -40;
         // the hive hangs from its top, so its bottom rises as it tilts
         const lift = fr(-60 * (-1 + MsCos(57.295776 * this.swingAngle)));
