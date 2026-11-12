@@ -163,6 +163,8 @@ export interface ReplayOptions {
      * other way instead of playing this one to its end first.
      */
     tried?: Set<string>;
+    /** called at each movement tick of a stage, as Mario's perform begins: memory is the game's after the tick before (the trace's label `tick`) */
+    onTick?: (tick: number) => void;
     /** called at each frame of a stage that is set up, before its director runs (a page showing the replay as it goes: `liveSample`) */
     onFrame?: (frame: number) => void;
     /** told of every block the heaps give out (a tool's: tests/uninit.ts) */
@@ -858,6 +860,7 @@ export class Replay {
         this.ticks++; this.stageTicks++; this.curTick = t.tick; this.curTickIndex = T.a[i];
         this.checkCalls(t.ev, `tick ${t.tick}`);
         if (this.phase !== 'stage') return;
+        if (this.onTick) this.onTick(t.tick);
         const dv = new DataView(t.input.buffer, t.input.byteOffset, IN.size);
         if (dv.getUint32(IN.cue) !== cue) this.issue('tick', `the perform cue is ${hex(cue)}, the trace's ${hex(dv.getUint32(IN.cue))}`);
         const valid = dv.getUint32(IN.valid);
@@ -1276,7 +1279,7 @@ export class Replay {
         };
     }
     /** the game's actors in the order Moonshine's recorder lists them: the enemy managers' objects, the other managers', the actors on their own */
-    private roster(): number[] {
+    roster(): number[] {
         const mem = this.m.mem, con = mem.r32(this.A.gpConductor), out: number[] = [], seen = new Set<number>();
         if (!con) return out;
         const add = (p: number) => { if (p && !seen.has(p)) { seen.add(p); out.push(p); } };

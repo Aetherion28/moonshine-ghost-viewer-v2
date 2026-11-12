@@ -1,0 +1,3 @@
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); const A = +process.env.LA, B = +process.env.LB, EV = +(process.env.LE || 1);
+  let b = null; const h = (v) => { const f = new Float32Array([v]); return new Uint32Array(f.buffer)[0].toString(16).padStart(8, '0'); };
+  P.testPerform = (c) => { const r = o(c); if (st.qf >= A && st.qf <= B && (st.qf - A) % EV === 0) { b = b || st.world.search('ボスワンワン'); if (b) { const n = b.leash.nodes[0]; console.log('SIM', st.qf, 'boss', h(b.pos.x), h(b.pos.y), h(b.pos.z), 'node0', h(n.pos.x), h(n.pos.y), h(n.pos.z), +n.pos.x.toFixed(2), +n.pos.z.toFixed(2)); } } return r; }; }
