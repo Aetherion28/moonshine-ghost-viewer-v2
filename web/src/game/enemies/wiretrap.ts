@@ -144,7 +144,7 @@ export class WireTrap extends SpineEnemy {
         // spinning around that direction (the quaternion product as a matrix: R · Rz)
         this.rot.z = fr(this.rot.z + -17.75);
         this.rot.z = MsWrap(this.rot.z, 0, 360);
-        const a = fr(0.017453294 * this.rot.z), c = Math.cos(a), s = Math.sin(a);
+        const a = fr(fr(0.017453294) * this.rot.z), c = Math.cos(a), s = Math.sin(a);
         const B = this.baseTR, k = this.appearScale;
         for (let r = 0; r < 3; r++) {
             const x = m[r * 4], y = m[r * 4 + 1];

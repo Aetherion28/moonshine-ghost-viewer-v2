@@ -202,7 +202,7 @@ export class FruitsBoat extends SpineEnemy {
         const m = this.baseTR;
         MsMtxSetRotRPH(m, this.rot.x, this.rot.y, this.rot.z);
         const rock = mtx();
-        MTXRotAxisRad(rock, this.mRockAxis, fr(0.017453292 * this.mRockAngle));
+        MTXRotAxisRad(rock, this.mRockAxis, fr(fr(0.017453292) * this.mRockAngle));
         MTXConcat(rock, m, m);
         m[3] = fr(m[3] + this.pos.x); m[7] = fr(m[7] + this.pos.y); m[11] = fr(m[11] + this.pos.z);   // MTXTransApply
         // (setBaseScale(mScaling): the viewer draws with this.scale)

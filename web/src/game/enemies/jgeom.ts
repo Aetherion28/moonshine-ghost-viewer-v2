@@ -37,7 +37,7 @@ export const qEulerZ = (a: number) => new Quat(0, 0, mslSinf(fr(0.5 * fr(a))), m
 /** TQuat4::getYDir */
 export const qYDir = (q: Quat, out = new V3()) => out.set(q.x * q.y * 2 - q.w * q.z * 2, 1 - q.x * q.x * 2 - q.z * q.z * 2, q.y * q.z * 2 + q.w * q.x * 2);
 
-const DEG = 0.017453294;
+const DEG = fr(0.017453294);
 /** SMS_Eular2Quat (Animal/AnimalBase.cpp): qy * (qx * qz) */
 export function eulerToQuat(r: V3) {
     const qz = qEulerZ(DEG * r.z), qy = qEulerY(DEG * r.y), qx = qEulerX(DEG * r.x);

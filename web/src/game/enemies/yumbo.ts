@@ -163,7 +163,7 @@ export class Yumbo extends SmallEnemy {
         dir.y = fr(dir.y + 200 * (0.5 + MsRandF()));
         setLength(dir, P.mShootSpeed);
         const angle = MsGetRotFromZaxisY(dir);
-        qRotate(qEulerY(-(0.017453294 * angle)), dir, dir);
+        qRotate(qEulerY(-(fr(0.017453294) * angle)), dir, dir);
         const spin = qEulerY(fr(fr(6.2831855) * MsRandF()));   // (f32 2pi; qEulerY halves it exactly)
         const tilt = qEulerX(fr(fr(-Math.PI) * P.mShootAngleX));   // (f32 pi)
         qRotate(new Quat().mul(spin, tilt), dir, dir);

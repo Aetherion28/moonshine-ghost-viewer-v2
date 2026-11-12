@@ -608,7 +608,7 @@ export class KoopaJrSubmarine extends SpineEnemy {
         const marioDiff = Math.abs(fr(target - R.calcNearerDirection(marioDir)));
         if (koopa && koopa.isFlaming() && flameDiff <= P.aboidKoopaFlameAngle) target = fr(flameDir + PI);
         else if (marioDiff > P.traceMarioAngle) target = marioDir;
-        let speed = fr(0.017453294 * P.mSLRoundAngleVelocity);
+        let speed = fr(fr(0.017453294) * P.mSLRoundAngleVelocity);
         R.unk0 = MsWrapMod(R.unk0, 0, fr(2 * PI));
         const nearer = R.calcNearerDirection(target), cur = R.unk0;
         if (nearer > cur) { if (fr(nearer - cur) < speed) speed = fr(nearer - cur); R.unk0 = fr(cur + speed); }

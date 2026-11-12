@@ -299,7 +299,7 @@ export class FenceWaterH extends FenceWater {
         this.controlRotation();
         this.rot.z = MsWrap(fr(this.unk140 + this.initialRot.z), 0, 360);
         // TPosition3f::setEular(0, y, 0) x setEular(0, 0, z), at the position: getModel()->setAnmMtx(0, ...)
-        const y = fr(0.017453294 * this.rot.y), z = fr(0.017453294 * this.rot.z);
+        const y = fr(fr(0.017453294) * this.rot.y), z = fr(fr(0.017453294) * this.rot.z);
         const sy = fr(Math.sin(y)), cy = fr(Math.cos(y)), sz = fr(Math.sin(z)), cz = fr(Math.cos(z));
         const ry = mtx(); ry[0] = cy; ry[2] = sy; ry[8] = -sy; ry[10] = cy;
         const rz = mtx(); rz[0] = cz; rz[1] = -sz; rz[4] = sz; rz[5] = cz;

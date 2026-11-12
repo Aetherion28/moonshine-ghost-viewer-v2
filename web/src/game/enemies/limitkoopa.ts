@@ -417,7 +417,7 @@ export class LimitKoopaJr extends SpineEnemy {
     private centre() { return this.mBathtub ? this.mBathtub.pos : new V3(); }
     moveRun() {
         const P = this.getParam();
-        const av = fr(0.017453294 * P.mSLRoundAngleVelocity);
+        const av = fr(fr(0.017453294) * P.mSLRoundAngleVelocity);
         const d = new DirectionCalc(this.unk170.calcTurnDirection(this.calcTargetDirection(), av));
         const turn = d.sub(this.unk170.unk0);
         this.unk170.unk0 = d.unk0;
