@@ -41,11 +41,18 @@ cpu.hook(PADRead, (c) => {
 
 // the application's state (TApplication gpApplication, JP 0x803E6000), reported as it changes
 const APP = 0x803E6000;
-let lastApp = '';
+let lastApp = '', lastDir = '', lastDs = -2;
 const watch = () => {
     const st = mem.r8(APP + 8), dir = mem.r32(APP + 4), cur = [mem.r8(APP + 0xE), mem.r8(APP + 0xF)], next = [mem.r8(APP + 0x12), mem.r8(APP + 0x13)];
     const k = `app state ${st} director ${dir ? S.who(mem.r32(dir)) : '-'} area ${cur} next ${next}`;
     if (k !== lastApp) { lastApp = k; console.log(`[field ${M.fields}, movie frame ${(M.fields / 2).toFixed(1)}, pad reads ${reads}]`, k); }
+    // the director's state and Mario (gpMarDirector 0x8040A2A8: mState +0x64; gpMarioOriginal 0x8040A378: position +0x10, status +0x7C)
+    const md = mem.r32(0x8040A2A8), ma = mem.r32(0x8040A378);
+    const ds = md ? mem.r8(md + 0x64) : -1;
+    const f = (a: number) => { const v = new DataView(new ArrayBuffer(4)); v.setUint32(0, mem.r32(a)); return v.getFloat32(0).toFixed(1); };
+    const mk = ma ? `mario ${f(ma + 0x10)},${f(ma + 0x14)},${f(ma + 0x18)} st ${mem.r32(ma + 0x7C).toString(16)}` : 'no mario';
+    const key = `dir ${ds} ${mk}`;
+    if (key !== lastDir && (ds !== lastDs || M.fields % +(process.env.EVERY || 60) === 0)) { console.log(`  [movie frame ${(M.fields / 2).toFixed(1)}] ${key}`); lastDir = key; lastDs = ds; }
     M.after(M.hw.field, watch);
 };
 M.after(M.hw.field, watch);
