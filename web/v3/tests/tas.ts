@@ -18,7 +18,8 @@ installHle(M, (n) => S.byName.get(n), { report: (t) => { if (process.env.GAMELOG
 const dtm = readFileSync(process.argv[2]);
 const POLLS = (dtm.length - 0x100) >> 3;
 const poll = (i: number) => dtm.subarray(0x100 + 8 * i, 0x108 + 8 * i);
-const OFFSET = +(process.env.OFFSET || 0);
+const OFFSET = +(process.env.OFFSET || 0), STAGE4 = +(process.env.STAGE4 || -1);
+let stage4Field = -1;
 // Dolphin's ControllerState to the SDK's PADStatus (12 bytes: buttons, stick x y, C x y, triggers L R, analog A B, err)
 const BITS: [number, number, number][] = [[0, 0x01, 0x1000], [0, 0x02, 0x100], [0, 0x04, 0x200], [0, 0x08, 0x400], [0, 0x10, 0x800], [0, 0x20, 0x10],
     [0, 0x40, 0x8], [0, 0x80, 0x4], [1, 0x01, 0x1], [1, 0x02, 0x2], [1, 0x04, 0x40], [1, 0x08, 0x20]];
@@ -28,7 +29,8 @@ cpu.hook(PADRead, (c) => {
     const p = c.gpr[3];
     for (let i = 0; i < 48; i++) mem.w8(p + i, 0);
     for (let ch = 1; ch < 4; ch++) mem.w8(p + ch * 12 + 10, 0xFF);   // PAD_ERR_NO_CONTROLLER
-    const k = Math.min(POLLS - 1, Math.max(0, M.fields * 3 + 2 + OFFSET));
+    // STAGE4=<movie frame>: from the first frame of the stage's play (TMarDirector state 4) the movie is read from that frame on
+    const k = Math.min(POLLS - 1, Math.max(0, stage4Field >= 0 ? STAGE4 * 6 + (M.fields - stage4Field) * 3 + 2 + OFFSET : M.fields * 3 + 2 + OFFSET));
     const s = poll(k);
     let b = 0; for (const [byte, bit, pad] of BITS) if (s[byte] & bit) b |= pad;
     mem.w16(p, b); mem.w8(p + 2, s[4] - 128); mem.w8(p + 3, s[5] - 128); mem.w8(p + 4, s[6] - 128); mem.w8(p + 5, s[7] - 128);
@@ -41,7 +43,7 @@ cpu.hook(PADRead, (c) => {
 
 // the application's state (TApplication gpApplication, JP 0x803E6000), reported as it changes
 const APP = 0x803E6000;
-let lastApp = '', lastDir = '', lastDs = -2;
+let lastApp = '', lastDir = '', lastDs = -2, shineSeen = false;
 const watch = () => {
     const st = mem.r8(APP + 8), dir = mem.r32(APP + 4), cur = [mem.r8(APP + 0xE), mem.r8(APP + 0xF)], next = [mem.r8(APP + 0x12), mem.r8(APP + 0x13)];
     const k = `app state ${st} director ${dir ? S.who(mem.r32(dir)) : '-'} area ${cur} next ${next}`;
@@ -51,6 +53,8 @@ const watch = () => {
     const ds = md ? mem.r8(md + 0x64) : -1;
     const f = (a: number) => { const v = new DataView(new ArrayBuffer(4)); v.setUint32(0, mem.r32(a)); return v.getFloat32(0).toFixed(1); };
     const mk = ma ? `mario ${f(ma + 0x10)},${f(ma + 0x14)},${f(ma + 0x18)} st ${mem.r32(ma + 0x7C).toString(16)}` : 'no mario';
+    if (STAGE4 >= 0 && stage4Field < 0 && ds === 4 && mem.r8(APP + 0xE) === 0) { stage4Field = M.fields; console.log(`  [field ${M.fields}] the stage's play begins: the movie from frame ${STAGE4}`); }
+    if (ma && (mem.r32(ma + 0x7C) & 0x1FF) === 0x102 && !shineSeen) { shineSeen = true; console.log(`  SHINE GET at movie frame ${STAGE4 >= 0 && stage4Field >= 0 ? (STAGE4 + (M.fields - stage4Field) / 2).toFixed(1) : (M.fields / 2).toFixed(1)}`); }
     const key = `dir ${ds} ${mk}`;
     if (key !== lastDir && (ds !== lastDs || M.fields % +(process.env.EVERY || 60) === 0)) { console.log(`  [movie frame ${(M.fields / 2).toFixed(1)}] ${key}`); lastDir = key; lastDs = ds; }
     M.after(M.hw.field, watch);
