@@ -222,6 +222,18 @@ interface TraceActorsLike { count: number; qf: Int32Array; id: Uint32Array; key:
  * in their contexts around each frame. The viewer's runner and the test harness both play a trace
  * through this, so a new kind of recorded value is added here once. off: kinds to leave out (harness flags).
  */
+/**
+ * Uninitialised memory a stage starts with, from the recording (the heap's leftovers the game reads before it
+ * writes them): Mario's mFreezeImmunityTimer (initValues leaves it).
+ */
+export const traceGarbageCtx: { mario: { freezeImmunityTimer: number } | null } = { mario: null };
+/** the first Mario record of the trace's stage (past the load pose 0x133F is no matter: the timer isn't touched before) */
+export function traceGarbageOf(g: any): { freezeImmunityTimer: number } | null {
+    const T = g && g.trace; if (!T) return null;
+    const t = T.ticks.find((x: any) => x.mario);
+    return t ? { freezeImmunityTimer: t.mario.freezeImmunityTimer } : null;
+}
+
 export class TraceFeeds {
     feedback: FeedbackReplay | null = null;
     status: ((d: number) => number | null) | null = null;
@@ -230,6 +242,7 @@ export class TraceFeeds {
     session: ((field: SessionField) => number | null) | null = null;
     follow: ((actors: Iterable<any>, keyOf: (a: any) => number) => void) | null = null;
     director: ((t: number) => number | null) | null = null;
+    garbage: { freezeImmunityTimer: number } | null = null;
     constructor(g: any, q0: number, qfNow: () => number, off: { feedback?: boolean; status?: boolean; rng?: boolean; actor?: boolean; session?: boolean; follow?: boolean } = {}) {
         const T = g && g.trace;
         if (!T) return;
@@ -245,13 +258,14 @@ export class TraceFeeds {
         if (!off.follow && T.director && T.director.count) this.director = traceDirectorByTick(T.director, q0 + g.header.startQf);
         // Moonshine's settings as the runner changed them (the Ricco fruit machine: mapobj/ricco.ts)
         if (!off.session) this.session = traceSessionByTick(T.session, q0, qfNow);
+        this.garbage = traceGarbageOf(g);
     }
     install() {
         feedbackCtx.take = this.feedback ? this.feedback.take : null;
-        traceStatusCtx.at = this.status; traceRngCtx.next = this.rng; traceActorCtx.at = this.actor; sessionCtx.at = this.session; traceFollowCtx.apply = this.follow; traceDirectorCtx.at = this.director;
+        traceStatusCtx.at = this.status; traceRngCtx.next = this.rng; traceActorCtx.at = this.actor; sessionCtx.at = this.session; traceFollowCtx.apply = this.follow; traceDirectorCtx.at = this.director; traceGarbageCtx.mario = this.garbage;
     }
     static clear() {
         feedbackCtx.take = null;
-        traceStatusCtx.at = null; traceRngCtx.next = null; traceActorCtx.at = null; sessionCtx.at = null; traceFollowCtx.apply = null; traceDirectorCtx.at = null;
+        traceStatusCtx.at = null; traceRngCtx.next = null; traceActorCtx.at = null; sessionCtx.at = null; traceFollowCtx.apply = null; traceDirectorCtx.at = null; traceGarbageCtx.mario = null;
     }
 }

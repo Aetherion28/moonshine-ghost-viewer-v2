@@ -13,7 +13,7 @@ import { MarioSample, MarioTrack } from './mario.js';
 import { LiveActor, NameRef, World, calcKeyCode, LF, shineIDofExStage } from './engine.js';
 import { rngCtx, srand, fr } from './math.js';
 import { CraneRotY } from './mapobj/ricco.js';
-import { TraceFeeds, traceSessionAtStart, SessionField } from './feedback.js';
+import { TraceFeeds, traceSessionAtStart, SessionField, traceGarbageCtx, traceGarbageOf } from './feedback.js';
 import { npcSinkSetup, npcSinkCounterOf } from './npc/base.js';
 import type { MarioView } from '../ghost/mstr.js';
 import type { TraceActors } from '../ghost/mstrghost.js';
@@ -823,9 +823,11 @@ export class SimRunner {
             if (intro && segI === 0 && g.trace) { const th = traceActorsHitFilter(g); if (th) intro.traceHitFilter = th; }
             if (intro && segI === 0 && g.trace) { const ev = traceShadowMarioEvent(g, segI, seg.route.area, seg.route.episode); if (ev !== undefined) intro.shadowMarioEvent = ev; }
             npcSinkSetup.start = segI === 0 ? (g.trace && g.trace.stageStart && g.trace.stageStart.npcSinkPhase !== null ? g.trace.stageStart.npcSinkPhase : 0) : (prevSink ?? 0);
+            // (the heap's leftovers the stage's setup reads: feedback.ts traceGarbageCtx)
+            traceGarbageCtx.mario = g && g.trace ? traceGarbageOf(g) : null;
             try { this.stage = Stage.fresh(this.disc.stageFiles(scene), sceneName, seg.route.area, seg.route.episode, seed ?? 0, 0, intro); }
             catch (e) { this.error = e; this.stage = null; console.warn('[game] stage', e); return false; }
-            finally { npcSinkSetup.start = 0; }
+            finally { npcSinkSetup.start = 0; traceGarbageCtx.mario = null; }
             { const n = npcSinkCounterOf(this.stage.world); this.sinkCarry = { seg: segI, n: n ?? npcSinkSetup.start }; }
             // V9: rand()'s state at the first recorded pose (the stage's QF 0, after its lead frames)
             if (segI === 0 && !fromLoad && g.header && g.header.initialRng !== undefined) srand(g.header.initialRng);

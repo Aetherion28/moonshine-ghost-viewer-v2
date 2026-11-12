@@ -1,3 +1,4 @@
+import { traceGarbageCtx } from '../feedback.js';
 // The player: gpMarioOriginal, a whole TMario (player/*.ts) driven by the ghost's controller inputs
 // the way the game drives it: TMarioGamePad (pad.ts) read once a frame, TMario::perform's movement
 // every tick (MarioMain.cpp), his own controller (MarioMove.cpp checkController: the stick against
@@ -101,7 +102,7 @@ export class PlayerMario extends TMarioSim {
     simCamera: SimCamera | null = null;
     /** true while the stick's camera is a stand-in (Mario's back), not the game's */
     cameraApprox = true;
-    mCoinCount = 0; unk144 = 0; unk148: HitActor | null = null; unk298 = 100;
+    mCoinCount = 0; unk144 = -1; unk148: HitActor | null = null; unk298 = 100;
     mDamagePos = new V3();
     mWarpInDir = new V3(); unk468 = 0;
     // TEParams (/Mario/Dmg*.prm)
@@ -157,6 +158,9 @@ export class PlayerMario extends TMarioSim {
             this.mDeParams.mTrampleRadius, this.mDeParams.mAttackHeight, this.mDeParams.mDamageRadius, this.mDeParams.mDamageHeight);
         this.mCoinCount = 0;
         this.unk55C = 50;
+        // (initValues: unk144 0xffffffff, unk15C 0; mFreezeImmunityTimer isn't set: the heap's, from the recording)
+        this.unk144 = -1; this.unk15C = 0;
+        if (traceGarbageCtx.mario) this.mFreezeImmunityTimer = traceGarbageCtx.mario.freezeImmunityTimer;
         // mYoshi = new TYoshi; mYoshi->init(this) (after the water gun's, before TMarioEffect)
         this.unk3E8 = 4; this.unk3EC = 0;
         try { this.mYoshi = new Yoshi(this as any); } catch (e) { console.warn('[player] yoshi', e); this.mYoshi = null; }

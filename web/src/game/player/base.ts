@@ -188,7 +188,7 @@ export abstract class MarioBase extends TakeActor {
     mHealth = 8; mHotTimer = 0; mHotTimerMax = 0; unk122 = 0;
     mAir = 0; mMaxAir = 0; mDirty = 0; mOilBrake = 1; mDirtyTimer = 0; unk140 = 0;
     mInvincibilityFrames = 0; mFreezeTimer = 0; mFreezeImmunityTimer = 0;
-    unk15C = 50;
+    unk15C = 0;
     unk160 = new V3(); mHeadPos = new V3(); mCenterPos = new V3(); mRightHandPos = new V3(); mWaterRipplePos = new V3();
     mHeadMtx: Mtx = mtx();
     mPrevPosition = new V3(); unk2A8 = new V3(); unk2B4 = { x: 0, y: 0, z: 0 }; mOobKillTimer = 0; unk2BC = 0;

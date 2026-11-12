@@ -85,7 +85,8 @@ export function startLockstep(file: string, st: any, P: any, randState: () => nu
         if (msg.log !== undefined) { console.log(msg.log); return next(); }
         return msg;
     };
-    const FROM = +(process.env.LS_FROM || 0), TO = +(process.env.LS_TO || 1e9), TOFF = +(process.env.LS_TOFF || 0), ONLY = process.env.LS_ONLY || '';
+    // (from tick 2 by default: v3 takes the heap's leftovers from a recorded object's first record, during the first tick)
+    const FROM = +(process.env.LS_FROM || 2), TO = +(process.env.LS_TO || 1e9), TOFF = +(process.env.LS_TOFF || 0), ONLY = process.env.LS_ONLY || '';
     let pending: any = null, ended = false;
     const firstByKey = new Map<string, Diff>(), firstByField = new Map<string, Diff>();
     const unmapped = new Map<string, Set<string>>(), unpaired = new Map<string, number>(), unrounded = new Map<string, number>();
@@ -158,7 +159,7 @@ export function startLockstep(file: string, st: any, P: any, randState: () => nu
         lastT = t;
         if (t < FROM) return r();
         if (t > TO) { done = true; report('stopped at LS_TO'); w.terminate(); return r(); }
-        while (!ended && (!pending || pending.t < t + TOFF)) { pending = next(); if (pending.end) { ended = true; report(`v3 ended (${pending.ticks} ticks${pending.issues.length ? ', ' + pending.issues[0] : ''})`); done = true; w.terminate(); return r(); } }
+        while (!ended && (!pending || pending.t < t + TOFF)) { pending = next(); if (pending.end) { ended = true; if (process.env.LS_COV && pending.covered) writeFileSync(process.env.LS_COV, pending.covered.join('\n') + '\n'); report(`v3 ended (${pending.ticks} ticks${pending.issues.length ? ', ' + pending.issues[0] : ''})`); done = true; w.terminate(); return r(); } }
         if (pending && pending.t === t + TOFF) compareTick(pending, t);
         return r();
     };

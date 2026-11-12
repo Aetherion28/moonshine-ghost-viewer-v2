@@ -426,6 +426,8 @@ export interface MarioView {
     statusState: number; statusTimer: number; intendedMag: number; intendedYaw: number; faceAngle: [number, number, number];
     modelFaceAngle: number; vel: [number, number, number]; forwardVel: number; slideVel: [number, number];
     floorY: number; slopeAngle: number; animationId: number; flag: number; health: number;
+    /** mFreezeImmunityTimer (0x150): initValues doesn't set it, so the stage starts with what the heap had */
+    freezeImmunityTimer: number;
 }
 export function marioView(b: BlobState): MarioView {
     const d = dvOf(b), M = MARIO, f = (o: number) => d.getFloat32(o), v3 = (o: number): [number, number, number] => [f(o), f(o + 4), f(o + 8)];
@@ -435,6 +437,7 @@ export function marioView(b: BlobState): MarioView {
         faceAngle: [d.getInt16(M.faceAngle), d.getInt16(M.faceAngle + 2), d.getInt16(M.faceAngle + 4)], modelFaceAngle: d.getInt16(M.modelFaceAngle),
         vel: v3(M.vel), forwardVel: f(M.forwardVel), slideVel: [f(M.slideVelX), f(M.slideVelZ)], floorY: f(M.floorPosition + 4),
         slopeAngle: d.getInt16(M.slopeAngle), animationId: d.getUint16(M.animationId), flag: d.getUint32(M.flag), health: d.getInt16(M.health),
+        freezeImmunityTimer: d.getInt16(0x150),
     };
 }
 

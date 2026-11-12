@@ -35,7 +35,17 @@ const vts = new Map<number, string>();
 for (const l of readFileSync(symFile, 'utf8').split('\n')) { const m = /^__vt__(\S+) = \.\w+:0x([0-9A-F]+);/.exec(l); if (m) vts.set(parseInt(m[2], 16), m[1]); }
 // a vtable symbol's class: __vt__6TMario -> TMario, __vt__Q26JDrama6TActor -> TActor
 const className = (sym: string) => { const q = /^Q(\d)(.*)$/.exec(sym); let s = q ? q[2] : sym; let last = ''; while (s.length) { const m = /^(\d+)/.exec(s); if (!m) break; const n = +m[1]; last = s.substr(m[1].length, n); s = s.slice(m[1].length + n); if (!q) break; } return last || sym; };
-const R = new Replay(loadBytes(D.dol), D.disc(), T, V.addrs, (n) => S.byName.get(n), { log: () => {}, fstPad: +(process.env.FSTPAD ?? 480), maxIssues: 50 });
+// (the stage heap must be the recording console's: when the disc's file table here sizes it otherwise, v3 says by
+// how much, and the trace is played again with that much more padding before any tick has been sent)
+const makeReplay = (pad: number) => new Replay(loadBytes(D.dol), D.disc(), T, V.addrs, (n) => S.byName.get(n), { log: () => {}, fstPad: pad, maxIssues: 50 });
+let pad = +(process.env.FSTPAD ?? 480);
+for (let tries = 0; tries < 3; tries++) {
+    const probe = makeReplay(pad);
+    while (probe.ticks === 0 && !probe.heapDelta && probe.run(50e6) !== 'done');
+    if (probe.ticks > 0 || !probe.heapDelta) break;
+    pad += probe.heapDelta;
+}
+const R = makeReplay(pad);
 const mem = R.m.mem, sjis = new TextDecoder('shift_jis');
 const nameOf = (p: number) => { const s = mem.r32(p + 4); if (s < 0x80003000 || s >= 0x81800000) return ''; const o: number[] = []; for (let i = 0; i < 64; i++) { const c = mem.r8(s + i); if (!c) break; o.push(c); } return sjis.decode(Uint8Array.from(o)); };
 const lenOf = new Map<string, number>();
@@ -90,5 +100,13 @@ R.onTick = (tick) => {
 };
 let res: string;
 while ((res = R.run(200e6)) !== 'done' && R.ticks <= stopAt + 8);
-send({ end: true, ticks: R.ticks, issues: R.issues.slice(0, 3).map((i) => i.text) });
+// the functions the game ran (every block start the JIT's map has seen, interpreted or compiled), by symbol: the
+// coverage ledger's input (tools/harness/ledger.py)
+const covered: string[] = [];
+{
+    const bmap: Int32Array = cpu.bmap, list: [number, number, string][] = [];
+    for (const l of readFileSync(symFile, 'utf8').split('\n')) { const m = /^(\S+) = \.text:0x([0-9A-F]+); \/\/ type:function size:0x([0-9A-F]+)/.exec(l); if (m) list.push([parseInt(m[2], 16), parseInt(m[3], 16), m[1]]); }
+    for (const [a, n, name] of list) { const o = (a ^ 0x80000000) >>> 2; let hit = false; for (let i = 0; i < n >>> 2 && !hit; i++) if (bmap[o + i] !== 0) hit = true; if (hit) covered.push(name); }
+}
+send({ end: true, ticks: R.ticks, issues: R.issues.slice(0, 3).map((i) => i.text), covered });
 parentPort?.postMessage('done');
