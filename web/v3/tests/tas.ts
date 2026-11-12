@@ -1,0 +1,56 @@
+// v3: plays a Dolphin TAS movie (.dtm) from power-on and reports where the game goes.
+// Run: npx esbuild v3/tests/tas.ts --bundle --platform=node --format=esm --outfile=/tmp/claude-0/ct/tas.mjs && node /tmp/claude-0/ct/tas.mjs <movie.dtm> [seconds of game time]
+// The movie holds the controller as Dolphin's serial interface polled it: three polls a video field, eight bytes a
+// poll (Movie.h ControllerState: Start A B X Y Z Up Down / Left Right L R disc reset connected -, triggers L R, main
+// stick X Y, C stick X Y). Each PADRead gets the last poll before the current field ends. Env: OFFSET=n shifts the
+// movie by n polls (the game's timing against Dolphin's), LOG=1 prints every button change the game is given.
+import { readFileSync } from 'node:fs';
+import { Machine } from '../ppc/machine.ts';
+import { installHle } from '../ppc/hle.ts';
+import { symbols } from './syms.ts';
+import { jpDisc, JP_DOL, loadBytes } from './jpdisc.ts';
+
+const S = symbols();
+const M = new Machine(), cpu = M.cpu, mem = M.mem;
+M.load(loadBytes(JP_DOL), jpDisc());
+installHle(M, (n) => S.byName.get(n), { report: (t) => { if (process.env.GAMELOG) process.stdout.write('[game] ' + t); } });
+
+const dtm = readFileSync(process.argv[2]);
+const POLLS = (dtm.length - 0x100) >> 3;
+const poll = (i: number) => dtm.subarray(0x100 + 8 * i, 0x108 + 8 * i);
+const OFFSET = +(process.env.OFFSET || 0);
+// Dolphin's ControllerState to the SDK's PADStatus (12 bytes: buttons, stick x y, C x y, triggers L R, analog A B, err)
+const BITS: [number, number, number][] = [[0, 0x01, 0x1000], [0, 0x02, 0x100], [0, 0x04, 0x200], [0, 0x08, 0x400], [0, 0x10, 0x800], [0, 0x20, 0x10],
+    [0, 0x40, 0x8], [0, 0x80, 0x4], [1, 0x01, 0x1], [1, 0x02, 0x2], [1, 0x04, 0x40], [1, 0x08, 0x20]];
+let reads = 0, lastButtons = -1;
+const PADRead = S.byName.get('PADRead')!;
+cpu.hook(PADRead, (c) => {
+    const p = c.gpr[3];
+    for (let i = 0; i < 48; i++) mem.w8(p + i, 0);
+    for (let ch = 1; ch < 4; ch++) mem.w8(p + ch * 12 + 10, 0xFF);   // PAD_ERR_NO_CONTROLLER
+    const k = Math.min(POLLS - 1, Math.max(0, M.fields * 3 + 2 + OFFSET));
+    const s = poll(k);
+    let b = 0; for (const [byte, bit, pad] of BITS) if (s[byte] & bit) b |= pad;
+    mem.w16(p, b); mem.w8(p + 2, s[4] - 128); mem.w8(p + 3, s[5] - 128); mem.w8(p + 4, s[6] - 128); mem.w8(p + 5, s[7] - 128);
+    mem.w8(p + 6, s[2]); mem.w8(p + 7, s[3]);
+    reads++;
+    if (process.env.LOG && b !== lastButtons) console.log(`  field ${M.fields} poll ${k} (movie frame ${(k / 6).toFixed(1)}) buttons ${b.toString(16)}`);
+    lastButtons = b;
+    c.gpr[3] = 0; c.pc = c.lr; return true;
+});
+
+// the application's state (TApplication gpApplication, JP 0x803E6000), reported as it changes
+const APP = 0x803E6000;
+let lastApp = '';
+const watch = () => {
+    const st = mem.r8(APP + 8), dir = mem.r32(APP + 4), cur = [mem.r8(APP + 0xE), mem.r8(APP + 0xF)], next = [mem.r8(APP + 0x12), mem.r8(APP + 0x13)];
+    const k = `app state ${st} director ${dir ? S.who(mem.r32(dir)) : '-'} area ${cur} next ${next}`;
+    if (k !== lastApp) { lastApp = k; console.log(`[field ${M.fields}, movie frame ${(M.fields / 2).toFixed(1)}, pad reads ${reads}]`, k); }
+    M.after(M.hw.field, watch);
+};
+M.after(M.hw.field, watch);
+
+const secs = +(process.argv[3] || 100);
+const t0 = performance.now();
+try { M.run(secs * 486e6); } catch (e) { console.log('STOP', String(e)); }
+console.log(`ran ${(cpu.count / 486e6).toFixed(1)} s of game time in ${((performance.now() - t0) / 1000).toFixed(1)} s; fields ${M.fields}; pad reads ${reads}`);
