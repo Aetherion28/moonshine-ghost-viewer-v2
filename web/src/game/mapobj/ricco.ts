@@ -17,16 +17,41 @@ import { LeanBlock, MapObjFloatOnSea } from './bianco.js';
 import type { ResetFruit } from './fruit.js';
 import { sessionSetting, SessionField } from '../feedback.js';
 
-const ST_ROTATE_TO_MAX = 1, ST_WAIT_AT_MAX = 2, ST_ROTATE_TO_MIN = 3, ST_WAIT_AT_MIN = 4;
+// (MapObjRicco.hpp's states)
+const ST_ROTATE_TO_MAX = 0, ST_WAIT_AT_MIN = 1, ST_ROTATE_TO_MIN = 2, ST_WAIT_AT_MAX = 3;
+
+/**
+ * Moonshine's Ricco crane speed (susamune rng_control.cpp): the rand() of each of the five cranes' setup is kept
+ * as its roll; with RICCO_CRANE_SPEED (1..5) set, each control runs at a percentage from it: a turning crane's speed
+ * (unk144) is 0.0015f * percent (its own when the setting is off), the nodding crane's mRotSpeed for the call is
+ * (retail * 0.01f) * percent (the order Moonshine's compiled code multiplies in; it is built with -ffast-math).
+ */
+const CRANE_NAMES = ['crane90 0', 'crane90 1', 'crane90 2', 'craneUpDown 0', 'craneUpDown 1'];
+const cranePercent = (roll: number) => {
+    const choice = sessionSetting(SessionField.RICCO_CRANE_SPEED);
+    if (choice === null || choice < 1 || choice > 5) return 0;
+    return (choice * 20 - 19 + ((roll * 20) >>> 15)) & 0xFF;
+};
+const craneRoll = (o: MapObjBase, r: number) => (o.world.map === 3 && CRANE_NAMES.includes(o.name) ? Math.round(r * 32768) : -1);
 
 // ---------------------------------------------------------------- TCraneRotY
 export class CraneRotY extends MapObjBase {
     static mWaitTime = 120;
     /** unk138 its start yaw, unk13C / unk140 the swing's ends from it (unk13C is never read in: 0), unk144 its speed, unk148 its sound */
     unk138 = 0; unk13C = 0; unk140 = 0; unk144 = 0; unk148 = 0;
+    /** Moonshine: the roll of its setup's rand(), its retail speed once captured */
+    roll = -1; retailSpeed: number | null = null;
     constructor(w: World, name = 'クレーン') { super(w, name); }
     calc() { setRootMtx(this, makeRootMtxRot(this, 'y')); }
     control() {
+        if (this.roll >= 0) {
+            if (this.retailSpeed === null) this.retailSpeed = this.unk144;
+            const p = cranePercent(this.roll);
+            this.unk144 = p ? fr(fr(0.0015) * p) : this.retailSpeed;
+        }
+        this.controlRetail();
+    }
+    private controlRetail() {
         super.control();
         switch (this.state) {
             case ST_ROTATE_TO_MAX:
@@ -46,7 +71,9 @@ export class CraneRotY extends MapObjBase {
         super.load(s);
         this.unk140 = s.f32();
         this.unk138 = this.rot.y;
-        this.unk144 = fr(fr(MsRandF() * fr(0.1)) + fr(0.05));
+        const r = MsRandF();
+        this.roll = craneRoll(this, r);
+        this.unk144 = fr(fr(r * fr(0.1)) + fr(0.05));
         this.unk148 = this.name === 'crane90 0' ? SE.OBJ_CRANE_SIDEMOVE1 : SE.OBJ_CRANE_SIDEMOVE2;
         this.state = ST_ROTATE_TO_MAX;
     }
@@ -57,8 +84,15 @@ export class CraneUpDown extends MapObjBase {
     static mRotSpeed = fr(0.1); static mWaitTime = 120;
     /** unk138 the cargo, unk13C its sound, unk140 / unk144 the pitch's top and bottom */
     unk138: MapObjBase | null = null; unk13C = 0; unk140 = 0; unk144 = 0;
+    roll = -1;
     constructor(w: World, name = 'クレーン（上下）') { super(w, name); }
     control() {
+        const p = this.roll >= 0 ? cranePercent(this.roll) : 0;
+        const retail = CraneUpDown.mRotSpeed;
+        if (p) CraneUpDown.mRotSpeed = fr(fr(retail * fr(0.01)) * p);
+        try { this.controlRetail(); } finally { CraneUpDown.mRotSpeed = retail; }
+    }
+    private controlRetail() {
         super.control();
         switch (this.state) {
             case ST_WAIT_AT_MIN: if (!this.isStateTimerEngaged()) this.state = ST_ROTATE_TO_MAX; break;
@@ -92,7 +126,9 @@ export class CraneUpDown extends MapObjBase {
         if (this.unk138) this.unk138.appear();
         if (this.name === 'craneUpDown 0') { this.unk144 = -25; this.unk140 = 45; this.unk13C = SE.OBJ_CRANE_UPDOWN1; }
         else { this.unk144 = -25; this.unk140 = 30; this.unk13C = SE.OBJ_CRANE_UPDOWN2; }
-        this.rot.x = fr(fr(MsRandF() * fr(this.unk140 - this.unk144)) + this.unk144);
+        const r = MsRandF();
+        this.roll = craneRoll(this, r);
+        this.rot.x = fr(fr(r * fr(this.unk140 - this.unk144)) + this.unk144);
     }
 }
 

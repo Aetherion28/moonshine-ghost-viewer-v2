@@ -835,7 +835,6 @@ export class SimRunner {
             // V9: rand()'s state at the first recorded pose (the stage's QF 0, after its lead frames)
             if (segI === 0 && !fromLoad && g.header && g.header.initialRng !== undefined) srand(g.header.initialRng);
             const st0 = this.stage;
-            if (g.trace) traceCraneSpeeds(g, q0, st0.objects);
             const C0: any = st0.player && st0.player.simCamera;
             if (C0 && demoName) C0.stageDemoName = demoName(st0.world.flags);
             this.pads = null; this.sync = null; this.history = null; this.camKeys = null; this.camCorrections = [];
