@@ -10,7 +10,7 @@
 //        LS_JSON=<file> write the full result as JSON
 import { Worker } from 'node:worker_threads';
 import { writeFileSync } from 'node:fs';
-import { layoutOf, type Field } from './layouts.ts';
+import { layoutOf, SIZE as SIZES, type Field } from './layouts.ts';
 
 // v2's names for the decomp's base members
 const ALIAS: Record<string, string> = {
@@ -93,7 +93,7 @@ export function startLockstep(file: string, st: any, P: any, randState: () => nu
     let pending: any = null, ended = false;
     const firstByKey = new Map<string, Diff>(), firstByField = new Map<string, Diff>();
     const unmapped = new Map<string, Set<string>>(), unpaired = new Map<string, number>(), unrounded = new Map<string, number>();
-    let first: Diff | null = null, ticks = 0, compared = 0, randFirst = -1;
+    let first: Diff | null = null, ticks = 0, compared = 0, randFirst = -1, uninit = 0;
     const pairSim = () => {
         const out = new Map<string, any>();
         const W = st.world, count = new Map<string, number>();
@@ -123,8 +123,12 @@ export function startLockstep(file: string, st: any, P: any, randState: () => nu
             const s = sims.get(key);
             if (!s) { unpaired.set(`${o.cls} ${key}`, (unpaired.get(`${o.cls} ${key}`) || 0) + 1); continue; }
             const b = Buffer.from(o.b, 'base64');
+            // (bytes the game hasn't written since the object's allocation: what the session left there, lockstep_v3.ts)
+            const u = o.u ? Buffer.from(o.u, 'base64') : null;
+            const unsetField = (f: { off: number; type: string }) => { if (!u) return false; const n = SIZES[f.type] || 4; for (let i = f.off; i < f.off + n; i++) if (!(u[i >> 3] & (1 << (i & 7)))) return false; return true; };
             for (const f of layoutOf(o.cls)) {
                 if (f.type === 'ptr' || SKIP.has(f.name) || f.off + 1 > b.length) continue;
+                if (unsetField(f)) { uninit++; continue; }
                 const p = propOf(s, f.name);
                 if (!p.has) { let u = unmapped.get(o.cls); if (!u) unmapped.set(o.cls, u = new Set()); u.add(`${f.cls}.${f.name}`); continue; }
                 const sv = simVal(p.v, f); if (!sv) { let u = unmapped.get(o.cls); if (!u) unmapped.set(o.cls, u = new Set()); u.add(`${f.cls}.${f.name}(type)`); continue; }
@@ -141,7 +145,7 @@ export function startLockstep(file: string, st: any, P: any, randState: () => nu
     };
     const report = (why: string) => {
         const top = +(process.env.LS_TOP || 30);
-        console.log(`LOCKSTEP ${why}: ${ticks} tick(s), ${compared} field comparisons; rand first differs at ${randFirst < 0 ? 'never' : randFirst}`);
+        console.log(`LOCKSTEP ${why}: ${ticks} tick(s), ${compared} field comparisons (${uninit} left out: the game never wrote them); rand first differs at ${randFirst < 0 ? 'never' : randFirst}`);
         console.log(first ? `LOCKSTEP FIRST tick ${first.tick} ${first.cls} ${first.key} ${first.field} (+0x${first.off.toString(16)}) game ${first.game} v2 ${first.sim}` : 'LOCKSTEP FIRST none: every compared field is equal');
         const rows = [...firstByField.values()].sort((a, b) => a.tick - b.tick);
         console.log(`LOCKSTEP fields that differ: ${rows.length}; objects with a difference: ${firstByKey.size}`);
