@@ -138,7 +138,7 @@ export class PlayerMario extends TMarioSim {
         Object.defineProperty(this, 'mHeldObject', { get: () => this.held, set: (v) => { this.held = v; }, configurable: true });
         this.camera = { yaw: () => s16(this.mFaceAngle.y + 0x8000) };
         this.mGamePad.isLButtonCamera = () => !!(this.camera.isLButtonCamera && this.camera.isLButtonCamera());
-        this.initValues();
+        // (TMario's constructor doesn't call initValues: load does, once; a second call steps his motion again)
     }
 
     // ---------------------------------------------------------------- MarioInit.cpp

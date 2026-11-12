@@ -3,7 +3,7 @@
 // the conductor (v3 game/replay.ts roster, the recorder's order), each with its class (vtable symbol) and name.
 // Messages go through a ring in shared memory (lockstep_lib.ts reads them) as length-prefixed JSON.
 import { parentPort, workerData } from 'node:worker_threads';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { readTrace } from '../../v3/game/trace.ts';
 import { Replay } from '../../v3/game/replay.ts';
 import { versionOf } from '../../v3/game/versions.ts';
@@ -37,8 +37,14 @@ for (const l of readFileSync(symFile, 'utf8').split('\n')) { const m = /^__vt__(
 const className = (sym: string) => { const q = /^Q(\d)(.*)$/.exec(sym); let s = q ? q[2] : sym; let last = ''; while (s.length) { const m = /^(\d+)/.exec(s); if (!m) break; const n = +m[1]; last = s.substr(m[1].length, n); s = s.slice(m[1].length + n); if (!q) break; } return last || sym; };
 // (the stage heap must be the recording console's: when the disc's file table here sizes it otherwise, v3 says by
 // how much, and the trace is played again with that much more padding before any tick has been sent)
-const makeReplay = (pad: number) => new Replay(loadBytes(D.dol), D.disc(), T, V.addrs, (n) => S.byName.get(n), { log: () => {}, fstPad: pad, maxIssues: 50 });
-let pad = +(process.env.FSTPAD ?? 480);
+// LS_OPTS=<file>: the setup v3's replay test settled on for this trace (tests/replay.ts OPTS_OUT: the file table's
+// padding, Shiny Shines, locked scripts, Dolphin's arithmetic, the NPC phase, the select screen's hold)
+const OPTS = process.env.LS_OPTS && existsSync(process.env.LS_OPTS) ? JSON.parse(readFileSync(process.env.LS_OPTS, 'utf8')) : null;
+const makeReplay = (pad: number) => new Replay(loadBytes(D.dol), D.disc(), T, V.addrs, (n) => S.byName.get(n), {
+    log: () => {}, fstPad: pad, maxIssues: 50, recorded: V.addrs,
+    ...(OPTS ? { shinyShines: OPTS.shinyShines, scriptsLocked: OPTS.scriptsLocked, dolphin: OPTS.dolphin, npcPhase: OPTS.npcPhase, selectHold: OPTS.selectHold } : {}),
+});
+let pad = OPTS ? OPTS.fstPad : +(process.env.FSTPAD ?? 480);
 for (let tries = 0; tries < 3; tries++) {
     const probe = makeReplay(pad);
     while (probe.ticks === 0 && !probe.heapDelta && probe.run(50e6) !== 'done');

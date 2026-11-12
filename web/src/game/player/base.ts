@@ -111,7 +111,6 @@ export class MarioModel {
     update() {
         this.fc[0].update();
         this.fc[1].update();
-        this.joints = null;
     }
     /** Each joint's matrix in its parent's (for the viewer's joint callback: a model rigged like Mario's). */
     locals: mat4[] = [];
@@ -127,7 +126,6 @@ export class MarioModel {
     fx: MultiMtxEffect | null = null;
     /** fx: J3DModel::calc from calcAnim (the joint callbacks step); else the stored matrices (getAnmMtx) */
     calc(fx = false): mat4[] | null {
-        if (this.joints && !fx) return this.joints;
         const up = this.upperCalc !== -1 && this.upperJoint >= 0 && this.anm[1] >= 0;
         const J = this.jointCtrl;
         const key = this.anm[0] + '|' + this.fc[0].frame + '|' + this.blendRatio + '|' + (up ? this.anm[1] + '@' + this.fc[1].frame : '-') + '|' + Array.from(this.baseTR).join(',') + (J ? '|' + J.joint + ':' + Array.from(J.r).join(',') : '');
@@ -146,9 +144,12 @@ export class MarioModel {
         }
         return this.joints;
     }
-    /** getAnmMtx(j): joint j's world matrix after the last calc. */
+    /**
+     * getAnmMtx(j): joint j's world matrix as the last calc left it (J3DModel keeps them: a read between two calcs
+     * sees the last one's, not one with the current frame and base matrix).
+     */
     anmMtx(j: number): mat4 | null {
-        const all = this.calc();
+        const all = this.joints || this.calc();
         return all ? all[j] || null : null;
     }
     jointIndex(name: string) { const sk = Skeleton.of(marioFile('bmd/ma_mdl1.bmd')); return sk ? sk.index(name) : -1; }

@@ -93,4 +93,6 @@ if (R.follow) console.log(`following: the recording's state taken ${Object.entri
 if (R.actorTakenAt.size) console.log('    actor words put in, by offset: ' + [...R.actorTakenAt].sort((a, b) => b[1] - a[1]).slice(0, 16).map(([o, n]) => `+0x${o.toString(16)} ${n}`).join(', '));
 if (R.occlusionTaken || R.occlusionOpen) console.log(`occlusion reads found from the camera's next record: ${R.occlusionTaken}; camera ticks neither value explains: ${R.occlusionOpen}`);
 console.log(`${(cpu.count / 1e6).toFixed(0)} M instructions (${((cpu.count - R.m.idleSkipped) / 1e6).toFixed(0)} M run) in ${dt.toFixed(1)} s; stage load ${((R.countAtPlay - R.countAtStage) / 486e6).toFixed(2)} s of game time, ${R.extraLoadFrames} extra loading frame(s)`);
+// OPTS_OUT=<file>: the setup this run settled on, for a tool that plays the trace again (tools/harness/lockstep_v3.ts)
+if (process.env.OPTS_OUT) (await import('node:fs')).writeFileSync(process.env.OPTS_OUT, JSON.stringify({ fstPad: R.fstPadUsed, shinyShines: shiny, scriptsLocked: R.scriptsLocked, dolphin: R.dolphin, npcPhase: R.npcPhaseTaken, selectHold: R.selectHoldUsed, issues: R.issues.length, frames: R.frames, of: T.frames.length }));
 process.exit(R.issues.length ? 1 : 0);

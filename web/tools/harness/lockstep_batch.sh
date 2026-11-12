@@ -9,6 +9,8 @@ while read -r path region end; do
   [ -n "$only" ] && ! echo "$path" | grep -q "$only" && continue
   n=$(echo "$path" | tr '/' '_' | sed 's/\.msgt$//')
   [ -s "$out/$n.json" ] && continue
-  LOCKSTEP=1 LS_TOP=12 LS_JSON="$out/$n.json" LS_COV="$out/$n.cov" timeout 7200 node "$pm" auto "$path" "$end" > "$out/$n.log" 2>&1
+  # v3's setup for the trace first (tests/replay.ts: its retries), kept in <name>.opts
+  [ -s "$out/$n.opts" ] || QUIET=1 OPTS_OUT="$out/$n.opts" timeout 7200 node "${V3REPLAY:-/tmp/claude-0/ct/v3replay.mjs}" "$path" 1000000 > "$out/$n.v3log" 2>&1
+  LS_OPTS="$out/$n.opts" LOCKSTEP=1 LS_TOP=12 LS_JSON="$out/$n.json" LS_COV="$out/$n.cov" timeout 7200 node "$pm" auto "$path" "$end" > "$out/$n.log" 2>&1
   echo "$n $(grep -m1 '^LOCKSTEP FIRST' "$out/$n.log" | cut -c1-160)"
 done < list5.txt

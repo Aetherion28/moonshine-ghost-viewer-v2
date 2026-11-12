@@ -22,6 +22,9 @@ const ALIAS: Record<string, string> = {
     mKeyCode: 'keyCode',
 };
 const SKIP = new Set(['mName', 'unk1C']);
+// bits not compared, by class.field: Mario's occlusion bit (MARIO_FLAG_OCCLUDED) is the GPU's: v3 has no frame
+// buffer to peek at, so its draw-sync callback writes a bit of its own between the recorded ones (v3 game/replay.ts)
+const MASK: Record<string, number> = { 'TMario.mFlag': ~1 >>> 0, 'TMario.mPrevFlag': ~1 >>> 0 };
 
 const F = new Float32Array(1), U = new Uint32Array(F.buffer), D = new Float64Array(1), DU = new Uint32Array(D.buffer);
 const f32bits = (v: number) => { F[0] = v; return U[0]; };
@@ -126,6 +129,7 @@ export function startLockstep(file: string, st: any, P: any, randState: () => nu
                 if (!p.has) { let u = unmapped.get(o.cls); if (!u) unmapped.set(o.cls, u = new Set()); u.add(`${f.cls}.${f.name}`); continue; }
                 const sv = simVal(p.v, f); if (!sv) { let u = unmapped.get(o.cls); if (!u) unmapped.set(o.cls, u = new Set()); u.add(`${f.cls}.${f.name}(type)`); continue; }
                 const gv = gameVal(b, f); compared++;
+                const mk = MASK[`${f.cls}.${f.name}`]; if (mk !== undefined) { gv[0] = (gv[0] & mk) >>> 0; sv.w[0] = (sv.w[0] & mk) >>> 0; }
                 if (sv.unrounded) unrounded.set(`${o.cls}.${f.name}`, (unrounded.get(`${o.cls}.${f.name}`) || 0) + 1);
                 if (gv.every((x, i) => x === sv.w[i])) continue;
                 const d: Diff = { tick: t, key, cls: o.cls, field: `${f.cls}.${f.name}`, off: f.off, game: show(f, gv), sim: show(f, sv.w) };
