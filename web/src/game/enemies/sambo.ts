@@ -54,7 +54,7 @@ export class SamboLeaf extends LiveActor {
         if (!this.unk44) return;
         if (cue & CUE_MOVE) {
             this.pos.add(this.vel38);
-            if (this.vel38.y > -20) this.vel38.y -= this.mgr.saveParams.mSLLeafGravity;
+            if (this.vel38.y > -20) this.vel38.y = fr(this.vel38.y - this.mgr.saveParams.mSLLeafGravity);
             const [h] = this.world.checkGround(this.pos.x, 20 + this.pos.y, this.pos.z);
             if (this.pos.y < h) this.unk44 = false;
         }

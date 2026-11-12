@@ -4,7 +4,7 @@ import sys, base64
 def load(p):
     D = {}
     for l in open(p, errors='replace'):
-        if l.startswith('GOOP '):
+        if l.startswith('GOOP ') and len(l.split()) == 9 and l.split()[-2].isdigit():
             q = l.split(); D.setdefault(int(q[1]), {})[int(q[2])] = (q[4], int(q[-2]), base64.b64decode(q[-1]))
     return D
 G, S = load(sys.argv[1]), load(sys.argv[2]); off = int(sys.argv[3]) if len(sys.argv) > 3 else 0

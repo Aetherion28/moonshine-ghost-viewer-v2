@@ -291,7 +291,7 @@ export class PakkunSeed extends SpineEnemy {
     bind() {
         const n = this.pos.clone().add(this.posDelta).add(this.vel);
         this.recoverScale();
-        this.vel.y -= this.getNowGravity();
+        this.vel.y = fr(this.vel.y - this.getNowGravity());
         if (this.vel.y < -40) this.vel.y = -40;
         if (!this.unk168) { const [h, d] = this.world.checkGround(n.x, n.y + this.headHeight, n.z); this.groundHeight = h + 1; this.groundPlane = d; }
         if (n.y + this.vel.y <= this.groundHeight) this.behaveToHitGround(); else this.onLiveFlag(LF.AIRBORNE);

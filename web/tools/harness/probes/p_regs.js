@@ -1,0 +1,2 @@
+// the GPU registers at the first model stamp draw of tick 256 (as JSON): diff against a goopstream capture row
+{ const st = globalThis.__st; let n = 0; globalThis.__goopDbg.onPrim = (g) => { if (st.qf === 256 && n++ === 0) console.log('REGS', JSON.stringify({ bp: Array.from(g.bp), cp: Array.from(g.cp), xf: Array.from(g.xfw.subarray(0x1000, 0x1058)), tevReg: Array.from(g.tevReg), konst: Array.from(g.konst) })); }; }

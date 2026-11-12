@@ -1,0 +1,5 @@
+// an actor's place, turn, speed and step per tick: NAME=<its name or class> [NTH=<which of several, from 0>] LA LB [LE]
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P); const A = +process.env.LA, B = +process.env.LB, EV = +(process.env.LE || 1); const F = new Float32Array(1), U = new Uint32Array(F.buffer); const h = (v) => { F[0] = v; return U[0].toString(16).padStart(8, '0') + '(' + (+F[0].toPrecision(8)) + ')'; };
+  let b = null; const v3 = (v) => v ? [v.x, v.y, v.z].map(h).join(' ') : '?';
+  const find = () => { const N = process.env.NAME, out = []; for (const m of st.world.conductor.liveManagers) for (const a of (m.objs || [])) if (a && (a.name === N || a.constructor.name === N)) out.push(a); if (!out.length) { const s = st.world.search(N); if (s) out.push(s); } return out[+(process.env.NTH || 0)] || null; };
+  P.testPerform = (c) => { const r = o(c); if (st.qf >= A && st.qf <= B && (st.qf - A) % EV === 0) { b = b || find(); if (b) console.log('SIM', st.qf, 'pos', v3(b.pos), 'rot', v3(b.rot), 'vel', v3(b.vel), 'delta', v3(b.posDelta)); } return r; }; }

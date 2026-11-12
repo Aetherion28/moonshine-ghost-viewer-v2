@@ -51,7 +51,7 @@ export class Amenbo extends SmallEnemy {
     bind() {
         if (this.checkLiveFlag(LF.UNK10)) return;
         const n = this.pos.clone(); n.y += this.headHeight; n.add(this.posDelta).add(this.vel);
-        this.vel.y -= this.getGravityY();
+        this.vel.y = fr(this.vel.y - this.getGravityY());
         if (this.vel.y < -40) this.vel.y = -40;
         const [h, d] = this.world.checkGround(n.x, n.y + this.headHeight, n.z);
         this.groundPlane = d; this.groundHeight = fr(h + 1);

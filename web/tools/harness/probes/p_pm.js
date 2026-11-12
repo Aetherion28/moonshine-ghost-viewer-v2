@@ -1,0 +1,3 @@
+// the goop mark models (TEnemyPolluteModel) of every manager that has them, ticks MA..MB: active, clipped, place, BCK frame
+{ const st = globalThis.__st, P = globalThis.__P; const o = P.testPerform.bind(P);
+  P.testPerform = (c) => { const r = o(c); const q = st.qf; if (q >= +process.env.MA && q <= +process.env.MB) { for (const m of st.world.conductor.liveManagers) if (m.unk6C && m.unk6C.models) m.unk6C.models.forEach((pm, i) => { if (pm.unk5D) { const f = pm.mactor.getFrameCtrl(0); console.log('PM', q, i, '5D', pm.unk5D, '5C', pm.unk5C, 'pos', pm.pos.x.toFixed(2), pm.pos.y.toFixed(2), pm.pos.z.toFixed(2), 'frame', f && f.frame); } }); } return r; }; }

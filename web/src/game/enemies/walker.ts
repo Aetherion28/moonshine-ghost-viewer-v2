@@ -41,7 +41,7 @@ export class Walker {
         if (e.isAirborne()) {
             const v = e.vel.clone();
             n.add(v);
-            v.y -= e.getGravityY();
+            v.y = fr(v.y - e.getGravityY());
             if (v.y < velocityMinY) v.y = velocityMinY;
             e.vel.set(v);
         }

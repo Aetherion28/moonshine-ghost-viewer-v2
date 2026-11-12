@@ -131,7 +131,7 @@ export function traceActorsByTick(A: { count: number; qf: Int32Array; key: Uint1
 // mapobj/ricco.ts); sessionCtx.at(field) gives the field's value in the snapshot in effect at this tick.
 
 /** GhostSimulation::Field (ghost_simulation.hxx): the snapshot's byte for a setting */
-export const enum SessionField { RESPAWN_SHINES = 13, RICCO_FRUIT_MACHINE = 35 }
+export const enum SessionField { RESPAWN_SHINES = 13, PATTERN_SELECTOR = 27, PETEY_ROUTE = 33, RICCO_FRUIT_MACHINE = 35, GELATO_BLUE_BIRD_PATTERN = 37, PATTERN_0 = 41 }
 
 /** The current stage's recorded settings, set by the runner around a stage's frames; null: none. */
 export const sessionCtx: { at: ((field: SessionField) => number | null) | null } = { at: null };
