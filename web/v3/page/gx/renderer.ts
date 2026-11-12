@@ -112,6 +112,7 @@ export class GxRenderer {
         this.uDraw = new UniformStream(gl, 2, 1 << 21, align);
         // (a vertex without a colour is white)
         gl.vertexAttrib4f(6, 1, 1, 1, 1); gl.vertexAttrib4f(7, 1, 1, 1, 1);
+        this.unitKey.fill(-1);
         if (!canvas.width || canvas.width === 300) { canvas.width = EFB_W * this.efb.scale; canvas.height = 448 * this.efb.scale; }
     }
 
@@ -121,15 +122,31 @@ export class GxRenderer {
     frame(f: GxFrame): void {
         const t0 = performance.now(), gl = this.gl, S = this.stats;
         this.frameNo++;
-        S.frame = f.frame; S.draws = S.keptHits = S.lines = S.failed = 0; S.copies = []; S.patches = f.patches.length; S.patchBytes = 0;
-        if (f.regs) this.loadRegs(f.regs);
+        S.frame = f.frame; S.patches = f.patches.length;
         this.geom.newFrame(this.frameNo);
-        if (this.frameNo % 512 === 511) this.tex.sweep(this.frameNo);
-        this.uScene.restart(); this.uMat.restart(); this.uDraw.restart();
-        this.glDirty = true; this.ended = false;
+        if (this.frameNo % 512 === 511) { this.tex.sweep(this.frameNo); this.unitKey.fill(-1); }
         const programs0 = this.mats.compiled, tex0 = this.tex.decodes;
-        // the stream, with each patch put into RAM as the command at its offset comes up
-        const b = f.fifo, P = f.patches;
+        // A frame that starts from the registers alone (the first one, or the one after a gap) draws with textures
+        // the game copied out of the frame buffer in the frame before, which was never seen here. Its commands are
+        // run twice: the first run makes this frame's copies, which stand in for the missing ones in the second.
+        for (let pass = f.regs ? 0 : 1; pass < 2; pass++) {
+            if (f.regs) this.loadRegs(f.regs);
+            this.walk(f);
+        }
+        gl.bindVertexArray(null);
+        gl.flush();
+        S.decodedKept = this.geom.decodedKept; S.decodedStream = this.geom.decodedStream; S.vertices = this.geom.vertices;
+        S.programs = this.mats.compiled - programs0; S.textures = this.tex.decodes - tex0;
+        S.ms = performance.now() - t0;
+    }
+
+    /** the stream once through, with each patch put into RAM as the command at its offset comes up */
+    private walk(f: GxFrame) {
+        const S = this.stats, b = f.fifo, P = f.patches;
+        S.draws = S.keptHits = S.lines = S.failed = 0; S.copies = []; S.patchBytes = 0;
+        this.uScene.restart(); this.uMat.restart(); this.uDraw.restart();
+        this.glDirty = this.sceneFresh = true; this.ended = false;
+        this.blockMat = null; this.blockPnIdx = -2;
         let pi = 0, p = 0;
         while (p < b.length) {
             let stop = b.length;
@@ -138,15 +155,10 @@ export class GxRenderer {
                 stop = Math.min(stop, P[pi].at);
             }
             const q = this.run(b, p, stop, b.length, false);
-            if (q <= p) { if (q < 0) break; this.warn('the stream stops inside a command'); break; }
+            if (q <= p) { if (q >= 0) this.warn('the stream stops inside a command'); break; }
             p = q;
         }
         while (pi < P.length) this.patch(P[pi++]);
-        gl.bindVertexArray(null);
-        gl.flush();
-        S.decodedKept = this.geom.decodedKept; S.decodedStream = this.geom.decodedStream; S.vertices = this.geom.vertices;
-        S.programs = this.mats.compiled - programs0; S.textures = this.tex.decodes - tex0;
-        S.ms = performance.now() - t0;
     }
 
     /** Forgets everything (a new replay started). */
@@ -166,11 +178,26 @@ export class GxRenderer {
         this.uScene.destroy(); this.uMat.destroy(); this.uDraw.destroy();
     }
 
+    /** (for tests) the frame buffer copies there are: where their images are in RAM, and one's pixels (RGBA, top row first) */
+    copyAddresses(): number[] { return [...this.tex.copies.keys()].map((a) => a + 0x80000000); }
+    readCopy(addr: number): { w: number; h: number; data: Uint8Array } | null {
+        const c = this.tex.copies.get(addr & RAM_MASK), gl = this.gl;
+        if (!c) return null;
+        const w = c.w * this.efb.scale, h = c.h * this.efb.scale, data = new Uint8Array(w * h * 4), fb = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, c.tex, 0);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, data);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb);
+        this.glDirty = true;
+        return { w, h, data };
+    }
+
     private loadRegs(r: { cp: Uint32Array; bp: Uint32Array; xf: Uint32Array }) {
         this.cp.set(r.cp.subarray(0, 256)); this.bp.set(r.bp.subarray(0, 256)); this.xfw.set(r.xf.subarray(0, 0x1100));
         for (let i = 0; i < 256; i++) this.bp[i] &= 0xFFFFFF;
-        // (the colour registers share their numbers with the constant colours: the one last loaded is known)
-        for (let reg = 0xE0; reg < 0xE8; reg++) this.tevColor(reg, this.bp[reg]);
+        // (the colour registers share their numbers with the constant colours: both follow the 256, colours first)
+        if (r.bp.length >= 272) for (let i = 0; i < 8; i++) { this.tevColor(0xE0 + i, r.bp[256 + i] & 0x7FFFFF); this.tevColor(0xE0 + i, (r.bp[264 + i] & 0x7FFFFF) | 0x800000); }
+        else for (let reg = 0xE0; reg < 0xE8; reg++) this.tevColor(reg, this.bp[reg]);
         this.bpMask = 0xFFFFFF;
         this.bpDirty = this.xfDirty = this.mtxDirty = this.paramDirty = true;
     }
@@ -220,7 +247,8 @@ export class GxRenderer {
                     if (cmd >= 0xA8) this.stats.lines++; else this.stats.failed++;
                     p += total; continue;
                 }
-                const len = GeometryCache.run(b, p, end, L.size);
+                // (primitives that follow each other are drawn as one, up to where the next patch comes in)
+                const len = GeometryCache.run(b, p, inList ? end : stop, L.size) || GeometryCache.run(b, p, end, L.size);
                 if (!len) return inList ? end : p;
                 if (!this.ended) {
                     const dec = this.geom.decodedKept;
@@ -320,8 +348,11 @@ export class GxRenderer {
         }
         if (ctl & 0x800) {
             // the clear: colour 0x4F (alpha, red) and 0x50 (green, blue), depth 0x51, each where its update is on
-            const bm = bp[0x41];
-            efb.clear(x, y, w, h, [bp[0x4F] & 0xFF, (bp[0x50] >>> 8) & 0xFF, bp[0x50] & 0xFF, hasAlpha ? (bp[0x4F] >>> 8) & 0xFF : 255], !!(bm & 8), hasAlpha ? !!(bm & 0x10) : true, bp[0x40] & 0x10 ? bp[0x51] & 0xFFFFFF : null);
+            // (A frame buffer of 8 bits a colour and no alpha is the same memory as one of 6 bits each with alpha:
+            // what is cleared in the first reads, in the second, with the blue's low 6 bits as its alpha.)
+            const bm = bp[0x41], blue = bp[0x50] & 0xFF, a6 = blue & 63;
+            const alpha = hasAlpha ? (bp[0x4F] >>> 8) & 0xFF : (a6 << 2) | (a6 >> 4);
+            efb.clear(x, y, w, h, [bp[0x4F] & 0xFF, (bp[0x50] >>> 8) & 0xFF, blue, alpha], !!(bm & 8), hasAlpha ? !!(bm & 0x10) : pixelFormat === 0 && !!(bm & 8), bp[0x40] & 0x10 ? bp[0x51] & 0xFFFFFF : null);
         }
         this.glDirty = true;
     }
@@ -359,7 +390,8 @@ export class GxRenderer {
                 gl.colorMask(false, false, false, true);
                 gl.disable(gl.BLEND); gl.depthMask(false);
                 const zm = bp[0x40], func = (zm >>> 1) & 7;
-                if ((zm & 1) && (func === 1 || func === 2)) gl.depthFunc(gl.GEQUAL);
+                // (the first pass wrote its depth: a strict comparison must now let its own pixels through)
+                if ((zm & 1) && func === 1) gl.depthFunc(gl.GEQUAL); else if ((zm & 1) && func === 4) gl.depthFunc(gl.LEQUAL);
                 gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, g.offset);
             }
             this.curMat = null;

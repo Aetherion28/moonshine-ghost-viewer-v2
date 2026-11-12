@@ -2,7 +2,8 @@
 // mirror of the game's RAM that only the patches fill, the registers, and the commands walked in order. Every read
 // of memory a command makes (a display list, a vertex array through an index, a matrix loaded by index, a texture
 // image, a palette) must be of bytes a patch has delivered (or a frame buffer copy has written: the page's own).
-// Run: node gxcheck.mjs <folder> [frames to list, default 5]     (env: ALL=1 lists every frame)
+// Run: node gxcheck.mjs <folder> [frames to list, default 5]     (env: ALL=1 lists every frame; ORDER=n lists the
+//   frame buffer copies of the dump's n-th frame in their order, with the primitives drawn before each)
 // Prints what is missing, the totals a frame, and what a renderer wants to know of the frames (the viewport and
 // scissor, the frame buffer copies, the texture formats).
 import { readFileSync, readdirSync } from 'node:fs';
@@ -10,7 +11,7 @@ import { decodeGxFrame } from '../web/gxframe.ts';
 
 const dir = process.argv[2], listN = process.env.ALL ? Infinity : +(process.argv[3] || 5);
 if (!dir) { console.log('usage: node gxcheck.mjs <folder>'); process.exit(2); }
-const files = readdirSync(dir).filter((n) => n.endsWith('.gxf')).sort();
+const files = readdirSync(dir).filter((n: string) => n.endsWith('.gxf')).sort();
 
 const RAM = 0x01800000;
 const ram = new Uint8Array(RAM), have = new Uint8Array(RAM);
@@ -70,9 +71,14 @@ function texBytes(fmt: number, w: number, h: number, levels: number) {
     return n;
 }
 const FMT = ['I4', 'I8', 'IA4', 'IA8', 'RGB565', 'RGB5A3', 'RGBA8', '7', 'C4', 'C8', 'C14X2', '11', '12', '13', 'CMPR', '15'];
-const texFormats = new Map<string, number>(), copyDst = new Map<number, string>(), texFromCopy = new Map<string, number>();
+const texFormats = new Map<string, number>(), texFromCopy = new Map<string, number>();
+/** the textures frame buffer copies wrote, by address: as what, how many bytes, how often, and how often a patch brought the memory's own bytes after one */
+const copyDst = new Map<number, { what: string; n: number; copies: number; sent: number; fresh: boolean }>();
 const viewports = new Map<string, number>(), scissors = new Map<string, number>(), texCopies = new Map<string, number>(), xfbCopies = new Map<string, number>();
 const bpUsed = new Uint8Array(256);
+/** (ORDER) the copies of the frame asked for, in order */
+const orderOf = process.env.ORDER === undefined ? -1 : +process.env.ORDER, order: string[] = [];
+let primsAtCopy = 0;
 let vpOf: number[] = [], vp = '', scOf: number[] = [], sc = '';
 let stat = { prims: 0, verts: 0, lists: 0, xfIdx: 0, tluts: 0, texCopies: 0, xfbCopies: 0, cmds: 0 };
 function textures() {
@@ -88,7 +94,7 @@ function textures() {
         const key = FMT[fmt] + (mips ? ' with mipmaps' : '');
         texFormats.set(key, (texFormats.get(key) || 0) + 1);
         if (n < 0) { note(`a texture of format ${fmt}`, 0, a); continue; }
-        if (copyDst.has(a)) { const k = `0x${hex(0x80000000 + a)} ${w}x${h} ${FMT[fmt]} (copied as ${copyDst.get(a)})`; texFromCopy.set(k, (texFromCopy.get(k) || 0) + 1); }
+        if (copyDst.has(a)) { const k = `0x${hex(0x80000000 + a)} ${w}x${h} ${FMT[fmt]} (copied as ${copyDst.get(a)!.what})`; texFromCopy.set(k, (texFromCopy.get(k) || 0) + 1); }
         need('texture image', a, n);
     }
 }
@@ -102,6 +108,10 @@ function bpLoad(word: number) {
     if (reg === 0x65) { stat.tluts++; need('palette', (bp[0x64] << 5) & 0x01FFFFFF, ((v >>> 10) & 0x7FF) * 32); }
     if (reg === 0x52) {
         const x = bp[0x49] & 0x3FF, y = (bp[0x49] >>> 10) & 0x3FF, w = (bp[0x4A] & 0x3FF) + 1, h = ((bp[0x4A] >>> 10) & 0x3FF) + 1;
+        if (frameNo === orderOf) {
+            order.push(`  at ${cmdAt}: ${stat.prims - primsAtCopy} primitives (last viewport ${vp || 'none'}), then a copy ${v & 0x4000 ? 'to the display' : `to the texture at 0x${hex(0x80000000 + ((bp[0x4B] << 5) & 0x03FFFFFF))}`} from ${x},${y} ${w}x${h}, control 0x${hex(v)}${v & 0x800 ? `, clearing to colour ${hex(bp[0x4F] & 0xFFFF)} ${hex(bp[0x50] & 0xFFFF)} depth ${hex(bp[0x51])} (colour ${(bp[0x41] >>> 3) & 1}, alpha ${(bp[0x41] >>> 4) & 1}, depth ${(bp[0x40] >>> 4) & 1} written)` : ''}; pixel format ${bp[0x43] & 7}`);
+            primsAtCopy = stat.prims;
+        }
         if (v & 0x4000) {
             stat.xfbCopies++;
             const k = `from ${x},${y} ${w}x${h} to 0x${hex(0x80000000 + ((bp[0x4B] << 5) & 0x03FFFFFF))}, clear ${(v >>> 11) & 1}, control 0x${hex(v)}, y scale 0x${hex(bp[0x4E] & 0x1FF)}`;
@@ -113,7 +123,8 @@ function bpLoad(word: number) {
             const what = `format ${fmt}${(bp[0x43] & 7) === 3 ? ' of the depth buffer' : ''}${v & 0x8000 ? ' as intensity' : ''}${half ? ' at half size' : ''}`;
             const k = `from ${x},${y} ${w}x${h} to 0x${hex(0x80000000 + a)}, ${what}, clear ${(v >>> 11) & 1}`;
             texCopies.set(k, (texCopies.get(k) || 0) + 1);
-            copyDst.set(a, what);
+            const d = copyDst.get(a) || { what, n, copies: 0, sent: 0, fresh: false };
+            d.what = what; d.n = n; d.copies++; d.fresh = true; copyDst.set(a, d);
             // (the copy writes the texture's memory: the page's own copy stands for it)
             if (a + n <= RAM) have.fill(1, a, a + n);
         }
@@ -190,6 +201,7 @@ for (const name of files) {
             if (q.at !== p) say(`${name}: a patch at ${q.at}, which is not where a command starts (the next starts at ${p})`);
             if (a < 0 || a + q.data.length > RAM) { say(`${name}: a patch outside RAM (0x${hex(q.addr)}, ${q.data.length} bytes)`); continue; }
             ram.set(q.data, a); have.fill(1, a, a + q.data.length); patchBytes += q.data.length;
+            for (const [da, d] of copyDst) if (d.fresh && a < da + d.n && a + q.data.length > da) { d.fresh = false; d.sent++; }
         }
     };
     let endAt = -1;
@@ -202,6 +214,7 @@ for (const name of files) {
     tot.fifo += f.fifo.length; tot.patch += patchBytes; tot.patches += f.patches.length; tot.prims += stat.prims; tot.verts += stat.verts; tot.lists += stat.lists;
     if (frames === 1) console.log(`   (the first frame: ${patchBytes} bytes of memory)`);
 }
+if (order.length) console.log(`the copies of frame file ${orderOf}, in order:\n${order.join('\n')}`);
 const top = (m: Map<string, number>, n = 12) => [...m].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, c]) => `    ${c} x ${k}`).join('\n') + (m.size > n ? `\n    ... ${m.size - n} more` : '');
 console.log(`${frames} frames. A frame on average: ${Math.round(tot.fifo / frames)} bytes of commands, ${Math.round(tot.patch / frames)} bytes of memory in ${Math.round(tot.patches / frames)} patches, ${Math.round(tot.prims / frames)} primitives, ${Math.round(tot.verts / frames)} vertices, ${Math.round(tot.lists / frames)} display list calls`);
 console.log(`viewports (width x height at left,top; by primitives):\n${top(viewports)}`);
@@ -209,6 +222,7 @@ console.log(`scissors (by primitives):\n${top(scissors)}`);
 console.log(`copies to the display:\n${top(xfbCopies)}`);
 console.log(`copies to textures (${texCopies.size} kinds):\n${top(texCopies, 40)}`);
 console.log(`textures drawn from memory a copy wrote:\n${top(texFromCopy, 40) || '    none'}`);
+console.log(`after a copy to a texture, the memory's own bytes came in a patch (the copy was made in software and is the memory's: use the patch), or not (the page's own copy is the texture):\n${[...copyDst].map(([a, d]) => `    0x${hex(0x80000000 + a)} (${d.what}): ${d.copies} copies, a patch after ${d.sent}`).join('\n') || '    none'}`);
 console.log(`texture formats (by primitives):\n${top(texFormats, 20)}`);
 console.log(`BP registers loaded: ${[...bpUsed].map((u, i) => u ? hex(i) : '').filter(Boolean).join(' ')}`);
 if (missing.size) { problems += missing.size; for (const [kind, m] of missing) console.log(`MISSING ${kind}: ${m.reads} read(s), ${m.bytes} byte(s) no patch delivered; first in ${m.first}`); }

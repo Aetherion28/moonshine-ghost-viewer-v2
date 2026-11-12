@@ -5,7 +5,8 @@
 //   replay frame is at least [first frame] (default: the first captured), [count] of them (default 120). The
 //   first file carries the GPU's registers and every piece of memory it reads, so a dump stands by itself.
 //   env: FSTPAD=n the file table's padding (480 for the JP recordings at hand), QUIET=0 shows the game's console,
-//   NOCAP=1 plays as far without capturing (to time the capture)
+//   NOCAP=1 plays as far without capturing (to time the capture), EVERY=1 compares every read of memory with what
+//   was sent (slow; the dump should come out the same)
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { readTrace } from '../game/trace.ts';
 import { Replay } from '../game/replay.ts';
@@ -43,6 +44,7 @@ const R = new Replay(loadBytes(D.dol), D.disc(), T, V.addrs, (n) => S.byName.get
     report: process.env.QUIET === '0' ? (t) => process.stdout.write('[game] ' + t) : undefined,
     onGxFrame: noCap ? undefined : onGxFrame,
 });
+if (process.env.EVERY) R.m.hw.gx.captureEvery = true;
 const t0 = performance.now();
 let res = 'budget';
 // (without capturing: as many of the recording's frames as the dump would have needed)

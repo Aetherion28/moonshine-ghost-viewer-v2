@@ -292,6 +292,8 @@ export class Gx {
             seen: new Map(), lists: new Map(), list: null, listPrim: 0, texDirty: true, texN: 0, texAt: new Int32Array(8), texLen: new Int32Array(8), max: new Int32Array(16),
         };
     }
+    /** (for tests) compare every read with what was sent, not only a vertex array's or a texture's first of a frame */
+    captureEvery = false;
     /** The receiver starts from nothing again: the next frame to begin carries the registers and every range it reads. */
     forget() { if (this.cap) this.cap.fresh = true; }
 
@@ -382,7 +384,7 @@ export class Gx {
         const C = this.cap!;
         if (!C.live) return;
         if (cmdPos >= 0) C.at = cmdPos - C.start;
-        const idx = L.idx, seen = C.seen;
+        const idx = L.idx, seen = C.seen, every = this.captureEvery;
         if (idx.length) {
             let max = C.max;
             const list = cmdPos < 0 ? C.list : null;
@@ -398,13 +400,13 @@ export class Gx {
                 if (max[j] < 0) continue;
                 const at = idx[j], base = cp[0xA0 + at.array] & 0x03FFFFFF, stride = cp[0xB0 + at.array] & 0xFF, end = base + max[j] * stride + (stride > at.size ? stride : at.size);
                 const was = seen.get(base);
-                if (was === undefined || was < end) { this.capRead(base, end - base, false, -1); seen.set(base, end); }
+                if (was === undefined || was < end || every) { this.capRead(base, end - base, every, -1); seen.set(base, end); }
             }
         }
         if (C.texDirty) this.capTextures();
         for (let k = 0; k < C.texN; k++) {
             const a = C.texAt[k], end = a + C.texLen[k], was = seen.get(a);
-            if (was === undefined || was < end) { this.capRead(a, end - a, false, -1); seen.set(a, end); }
+            if (was === undefined || was < end || every) { this.capRead(a, end - a, every, -1); seen.set(a, end); }
         }
     }
     /** The texture images a primitive drawn now samples: those of the maps the texture environment's stages and the indirect stages take. */

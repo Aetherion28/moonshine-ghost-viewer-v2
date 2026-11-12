@@ -15,7 +15,8 @@
 //        copy inside the arena, no block changed under commands the GPU may not have run yet. Exit code 1 if not.
 //      node hwframe.mjs picture <answer> <out.png> [which]
 //        A saved block of a console's answer as a PNG: efb (the default), z, xfb, copy0, copy1, ... or a number;
-//        list: only the list; all: every block, as <out>.<name>.png.
+//        list: only the list; all: every block, as <out>.<name>.png. (ALPHA=1: with the block's alpha; else opaque.
+//        The depth buffer's 24 bits are the picture's red, green and blue, from the top byte down.)
 //      node hwframe.mjs diff <a.png> <b.png> <out.png>
 //        The difference of two pictures, channel by channel, and how many pixels are off by more than 8.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -240,8 +241,8 @@ function walk(g: Gpu, mem: Uint8Array, b: Uint8Array, p: number, end: number, si
 class Out {
     ops: Op[] = [];
     private pend: Uint8Array[] = []; private pendLen = 0;
-    /** commands were sent since the last wait */
-    dirty = false;
+    /** commands were sent since the last wait (how many bytes) */
+    dirty = false; private since = 0;
     fifoBytes = 0; memBytes = 0; syncs = 0; blocks = 0;
     private flush() {
         if (!this.pendLen) return;
@@ -250,11 +251,16 @@ class Out {
         for (let q = 0; q < all.length; q += 0xF000) this.ops.push({ op: OP.FIFO, a: 0, b: 0, data: all.subarray(q, Math.min(q + 0xF000, all.length)) });
         this.pend = []; this.pendLen = 0;
     }
-    fifo(d: ArrayLike<number>) { const u = d instanceof Uint8Array ? d : Uint8Array.from(d); this.pend.push(u); this.pendLen += u.length; this.fifoBytes += u.length; this.dirty = true; if (this.pendLen >= 0x40000) this.flush(); }
+    /** whole commands (a mask together with the load it is for). The console's command buffer is 512 KB: a wait at least every 192 KB keeps it far from full. */
+    fifo(d: ArrayLike<number>) {
+        const u = d instanceof Uint8Array ? d : Uint8Array.from(d);
+        this.pend.push(u); this.pendLen += u.length; this.fifoBytes += u.length; this.dirty = true;
+        if ((this.since += u.length) >= 0x30000) this.sync();
+    }
     bpw(reg: number, v: number) { this.fifo([0x61, reg, (v >>> 16) & 0xFF, (v >>> 8) & 0xFF, v & 0xFF]); }
     bpAddr(reg: number, at: number) { this.flush(); this.ops.push({ op: OP.BPADDR, a: reg, b: at }); this.fifoBytes += 5; this.dirty = true; }
     cpAddr(reg: number, at: number) { this.flush(); this.ops.push({ op: OP.CPADDR, a: reg, b: at >>> 0 }); this.fifoBytes += 6; this.dirty = true; }
-    sync() { if (!this.dirty) return; this.flush(); this.ops.push({ op: OP.SYNC, a: 0, b: 0 }); this.dirty = false; this.syncs++; }
+    sync() { if (!this.dirty) return; this.flush(); this.ops.push({ op: OP.SYNC, a: 0, b: 0 }); this.dirty = false; this.since = 0; this.syncs++; }
     /** (the GPU must have run everything sent before memory changes) */
     mem(at: number, data: Uint8Array) {
         this.sync();
@@ -315,12 +321,17 @@ function buildJob(dir: string, index: number, before: number, plainXf: boolean) 
     const items: Item[] = [], needs = new Ranges(), hulls = new Map<string, [number, number]>();
     const xfbDst = new Set<number>(); let xfbSize = 0;
     const copies: string[] = [], warnings = new Set<string>();
+    /** what the commands read, in order (a digest each; for a texture also its range), to be held against the finished job's */
+    const evD: number[] = [], evLo: number[] = [], evHi: number[] = [], copyDst = new Ranges();
+    const ev = (d: number, lo = -1, hi = -1) => { evD.push(d); evLo.push(lo); evHi.push(hi); };
     let g0: Gpu | null = null, ram0: Uint8Array | null = null, wanted = false, nCopy = 0, mask: Uint8Array | null = null, lists = 0, listBytes = 0, prims = 0, capSize = 0;
     const need = (lo: number, hi: number, what: string) => { if (hi > RAM_SIZE) throw new Error(`${what} at ${hex(lo)}..${hex(hi)} outside the game's memory`); needs.add(lo & ~31, up32(hi)); };
     const hull = (array: number, base: number, lo: number, hi: number) => { const key = `${array}:${base}`, h = hulls.get(key); if (!h) hulls.set(key, [lo, hi]); else { if (lo < h[0]) h[0] = lo; if (hi > h[1]) h[1] = hi; } };
     // (bytes in the game's memory are copied: a later patch may change them)
     const own = (raw: Uint8Array) => g.inList ? raw.slice() : raw;
     const fifo = (raw: Uint8Array) => items.push({ k: 'fifo', d: own(raw) });
+    /** a BP load, with the mask before it if there was one (one piece: nothing may come between the two) */
+    const masked = (m: Uint8Array | null, raw: Uint8Array) => { if (!m) { fifo(raw); return; } const d = new Uint8Array(10); d.set(m); d.set(raw, 5); items.push({ k: 'fifo', d }); };
     let texKey = '';
     const sink: Sink = {
         cp(reg, v, raw) { if (reg >= 0xA0 && reg < 0xB0) items.push({ k: 'array', reg, v, raw: own(raw) }); else fifo(raw); },
@@ -329,7 +340,7 @@ function buildJob(dir: string, index: number, before: number, plainXf: boolean) 
             if (plainXf) {
                 const c = new Uint8Array(5 + 4 * n); c[0] = 0x10; c[2] = n - 1; c[3] = addr >> 8; c[4] = addr & 0xFF; c.set(ram.subarray(src, src + 4 * n), 5);
                 items.push({ k: 'fifo', d: c });
-            } else { hull(array, g.cp[0xA0 + array] & 0x03FFFFFF, src, src + 4 * n); fifo(raw); }
+            } else { hull(array, g.cp[0xA0 + array] & 0x03FFFFFF, src, src + 4 * n); ev(fnv(1, ram, src, 4 * n)); fifo(raw); }
         },
         bp(reg, v, raw) {
             texKey = '';
@@ -342,7 +353,7 @@ function buildJob(dir: string, index: number, before: number, plainXf: boolean) 
                 return;
             }
             if (reg >= 0x60 && reg <= 0x63) warnings.add('a texture preloaded into the GPU\'s own memory (BP 0x60..0x63): its image is not supplied');
-            if (reg === 0x65) { const a = (g.bp[TLUT_SRC] << 5) & 0x03FFFFFF; need(a, a + ((v >>> 10) & 0x7FF) * 32, 'a palette'); }
+            if (reg === 0x65) { const a = (g.bp[TLUT_SRC] << 5) & 0x03FFFFFF, n = ((v >>> 10) & 0x7FF) * 32; need(a, a + n, 'a palette'); ev(fnv(2, ram, a, n)); }
             if (reg === 0x52) {
                 const bp = g.bp, sx = bp[0x49] & 0x3FF, sy = (bp[0x49] >>> 10) & 0x3FF, sw = (bp[0x4A] & 0x3FF) + 1, sh = ((bp[0x4A] >>> 10) & 0x3FF) + 1, dst = (bp[COPY_DST] << 5) & 0x03FFFFFF;
                 if (v & 0x4000) {
@@ -350,8 +361,7 @@ function buildJob(dir: string, index: number, before: number, plainXf: boolean) 
                     const stride = (bp[0x4D] & 0x3FF) << 5, scale = bp[0x4E] & 0x1FF, lines = v & 0x400 && scale ? Math.ceil(sh * 256 / scale) : sh;
                     xfbDst.add(dst); xfbSize = Math.max(xfbSize, stride * (lines + 4));
                     if (wanted) { items.push({ k: 'capture', bp: bp.slice() }); capSize = texBytes(6, sw, sh, 1); }
-                    if (m) items.push({ k: 'fifo', d: m });
-                    fifo(raw);
+                    masked(m, raw);
                     if (wanted) items.push({ k: 'savexfb', w: sw, h: lines, stride });
                     return;
                 }
@@ -361,17 +371,15 @@ function buildJob(dir: string, index: number, before: number, plainXf: boolean) 
                 const rows = as === 0 ? (h + 7) >> 3 : (h + 3) >> 2, natural = texBytes(as, w, h, 1), row = natural / rows, stride = (bp[0x4D] & 0x3FF) << 5;
                 const size = Math.max(natural, (rows - 1) * stride + row);
                 if (stride !== row) warnings.add(`a copy whose rows are ${stride} bytes apart where its texture's are ${row}`);
-                need(dst, dst + size, 'a copy\'s destination');
-                if (m) items.push({ k: 'fifo', d: m });
-                fifo(raw);
+                need(dst, dst + size, 'a copy\'s destination'); copyDst.add(dst, dst + size);
+                masked(m, raw);
                 items.push({ k: 'copied', lo: dst, hi: dst + size });
                 const what = `${wanted ? `copy${nCopy}` : 'copy (frame before)'}: ${sw} x ${sh} at (${sx}, ${sy}) -> ${w} x ${h}, copy format ${fmt}${depth ? ' of the depth buffer' : ''}${half ? ', half size' : ''}${v & 0x800 ? ', clears' : ''}, ${size} bytes at ${hex(0x80000000 + dst)} (control ${hex(v)})`;
                 copies.push(what);
                 if (wanted) items.push({ k: 'save', name: `copy${nCopy++}`, addr: dst, size, w, h, fmt: as, depth: depth && as === 6, note: what });
                 return;
             }
-            if (m) items.push({ k: 'fifo', d: m });
-            fifo(raw);
+            masked(m, raw);
         },
         prim(L, count, raw, b, vtx) {
             prims++;
@@ -381,7 +389,8 @@ function buildJob(dir: string, index: number, before: number, plainXf: boolean) 
                 hull(at.array, base, base, base + span[1] * stride + Math.max(stride, at.size));
             }
             // (the textures: worked out again after a BP load)
-            if (!texKey) { texKey = 'x'; for (const t of sampled(g.bp)) { if (!t.len) warnings.add(`a texture of format ${t.fmt}`); else need(t.addr, t.addr + t.len, 'a texture'); } }
+            if (!texKey) { texKey = 'x'; for (const t of sampled(g.bp)) { if (!t.len) warnings.add(`a texture of format ${t.fmt}`); else { need(t.addr, t.addr + t.len, 'a texture'); ev(fnv(3, ram, t.addr, t.len), t.addr, t.addr + t.len); } } }
+            ev(fetched(g, ram, L, count, b, vtx));
             fifo(raw);
         },
         other(raw) { fifo(raw); },
@@ -468,7 +477,7 @@ function buildJob(dir: string, index: number, before: number, plainXf: boolean) 
     /** the game's memory changes: what of it the arena holds is sent, where it differs and the console hasn't written it itself */
     const patch = (a: number, d: Uint8Array) => {
         for (let i = Math.max(0, needs.at(a)), end = a + d.length; i < needs.lo.length && needs.lo[i] < end; i++) {
-            if (i < 0 || needs.hi[i] <= a) continue;
+            if (needs.hi[i] <= a) continue;
             const lo = Math.max(a, needs.lo[i]), hi = Math.min(end, needs.hi[i]), at = place[i] + (lo - needs.lo[i]), src = lo - a, n = hi - lo;
             // (runs of bytes to send: a gap of up to 64 unchanged bytes doesn't end one)
             let from = -1, last = -1;
@@ -511,7 +520,47 @@ function buildJob(dir: string, index: number, before: number, plainXf: boolean) 
     out.sync();
     const S = new Script(); S.ops = out.ops; S.arena = arena;
     const bytes = S.bytes();
+
+    // ---- the finished job run here and held against the game: what its commands read out of the arena must be what
+    // the game's read out of the game's memory (but for textures the console's own copies write), and the registers
+    // must end as the game's did
+    const mem = new Uint8Array(HERE + arena + 64), J = new Gpu();
+    let live = false, n = 0, texKey2 = '';
+    const same = (d: number, what: string) => {
+        if (!live) return;
+        if (n >= evD.length) throw new Error('the job reads more than the game did');
+        if (evD[n] !== d && !(evLo[n] >= 0 && copyDst.hits(evLo[n], evHi[n]))) throw new Error(`the job's read ${n} (${what}) is not what the game's GPU got`);
+        n++;
+    };
+    runOps(readScript(bytes).ops, mem, HERE, J, {
+        xfIndexed(_array, src, k) { same(fnv(1, mem, src, 4 * k), 'a matrix loaded by index'); },
+        bp(reg, v) { texKey2 = ''; if (reg === 0x65) same(fnv(2, mem, (J.bp[TLUT_SRC] << 5) & 0x03FFFFFF, ((v >>> 10) & 0x7FF) * 32), 'a palette'); },
+        prim(L, count, _raw, b, vtx) {
+            if (!texKey2) { texKey2 = 'x'; for (const t of sampled(J.bp)) if (t.len) same(fnv(3, mem, t.addr, t.len), `a texture ${t.w} x ${t.h}`); }
+            same(fetched(J, mem, L, count, b, vtx), 'a primitive\'s vertices');
+        },
+    }, (o) => { if (o.op === OP.NOTE && new TextDecoder().decode(o.data!).startsWith('frame ')) live = true; });
+    if (n !== evD.length) throw new Error(`the job reads ${n} times, the game ${evD.length}`);
+    const differ: string[] = [], stray: string[] = [];
+    const held = (what: string, job: number, game: number, must: boolean) => { if (job !== game) (must ? differ : stray).push(`${what}: ${hex(game)} in the game, ${hex(job)} in the job`); };
+    for (let r = 0; r < 256; r++) {
+        if (r >= 0xA0 && r < 0xB0) { const h = hulls.get(`${r - 0xA0}:${g.cp[r] & 0x03FFFFFF}`); held(`CP 0x${hex(r)}`, J.cp[r], h ? HERE + lookup(h[0]) - (h[0] - (g.cp[r] & 0x03FFFFFF)) : g.cp[r], true); }
+        else held(`CP 0x${hex(r)}`, J.cp[r], g.cp[r], r === 0x30 || r === 0x40 || r === 0x50 || r === 0x60 || (r >= 0x70 && r < 0x98) || r >= 0xB0);
+    }
+    const xfSent = (a: number) => a < 0x100 || (a >= 0x400 && a < 0x460) || (a >= 0x500 && a < 0x680) || a === 0x1005 || (a >= 0x1008 && a < 0x1027) || (a >= 0x103F && a < 0x1058);
+    for (let a = 0; a < 0x1100; a++) held(`XF 0x${hex(a)}`, J.xf[a], g.xf[a], xfSent(a));
+    for (let r = 0; r < 256; r++) {
+        if (BP_DROP.has(r) || r === 0xFE || (r >= 0xE0 && r <= 0xE7)) continue;
+        if (r === COPY_DST) continue;
+        if (TEX_ADDR.includes(r) || r === TLUT_SRC) { const at = lookup((g.bp[r] << 5) & 0x03FFFFFF); held(`BP 0x${hex(r)}`, J.bp[r], at >= 0 ? ((HERE + at) >>> 5) & 0xFFFFFF : g.bp[r], r !== TLUT_SRC || at >= 0); }
+        else held(`BP 0x${hex(r)}`, J.bp[r], g.bp[r], BP_STATE.includes(r));
+    }
+    for (let k = 0; k < 16; k++) if (g.tevSet & (1 << k)) held(`the TEV register behind BP 0x${hex(0xE0 + (k & 7))}${k & 8 ? ' (constant colour)' : ''}`, J.tev[k], g.tev[k], true);
+    if (differ.length) throw new Error(`the job leaves the registers other than the game did:\n  ${differ.slice(0, 20).join('\n  ')}`);
     const text = [
+        `A job for tools/hwprobe (tests/hwframe.ts): a console draws frames of the game as they were captured, and saves what it drew.`,
+        `Check it: node hwframe.mjs check <this job>. Its answer: node hwframe.mjs picture <answer> <out.png> [efb | z | xfb | copyN | all].`,
+        '',
         `frames ${start}..${index} of ${dir} (the wanted one: ${index}; ${index - start} drawn before it)`,
         `commands: ${out.fifoBytes} bytes to the GPU (the frames' own streams: ${fifoIn} bytes; ${lists} display lists of ${listBytes} bytes in their place; ${prims} primitives)`,
         `memory: ${needs.lo.length} ranges of the game's memory, ${needs.bytes} bytes, sent first as ${firstBlocks} blocks (${firstBytes} bytes); then ${patchRuns} changes (${patchBytes} bytes) of the frames' ${patchesIn} patches, each after a wait for the GPU (${out.syncs} waits in all)`,
@@ -519,15 +568,57 @@ function buildJob(dir: string, index: number, before: number, plainXf: boolean) 
         `arena: ${arena} bytes of ${ARENA_MAX} (the display's buffer at ${xfbAt}, ${up32(xfbSize)} bytes; the frame buffer saved at ${capAt}${capAt ? '' : ', over the blocks'})`,
         `script: ${bytes.length} bytes, ${out.ops.length} operations`,
         `texture copies:${copies.length ? '' : ' none'}`, ...copies.map((c) => '  ' + c),
-        'saved, in this order:', ...saves.map((s) => `  ${s.name}: ${s.kind === 'xfb' ? `YUYV ${s.w} x ${s.h}, lines of ${s.stride} bytes` : `${s.w} x ${s.h}, texture format ${s.fmt}${s.depth ? ' (depth: Z24X8)' : ''}`}, ${s.size} bytes`),
+        'saved, in this order:', ...saves.map((s) => `  ${s.name}: ${s.kind === 'xfb' ? `YUYV ${s.w} x ${s.h}, lines of ${s.stride} bytes` : `${s.w} x ${s.h}, texture format ${s.fmt}${s.depth ? ' (depth: Z24X8)' : ''}`}, ${s.size} bytes${s.name.startsWith('copy') ? '' : ` (${s.note})`}`),
+        `held against the game here: ${n} reads (indexed vertices of every primitive, matrices loaded by index, palettes, texture images) give the job's commands what the game's GPU got; the registers end as the game's`,
+        ...(stray.length ? [`registers the job doesn't set that the game has otherwise than a console that never got them (${stray.length}): ${stray.slice(0, 12).join('; ')}`] : []),
         ...[...warnings].map((w) => '! ' + w),
     ].join('\n') + '\n';
     return { bytes, text };
 }
 
+/**
+ * A script's operations run without a console: its commands walked on the registers g (the arena at `base` of mem,
+ * blocks put there as the script sets them), `on` told of every other operation once the commands before it have run.
+ */
+function runOps(ops: Op[], mem: Uint8Array, base: number, g: Gpu, sink: Sink, on: (o: Op, index: number) => void, fed?: (b: Uint8Array, index: number) => void) {
+    let pend: Uint8Array[] = [], pendLen = 0;
+    const run = (index: number) => {
+        if (!pendLen) return;
+        const all = new Uint8Array(pendLen); let o = 0;
+        for (const d of pend) { all.set(d, o); o += d.length; }
+        pend = []; pendLen = 0;
+        if (fed) fed(all, index);
+        if (walk(g, mem, all, 0, all.length, sink) !== all.length) throw new Error(`the stream stops inside a command before operation ${index}`);
+    };
+    const feed = (d: Uint8Array) => { pend.push(d); pendLen += d.length; };
+    ops.forEach((o, i) => {
+        switch (o.op) {
+            case OP.FIFO: feed(o.data!); return;
+            case OP.BPADDR: { const v = ((base + o.b) >>> 5) & 0xFFFFFF; feed(Uint8Array.from([0x61, o.a, v >>> 16, (v >>> 8) & 0xFF, v & 0xFF])); return; }
+            case OP.CPADDR: { const v = (base + (o.b | 0)) >>> 0; feed(Uint8Array.from([0x08, o.a, v >>> 24, (v >>> 16) & 0xFF, (v >>> 8) & 0xFF, v & 0xFF])); return; }
+        }
+        run(i + 1);
+        on(o, i + 1);
+        if (o.op === OP.MEM || o.op === OP.MEMRLE) { const d = o.op === OP.MEM ? o.data! : rleDecode(o.data!, o.b); if (base + o.a + d.length <= mem.length) mem.set(d, base + o.a); }
+    });
+    run(ops.length + 1);
+}
+/** where a script's arena is when it is run here: past the game's own memory, so an address left as the game's is told from one of the arena */
+const HERE = 0x02000000;
+const fnv = (h: number, b: Uint8Array, p: number, n: number) => { for (let i = 0; i < n; i++) h = Math.imul(h ^ b[p + i], 0x01000193); return h >>> 0; };
+/** a digest of what a primitive's indexes fetch from the arrays */
+function fetched(g: Gpu, mem: Uint8Array, L: Lay, count: number, b: Uint8Array, vtx: number): number {
+    let h = 0x811C9DC5;
+    for (const at of L.idx) {
+        const base = g.cp[0xA0 + at.array] & 0x03FFFFFF, stride = g.cp[0xB0 + at.array] & 0xFF, none = at.array === 0 ? (at.wide ? 0xFFFF : 0xFF) : -1;
+        for (let i = 0, q = vtx + at.off; i < count; i++, q += L.size) { const v = at.wide ? (b[q] << 8) | b[q + 1] : b[q]; if (v !== none) h = fnv(h, mem, base + v * stride, at.size); }
+    }
+    return h;
+}
+
 // ---------------------------------------------------------------- check: a job walked without a console
 function checkJob(file: string): boolean {
-    const sc = readScript(new Uint8Array(readFileSync(file))), BASE = 0x02000000, arena = sc.arena;
+    const sc = readScript(new Uint8Array(readFileSync(file))), BASE = HERE, arena = sc.arena;
     const mem = new Uint8Array(BASE + ARENA_MAX + 64), g = new Gpu();
     const fails: string[] = [], fail = (s: string) => { if (fails.length < 30 && !fails.includes(s)) fails.push(s); };
     /** arena bytes the job has set or the console has written; what the GPU reads and writes since the last wait */
@@ -548,6 +639,7 @@ function checkJob(file: string): boolean {
         bp(reg, v) {
             commands++; texKey = '';
             if (reg === 0x45 || reg === 0x47 || reg === 0x48) fail(`BP register 0x${hex(reg)} (draw done, a token) in the stream (operation ${opIndex})`);
+            if (g.mask !== 0xFFFFFF && (reg === COPY_DST || reg === TLUT_SRC || TEX_ADDR.includes(reg))) fail(`a masked load of BP register 0x${hex(reg)}, which holds an address (operation ${opIndex})`);
             if (reg === 0x65) read((g.bp[TLUT_SRC] << 5) & 0x03FFFFFF, ((v >>> 10) & 0x7FF) * 32, 'a palette');
             if (reg === 0x52) {
                 const bp = g.bp, sw = (bp[0x4A] & 0x3FF) + 1, sh = ((bp[0x4A] >>> 10) & 0x3FF) + 1, dst = (bp[COPY_DST] << 5) & 0x03FFFFFF, stride = (bp[0x4D] & 0x3FF) << 5;
@@ -578,55 +670,44 @@ function checkJob(file: string): boolean {
     // (the same bytes through ppc/gx.ts's parser, as a second opinion on where each command ends)
     const gxWarn: string[] = [];
     const gx = new Gx(mem, { token() { }, finish() { }, unsupported(w) { gxWarn.push(w); } });
-    let pend: Uint8Array[] = [], pendLen = 0;
-    const run = () => {
-        if (!pendLen) return;
-        const all = new Uint8Array(pendLen); let o = 0;
-        for (const d of pend) { all.set(d, o); o += d.length; }
-        pend = []; pendLen = 0;
-        try {
-            const stop = walk(g, mem, all, 0, all.length, sink);
-            if (stop !== all.length) fail(`the stream stops inside a command before operation ${opIndex}`);
-        } catch (e) { fail(`${(e as Error).message} (before operation ${opIndex})`); }
-        try { gx.feed(all, 0, all.length); } catch (e) { gxWarn.push((e as Error).message); }
-    };
-    const feed = (d: Uint8Array) => { pend.push(d); pendLen += d.length; fifoBytes += d.length; };
     const inArena = (a: number, n: number, what: string) => { if (a > arena || n > arena - a) { fail(`${what} at ${a} (${n} bytes) outside the arena (operation ${opIndex})`); return false; } return true; };
-    for (const o of sc.ops) {
-        opIndex++;
-        if ((o.data?.length ?? 0) > PAYLOAD_MAX) fail(`operation ${opIndex} carries ${o.data!.length} bytes: more than the console's program takes`);
-        switch (o.op) {
-            case OP.FIFO: feed(o.data!); break;
-            case OP.BPADDR: { const v = ((BASE + o.b) >>> 5) & 0xFFFFFF; if (o.b & 31) fail(`an address register set to arena ${o.b}: not on 32 bytes (operation ${opIndex})`); feed(Uint8Array.from([0x61, o.a, v >>> 16, (v >>> 8) & 0xFF, v & 0xFF])); break; }
-            case OP.CPADDR: { const v = (BASE + (o.b | 0)) >>> 0; feed(Uint8Array.from([0x08, o.a, v >>> 24, (v >>> 16) & 0xFF, (v >>> 8) & 0xFF, v & 0xFF])); break; }
-            case OP.MEM: case OP.MEMRLE: {
-                run();
-                const d = o.op === OP.MEM ? o.data! : rleDecode(o.data!, o.b);
-                if (!inArena(o.a, d.length, 'a block')) break;
-                if (reads.hits(o.a, o.a + d.length) || writes.hits(o.a, o.a + d.length)) fail(`a block at arena ${o.a} (${d.length} bytes) changes memory that commands sent since the last wait use (operation ${opIndex})`);
-                mem.set(d, BASE + o.a); defined.add(o.a, o.a + d.length); memBytes += d.length;
-                break;
+    sc.ops.forEach((o, i) => {
+        if ((o.data?.length ?? 0) > PAYLOAD_MAX) fail(`operation ${i + 1} carries ${o.data!.length} bytes: more than the console's program takes`);
+        if (o.op === OP.BPADDR && (o.b & 31)) fail(`an address register set to arena ${o.b}: not on 32 bytes (operation ${i + 1})`);
+        if (o.op === OP.FIFO) fifoBytes += o.data!.length; else if (o.op === OP.BPADDR) fifoBytes += 5; else if (o.op === OP.CPADDR) fifoBytes += 6;
+    });
+    try {
+        runOps(sc.ops, mem, HERE, g, sink, (o, index) => {
+            opIndex = index;
+            switch (o.op) {
+                case OP.MEM: case OP.MEMRLE: {
+                    const n = o.op === OP.MEM ? o.data!.length : o.b;
+                    if (!inArena(o.a, n, 'a block')) break;
+                    if (reads.hits(o.a, o.a + n) || writes.hits(o.a, o.a + n)) fail(`a block at arena ${o.a} (${n} bytes) changes memory that commands sent since the last wait use (operation ${index})`);
+                    defined.add(o.a, o.a + n); memBytes += n;
+                    break;
+                }
+                case OP.SYNC:
+                    // (the console's wait loads a BP register of its own: a mask waiting for its load would go to that)
+                    if (g.mask !== 0xFFFFFF) fail(`a wait between a BP mask and the load it is for (operation ${index})`);
+                    reads.clear(); writes.clear(); syncs++; break;
+                case OP.DUMP:
+                    if (!inArena(o.a, o.b, 'a saved block')) break;
+                    if (writes.hits(o.a, o.a + o.b)) fail(`a block is saved at arena ${o.a} before the wait for the copy that writes it (operation ${index})`);
+                    if (!defined.has(o.a, o.a + o.b)) fail(`a block is saved at arena ${o.a} (${o.b} bytes) that nothing has written (operation ${index})`);
+                    dumps++; dumpBytes += o.b;
+                    if (inSave) { saveGot += o.b; if (saveGot >= inSave.size) inSave = null; }
+                    break;
+                case OP.NOTE: {
+                    const t = new TextDecoder().decode(o.data!);
+                    if (t.startsWith('save ')) { inSave = JSON.parse(t.slice(5)) as Save; saveGot = 0; saves.push(inSave); }
+                    break;
+                }
+                default: fail(`operation ${index} is of kind ${o.op}: not one a frame job has`);
             }
-            case OP.SYNC: run(); reads.clear(); writes.clear(); syncs++; break;
-            case OP.DUMP:
-                run();
-                if (!inArena(o.a, o.b, 'a saved block')) break;
-                if (writes.hits(o.a, o.a + o.b)) fail(`a block is saved at arena ${o.a} before the wait for the copy that writes it (operation ${opIndex})`);
-                if (!defined.has(o.a, o.a + o.b)) fail(`a block is saved at arena ${o.a} (${o.b} bytes) that nothing has written (operation ${opIndex})`);
-                dumps++; dumpBytes += o.b;
-                if (inSave) { saveGot += o.b; if (saveGot >= inSave.size) inSave = null; }
-                break;
-            case OP.NOTE: {
-                run();
-                const t = new TextDecoder().decode(o.data!);
-                if (t.startsWith('save ')) { inSave = JSON.parse(t.slice(5)) as Save; saveGot = 0; saves.push(inSave); }
-                break;
-            }
-            default: fail(`operation ${opIndex} is of kind ${o.op}: not one a frame job has`);
-        }
-    }
-    run();
-    if (inSave) fail(`the saved block ${inSave.name} is not all there`);
+        }, (all, index) => { opIndex = index; try { gx.feed(all, 0, all.length); } catch (e) { gxWarn.push((e as Error).message); } });
+    } catch (e) { fail(`${(e as Error).message} (at operation ${opIndex})`); }
+    if (inSave) fail(`the saved block ${(inSave as Save).name} is not all there`);
     if (!saves.some((s) => s.name === 'efb')) fail('the job doesn\'t save the frame buffer');
     console.log(`${sc.ops.length} operations, arena ${arena} bytes; ${fifoBytes} bytes of commands: ${commands} commands, ${prims} primitives (${vertices} vertices), ${copies} copies, ${texReads} texture binds checked; ${memBytes} bytes of blocks (${defined.lo.length} ranges set, ${defined.bytes} bytes); ${syncs} waits; ${dumps} saves of ${dumpBytes} bytes`);
     for (const s of saves) console.log(`  saves ${s.name}: ${s.kind === 'xfb' ? `YUYV ${s.w} x ${s.h}` : `${s.w} x ${s.h} format ${s.fmt}${s.depth ? ' (depth)' : ''}`}, ${s.size} bytes at arena ${s.at}`);
@@ -753,12 +834,14 @@ if (mode === 'job') {
 } else if (mode === 'check') {
     process.exit(checkJob(process.argv[3]) ? 0 : 1);
 } else if (mode === 'picture') {
-    const A = readAnswer(new Uint8Array(readFileSync(process.argv[3]))), outPath = process.argv[4], which = process.argv[5] ?? 'efb';
+    const A = readAnswer(new Uint8Array(readFileSync(process.argv[3]))), outPath = process.argv[4], which = process.argv[5] ?? 'efb', keepAlpha = process.env.ALPHA === '1';
     for (const l of A.lines) console.log(l);
     for (const [i, s] of A.saves.entries()) console.log(`${i} ${s.what.name}: ${s.what.w} x ${s.what.h}, ${s.got} of ${s.what.size} bytes${s.what.note ? ` (${s.what.note})` : ''}`);
     const write = (s: (typeof A.saves)[0], path: string) => {
         if (s.got < s.what.size) console.log(`${s.what.name}: only ${s.got} of ${s.what.size} bytes are in the answer`);
         const W = s.what, rgba = W.kind === 'xfb' ? xfbToRgba(s.data, W.w, W.h, W.stride!) : texToRgba(s.data, W.w, W.h, W.fmt!, !!W.depth);
+        // (the frame buffer's alpha is the game's working value, not how see-through the picture is)
+        if (!keepAlpha) for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255;
         writeFileSync(path, pngEncode(W.w, W.h, rgba));
         console.log(`${path}: ${W.name}, ${W.w} x ${W.h}`);
     };

@@ -14,6 +14,9 @@
 //     stood before this frame's commands: CP (256 words, by register number), BP (256 words, by register number,
 //     each the 24 bits last loaded), XF (0x1100 words, by XF address: the matrix memory from 0x000, the registers from
 //     0x1000; floats as their bits).
+//     A TEV register number (BP 0xE0 to 0xE7) holds two things, told apart by bit 23 of the word loaded: so BP has
+//     16 more words after the 256, 0xE0..0xE7 as last loaded without bit 23 (the colour registers), then 0xE0..0xE7
+//     as last loaded with it (the constant colours).
 export interface GxFrame {
     type: 'gxframe';
     /** the replay's frame (the recording's frame count so far) and movement tick this was drawn in */
