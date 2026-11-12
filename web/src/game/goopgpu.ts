@@ -45,14 +45,13 @@ function restore(g: Gx) {
     // (the TEV registers are kept apart from the BP words: decode them again)
     for (let r = 0xE0; r < 0xE8; r++) bpw(g, r, g.bp[r]);
 }
-function fadeState(g: Gx, step: number, threshold: number) {
-    const xw = g.xfw, keep = Array.from(xw.subarray(0x101A, 0x1027));
+function fadeState(g: Gx, w: number, h: number, step: number, threshold: number) {
+    const xw = g.xfw;
     g.bp.fill(0); g.cp.fill(0); xw.fill(0, 0x1000, 0x1058);
     for (const [k, v] of Object.entries(GOOP_FADE_BP)) g.bp[+k] = v;
     for (const [k, v] of Object.entries(GOOP_FADE_XF)) xw[+k] = v;
     for (const [k, v] of Object.entries(GOOP_FADE_CP)) g.cp[+k] = v;
-    // (the layer's viewport and projection, as set for it)
-    xw.set(keep, 0x101A);
+    layerView(g, w, h);
     g.tevReg.set(GOOP_FADE_TEVREG); g.konst.set(GOOP_FADE_KONST);
     for (let k = 0; k < 4; k++) { g.tevReg[4 + k] = step & 0xFF; g.tevReg[8 + k] = threshold & 0xFF; }
 }
@@ -81,23 +80,28 @@ export function drawLayerGpu(map: Uint8Array, lw: number, lh: number, index: (x:
     // the copy before cleared it (the fade's quad neither tests nor writes it)
     for (let z = 0; z < h; z++) for (let x = 0; x < w; x++) { const o = (z * EFB_W + x) * 4, v = map[index(x, z)]; efb[o] = efb[o + 1] = efb[o + 2] = v; zb[z * EFB_W + x] = 0xFFFFFF; }
     // the viewport, the projection and the scissor of the layer's frame (an orthographic view of w x h pixels at the buffer's corner)
-    const xw = g.xfw;
-    xw[0x101A] = bits(w / 2); xw[0x101B] = bits(-h / 2); xw[0x101D] = bits(342 + w / 2); xw[0x101E] = bits(342 + h / 2);
-    xw[0x1020] = bits(2 / w); xw[0x1021] = bits(-1); xw[0x1022] = bits(-2 / h); xw[0x1023] = bits(1);
-    g.bp[0x20] = (342 << 12) | 342; g.bp[0x21] = ((342 + w - 1) << 12) | (342 + h - 1);
+    layerView(g, w, h);
     if (models.length) {
         // the state the fade's quad left (initGXforPollutionLayer: C0 the step, C1 the threshold), which the
         // models' materials load over only in part
-        fadeState(g, fade.step, fade.threshold);
+        fadeState(g, w, h, fade.step, fade.threshold);
         for (const M of models) drawModel(g, M.gm, M.draw);
     }
     if (stamps.length) texStamps(g, lw, lh, height, window, stamps);
     for (let z = 0; z < h; z++) for (let x = 0; x < w; x++) map[index(x, z)] = efb[(z * EFB_W + x) * 4];
 }
+/** the viewport, the projection and the scissor of a layer's frame (an orthographic view of w x h pixels at the buffer's corner) */
+function layerView(g: Gx, w: number, h: number) {
+    const xw = g.xfw;
+    xw[0x101A] = bits(w / 2); xw[0x101B] = bits(-h / 2); xw[0x101D] = bits(342 + w / 2); xw[0x101E] = bits(342 + h / 2);
+    xw[0x1020] = bits(2 / w); xw[0x1021] = bits(-1); xw[0x1022] = bits(-2 / h); xw[0x1023] = bits(1);
+    g.bp[0x20] = (342 << 12) | 342; g.bp[0x21] = ((342 + w - 1) << 12) | (342 + h - 1);
+}
 function texStamps(g: Gx, lw: number, lh: number, height: Uint8Array, window: number, stamps: { tex: StampTex; clean: boolean; tasks: StampTask[] }[]) {
     const R = ram!, w = 1 << lw, h = 1 << lh;
     // (ReInitializeGX and initGXforStamp: the stamps' state over whatever the models left)
     restore(g);
+    layerView(g, w, h);
     // initGXforStamp: positions s16, the stamp's coordinate u16 (0 or 1), the height map's s16 with `frac` bits; the
     // height map on map 1 (I8, clamped, nearest)
     const frac = lw >= lh ? lw : lh;
