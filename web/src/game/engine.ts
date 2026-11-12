@@ -289,7 +289,7 @@ export class HitActor extends Actor {
         this.attackRadius = ar; this.attackHeight = ah; this.damageRadius = dr; this.damageHeight = dh;
         this.calcEntryRadius();
     }
-    setHitParams(ar: number, ah: number, dr: number, dh: number) { this.attackRadius = ar; this.attackHeight = ah; this.damageRadius = dr; this.damageHeight = dh; this.calcEntryRadius(); }
+    setHitParams(ar: number, ah: number, dr: number, dh: number) { this.attackRadius = fr(ar); this.attackHeight = fr(ah); this.damageRadius = fr(dr); this.damageHeight = fr(dh); this.calcEntryRadius(); }   // (f32 arguments)
     getHitCategory() { return this.actorType & HC_MASK; }
     isHitCategory(c: number) { return (this.actorType & c) !== 0; }
     isActorType(t: number) { return this.actorType === (t | 0); }
