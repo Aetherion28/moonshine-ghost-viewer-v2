@@ -36,7 +36,7 @@ interface Frame {
     i: number; rc: number; dticks: number; moveTicks: number; dirState: number; seed: number; area: number; episode: number;
     pad: Uint8Array; ticks: Tick[]; mario: Uint8Array | null; fludd: Blob | null; yoshi: Blob | null; frameCtrl: Uint8Array | null;
     actors: { addr: number; data: Uint8Array }[]; shines: Set<number>; ms: number;
-    marioPtr?: number; flPtr?: number; yoPtr?: number; flags?: Uint8Array;
+    marioPtr?: number; flPtr?: number; yoPtr?: number; camPtr?: number; flags?: Uint8Array; cameraF?: Uint8Array | null;
 }
 const blobs = new Map<number, Blob>();
 let frames: Frame[] = [];
@@ -80,7 +80,7 @@ while (p < cap.length) {
             seed: bv.getUint32(24), area: app[0xe], episode: app[0xf], pad: body.slice(44 + 0x30, 44 + 0x70), ticks: pendingTicks,
             mario: null, fludd: null, yoshi: null, frameCtrl: null, actors: [], shines: new Set(), ms: bv.getUint32(44 + 0x70),
         };
-        f.marioPtr = bv.getUint32(28); f.flPtr = bv.getUint32(36); f.yoPtr = bv.getUint32(40);
+        f.marioPtr = bv.getUint32(28); f.camPtr = bv.getUint32(32); f.flPtr = bv.getUint32(36); f.yoPtr = bv.getUint32(40);
         pendingTicks = [];
         lastFrame = f;
     } else if (tag === 'ROST') {
@@ -97,6 +97,7 @@ while (p < cap.length) {
         f.flags = fg ? fg.data.slice(0, 0x100) : undefined;
         const m = blobs.get(1); f.mario = m && m.addr === f.marioPtr ? m.data.slice() : null;
         const fl = blobs.get(3); f.fludd = fl && fl.addr === f.flPtr ? { addr: fl.addr, data: fl.data.slice() } : null;
+        const cmb = blobs.get(2); f.cameraF = cmb && cmb.addr === f.camPtr ? cmb.data.slice() : null;
         const yo = blobs.get(4); f.yoshi = yo && yo.addr === f.yoPtr ? { addr: yo.addr, data: yo.data.slice() } : null;
         const fc = blobs.get(7); f.frameCtrl = fc ? fc.data.slice() : null;
         f.actors = rosterAddrs.map((a, i) => { const s = blobs.get(0x1000 + i); return s && s.addr === a ? { addr: a, data: s.data.slice() } : null; }).filter((x): x is { addr: number; data: Uint8Array } => !!x);
@@ -165,12 +166,22 @@ const PARENT = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 6, 0xFF, 0xFF, 0xFF, 0
 function smsghost(label: string, c: Cut) {
     const RQ = runQf(c);
     const segs: { area: number; episode: number; parent: number; flags: number; variant: number; samples: number[][] }[] = [];
-    let lastQf = -1;
+    let lastQf = -1, seed = -1;
+    const inputs: (number | string)[][] = [], camera: number[][] = [];
     for (let i = c.f0; i <= c.f1; i++) {
         const f = frames[i];
         const m = i === c.f1 ? c.t1 >= 0 && f.ticks[c.t1].mario : f.mario;
         if (!m || !f.dticks) continue;
         const qf = RQ.get(i)!;
+        // the frame's input (JUTGamePad::mPadStatus[0], as PracticeSession::snapshot reads it) and the rendered view
+        // (mWorldTranslation 0x124, mTRSMatrix 0x1EC, mProjectionFovy 0x48), once a frame as Ghost::captureInput takes them
+        inputs.push([qf, Buffer.from(f.pad.subarray(0, 12)).toString('hex')]);
+        const cv = f.cameraF;
+        if (cv) { const v: number[] = [qf, segs.length - (segs.length && segs[segs.length - 1].area === f.area && segs[segs.length - 1].episode === f.episode ? 1 : 0)];
+            for (let k = 0; k < 3; k++) v.push(f32(cv, 0x124 + 4 * k));
+            for (let k = 0; k < 12; k++) v.push(f32(cv, 0x1ec + 4 * k));
+            v.push(f32(cv, 0x48)); camera.push(v); }
+        if (seed < 0) seed = f.seed >>> 0;
         // the route: the scene, its parent area (LevelWarp::parentArea), the parent episode (flag 0x40003: mGameInts[3])
         const parent = f.area < PARENT.length ? PARENT[f.area] : 0xff;
         const variant = f.flags ? (u32(f.flags, 0xdc) | 0) : -1;
@@ -187,10 +198,10 @@ function smsghost(label: string, c: Cut) {
         const ty = f.yoshi ? (f.yoshi.data[0xd0] << 24 >> 24) : -1;
         const yo = f.yoshi && f.yoshi.data[0] === 8 ? (ty >= 0 && ty <= 3 ? ty + 1 : 5) : 0;
         const fx = (o: number) => Math.trunc(Math.fround(f32(m, o) * 8));
-        g.samples.push([fx(0x10), fx(0x14), fx(0x18), s16(m, 0x9a), g.samples.length ? qf - lastQf : 0, Math.min(u16(m, 0xfa), 511), phase, yo, 0, qf]);
+        g.samples.push([fx(0x10), fx(0x14), fx(0x18), s16(m, 0x9a), g.samples.length ? qf - lastQf : 0, Math.min(u16(m, 0xfa), 335), phase, yo, 0, qf]);
         lastQf = qf;
     }
-    return { name: label, segments: segs.filter((g) => g.samples.length) };
+    return { name: label, seed, inputs, camera, segments: segs.filter((g) => g.samples.length) };
 }
 
 // ---------------------------------------------------------------- .msgt (MSTR v2)
