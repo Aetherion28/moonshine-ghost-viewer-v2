@@ -143,7 +143,7 @@ def build(g):
     vg._GHOST_PREFIX.pack_into(header, 0, vg.GHOST_MAGIC, vg.GHOST_VERSION_V9, vg.GHOST_HEADER_SIZE, vg.GHOST_HEADER_SIZE + len(payload),
                                0, 0, vg._crc32(payload), 63, 0x21, vg.REGION_GAME_IDS[0], 0, 0, 0, vg.RECORDING_POSE_QF,
                                vg.CODEC_POSE_ATTACHMENTS, vg.SAMPLE_SIZE, vg.SAMPLE_INTERVAL_QF, a, e, p, fl, var,
-                               end_qf, start_qf, end_qf, end_qf - start_qf, len(samples), len(payload), 0, int(time.time()),
+                               g.get('resultQf', end_qf), start_qf, end_qf, end_qf - start_qf, len(samples), len(payload), 0, int(time.time()),
                                gid >> 32, gid & 0xFFFFFFFF, len(author), len(name), len(profile), vg.CHECKSUM_CRC32)
     struct.pack_into('>I', header, 16, vg._crc32_zeroed(bytes(header), (12, 20)))
     raw = bytearray(header + payload)

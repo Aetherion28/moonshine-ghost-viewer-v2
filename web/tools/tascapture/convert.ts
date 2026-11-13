@@ -115,7 +115,7 @@ const u16 = (d: Uint8Array, o: number) => new DataView(d.buffer, d.byteOffset + 
 const isPlaza = (a: number) => a === 1 || a === 15;
 
 /** the frame (and tick) where the Shine flag was set, then back to the tick status first reads 0x1302 */
-interface Cut { f0: number; f1: number; t1: number }
+interface Cut { f0: number; f1: number; t1: number; touchF: number; touchT: number }
 function cutFor(L: typeof LEVELS[0], secretOnly: boolean): Cut {
     const frames = light;
     const fs = frames.findIndex((f) => f.shines.has(L.shine));
@@ -140,7 +140,12 @@ function cutFor(L: typeof LEVELS[0], secretOnly: boolean): Cut {
     else if (L.startArea !== undefined) { while (frames[f0].area !== L.startArea) f0++; }
     // the first frame with Mario updates
     while (!frames[f0].ticks.some((t) => t.hasMario)) f0++;
-    return { f0, f1, t1 };
+    // the end: the save prompt (TMarDirector::mState, u8 at 0x64, becomes STATE_CARD_SAVE 11), with that frame's ticks
+    const touchF = f1, touchT = t1;
+    let e = f1;
+    while (e + 1 < frames.length && !(frames[e].dirState !== 0xffffffff && frames[e].dirState >>> 24 === 11 && e > f1)) e++;
+    if (frames[e].dirState >>> 24 !== 11) throw new Error('no save prompt after ' + L.label);
+    return { f0, f1: e, t1: frames[e].ticks.length - 1, touchF, touchT };
 }
 
 // ---------------------------------------------------------------- .smsghost
@@ -170,7 +175,7 @@ function smsghost(label: string, c: Cut) {
     const inputs: (number | string)[][] = [], camera: number[][] = [];
     for (let i = c.f0; i <= c.f1; i++) {
         const f = frames[i];
-        const m = i === c.f1 ? c.t1 >= 0 && f.ticks[c.t1].mario : f.mario;
+        const m = i === c.f1 ? (c.t1 >= 0 && f.ticks[c.t1].mario) || f.mario : f.mario;
         if (!m || !f.dticks) continue;
         const qf = RQ.get(i)!;
         // the frame's input (JUTGamePad::mPadStatus[0], as PracticeSession::snapshot reads it) and the rendered view
@@ -201,7 +206,8 @@ function smsghost(label: string, c: Cut) {
         g.samples.push([fx(0x10), fx(0x14), fx(0x18), s16(m, 0x9a), g.samples.length ? qf - lastQf : 0, Math.min(u16(m, 0xfa), 335), phase, yo, 0, qf]);
         lastQf = qf;
     }
-    return { name: label, seed, inputs, camera, segments: segs.filter((g) => g.samples.length) };
+    let resultQf = RQ.get(c.touchF)!;
+    return { name: label, seed, resultQf, inputs, camera, segments: segs.filter((g) => g.samples.length) };
 }
 
 // ---------------------------------------------------------------- .msgt (MSTR v2)
@@ -279,7 +285,7 @@ function msgt(c: Cut, run: number): Uint8Array {
             M.rec(2, frameNo, tick, new Uint8Array(e.buffer));
         }
         const fb = new DataView(new ArrayBuffer(32));
-        [f.area << 8 | f.episode, 0, f.rc, f.ms, s.seed, tick, s.dirState === 0xffffffff ? 0xffffffff : s.dirState >>> 16, 0].forEach((v, k) => fb.setUint32(k * 4, v >>> 0));
+        [f.area << 8 | f.episode, 0, f.rc, f.ms, s.seed, tick, s.dirState === 0xffffffff ? 0xffffffff : s.dirState >>> 24, 0].forEach((v, k) => fb.setUint32(k * 4, v >>> 0));
         M.rec(2, frameNo, tick, new Uint8Array(fb.buffer));
         if (s !== f || i === c.f0) {
             if (s.fludd) M.blob(8, frameNo, tick, s.fludd.addr, s.fludd.data);
