@@ -1,10 +1,10 @@
 # name; sram=mono|stereo; backend=D3D|D3D12|OGL|Software Renderer; Section.Key=Value (User/GameSettings/GMSJ01.ini)
 # mono-d3d (2026-11-13): desynced in the airstrip, so the TAS was made with stereo; mono is out.
-stereo-d3d-native; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=1; Video_Settings.SSAA=False
-stereo-d3d12; sram=stereo; backend=D3D12; Video_Settings.EFBScale=2
-stereo-ogl; sram=stereo; backend=OGL; Video_Settings.EFBScale=2
-stereo-d3d-nofastdepth; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.FastDepthCalc=False
-stereo-d3d-safetex; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.SafeTextureCacheColorSamples=0
-stereo-d3d-noperfq; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video.PerfQueriesEnable=False
-stereo-d3d-bbox; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Hacks.BBoxEnable=True
-stereo-software; sram=stereo; backend=Software Renderer
+# unlimited speed (2026-11-13): every setup entered Bianco Hills 2 about 205 fields early (the load ran shorter), so attempts run at speed 1 now
+stereo-d3d-native-s1; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=1; Video_Settings.SSAA=False
+stereo-d3d12-s1; sram=stereo; backend=D3D12; Video_Settings.EFBScale=2
+stereo-ogl-s1; sram=stereo; backend=OGL; Video_Settings.EFBScale=2
+stereo-d3d-nofastdepth-s1; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.FastDepthCalc=False
+stereo-d3d-safetex-s1; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.SafeTextureCacheColorSamples=0
+stereo-d3d-noperfq-s1; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video.PerfQueriesEnable=False
+stereo-d3d-bbox-s1; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Hacks.BBoxEnable=True

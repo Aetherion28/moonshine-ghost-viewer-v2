@@ -1,6 +1,6 @@
 # One attempt of the Manta Storm sync sweep (run_mantasweep.cmd calls it in a loop, so edits apply to the next attempt).
 # Takes the first line of sweep_queue.txt whose name isn't in sweep_results.txt, sets Dolphin up that way, plays the
-# TAS from boot at unlimited speed and watches the game's memory:
+# TAS from boot at normal speed (at unlimited speed the stage loads take fewer fields and the TAS desyncs) and watches the game's memory:
 #   success  Mario's status reads 0x1302 (the Shine touch) in Sirena Beach 1 (area 6, episode 0)
 #   fail     Sirena left or reloaded without it (a death), 30000 fields in Sirena, Sirena not reached by field 200000,
 #            the game stalled for 3 minutes
@@ -41,7 +41,7 @@ Log "attempt $name : $entry"
 $ini = Join-Path $dol 'User\Config\Dolphin.ini'
 if (-not (Test-Path "$ini.sweepbak")) { Copy-Item $ini "$ini.sweepbak" }
 $c = Get-Content $ini
-$c = $c -replace '^EmulationSpeed = .*', 'EmulationSpeed = 0.00000000' -replace '^GFXBackend = .*', "GFXBackend = $backend"
+$c = $c -replace '^EmulationSpeed = .*', 'EmulationSpeed = 1.00000000' -replace '^GFXBackend = .*', "GFXBackend = $backend"
 Set-Content -Path $ini -Value $c
 # the game ini
 $gdir = Join-Path $dol 'User\GameSettings'; New-Item -ItemType Directory -Force -Path $gdir | Out-Null
