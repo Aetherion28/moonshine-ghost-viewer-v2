@@ -32,10 +32,10 @@ foreach ($l in Get-Content $queue) {
 }
 if (-not $entry) { Log 'queue empty'; exit 2 }
 $parts = $entry -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0; $gecko = @(); $pokes = ''; $kill = 0; $grab = 0; $adapter = 0
+$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0; $gecko = @(); $pokes = ''; $kill = 0; $grab = 0; $adapter = 0; $logall = 0
 foreach ($p in $parts[1..($parts.Count - 1)]) {
     $k, $v = $p -split '=', 2
-    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v } elseif ($k -eq 'gecko') { $gecko += $v } elseif ($k -eq 'poke') { $pokes = $v } elseif ($k -eq 'kill') { $kill = [int]$v } elseif ($k -eq 'grab') { $grab = [int]$v } elseif ($k -eq 'adapter') { $adapter = [int]$v }
+    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v } elseif ($k -eq 'gecko') { $gecko += $v } elseif ($k -eq 'poke') { $pokes = $v } elseif ($k -eq 'kill') { $kill = [int]$v } elseif ($k -eq 'grab') { $grab = [int]$v } elseif ($k -eq 'adapter') { $adapter = [int]$v } elseif ($k -eq 'logall') { $logall = [int]$v }
     else { $s, $key = $k -split '\.', 2; if (-not $game.ContainsKey($s)) { $game[$s] = @() }; $game[$s] += "$key = $v" }
 }
 Log "attempt $name : $entry"
@@ -136,7 +136,7 @@ public static class Sweep {
     }
     const uint VT_MANTA = 0x803E1874, VT_SHINE = 0x803C11E4;
     // returns "SUCCESS ..." or "FAIL ..." or "ERROR ..."
-    public static string Run(string exe, string args, string trackPath, string logPath, int loadState, int saveState, string pokes, int killRc, int grabRc) {
+    public static string Run(string exe, string args, string trackPath, string logPath, int loadState, int saveState, string pokes, int killRc, int grabRc, int logAll) {
         SetThreadExecutionState(0x80000001u);   // ES_CONTINUOUS | ES_SYSTEM_REQUIRED: no idle sleep while this runs
         var track = new StreamWriter(trackPath); track.AutoFlush = true;
         var log = new StreamWriter(logPath, true); log.AutoFlush = true;
@@ -192,9 +192,9 @@ public static class Sweep {
                     // forced: after Sirena's Shine, the movie has to get its next Shine on its own
                     if (area != afterArea) { afterArea = area; track.WriteLine("area " + rc + " " + area + "," + ep); }
                     if (okp(mario) && area != 6 && u32(mario + 0x7C) != 0x1302) freed = true;
-                    if (okp(mario) && freed && u32(mario + 0x7C) == 0x1302) return "SUCCESS the next Shine (area " + area + "," + ep + ") at field " + rc + " after the forced Sirena Shine at " + shineRc;
-                    if (rc - shineRc > 9000) return "FAIL no next Shine within 9000 fields of the forced Sirena Shine at " + shineRc + " (now area " + area + "," + ep + ")";
-                    if (rc != lastTrackRc && okp(mario)) { lastTrackRc = rc; track.WriteLine(rc + " a" + area + "," + ep + " pad " + u32(0x80400D50).ToString("X8") + " " + u32(mario + 0x7C).ToString("X") + " " + f32(mario + 0x10) + " " + f32(mario + 0x14) + " " + f32(mario + 0x18)); }
+                    if (logAll == 0 && okp(mario) && freed && u32(mario + 0x7C) == 0x1302) return "SUCCESS the next Shine (area " + area + "," + ep + ") at field " + rc + " after the forced Sirena Shine at " + shineRc;
+                    if (logAll > 0 && rc - shineRc > 90000) return "DONE logged 90000 fields after the forced Sirena Shine"; if (logAll == 0 && rc - shineRc > 9000) return "FAIL no next Shine within 9000 fields of the forced Sirena Shine at " + shineRc + " (now area " + area + "," + ep + ")";
+                    if (rc != lastTrackRc && okp(mario)) { lastTrackRc = rc; track.WriteLine(rc + " a" + area + "," + ep + " d" + (okp(md) ? (u32(md + 0x64) >> 24) : 255) + " pad " + u32(0x80400D50).ToString("X8") + " " + u32(mario + 0x7C).ToString("X") + " " + f32(mario + 0x10) + " " + f32(mario + 0x14) + " " + f32(mario + 0x18)); }
                     System.Threading.Thread.Sleep(1); continue;
                 }
                 if (inSirena && killRc > 0 && rc >= killRc && rc - lastKillCheck >= 30) {
@@ -250,7 +250,7 @@ $t0 = Get-Date
 $st = Join-Path $dol "User\StateSaves\GMSJ01.s0$loadstate"
 if ($loadstate -gt 0 -and -not (Test-Path $st)) { Log "waiting for the savestate $st"; exit 2 }
 if ($true) {
-$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate, $pokes, $kill, $grab) }
+$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate, $pokes, $kill, $grab, $logall) }
 $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
 Log "result $name : $r ($mins min)"
 Add-Content -Path $results -Value "$name | $r | $mins min | $entry"
