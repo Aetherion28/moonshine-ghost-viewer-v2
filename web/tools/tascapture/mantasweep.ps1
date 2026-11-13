@@ -29,10 +29,10 @@ foreach ($l in Get-Content $queue) {
 }
 if (-not $entry) { Log 'queue empty'; exit 2 }
 $parts = $entry -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}
+$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0
 foreach ($p in $parts[1..($parts.Count - 1)]) {
     $k, $v = $p -split '=', 2
-    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v }
+    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v }
     else { $s, $key = $k -split '\.', 2; if (-not $game.ContainsKey($s)) { $game[$s] = @() }; $game[$s] += "$key = $v" }
 }
 Log "attempt $name : $entry"
@@ -88,7 +88,7 @@ public static class Sweep {
         return 0;
     }
     // returns "SUCCESS ..." or "FAIL ..." or "ERROR ..."
-    public static string Run(string exe, string args, string trackPath, string logPath) {
+    public static string Run(string exe, string args, string trackPath, string logPath, int loadState) {
         SetThreadExecutionState(0x80000001u);   // ES_CONTINUOUS | ES_SYSTEM_REQUIRED: no idle sleep while this runs
         var track = new StreamWriter(trackPath); track.AutoFlush = true;
         var log = new StreamWriter(logPath, true); log.AutoFlush = true;
@@ -98,6 +98,14 @@ public static class Sweep {
             var sw = Stopwatch.StartNew();
             while (ram == 0 && !p.HasExited && sw.ElapsedMilliseconds < 120000) { System.Threading.Thread.Sleep(100); ram = findRam(); }
             if (ram == 0) return "ERROR no game memory";
+            if (loadState > 0) {
+                // load the savestate made at Sirena's start (F<n>, Dolphin's default hotkey), then check only Sirena
+                System.Threading.Thread.Sleep(4000);
+                Microsoft.VisualBasic.Interaction.AppActivate(p.Id);
+                System.Threading.Thread.Sleep(500);
+                System.Windows.Forms.SendKeys.SendWait("{F" + loadState + "}");
+                System.Threading.Thread.Sleep(3000);
+            }
             uint lastRc = 0; long lastRcChange = 0, lastLog = 0, lastRcLog = 0; int lastArea = -1, lastEp = -1;
             bool inSirena = false; int refIdx = 0; uint sirenaRc = 0, lastTrackRc = 0;
             while (true) {
@@ -111,14 +119,14 @@ public static class Sweep {
                     track.WriteLine("area " + rc + " " + area + "," + ep); lastArea = area; lastEp = ep;
                     // before Sirena, every stage change has to come as the synced capture's did; that capture saw a new stage only once its
                     // director ticked, up to a load later, so a change may come up to 900 fields before the reference, 120 after
-                    if (!inSirena && refIdx * 3 < REF.Length) {
+                    if (!inSirena && loadState == 0 && refIdx * 3 < REF.Length) {
                         uint rr = REF[refIdx * 3], ra = REF[refIdx * 3 + 1], re = REF[refIdx * 3 + 2];
                         if (area != ra || ep != re || (refIdx > 0 && ((long)rc > rr + 120 || (long)rc + 900 < rr)))
                             return "FAIL desync before Sirena: field " + rc + " entered " + area + "," + ep + ", the synced run entered " + ra + "," + re + " at " + rr;
                         refIdx++;
                     }
                 }
-                if (!inSirena && refIdx * 3 < REF.Length && rc > REF[refIdx * 3] + 600)
+                if (!inSirena && loadState == 0 && refIdx * 3 < REF.Length && rc > REF[refIdx * 3] + 600)
                     return "FAIL desync before Sirena: no change to " + REF[refIdx * 3 + 1] + "," + REF[refIdx * 3 + 2] + " by field " + rc + " (synced run: " + REF[refIdx * 3] + ")";
                 uint md = u32(0x8040A2A8), mario = u32(0x8040A378);
                 if (!inSirena && area == 6 && ep == 0 && okp(md) && okp(mario)) { inSirena = true; sirenaRc = rc; track.WriteLine("sirena " + rc); }
@@ -149,12 +157,14 @@ public static class Sweep {
     }
 }
 "@
-Add-Type -TypeDefinition $src
+Add-Type -TypeDefinition $src -ReferencedAssemblies Microsoft.VisualBasic, System.Windows.Forms
 $safe = $name -replace '[^A-Za-z0-9_-]', '_'
 New-Item -ItemType Directory -Force -Path (Join-Path $here 'sweep') | Out-Null
 $dargs = "-b -e `"$iso`" -m `"$dtm`""
 $t0 = Get-Date
-$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log)
+$st = Join-Path $dol "User\StateSaves\GMSJ01.s0$loadstate"
+if ($loadstate -gt 0 -and -not (Test-Path $st)) { $r = 'ERROR no savestate ' + $st } else {
+$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate) }
 $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
 Log "result $name : $r ($mins min)"
 Add-Content -Path $results -Value "$name | $r | $mins min | $entry"
