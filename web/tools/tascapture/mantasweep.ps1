@@ -1,6 +1,6 @@
 # One attempt of the Manta Storm sync sweep (run_mantasweep.cmd calls it in a loop, so edits apply to the next attempt).
 # Takes the first line of sweep_queue.txt whose name isn't in sweep_results.txt, sets Dolphin up that way, plays the
-# TAS from boot at normal speed (at unlimited speed the stage loads take fewer fields and the TAS desyncs) and watches the game's memory:
+# TAS from boot at unlimited speed and watches the game's memory:
 #   success  Mario's status reads 0x1302 (the Shine touch) in Sirena Beach 1 (area 6, episode 0)
 #   fail     Sirena left or reloaded without it (a death), 30000 fields in Sirena, Sirena not reached by field 200000,
 #            the game stalled for 3 minutes
@@ -41,7 +41,7 @@ Log "attempt $name : $entry"
 $ini = Join-Path $dol 'User\Config\Dolphin.ini'
 if (-not (Test-Path "$ini.sweepbak")) { Copy-Item $ini "$ini.sweepbak" }
 $c = Get-Content $ini
-$c = $c -replace '^EmulationSpeed = .*', 'EmulationSpeed = 1.00000000' -replace '^GFXBackend = .*', "GFXBackend = $backend"
+$c = $c -replace '^EmulationSpeed = .*', 'EmulationSpeed = 0.00000000' -replace '^GFXBackend = .*', "GFXBackend = $backend"
 Set-Content -Path $ini -Value $c
 # the game ini
 $gdir = Join-Path $dol 'User\GameSettings'; New-Item -ItemType Directory -Force -Path $gdir | Out-Null
@@ -109,10 +109,11 @@ public static class Sweep {
                 if (now - lastRcChange > 180000) return "ERROR stalled at field " + rc;
                 if (area != lastArea || ep != lastEp) {
                     track.WriteLine("area " + rc + " " + area + "," + ep); lastArea = area; lastEp = ep;
-                    // before Sirena, every stage change has to come as the synced capture's did (a few fields of slack)
+                    // before Sirena, every stage change has to come as the synced capture's did; that capture saw a new stage only once its
+                    // director ticked, up to a load later, so a change may come up to 900 fields before the reference, 120 after
                     if (!inSirena && refIdx * 3 < REF.Length) {
                         uint rr = REF[refIdx * 3], ra = REF[refIdx * 3 + 1], re = REF[refIdx * 3 + 2];
-                        if (area != ra || ep != re || (refIdx > 0 && Math.Abs((long)rc - rr) > 120))
+                        if (area != ra || ep != re || (refIdx > 0 && ((long)rc > rr + 120 || (long)rc + 900 < rr)))
                             return "FAIL desync before Sirena: field " + rc + " entered " + area + "," + ep + ", the synced run entered " + ra + "," + re + " at " + rr;
                         refIdx++;
                     }
