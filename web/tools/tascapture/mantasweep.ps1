@@ -18,7 +18,10 @@ $log = Join-Path $here 'sweep_log.txt'
 function Log($s) { $l = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $s; Add-Content -Path $log -Value $l; Write-Host $l }
 
 $done = @{}
-if (Test-Path $results) { foreach ($l in Get-Content $results) { $n = ($l -split '\|')[0].Trim(); if ($n) { $done[$n] = 1 } } }
+# an ERROR (Dolphin didn't start, stalled) doesn't use a line up: it is tried again, up to three times
+$errs = @{}
+if (Test-Path $results) { foreach ($l in Get-Content $results) { $f = $l -split '\|'; $n = $f[0].Trim(); if (-not $n) { continue }
+    if ($f.Count -gt 1 -and $f[1].Trim().StartsWith('ERROR')) { $errs[$n] = 1 + [int]$errs[$n]; if ($errs[$n] -ge 3) { $done[$n] = 1 } } else { $done[$n] = 1 } } }
 $entry = $null
 foreach ($l in Get-Content $queue) {
     $t = $l.Trim(); if (-not $t -or $t.StartsWith('#')) { continue }
@@ -135,7 +138,7 @@ public static class Sweep {
 Add-Type -TypeDefinition $src
 $safe = $name -replace '[^A-Za-z0-9_-]', '_'
 New-Item -ItemType Directory -Force -Path (Join-Path $here 'sweep') | Out-Null
-$dargs = "-b -V `"$backend`" -e `"$iso`" -m `"$dtm`""
+$dargs = "-b -e `"$iso`" -m `"$dtm`""
 $t0 = Get-Date
 $r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log)
 $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
