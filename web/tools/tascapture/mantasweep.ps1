@@ -240,7 +240,7 @@ public static class Sweep {
                 // follow=N: after a state load, log Mario and the seed every 10 fields for N fields, whatever the stage
                 if (follow > 0) {
                     if (followStart == 0) followStart = rc;
-                    if (rc - lastTrackRc >= 10) { lastTrackRc = rc; track.WriteLine(rc + " a" + area + "," + ep + " " + (okp(mario) ? u32(mario + 0x7C).ToString("X") + " " + f32(mario + 0x10) + " " + f32(mario + 0x14) + " " + f32(mario + 0x18) : "-") + " " + u32(0x80408CF0).ToString("X")); }
+                    if (rc - lastTrackRc >= 10) { lastTrackRc = rc; track.WriteLine(rc + " a" + area + "," + ep + " " + (okp(mario) ? u32(mario + 0x7C).ToString("X") + " " + f32(mario + 0x10) + " " + f32(mario + 0x14) + " " + f32(mario + 0x18) : "-") + " " + u32(0x80408CF0).ToString("X") + " w" + (okp(mario) && okp(u32(mario + 0x3E4)) ? ((int)u32(u32(mario + 0x3E4) + 0x1C80)).ToString() : "-")); }
                     if (rc - followStart > follow) return "DONE followed " + follow + " fields from " + followStart;
                     System.Threading.Thread.Sleep(1); continue;
                 }
