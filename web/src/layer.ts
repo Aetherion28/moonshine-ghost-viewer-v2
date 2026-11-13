@@ -47,7 +47,7 @@ import { MarioShadow } from './marioshadow.js';
 import { BossMantaManager } from './game/enemies/bossmanta.js';
 import { MapWireConst } from './game/mapwire.js';
 import { CLASSES } from './game/scene.js';
-import { LiveActor, MActor, LF } from './game/engine.js';
+import { LiveActor, MActor, AnmData, LF } from './game/engine.js';
 import { Mtx } from './game/math.js';
 import { ModelGate } from './game/mapobj/modelgate.js';
 import { ShiningStone } from './game/mapobj/mamma.js';
@@ -1155,6 +1155,21 @@ export class GameLayer {
                 this.simModelProxies.set(m, p);
             }
             out.push({ a: p, type: '', place: [P.pos.x, P.pos.y, P.pos.z] });
+        }
+        // Il Piantissimo (TEMario named モンテマン): his scene entry's character isn't in the scene, so the game gives
+        // the TEMario no MActor (TEMario::init) and he shows as his TEnemyMario's mSpecialModel (monteman_model.bmd)
+        // posed by that Mario's joints
+        for (const o of st.world.conductor.aloneActors as any[]) {
+            const em = o && o.mEnemyMario;
+            if (!em || !em.mSpecialModel || !em.mModel) continue;
+            let p = this.simModelProxies.get(o.mactor || o) as any;
+            if (!p) {
+                const file = em.mSpecialModel as string, folder = file.replace(/\/[^/]+$/, '');
+                const m = new MActor(file, new AnmData(folder, st.world.files));
+                p = { mactor: m, get baseTR() { return o.baseTR; }, scale: o.scale, drawn: () => o.drawn(), get locals() { return em.mModel.locals; } } as any;
+                this.simModelProxies.set(o.mactor || o, p);
+            }
+            out.push({ a: p, type: '', place: [o.pos.x, o.pos.y, o.pos.z] });
         }
         for (const o of st.objects) {
             if (o instanceof ModelGate) { add(o, o.unk78, o.baseTR, () => !!(o.unk70 & 1)); const pp = o.unk78 && this.simModelProxies.get(o.unk78); if (pp) (pp as any).gateMovie = true; }
