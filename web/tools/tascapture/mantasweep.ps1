@@ -29,10 +29,10 @@ foreach ($l in Get-Content $queue) {
 }
 if (-not $entry) { Log 'queue empty'; exit 2 }
 $parts = $entry -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0
+$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0; $gecko = @(); $pokes = ''
 foreach ($p in $parts[1..($parts.Count - 1)]) {
     $k, $v = $p -split '=', 2
-    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v }
+    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v } elseif ($k -eq 'gecko') { $gecko += $v } elseif ($k -eq 'poke') { $pokes = $v }
     else { $s, $key = $k -split '\.', 2; if (-not $game.ContainsKey($s)) { $game[$s] = @() }; $game[$s] += "$key = $v" }
 }
 Log "attempt $name : $entry"
@@ -41,11 +41,12 @@ Log "attempt $name : $entry"
 $ini = Join-Path $dol 'User\Config\Dolphin.ini'
 if (-not (Test-Path "$ini.sweepbak")) { Copy-Item $ini "$ini.sweepbak" }
 $c = Get-Content $ini
-$c = $c -replace '^EmulationSpeed = .*', 'EmulationSpeed = 0.00000000' -replace '^GFXBackend = .*', "GFXBackend = $backend"
+$c = $c -replace '^EnableCheats = .*', ('EnableCheats = ' + $(if ($gecko.Count) { 'True' } else { 'False' })) -replace '^EmulationSpeed = .*', 'EmulationSpeed = 0.00000000' -replace '^GFXBackend = .*', "GFXBackend = $backend"
 Set-Content -Path $ini -Value $c
 # the game ini
 $gdir = Join-Path $dol 'User\GameSettings'; New-Item -ItemType Directory -Force -Path $gdir | Out-Null
 $g = @(); foreach ($s in $game.Keys) { $g += "[$s]"; $g += $game[$s] }
+if ($gecko.Count) { $g += '[Gecko]'; $g += '$Sweep'; $g += $gecko; $g += '[Gecko_Enabled]'; $g += '$Sweep' }
 Set-Content -Path (Join-Path $gdir 'GMSJ01.ini') -Value ($g -join "`r`n")
 # SRAM: the sound mode bit (flags byte 0x13, 4 = stereo), with the checksums over the four halfwords at 0x0C
 $sp = Join-Path $dol 'User\GC\SRAM.raw'
@@ -65,6 +66,7 @@ using System.Runtime.InteropServices;
 public static class Sweep {
     [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int a, bool b, int pid);
     [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] buf, IntPtr n, out IntPtr r);
+    [DllImport("kernel32.dll")] static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] buf, IntPtr n, out IntPtr w);
     [DllImport("kernel32.dll")] static extern IntPtr VirtualQueryEx(IntPtr h, IntPtr a, out MBI m, IntPtr len);
     [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint f);
     delegate bool EnumProc(IntPtr hwnd, IntPtr l);
@@ -118,13 +120,13 @@ public static class Sweep {
         return 0;
     }
     // returns "SUCCESS ..." or "FAIL ..." or "ERROR ..."
-    public static string Run(string exe, string args, string trackPath, string logPath, int loadState, int saveState) {
+    public static string Run(string exe, string args, string trackPath, string logPath, int loadState, int saveState, string pokes) {
         SetThreadExecutionState(0x80000001u);   // ES_CONTINUOUS | ES_SYSTEM_REQUIRED: no idle sleep while this runs
         var track = new StreamWriter(trackPath); track.AutoFlush = true;
         var log = new StreamWriter(logPath, true); log.AutoFlush = true;
         var p = Process.Start(exe, args);
         try {
-            h = OpenProcess(0x0410, false, p.Id);
+            h = OpenProcess(0x0438, false, p.Id);
             var sw = Stopwatch.StartNew();
             while (ram == 0 && !p.HasExited && sw.ElapsedMilliseconds < 120000) { System.Threading.Thread.Sleep(100); ram = findRam(); }
             if (ram == 0) return "ERROR no game memory";
@@ -133,6 +135,14 @@ public static class Sweep {
                 System.Threading.Thread.Sleep(5000);
                 log.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "   load state " + loadState + ": " + stateCommand(p.Id, "Load State", loadState));
                 System.Threading.Thread.Sleep(4000);
+            }
+            // pokes "ADDR:WORD,..." written into game memory after the state load (code not yet run since the load is
+            // compiled from memory, since loading a state clears Dolphin's JIT cache)
+            if (pokes.Length > 0) foreach (string pk in pokes.Split(',')) {
+                string[] aw = pk.Trim().Split(':'); uint pa = Convert.ToUInt32(aw[0], 16), pv = Convert.ToUInt32(aw[1], 16);
+                byte[] wb = { (byte)(pv >> 24), (byte)(pv >> 16), (byte)(pv >> 8), (byte)pv }; IntPtr wn;
+                bool ok = WriteProcessMemory(h, new IntPtr(ram + (pa & 0x1FFFFFF)), wb, new IntPtr(4), out wn);
+                log.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "   poke " + pa.ToString("X8") + " = " + pv.ToString("X8") + (ok ? " ok" : " FAILED"));
             }
             uint lastRc = 0; long lastRcChange = 0, lastLog = 0, lastRcLog = 0; int lastArea = -1, lastEp = -1;
             bool inSirena = false; int refIdx = 0; uint sirenaRc = 0, lastTrackRc = 0;
@@ -194,7 +204,7 @@ $t0 = Get-Date
 $st = Join-Path $dol "User\StateSaves\GMSJ01.s0$loadstate"
 if ($loadstate -gt 0 -and -not (Test-Path $st)) { Log "waiting for the savestate $st"; exit 2 }
 if ($true) {
-$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate) }
+$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate, $pokes) }
 $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
 Log "result $name : $r ($mins min)"
 Add-Content -Path $results -Value "$name | $r | $mins min | $entry"

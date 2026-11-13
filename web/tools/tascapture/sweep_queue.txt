@@ -2,6 +2,8 @@
 # mono-d3d (2026-11-13): desynced in the airstrip, so the TAS was made with stereo; mono is out.
 # unlimited speed (2026-11-13): every setup entered Bianco Hills 2 about 205 fields early (the load ran shorter), so attempts run at speed 1 now
 # speed 1 changed nothing (2026-11-13): the synced capture recorded each stage change only once the stage's director ticked, so the check was wrong, not the speed; back to unlimited speed
+f26zero-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=1; Video_Settings.SSAA=False; loadstate=1; poke=803212D4:60000000,803212D8:60000000,803212DC:60000000
+mantafix-d3d; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=1; Video_Settings.SSAA=False; gecko=040E9050 C342FFE4
 make-state; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=1; Video_Settings.SSAA=False; savestate=1
 stereo-d3d-native-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=1; Video_Settings.SSAA=False; loadstate=1
 stereo-d3d12-ss; sram=stereo; backend=D3D12; Video_Settings.EFBScale=2; loadstate=1
@@ -12,7 +14,6 @@ stereo-d3d-noperfq-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Vide
 stereo-d3d-bbox-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Hacks.BBoxEnable=True; loadstate=1
 
 # from the Manta Storm savestate (slot 1, made in the OGL attempt): each try plays only Sirena 1
-stereo-software-ss; sram=stereo; backend=Software Renderer; loadstate=1
 stereo-d3d-auto-ss; sram=stereo; backend=D3D; loadstate=1
 stereo-d3d-2x-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=4; loadstate=1
 stereo-d3d-3x-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=5; loadstate=1
@@ -24,3 +25,25 @@ stereo-d3d-efbtotex-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Vid
 stereo-d3d12-msaa4-ss; sram=stereo; backend=D3D12; Video_Settings.EFBScale=2; Video_Settings.MSAA=4; loadstate=1
 stereo-ogl-2x-ss; sram=stereo; backend=OGL; Video_Settings.EFBScale=4; loadstate=1
 stereo-d3d-pixellight-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.EnablePixelLighting=True; loadstate=1
+# 2x resolution and 4x MSAA changed where Mario dies (174774 / 174836): explore around them
+res-s1_5x-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=3
+res-s2_5x-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=5
+res-s4x-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=7
+res-s0auto-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=0
+res-msaa2-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=2; Video_Settings.MSAA=2
+res-msaa8-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=2; Video_Settings.MSAA=8
+res-ssaa2-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=2; Video_Settings.MSAA=2; Video_Settings.SSAA=True
+res-2x-msaa4-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=4; Video_Settings.MSAA=4
+res-2x-msaa2-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=4; Video_Settings.MSAA=2
+res-2x-ogl-ss; sram=stereo; backend=OGL; loadstate=1; Video_Settings.EFBScale=4
+res-d3d12-2x-ss; sram=stereo; backend=D3D12; loadstate=1; Video_Settings.EFBScale=4
+res-d3d12-msaa4b-ss; sram=stereo; backend=D3D12; loadstate=1; Video_Settings.EFBScale=2; Video_Settings.MSAA=4
+# the two that lived longest: SSAA 2x (178143) and forced filtering (177542); combine and vary them
+mix-ssaa2-filter-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=2; Video_Settings.MSAA=2; Video_Settings.SSAA=True; Video_Enhancements.ForceFiltering=True
+mix-ssaa2-d3d12-ss; sram=stereo; backend=D3D12; loadstate=1; Video_Settings.EFBScale=2; Video_Settings.MSAA=2; Video_Settings.SSAA=True
+mix-ssaa2-ogl-ss; sram=stereo; backend=OGL; loadstate=1; Video_Settings.EFBScale=2; Video_Settings.MSAA=2; Video_Settings.SSAA=True
+mix-ssaa8-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=2; Video_Settings.MSAA=8; Video_Settings.SSAA=True
+mix-filter-d3d12-ss; sram=stereo; backend=D3D12; loadstate=1; Video_Settings.EFBScale=2; Video_Enhancements.ForceFiltering=True
+mix-filter-ogl-ss; sram=stereo; backend=OGL; loadstate=1; Video_Settings.EFBScale=2; Video_Enhancements.ForceFiltering=True
+mix-filter-aniso16-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=2; Video_Enhancements.ForceFiltering=True; Video_Enhancements.MaxAnisotropy=4
+mix-ssaa2-1_5x-ss; sram=stereo; backend=D3D; loadstate=1; Video_Settings.EFBScale=3; Video_Settings.MSAA=2; Video_Settings.SSAA=True
