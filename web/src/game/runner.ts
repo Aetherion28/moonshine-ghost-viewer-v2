@@ -1022,7 +1022,10 @@ export class SimRunner {
         if (!f) return null;
         const c = f(inp.ghost, t, seg);
         if (!c) return null;
-        return { pos: c.pos, quat: c.quat, fovy: c.fov, aspect: (640 * 0.9134614) / 448, near: 10 };
+        // GameCamera.quat is world-from-view. A trace's key is the camera's own orientation (that already); a ghost's SGCA
+        // key is the view matrix's rotation (GhostCamera::readRendered: mTRSMatrix, view-from-world), so its inverse
+        const q: [number, number, number, number] = c.orientation ? c.quat : [-c.quat[0], -c.quat[1], -c.quat[2], c.quat[3]];
+        return { pos: c.pos, quat: q, fovy: c.fov, aspect: (640 * 0.9134614) / 448, near: 10 };
     }
 
     /** The simulated objects the viewer draws, with their placement in scene.bin (type, position). */
