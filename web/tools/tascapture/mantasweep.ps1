@@ -193,7 +193,7 @@ public static class Sweep {
                     if (area != afterArea) { afterArea = area; track.WriteLine("area " + rc + " " + area + "," + ep); }
                     if (okp(mario) && area != 6 && u32(mario + 0x7C) != 0x1302) freed = true;
                     if (okp(mario) && freed && u32(mario + 0x7C) == 0x1302) return "SUCCESS the next Shine (area " + area + "," + ep + ") at field " + rc + " after the forced Sirena Shine at " + shineRc;
-                    if (rc - shineRc > 25000) return "FAIL no next Shine within 25000 fields of the forced Sirena Shine at " + shineRc + " (now area " + area + "," + ep + ")";
+                    if (rc - shineRc > 9000) return "FAIL no next Shine within 9000 fields of the forced Sirena Shine at " + shineRc + " (now area " + area + "," + ep + ")";
                     if (rc != lastTrackRc && okp(mario)) { lastTrackRc = rc; track.WriteLine(rc + " a" + area + "," + ep + " pad " + u32(0x80400D50).ToString("X8") + " " + u32(mario + 0x7C).ToString("X") + " " + f32(mario + 0x10) + " " + f32(mario + 0x14) + " " + f32(mario + 0x18)); }
                     System.Threading.Thread.Sleep(1); continue;
                 }
