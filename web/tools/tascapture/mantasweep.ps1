@@ -32,10 +32,10 @@ foreach ($l in Get-Content $queue) {
 }
 if (-not $entry) { Log 'queue empty'; exit 2 }
 $parts = $entry -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0; $gecko = @(); $pokes = ''; $kill = 0; $grab = 0; $adapter = 0; $logall = 0
+$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0; $gecko = @(); $pokes = ''; $kill = 0; $grab = 0; $adapter = 0; $logall = 0; $shots = ''
 foreach ($p in $parts[1..($parts.Count - 1)]) {
     $k, $v = $p -split '=', 2
-    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v } elseif ($k -eq 'gecko') { $gecko += $v } elseif ($k -eq 'poke') { $pokes = $v } elseif ($k -eq 'kill') { $kill = [int]$v } elseif ($k -eq 'grab') { $grab = [int]$v } elseif ($k -eq 'adapter') { $adapter = [int]$v } elseif ($k -eq 'logall') { $logall = [int]$v }
+    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v } elseif ($k -eq 'gecko') { $gecko += $v } elseif ($k -eq 'poke') { $pokes = $v } elseif ($k -eq 'kill') { $kill = [int]$v } elseif ($k -eq 'grab') { $grab = [int]$v } elseif ($k -eq 'adapter') { $adapter = [int]$v } elseif ($k -eq 'logall') { $logall = [int]$v } elseif ($k -eq 'shots') { $shots = $v }
     else { $s, $key = $k -split '\.', 2; if (-not $game.ContainsKey($s)) { $game[$s] = @() }; $game[$s] += "$key = $v" }
 }
 Log "attempt $name : $entry"
@@ -104,6 +104,21 @@ public static class Sweep {
         }
         return "menu item not found";
     }
+    // any menu item whose text starts with the prefix, in any top-level menu (Emulation > Pause / Play, Take Screenshot)
+    public static string menuCmd(int pid, string prefix) {
+        IntPtr main = IntPtr.Zero;
+        EnumWindows((w, l) => { uint q; GetWindowThreadProcessId(w, out q); if (q == pid && GetMenu(w) != IntPtr.Zero) { main = w; return false; } return true; }, IntPtr.Zero);
+        if (main == IntPtr.Zero) return "no main window";
+        IntPtr bar = GetMenu(main);
+        for (int i = 0; i < GetMenuItemCount(bar); i++) {
+            IntPtr em = GetSubMenu(bar, i);
+            for (int j = 0; j < GetMenuItemCount(em); j++) {
+                string t = menuText(em, j);
+                if (t.StartsWith(prefix) && GetSubMenu(em, j) == IntPtr.Zero) { PostMessage(main, 0x0111, new IntPtr((int)GetMenuItemID(em, j)), IntPtr.Zero); return "ok " + t; }
+            }
+        }
+        return "menu item not found: " + prefix;
+    }
     [StructLayout(LayoutKind.Sequential)] public struct MBI { public IntPtr Base; public IntPtr AllocBase; public uint AllocProtect; public IntPtr Size; public uint State; public uint Protect; public uint Type; }
     // the synced capture's stage changes up to Sirena Beach 1: field (retrace count), area, episode
     static readonly uint[] REF = { 7,0,0,325,15,0,615,0,0,5339,0,1,13047,1,0,26458,1,1,30332,2,255,30826,2,0,32382,55,0,37361,1,5,38192,2,255,38665,2,2,39964,47,0,41667,1,5,45261,2,255,45733,2,3,48584,1,5,49414,2,255,49909,2,4,57976,1,5,62050,4,255,62540,4,0,64270,1,6,65090,4,255,65605,4,6,67165,1,6,68259,8,255,68733,8,0,71307,1,6,71937,8,255,72405,8,1,76317,1,6,76947,8,255,77231,8,2,79471,1,7,80284,8,255,80761,8,3,83747,1,7,84560,8,255,85035,8,4,86106,42,0,88147,1,7,88960,8,255,89435,8,5,93631,1,7,94444,8,255,94924,8,6,96452,1,7,97861,1,8,98584,5,255,99073,5,0,99612,13,0,100121,13,6,100739,58,1,102722,13,7,103983,1,8,104982,5,255,105463,5,1,106230,50,0,108529,1,8,109527,5,255,110014,5,2,110552,13,1,112999,1,8,113997,5,255,114496,5,3,118090,1,8,119271,5,255,119804,5,2,122484,41,0,124514,1,8,125695,5,255,126187,5,6,126726,13,4,128067,1,8,129556,3,255,130035,3,0,131124,59,0,134292,1,8,135309,3,255,135793,3,1,136945,30,0,139386,1,8,140403,3,255,140884,3,2,142226,1,8,143243,3,255,143721,3,3,144503,48,0,146764,1,8,147781,3,255,148272,3,4,151896,1,8,152913,3,255,153388,3,5,156717,1,8,157734,3,255,158212,3,6,159618,1,8,160955,2,255,161421,2,5,163033,46,0,165838,1,8,166845,2,255,167317,2,6,168783,1,8,170270,6,255,170733,6,0 };
@@ -136,7 +151,7 @@ public static class Sweep {
     }
     const uint VT_MANTA = 0x803E1874, VT_SHINE = 0x803C11E4;
     // returns "SUCCESS ..." or "FAIL ..." or "ERROR ..."
-    public static string Run(string exe, string args, string trackPath, string logPath, int loadState, int saveState, string pokes, int killRc, int grabRc, int logAll) {
+    public static string Run(string exe, string args, string trackPath, string logPath, int loadState, int saveState, string pokes, int killRc, int grabRc, int logAll, string shots) {
         SetThreadExecutionState(0x80000001u);   // ES_CONTINUOUS | ES_SYSTEM_REQUIRED: no idle sleep while this runs
         var track = new StreamWriter(trackPath); track.AutoFlush = true;
         var log = new StreamWriter(logPath, true); log.AutoFlush = true;
@@ -162,6 +177,8 @@ public static class Sweep {
             }
             uint lastRc = 0; long lastRcChange = 0, lastLog = 0, lastRcLog = 0; int lastArea = -1, lastEp = -1;
             bool inSirena = false; int refIdx = 0; uint sirenaRc = 0, lastTrackRc = 0;
+            var shotList = new System.Collections.Generic.List<uint>(); int shotIdx = 0;
+            if (shots.Length > 0) foreach (string sh in shots.Split(',')) shotList.Add(Convert.ToUInt32(sh.Trim()));
             bool killed = false, sirenaShine = false, freed = false; uint shineRc = 0, grabTarget = 0, lastKillCheck = 0; int afterArea = -1;
             var shineFlags = new System.Collections.Generic.Dictionary<uint, uint>();
             Action<string> L = (msg) => log.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "   " + msg);
@@ -214,6 +231,16 @@ public static class Sweep {
                     }
                     if (u32(mario + 0x7C) != 0x1302) for (uint o = 0; o < 12; o += 4) w32(mario + 0x10 + o, u32(grabTarget + 0x10 + o));
                 }
+                if (shotIdx < shotList.Count && rc >= shotList[shotIdx]) {
+                    // pause, screenshot (Dolphin's own, into User\ScreenShots), go on
+                    L("shot " + shotList[shotIdx] + ": pause " + menuCmd(p.Id, "Pause")); System.Threading.Thread.Sleep(800);
+                    uint prc = u32(0x80409F00); L("  paused at field " + prc + " status " + (okp(mario) ? u32(mario + 0x7C).ToString("X") : "-") + " at " + (okp(mario) ? f32(mario + 0x10) + " " + f32(mario + 0x14) + " " + f32(mario + 0x18) : "-") + " health " + (okp(mario) ? (u32(mario + 0x120) >> 16).ToString() : "-"));
+                    L("  " + menuCmd(p.Id, "Take Screenshot")); System.Threading.Thread.Sleep(2500);
+                    L("  play " + menuCmd(p.Id, "Play")); System.Threading.Thread.Sleep(500);
+                    track.WriteLine("shot " + shotList[shotIdx] + " " + prc); shotIdx++;
+                    if (shotIdx == shotList.Count) return "DONE shots";
+                    lastRcChange = sw.ElapsedMilliseconds; continue;
+                }
                 if (inSirena) {
                     if (okp(mario) && (killRc > 0 || grabRc > 0) && u32(mario + 0x7C) == 0x1302) { sirenaShine = true; shineRc = rc; track.WriteLine("sirena shine " + rc); L("Sirena Shine touched at field " + rc); continue; }
                     if (!okp(md)) return "FAIL the stage ended without the Shine at field " + rc + " (" + (rc - sirenaRc) + " in)";
@@ -250,7 +277,7 @@ $t0 = Get-Date
 $st = Join-Path $dol "User\StateSaves\GMSJ01.s0$loadstate"
 if ($loadstate -gt 0 -and -not (Test-Path $st)) { Log "waiting for the savestate $st"; exit 2 }
 if ($true) {
-$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate, $pokes, $kill, $grab, $logall) }
+$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate, $pokes, $kill, $grab, $logall, $shots) }
 $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
 Log "result $name : $r ($mins min)"
 Add-Content -Path $results -Value "$name | $r | $mins min | $entry"
