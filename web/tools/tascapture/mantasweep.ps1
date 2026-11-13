@@ -68,6 +68,8 @@ public static class Sweep {
     [DllImport("kernel32.dll")] static extern IntPtr VirtualQueryEx(IntPtr h, IntPtr a, out MBI m, IntPtr len);
     [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint f);
     [StructLayout(LayoutKind.Sequential)] public struct MBI { public IntPtr Base; public IntPtr AllocBase; public uint AllocProtect; public IntPtr Size; public uint State; public uint Protect; public uint Type; }
+    // the synced capture's stage changes up to Sirena Beach 1: field (retrace count), area, episode
+    static readonly uint[] REF = { 7,0,0,325,15,0,615,0,0,5339,0,1,13047,1,0,26458,1,1,30332,2,255,30826,2,0,32382,55,0,37361,1,5,38192,2,255,38665,2,2,39964,47,0,41667,1,5,45261,2,255,45733,2,3,48584,1,5,49414,2,255,49909,2,4,57976,1,5,62050,4,255,62540,4,0,64270,1,6,65090,4,255,65605,4,6,67165,1,6,68259,8,255,68733,8,0,71307,1,6,71937,8,255,72405,8,1,76317,1,6,76947,8,255,77231,8,2,79471,1,7,80284,8,255,80761,8,3,83747,1,7,84560,8,255,85035,8,4,86106,42,0,88147,1,7,88960,8,255,89435,8,5,93631,1,7,94444,8,255,94924,8,6,96452,1,7,97861,1,8,98584,5,255,99073,5,0,99612,13,0,100121,13,6,100739,58,1,102722,13,7,103983,1,8,104982,5,255,105463,5,1,106230,50,0,108529,1,8,109527,5,255,110014,5,2,110552,13,1,112999,1,8,113997,5,255,114496,5,3,118090,1,8,119271,5,255,119804,5,2,122484,41,0,124514,1,8,125695,5,255,126187,5,6,126726,13,4,128067,1,8,129556,3,255,130035,3,0,131124,59,0,134292,1,8,135309,3,255,135793,3,1,136945,30,0,139386,1,8,140403,3,255,140884,3,2,142226,1,8,143243,3,255,143721,3,3,144503,48,0,146764,1,8,147781,3,255,148272,3,4,151896,1,8,152913,3,255,153388,3,5,156717,1,8,157734,3,255,158212,3,6,159618,1,8,160955,2,255,161421,2,5,163033,46,0,165838,1,8,166845,2,255,167317,2,6,168783,1,8,170270,6,255,170733,6,0 };
     static IntPtr h; static long ram;
     static bool okp(uint p) { return p >= 0x80000000u && p < 0x81800000u; }
     static byte[] b4 = new byte[4], b2 = new byte[2];
@@ -97,7 +99,7 @@ public static class Sweep {
             while (ram == 0 && !p.HasExited && sw.ElapsedMilliseconds < 120000) { System.Threading.Thread.Sleep(100); ram = findRam(); }
             if (ram == 0) return "ERROR no game memory";
             uint lastRc = 0; long lastRcChange = 0, lastLog = 0, lastRcLog = 0; int lastArea = -1, lastEp = -1;
-            bool inSirena = false; uint sirenaRc = 0, lastTrackRc = 0;
+            bool inSirena = false; int refIdx = 0; uint sirenaRc = 0, lastTrackRc = 0;
             while (true) {
                 if (p.HasExited) return "ERROR Dolphin exited at field " + lastRc;
                 long now = sw.ElapsedMilliseconds;
@@ -105,7 +107,18 @@ public static class Sweep {
                 byte area = (byte)(u32(0x803E600C) >> 8), ep = (byte)u32(0x803E600C);
                 if (rc != lastRc) { lastRc = rc; lastRcChange = now; }
                 if (now - lastRcChange > 180000) return "ERROR stalled at field " + rc;
-                if (area != lastArea || ep != lastEp) { track.WriteLine("area " + rc + " " + area + "," + ep); lastArea = area; lastEp = ep; }
+                if (area != lastArea || ep != lastEp) {
+                    track.WriteLine("area " + rc + " " + area + "," + ep); lastArea = area; lastEp = ep;
+                    // before Sirena, every stage change has to come as the synced capture's did (a few fields of slack)
+                    if (!inSirena && refIdx * 3 < REF.Length) {
+                        uint rr = REF[refIdx * 3], ra = REF[refIdx * 3 + 1], re = REF[refIdx * 3 + 2];
+                        if (area != ra || ep != re || (refIdx > 0 && Math.Abs((long)rc - rr) > 120))
+                            return "FAIL desync before Sirena: field " + rc + " entered " + area + "," + ep + ", the synced run entered " + ra + "," + re + " at " + rr;
+                        refIdx++;
+                    }
+                }
+                if (!inSirena && refIdx * 3 < REF.Length && rc > REF[refIdx * 3] + 600)
+                    return "FAIL desync before Sirena: no change to " + REF[refIdx * 3 + 1] + "," + REF[refIdx * 3 + 2] + " by field " + rc + " (synced run: " + REF[refIdx * 3] + ")";
                 uint md = u32(0x8040A2A8), mario = u32(0x8040A378);
                 if (!inSirena && area == 6 && ep == 0 && okp(md) && okp(mario)) { inSirena = true; sirenaRc = rc; track.WriteLine("sirena " + rc); }
                 if (inSirena) {
