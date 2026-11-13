@@ -114,16 +114,17 @@ def build(g):
                               var, a, e, p, fl, r0, r1)
     pose = b''.join(vg.pack_pose_sample_v4(x, y, z, yaw, d, anim, (phase * vg.V4_ANIMATION_PHASE_MAX + vg.ANIMATION_PHASE_MAX // 2) // vg.ANIMATION_PHASE_MAX, yo, held)
                     for x, y, z, yaw, d, anim, phase, yo, held in samples)
-    # SGTI v3: qf, the PracticeInput (buttons ... error, flags 0), the visual observation (none recorded: zero)
+    # SGTI v3: qf, the PracticeInput (buttons ... error, flags 0), the visual observation (capture3's VISL; else zero)
     inputs = b''
     previous = None
-    for qf, pad in g['inputs']:
+    for qf, pad, *vis in g['inputs']:
         if not (start_qf <= qf <= end_qf) or (previous is not None and qf <= previous):
             continue
         p = bytearray(bytes.fromhex(pad))
         struct.pack_into('>H', p, 0, struct.unpack_from('>H', p, 0)[0] & 0x1F7F)
         p[11] = 0
-        inputs += struct.pack('>I', qf) + bytes(p) + bytes(8)
+        v = bytes.fromhex(vis[0]) if vis and vis[0] else bytes(8)
+        inputs += struct.pack('>I', qf) + bytes(p) + v
         previous = qf
     n_inputs = len(inputs) // 24
     teaching = struct.pack('>IHHIIIIII', 0x53475449, 3, 32, n_inputs, 0, 0, vg._crc32(inputs), 0, 0) + inputs

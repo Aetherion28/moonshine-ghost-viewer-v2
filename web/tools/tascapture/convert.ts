@@ -31,12 +31,15 @@ const FULL = new Set(['Bianco 3', 'Pianta 5', 'Pinna 2', 'Pinna 6', 'Ricco 2', '
 const u32 = (d: Uint8Array, o: number) => (d[o] << 24 | d[o + 1] << 16 | d[o + 2] << 8 | d[o + 3]) >>> 0;
 
 interface Blob { addr: number; data: Uint8Array }
-interface Tick { status: number; hasMario: boolean; mt: number; mario: Uint8Array | null; camera: Uint8Array | null; marioAddr: number; cameraAddr: number }
+interface Tick { status: number; hasMario: boolean; mt: number; mario: Uint8Array | null; camera: Uint8Array | null; marioAddr: number; cameraAddr: number;
+    /** capture3: the tick's other blobs (7 frame control, 8 TMarioGamePad, 9 TMarioControllerWork, 10..13 triangles, 14 in-between, 15 pad mirrors) and TPTR */
+    extra?: Map<number, Blob>; tptr?: number[] }
 interface Frame {
     i: number; rc: number; dticks: number; moveTicks: number; dirState: number; seed: number; area: number; episode: number;
     pad: Uint8Array; ticks: Tick[]; mario: Uint8Array | null; fludd: Blob | null; yoshi: Blob | null; frameCtrl: Uint8Array | null;
     actors: { addr: number; data: Uint8Array }[]; shines: Set<number>; ms: number;
     marioPtr?: number; flPtr?: number; yoPtr?: number; camPtr?: number; flags?: Uint8Array; cameraF?: Uint8Array | null;
+    app?: Uint8Array; visual?: Uint8Array; npcPhase?: number; gamepad?: Blob | null; heap?: Blob | null; flagsFull?: Blob | null;
 }
 const blobs = new Map<number, Blob>();
 let frames: Frame[] = [];
@@ -45,6 +48,7 @@ let pendingTicks: Tick[] = [];
 let lastFrame: Frame | null = null;
 let rosterAddrs: number[] = [];
 let inFrameBlobs = false;
+let body0App = new Uint8Array(0x30);
 let nFrames = 0;
 const shineSet = (flags: Uint8Array) => { const s = new Set<number>(); for (let i = 0; i < 120; i++) if (flags[i >> 3] >> (i & 7) & 1) s.add(i); return s; };
 let p = 0;
@@ -71,10 +75,17 @@ while (p < cap.length) {
             const t = pendingTicks[pendingTicks.length - 1], s = blobs.get(key)!;
             if (key === 1) { t.hasMario = true; t.status = u32(s.data, 0x7c); }
             if (full(nFrames)) { const c = copy(key)!; if (key === 1) { t.mario = c.data; t.marioAddr = c.addr; } else { t.camera = c.data; t.cameraAddr = c.addr; } }
+        } else if (key >= 7 && key <= 15 && pendingTicks.length && !inFrameBlobs && full(nFrames)) {
+            const t = pendingTicks[pendingTicks.length - 1];
+            (t.extra ??= new Map()).set(key, copy(key)!);
         }
+    } else if (tag === 'TPTR') {
+        if (pendingTicks.length) pendingTicks[pendingTicks.length - 1].tptr = [0, 1, 2, 3, 4, 5, 6].map((k) => bv.getUint32(4 * k));
+    } else if (tag === 'VISL') {
+        if (lastFrame) { lastFrame.visual = body.slice(0, 8); lastFrame.npcPhase = bv.getUint32(8); }
     } else if (tag === 'FRAM') {
         inFrameBlobs = true;
-        const app = body.subarray(44, 44 + 0x30);
+        const app = body.subarray(44, 44 + 0x30); body0App = app;
         const f: Frame = {
             i: nFrames++, rc: bv.getUint32(0), dticks: bv.getUint32(8), moveTicks: bv.getUint32(12), dirState: bv.getUint32(16),
             seed: bv.getUint32(24), area: app[0xe], episode: app[0xf], pad: body.slice(44 + 0x30, 44 + 0x70), ticks: pendingTicks,
@@ -89,7 +100,7 @@ while (p < cap.length) {
     } else if (tag === 'DONE') break;
     // a frame's own blobs end at the next TICK or FRAM: close the frame then
     const next = p < cap.length ? cap.toString('latin1', p, p + 4) : 'DONE';
-    if (inFrameBlobs && next !== 'BLOB' && next !== 'ROST') {
+    if (inFrameBlobs && next !== 'BLOB' && next !== 'ROST' && next !== 'VISL') {
         const f = lastFrame!;
         const fg = blobs.get(5); f.shines = fg ? shineSet(fg.data) : new Set();
         inFrameBlobs = false;
@@ -100,6 +111,7 @@ while (p < cap.length) {
         const cmb = blobs.get(2); f.cameraF = cmb && cmb.addr === f.camPtr ? cmb.data.slice() : null;
         const yo = blobs.get(4); f.yoshi = yo && yo.addr === f.yoPtr ? { addr: yo.addr, data: yo.data.slice() } : null;
         const fc = blobs.get(7); f.frameCtrl = fc ? fc.data.slice() : null;
+        f.app = body0App.slice(); f.gamepad = copy(16); f.heap = copy(17); f.flagsFull = fg ? { addr: fg.addr, data: fg.data.slice(0, 0x380) } : null;
         f.actors = rosterAddrs.map((a, i) => { const s = blobs.get(0x1000 + i); return s && s.addr === a ? { addr: a, data: s.data.slice() } : null; }).filter((x): x is { addr: number; data: Uint8Array } => !!x);
         cb(f);
     }
@@ -180,7 +192,7 @@ function smsghost(label: string, c: Cut) {
         const qf = RQ.get(i)!;
         // the frame's input (JUTGamePad::mPadStatus[0], as PracticeSession::snapshot reads it) and the rendered view
         // (mWorldTranslation 0x124, mTRSMatrix 0x1EC, mProjectionFovy 0x48), once a frame as Ghost::captureInput takes them
-        inputs.push([qf, Buffer.from(f.pad.subarray(0, 12)).toString('hex')]);
+        inputs.push([qf, Buffer.from(f.pad.subarray(0, 12)).toString('hex'), f.visual ? Buffer.from(f.visual).toString('hex') : '']);
         const cv = f.cameraF;
         if (cv) { const v: number[] = [qf, segs.length - (segs.length && segs[segs.length - 1].area === f.area && segs[segs.length - 1].episode === f.episode ? 1 : 0)];
             for (let k = 0; k < 3; k++) v.push(f32(cv, 0x124 + 4 * k));
@@ -262,8 +274,10 @@ class Mstr {
 }
 function msgt(c: Cut, run: number): Uint8Array {
     const f0 = frames[c.f0];
-    // session, frame, Mario, camera, FLUDD, Yoshi, actors, controller
-    const caps = 2 | 4 | 8 | 32 | 64 | 128 | 1024;
+    // frame, Mario, camera, flags, actors, FLUDD, Yoshi, controller, stage start, visual; capture3 adds contacts,
+    // camera metadata, frame input and the pad mirrors
+    const has3 = !!frames[c.f1].visual;
+    const caps = 2 | 4 | 8 | 16 | 32 | 64 | 128 | 1024 | 65536 | 131072 | (has3 ? 16384 | 32768 | 262144 | 524288 : 0);
     const M = new Mstr(run, f0.area << 8 | f0.episode, caps);
     const id = new DataView(new ArrayBuffer(16));
     id.setUint32(0, 0x474d534a); id.setUint32(4, 0x30310000); id.setUint32(8, 0); id.setUint32(12, 0);
@@ -273,20 +287,52 @@ function msgt(c: Cut, run: number): Uint8Array {
     let tick = 0, frameNo = 0;
     const actorIds = new Map<number, number>(); let nextId = 1;
     const actorPrev = new Map<number, Uint32Array>();
-    let prevFrame: Frame | null = null, lastMt = -1;
+    let prevFrame: Frame | null = frames[c.f0 - 1] || null, lastMt = -1, generation = 0;
+    const contactPrev: (Uint8Array | null)[] = [null, null, null, null];
+    let camMetaPrev: Uint8Array | null = null, mirrorPrev: Uint8Array | null = null;
+    const same = (a: Uint8Array | null, b: Uint8Array) => !!a && a.length === b.length && a.every((x, i) => x === b[i]);
+    const words = (n: number, w: number[]) => { const d = new DataView(new ArrayBuffer(n)); w.forEach((v, k) => d.setUint32(k * 4, v >>> 0)); return new Uint8Array(d.buffer); };
     for (let i = c.f0; i <= c.f1; i++, frameNo++) {
         const f = frames[i];
         // the frame record as the frame begins: what the last frame left (the first: this frame's own)
-        const s = prevFrame && prevFrame.area === f.area && prevFrame.episode === f.episode ? prevFrame : f;
+        const newScene = !prevFrame || prevFrame.area !== f.area || prevFrame.episode !== f.episode || i === c.f0;
+        const s = !newScene && prevFrame ? prevFrame : f;
         // a stretch without the director (a load) is written as one frame record a game frame, so the viewer's clock keeps up
-        if (prevFrame && (!f.dticks || !prevFrame.dticks)) for (let k = 1; k < Math.round((f.rc - prevFrame.rc) / 2); k++, frameNo++) {
+        if (prevFrame && i > c.f0 && (!f.dticks || !prevFrame.dticks)) for (let k = 1; k < Math.round((f.rc - prevFrame.rc) / 2); k++, frameNo++) {
             const e = new DataView(new ArrayBuffer(32));
             [f.area << 8 | f.episode, 0, prevFrame.rc + 2 * k, f.ms, prevFrame.seed, tick, 0xffffffff, 0].forEach((v, n) => e.setUint32(n * 4, v >>> 0));
             M.rec(2, frameNo, tick, new Uint8Array(e.buffer));
         }
         const fb = new DataView(new ArrayBuffer(32));
-        [f.area << 8 | f.episode, 0, f.rc, f.ms, s.seed, tick, s.dirState === 0xffffffff ? 0xffffffff : s.dirState >>> 24, 0].forEach((v, k) => fb.setUint32(k * 4, v >>> 0));
+        [f.area << 8 | f.episode, f.app ? f.app[8] : 0, f.rc, f.ms, s.seed, tick, s.dirState === 0xffffffff ? 0xffffffff : s.dirState >>> 24, f.dticks ? 6 : 0].forEach((v, k) => fb.setUint32(k * 4, v >>> 0));
         M.rec(2, frameNo, tick, new Uint8Array(fb.buffer));
+        if (newScene) {
+            // the stage-start record (schema 3, ghost_trace.cpp stageSetup): the scenes, the seed and the flags as setup
+            // began (the last frame before this stage's first), the heap's free space, the disc, the NPC phase
+            const pf = prevFrame && i > c.f0 ? prevFrame : (frames[c.f0 - 1] || f), ap = f.app || new Uint8Array(0x30);
+            const ss = new Uint8Array(968), sv = new DataView(ss.buffer);
+            const flags = pf.flagsFull || f.flagsFull, hp = f.heap;
+            let sf = 4 | (flags ? 1 : 0);
+            const be = (a: Uint8Array, o: number) => u32(a, o);
+            const hw = hp ? [be(hp.data, 0x30), be(hp.data, 0x34), be(hp.data, 0x68), be(hp.data, 0x6C), be(hp.data, 0x70)] : null;
+            if (hw && hw[0] <= hw[3] && hw[3] <= hw[4] && hw[4] <= hw[1] && hw[2] === hw[4] - hw[3]) { sf |= 2; sv.setUint32(36, hw[3] - hw[0]); sv.setUint32(40, hw[1] - hw[4]); sv.setUint32(44, hw[1] - hw[0]); }
+            sv.setUint32(0, 3); sv.setUint32(4, sf); sv.setUint32(8, f.area << 8 | f.episode);
+            ss.set(ap.subarray(0x0a, 0x0e), 12); ss.set(ap.subarray(0x0e, 0x12), 16); ss.set(ap.subarray(0x12, 0x16), 20);
+            sv.setUint32(24, pf.seed); sv.setUint32(28, ++generation); sv.setUint32(32, 896);
+            sv.setUint32(48, 0x474d534a); sv.setUint32(52, 0x30310000); sv.setUint32(56, 0); sv.setUint32(60, u32(ap, 0x18));
+            if (flags) ss.set(flags.data.subarray(0, 896), 64);
+            sv.setUint32(960, (f.npcPhase ?? pf.npcPhase ?? 0) >>> 0); sv.setUint32(964, 0);
+            M.rec(22, frameNo, tick, ss);
+        }
+        // the visual record (ghost_trace.cpp visualSample: timed, the stage QF, the scene, the director's movement ticks, the stage generation)
+        M.rec(23, frameNo, tick, words(64, [1, 2, f.dticks, f.area << 8 | f.episode, 0, 0, 0, 0, 0, 0, 0, 0, 0, f.moveTicks, 0, generation]));
+        if (f.dticks && s.flagsFull) M.blob(5, frameNo, tick, s.flagsFull.addr, s.flagsFull.data);
+        if (has3 && f.gamepad) {
+            // the pad as the frame starts (directInput: word 1's high bit, JUTGamePad::mPadStatus[0], the application's TMarioGamePad 0)
+            const inp = new Uint8Array(300), iv = new DataView(inp.buffer);
+            iv.setUint32(4, 0x80000000); inp.set(f.pad.subarray(0, 11), 8); iv.setUint32(20, 1); inp.set(f.gamepad.data.subarray(0, 0xF0), 24);
+            M.rec(14, frameNo, tick, inp);
+        }
         if (s !== f || i === c.f0) {
             if (s.fludd) M.blob(8, frameNo, tick, s.fludd.addr, s.fludd.data);
             if (s.yoshi) M.blob(9, frameNo, tick, s.yoshi.addr, s.yoshi.data);
@@ -317,10 +363,29 @@ function msgt(c: Cut, run: number): Uint8Array {
             tick += lastMt >= 0 && t.mt > lastMt && t.mt - lastMt <= 8 ? t.mt - lastMt : 1;
             lastMt = t.mt;
             if (!t.mario) continue;
-            // the controller observation: cue 1, pad 0, the frame's PADStatus, valid
+            const X = t.extra;
+            const mir = X && X.get(15);
+            if (mir && !same(mirrorPrev, mir.data)) { const r = new Uint8Array(88); r.set(words(8, [1, 80]), 0); r.set(mir.data.subarray(0, 80), 8); M.rec(24, frameNo, tick, r); mirrorPrev = mir.data; }
+            // the controller observation (ghost_trace.cpp movement: cue, 0, mPadStatus[0], valid, TMarioGamePad, TMarioControllerWork)
             const inp = new Uint8Array(300), iv = new DataView(inp.buffer);
-            iv.setUint32(0, 1); iv.setUint32(4, 0); inp.set(f.pad.subarray(0, 12), 8); iv.setUint32(20, 1);
+            iv.setUint32(0, 1); iv.setUint32(4, 0); inp.set(f.pad.subarray(0, 11), 8);
+            const gp = X && X.get(8), cw = X && X.get(9);
+            let valid = X ? 0 : 1;
+            if (gp && t.mario && gp.addr === u32(t.mario, 0x4FC)) { inp.set(gp.data.subarray(0, 0xF0), 24); valid |= 1; }
+            if (cw && t.mario && cw.addr === u32(t.mario, 0x108)) { inp.set(cw.data.subarray(0, 0x24), 264); valid |= 2; }
+            iv.setUint32(20, valid);
             M.rec(14, frameNo, tick, inp);
+            if (X && t.tptr) {
+                // contacts (wall, roof, floor, water floor) and the camera's metadata, each when it changed
+                for (let r = 0; r < 4; r++) {
+                    const ptr = t.tptr[1 + r], tri = X.get(10 + r), ok = !!tri && tri.addr === ptr;
+                    const rec = new Uint8Array(88); rec.set(words(16, [r, ptr, ok ? 1 : 0, 0]), 0); if (ok) rec.set(tri!.data.subarray(0, 72), 16);
+                    if (!same(contactPrev[r], rec)) { M.rec(19, frameNo, tick, rec); contactPrev[r] = rec; }
+                }
+                const ib = X.get(14), ibOk = !!ib && ib.addr === t.tptr[5] && t.tptr[5] !== 0;
+                const cm = new Uint8Array(88); cm.set(words(16, [t.cameraAddr, t.tptr[6], t.tptr[5], t.camera ? (ibOk ? 3 : 1) : 0]), 0); if (ibOk) cm.set(ib!.data.subarray(0, 72), 16);
+                if (!same(camMetaPrev, cm)) { M.rec(21, frameNo, tick, cm); camMetaPrev = cm; }
+            }
             M.blob(3, frameNo, tick, t.marioAddr, t.mario);
             if (t.camera) M.blob(4, frameNo, tick, t.cameraAddr, t.camera);
         }
@@ -338,7 +403,7 @@ for (const L of LEVELS) {
     if (L.secret !== undefined) jobs.push({ name: `${L.label} (Secret)`, c: cutFor(L, true), run: run++ });
 }
 let low = 0;
-const need = (i: number) => jobs.some((j) => j.c.f0 <= i && i <= j.c.f1);
+const need = (i: number) => jobs.some((j) => j.c.f0 - 1 <= i && i <= j.c.f1);
 parse(need, (f) => {
     if (!need(f.i)) return;
     frames[f.i] = f;
@@ -351,6 +416,6 @@ parse(need, (f) => {
         console.log(`${name}: frames ${c.f0}..${c.f1} (areas ${[...new Set(frames.slice(c.f0, c.f1 + 1).map((f) => f.area.toString(16)))].join(',')}), ${qf} QF, samples ${g.segments.reduce((a, x) => a + x.samples.length, 0)}, trace ${t.length} B`);
     }
     // drop what no later job needs
-    const keep = Math.min(...jobs.filter((j) => j.c.f1 > f.i).map((j) => j.c.f0), f.i + 1);
+    const keep = Math.min(...jobs.filter((j) => j.c.f1 > f.i).map((j) => j.c.f0 - 1), f.i + 1);
     for (; low < keep; low++) delete frames[low];
 });
