@@ -32,10 +32,10 @@ foreach ($l in Get-Content $queue) {
 }
 if (-not $entry) { Log 'queue empty'; exit 2 }
 $parts = $entry -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0; $gecko = @(); $pokes = ''; $kill = 0; $grab = 0
+$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0; $gecko = @(); $pokes = ''; $kill = 0; $grab = 0; $adapter = 0
 foreach ($p in $parts[1..($parts.Count - 1)]) {
     $k, $v = $p -split '=', 2
-    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v } elseif ($k -eq 'gecko') { $gecko += $v } elseif ($k -eq 'poke') { $pokes = $v } elseif ($k -eq 'kill') { $kill = [int]$v } elseif ($k -eq 'grab') { $grab = [int]$v }
+    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v } elseif ($k -eq 'gecko') { $gecko += $v } elseif ($k -eq 'poke') { $pokes = $v } elseif ($k -eq 'kill') { $kill = [int]$v } elseif ($k -eq 'grab') { $grab = [int]$v } elseif ($k -eq 'adapter') { $adapter = [int]$v }
     else { $s, $key = $k -split '\.', 2; if (-not $game.ContainsKey($s)) { $game[$s] = @() }; $game[$s] += "$key = $v" }
 }
 Log "attempt $name : $entry"
@@ -46,6 +46,8 @@ if (-not (Test-Path "$ini.sweepbak")) { Copy-Item $ini "$ini.sweepbak" }
 $c = Get-Content $ini
 $c = $c -replace '^EnableCheats = .*', ('EnableCheats = ' + $(if ($gecko.Count) { 'True' } else { 'False' })) -replace '^EmulationSpeed = .*', 'EmulationSpeed = 0.00000000' -replace '^GFXBackend = .*', "GFXBackend = $backend"
 Set-Content -Path $ini -Value $c
+# adapter=N: the D3D adapter by index (GFX.ini [Hardware] Adapter; the last one is Windows' software WARP, "Microsoft Basic Render Driver")
+Set-Content -Path (Join-Path $dol 'User\Config\GFX.ini') -Value "[Hardware]`r`nAdapter = $adapter"
 # the game ini
 $gdir = Join-Path $dol 'User\GameSettings'; New-Item -ItemType Directory -Force -Path $gdir | Out-Null
 $g = @(); foreach ($s in $game.Keys) { $g += "[$s]"; $g += $game[$s] }
