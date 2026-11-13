@@ -29,10 +29,10 @@ foreach ($l in Get-Content $queue) {
 }
 if (-not $entry) { Log 'queue empty'; exit 2 }
 $parts = $entry -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0
+$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0
 foreach ($p in $parts[1..($parts.Count - 1)]) {
     $k, $v = $p -split '=', 2
-    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v }
+    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v }
     else { $s, $key = $k -split '\.', 2; if (-not $game.ContainsKey($s)) { $game[$s] = @() }; $game[$s] += "$key = $v" }
 }
 Log "attempt $name : $entry"
@@ -67,6 +67,36 @@ public static class Sweep {
     [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] buf, IntPtr n, out IntPtr r);
     [DllImport("kernel32.dll")] static extern IntPtr VirtualQueryEx(IntPtr h, IntPtr a, out MBI m, IntPtr len);
     [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint f);
+    delegate bool EnumProc(IntPtr hwnd, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    [DllImport("user32.dll")] static extern IntPtr GetMenu(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr m);
+    [DllImport("user32.dll")] static extern IntPtr GetSubMenu(IntPtr m, int i);
+    [DllImport("user32.dll")] static extern uint GetMenuItemID(IntPtr m, int i);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetMenuString(IntPtr m, uint item, System.Text.StringBuilder s, int max, uint flags);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
+    static string menuText(IntPtr m, int i) { var sb = new System.Text.StringBuilder(256); GetMenuString(m, (uint)i, sb, 256, 0x400); return sb.ToString().Replace("&", ""); }
+    // Dolphin's own menu command Emulation > (Save|Load) State > Slot n, posted to its main window (no focus or hotkey needed)
+    public static string stateCommand(int pid, string which, int slot) {
+        IntPtr main = IntPtr.Zero;
+        EnumWindows((w, l) => { uint q; GetWindowThreadProcessId(w, out q); if (q == pid && GetMenu(w) != IntPtr.Zero) { main = w; return false; } return true; }, IntPtr.Zero);
+        if (main == IntPtr.Zero) return "no main window";
+        IntPtr bar = GetMenu(main);
+        for (int i = 0; i < GetMenuItemCount(bar); i++) {
+            if (!menuText(bar, i).StartsWith("Emulation")) continue;
+            IntPtr em = GetSubMenu(bar, i);
+            for (int j = 0; j < GetMenuItemCount(em); j++) {
+                if (!menuText(em, j).StartsWith(which)) continue;
+                IntPtr sub = GetSubMenu(em, j);
+                for (int k = 0; k < GetMenuItemCount(sub); k++) {
+                    string t = menuText(sub, k);
+                    if (t.StartsWith("Slot " + slot + " ")) { PostMessage(main, 0x0111, new IntPtr((int)GetMenuItemID(sub, k)), IntPtr.Zero); return "ok " + t; }
+                }
+            }
+        }
+        return "menu item not found";
+    }
     [StructLayout(LayoutKind.Sequential)] public struct MBI { public IntPtr Base; public IntPtr AllocBase; public uint AllocProtect; public IntPtr Size; public uint State; public uint Protect; public uint Type; }
     // the synced capture's stage changes up to Sirena Beach 1: field (retrace count), area, episode
     static readonly uint[] REF = { 7,0,0,325,15,0,615,0,0,5339,0,1,13047,1,0,26458,1,1,30332,2,255,30826,2,0,32382,55,0,37361,1,5,38192,2,255,38665,2,2,39964,47,0,41667,1,5,45261,2,255,45733,2,3,48584,1,5,49414,2,255,49909,2,4,57976,1,5,62050,4,255,62540,4,0,64270,1,6,65090,4,255,65605,4,6,67165,1,6,68259,8,255,68733,8,0,71307,1,6,71937,8,255,72405,8,1,76317,1,6,76947,8,255,77231,8,2,79471,1,7,80284,8,255,80761,8,3,83747,1,7,84560,8,255,85035,8,4,86106,42,0,88147,1,7,88960,8,255,89435,8,5,93631,1,7,94444,8,255,94924,8,6,96452,1,7,97861,1,8,98584,5,255,99073,5,0,99612,13,0,100121,13,6,100739,58,1,102722,13,7,103983,1,8,104982,5,255,105463,5,1,106230,50,0,108529,1,8,109527,5,255,110014,5,2,110552,13,1,112999,1,8,113997,5,255,114496,5,3,118090,1,8,119271,5,255,119804,5,2,122484,41,0,124514,1,8,125695,5,255,126187,5,6,126726,13,4,128067,1,8,129556,3,255,130035,3,0,131124,59,0,134292,1,8,135309,3,255,135793,3,1,136945,30,0,139386,1,8,140403,3,255,140884,3,2,142226,1,8,143243,3,255,143721,3,3,144503,48,0,146764,1,8,147781,3,255,148272,3,4,151896,1,8,152913,3,255,153388,3,5,156717,1,8,157734,3,255,158212,3,6,159618,1,8,160955,2,255,161421,2,5,163033,46,0,165838,1,8,166845,2,255,167317,2,6,168783,1,8,170270,6,255,170733,6,0 };
@@ -88,7 +118,7 @@ public static class Sweep {
         return 0;
     }
     // returns "SUCCESS ..." or "FAIL ..." or "ERROR ..."
-    public static string Run(string exe, string args, string trackPath, string logPath, int loadState) {
+    public static string Run(string exe, string args, string trackPath, string logPath, int loadState, int saveState) {
         SetThreadExecutionState(0x80000001u);   // ES_CONTINUOUS | ES_SYSTEM_REQUIRED: no idle sleep while this runs
         var track = new StreamWriter(trackPath); track.AutoFlush = true;
         var log = new StreamWriter(logPath, true); log.AutoFlush = true;
@@ -99,12 +129,10 @@ public static class Sweep {
             while (ram == 0 && !p.HasExited && sw.ElapsedMilliseconds < 120000) { System.Threading.Thread.Sleep(100); ram = findRam(); }
             if (ram == 0) return "ERROR no game memory";
             if (loadState > 0) {
-                // load the savestate made at Sirena's start (F<n>, Dolphin's default hotkey), then check only Sirena
+                // load the savestate made at Sirena's start through Dolphin's menu, then check only Sirena
+                System.Threading.Thread.Sleep(5000);
+                log.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "   load state " + loadState + ": " + stateCommand(p.Id, "Load State", loadState));
                 System.Threading.Thread.Sleep(4000);
-                Microsoft.VisualBasic.Interaction.AppActivate(p.Id);
-                System.Threading.Thread.Sleep(500);
-                System.Windows.Forms.SendKeys.SendWait("{F" + loadState + "}");
-                System.Threading.Thread.Sleep(3000);
             }
             uint lastRc = 0; long lastRcChange = 0, lastLog = 0, lastRcLog = 0; int lastArea = -1, lastEp = -1;
             bool inSirena = false; int refIdx = 0; uint sirenaRc = 0, lastTrackRc = 0;
@@ -129,7 +157,8 @@ public static class Sweep {
                 if (!inSirena && loadState == 0 && refIdx * 3 < REF.Length && rc > REF[refIdx * 3] + 600)
                     return "FAIL desync before Sirena: no change to " + REF[refIdx * 3 + 1] + "," + REF[refIdx * 3 + 2] + " by field " + rc + " (synced run: " + REF[refIdx * 3] + ")";
                 uint md = u32(0x8040A2A8), mario = u32(0x8040A378);
-                if (!inSirena && area == 6 && ep == 0 && okp(md) && okp(mario)) { inSirena = true; sirenaRc = rc; track.WriteLine("sirena " + rc); }
+                if (!inSirena && area == 6 && ep == 0 && okp(md) && okp(mario)) { inSirena = true; sirenaRc = rc; track.WriteLine("sirena " + rc);
+                    if (saveState > 0) { log.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "   save state " + saveState + " at field " + rc + ": " + stateCommand(p.Id, "Save State", saveState)); System.Threading.Thread.Sleep(3000); } }
                 if (inSirena) {
                     if (!okp(md)) return "FAIL the stage ended without the Shine at field " + rc + " (" + (rc - sirenaRc) + " in)";
                     if (area != 6 || ep != 0) return "FAIL left Sirena without the Shine at field " + rc + " (" + (rc - sirenaRc) + " in)";
@@ -157,7 +186,7 @@ public static class Sweep {
     }
 }
 "@
-Add-Type -TypeDefinition $src -ReferencedAssemblies Microsoft.VisualBasic, System.Windows.Forms
+Add-Type -TypeDefinition $src 
 $safe = $name -replace '[^A-Za-z0-9_-]', '_'
 New-Item -ItemType Directory -Force -Path (Join-Path $here 'sweep') | Out-Null
 $dargs = "-b -e `"$iso`" -m `"$dtm`""
@@ -165,7 +194,7 @@ $t0 = Get-Date
 $st = Join-Path $dol "User\StateSaves\GMSJ01.s0$loadstate"
 if ($loadstate -gt 0 -and -not (Test-Path $st)) { Log "waiting for the savestate $st"; exit 2 }
 if ($true) {
-$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate) }
+$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate) }
 $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
 Log "result $name : $r ($mins min)"
 Add-Content -Path $results -Value "$name | $r | $mins min | $entry"
