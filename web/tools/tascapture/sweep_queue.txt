@@ -2,11 +2,24 @@
 # mono-d3d (2026-11-13): desynced in the airstrip, so the TAS was made with stereo; mono is out.
 # unlimited speed (2026-11-13): every setup entered Bianco Hills 2 about 205 fields early (the load ran shorter), so attempts run at speed 1 now
 # speed 1 changed nothing (2026-11-13): the synced capture recorded each stage change only once the stage's director ticked, so the check was wrong, not the speed; back to unlimited speed
-stereo-d3d-native-v3; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=1; Video_Settings.SSAA=False
-stereo-d3d12-v3; sram=stereo; backend=D3D12; Video_Settings.EFBScale=2
+stereo-d3d-native-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=1; Video_Settings.SSAA=False; loadstate=1
+stereo-d3d12-ss; sram=stereo; backend=D3D12; Video_Settings.EFBScale=2; loadstate=1
 stereo-ogl-v3; sram=stereo; backend=OGL; Video_Settings.EFBScale=2
+stereo-d3d-nofastdepth-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.FastDepthCalc=False; loadstate=1
+stereo-d3d-safetex-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.SafeTextureCacheColorSamples=0; loadstate=1
+stereo-d3d-noperfq-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video.PerfQueriesEnable=False; loadstate=1
+stereo-d3d-bbox-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Hacks.BBoxEnable=True; loadstate=1
+
+# from the Manta Storm savestate (slot 1, made in the OGL attempt): each try plays only Sirena 1
 stereo-software-ss; sram=stereo; backend=Software Renderer; loadstate=1
-stereo-d3d-nofastdepth-v3; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.FastDepthCalc=False
-stereo-d3d-safetex-v3; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.SafeTextureCacheColorSamples=0
-stereo-d3d-noperfq-v3; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video.PerfQueriesEnable=False
-stereo-d3d-bbox-v3; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Hacks.BBoxEnable=True
+stereo-d3d-auto-ss; sram=stereo; backend=D3D; loadstate=1
+stereo-d3d-2x-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=4; loadstate=1
+stereo-d3d-3x-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=5; loadstate=1
+stereo-d3d-msaa4-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=4; loadstate=1
+stereo-d3d-ssaa4-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=4; Video_Settings.SSAA=True; loadstate=1
+stereo-d3d-filter-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Enhancements.ForceFiltering=True; loadstate=1
+stereo-d3d-noscaledcopy-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=4; Video_Hacks.EFBScaledCopy=False; loadstate=1
+stereo-d3d-efbtotex-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Hacks.EFBToTextureEnable=True; loadstate=1
+stereo-d3d12-msaa4-ss; sram=stereo; backend=D3D12; Video_Settings.EFBScale=2; Video_Settings.MSAA=4; loadstate=1
+stereo-ogl-2x-ss; sram=stereo; backend=OGL; Video_Settings.EFBScale=4; loadstate=1
+stereo-d3d-pixellight-ss; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.EnablePixelLighting=True; loadstate=1

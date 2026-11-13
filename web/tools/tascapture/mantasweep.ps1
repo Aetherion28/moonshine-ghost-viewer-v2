@@ -163,7 +163,8 @@ New-Item -ItemType Directory -Force -Path (Join-Path $here 'sweep') | Out-Null
 $dargs = "-b -e `"$iso`" -m `"$dtm`""
 $t0 = Get-Date
 $st = Join-Path $dol "User\StateSaves\GMSJ01.s0$loadstate"
-if ($loadstate -gt 0 -and -not (Test-Path $st)) { $r = 'ERROR no savestate ' + $st } else {
+if ($loadstate -gt 0 -and -not (Test-Path $st)) { Log "waiting for the savestate $st"; exit 2 }
+if ($true) {
 $r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate) }
 $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
 Log "result $name : $r ($mins min)"
