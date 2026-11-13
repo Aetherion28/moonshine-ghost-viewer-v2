@@ -540,7 +540,10 @@ export class BossMantaManager extends EnemyManager {
             const m = this.getDeadEnemy();
             if (!m) return;
             const angle = fr(baseAngle + fr(fr(fr(2 * i) * PI_F) / count));
-            // TODO: the game's mult() adds an unset matrix translation (whatever was on the stack); taken as 0
+            // Each component adds f26, which spawn never sets (JP 0x803212D4..DC): the caller's leftover.
+            // Moonshine's Manta Fix (features.cpp, always on) loads 0.0 into f26 at boot (TGCLogoDir::direct+0x88,
+            // lfs f26,-0x1C(r2)), so a Moonshine recording's split Mantas get sin, 0, cos. (The DOL calls MSL
+            // sinf / cosf here; using them made two Sirena traces worse: Refuted, 2026-11-13.)
             m.unk170.set(fr(Math.sin(angle)), 0, fr(Math.cos(angle)));
             m.pos.set(p);
             m.initNthGeneration(gen);
