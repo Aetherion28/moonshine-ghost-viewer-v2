@@ -1,13 +1,10 @@
 # name; sram=mono|stereo; backend=D3D|D3D12|OGL|Software Renderer; Section.Key=Value (User/GameSettings/GMSJ01.ini)
-mono-d3d; sram=mono; backend=D3D
-mono-d3d-native; sram=mono; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=1; Video_Settings.SSAA=False
-mono-d3d12; sram=mono; backend=D3D12; Video_Settings.EFBScale=2
-mono-ogl; sram=mono; backend=OGL; Video_Settings.EFBScale=2
+# mono-d3d (2026-11-13): desynced in the airstrip, so the TAS was made with stereo; mono is out.
 stereo-d3d-native; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.MSAA=1; Video_Settings.SSAA=False
-mono-d3d-nofastdepth; sram=mono; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.FastDepthCalc=False
-mono-d3d-safetex; sram=mono; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.SafeTextureCacheColorSamples=0
-mono-d3d-noperfq; sram=mono; backend=D3D; Video_Settings.EFBScale=2; Video.PerfQueriesEnable=False
-mono-d3d-bbox; sram=mono; backend=D3D; Video_Settings.EFBScale=2; Video_Hacks.BBoxEnable=True
-stereo-ogl; sram=stereo; backend=OGL; Video_Settings.EFBScale=2
 stereo-d3d12; sram=stereo; backend=D3D12; Video_Settings.EFBScale=2
-mono-software; sram=mono; backend=Software Renderer
+stereo-ogl; sram=stereo; backend=OGL; Video_Settings.EFBScale=2
+stereo-d3d-nofastdepth; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.FastDepthCalc=False
+stereo-d3d-safetex; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Settings.SafeTextureCacheColorSamples=0
+stereo-d3d-noperfq; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video.PerfQueriesEnable=False
+stereo-d3d-bbox; sram=stereo; backend=D3D; Video_Settings.EFBScale=2; Video_Hacks.BBoxEnable=True
+stereo-software; sram=stereo; backend=Software Renderer
