@@ -282,7 +282,7 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
 .sprite { animation: pose 1.5s steps(1) infinite; }
 .sp-sun { width: 32px; height: 36px; background-image: url(sprite-sun.png); transform-origin: 50% 100%; animation: lean 1.5s steps(1) infinite; }
 .sp-palm { width: 40px; height: 36px; background-image: url(sprite-palm.png); display: none; }
-@media (min-width: 1480px) { .sp-palm { display: inline-block; } }
+@media (min-width: 1760px) { .sp-palm { display: inline-block; } }
 @media (max-width: 760px) { .sp-sun { width: 24px; height: 27px; } }
 .sp-fish { width: 48px; height: 48px; background-image: url(sprite-fish.png); }
 .sp-ship { width: 96px; height: 72px; background-image: url(sprite-ship.png); }
@@ -585,14 +585,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1794549795228"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1794549795228"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1794549795228"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1794549795228"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1794549795228"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1794549795228"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1794549795228"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1794549795228"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1794628378095"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1794628378095"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1794628378095"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1794628378095"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1794628378095"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1794628378095"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1794628378095"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1794628378095"><\/script>');
 </script>
 <script>
 (() => {
@@ -7541,7 +7541,7 @@ void main() {
   //    nozzle's emit joint. Underwater (TNozzleBase) has none.
   //  - Sliding (TMario::frontSlipEffect, called by slippingBasic while on the ground): on wet
   //    ground ms_m_watslide_a / b / c on Mario's centre joint; elsewhere ms_m_slipsmoke on joint 0
-  //    (on sand ms_m_slidesand: TODO).
+  //    on sand ms_m_slidesand_a / _b (sandMtx).
   const JPA_SIM_FRAMES = 40;   // simulated before the shown frame: longer than any effect's particles live
   const SLIDE_ANIMS = new Set([0x88, 0x89, 0x91]);   // catching (sldct), slipBack (slpbk), slipFore (slip)
   const WET_GROUND = new Set([0x4, 0x4004, 0x8004, 0xc004]);   // TBGCheckData::isWetGround
@@ -7580,14 +7580,14 @@ void main() {
   }
   // 'wet' / 'dry' while Mario slides on the ground at frame e, else null.
   function jpaSlide(g, e) {
-    if (g.live) { const v = g.H.slipAt(e * QF_PER_FRAME); return v === 1 ? 'wet' : v === 2 ? 'dry' : null; }
+    if (g.live) { const v = g.H.slipAt(e * QF_PER_FRAME); return v === 1 ? 'wet' : v === 2 ? 'dry' : v === 3 ? 'sand' : null; }
     const C = g.jpaSlide || (g.jpaSlide = new Map()), key = (mapGroup && mapGroup.uuid) + (activeCol() ? ':col' : '');
     if (C.mapId !== key) { C.clear(); C.mapId = key; }
     const d = g.data, q = e * QF_PER_FRAME;
     // The simulated stage: the sim's own frontSlipEffect (TMario::slippingBasic, on the ground only),
-    // 1 watslide, 2 slip smoke, 3 sand (not drawn), 0 none. Not cached: the history grows.
+    // 1 watslide, 2 slip smoke, 3 sand, 0 none. Not cached: the history grows.
     const H = replayOf(d), v = H && H.slipAt ? H.slipAt(q) : undefined;
-    if (v !== undefined) return v === 1 ? 'wet' : v === 2 ? 'dry' : null;
+    if (v !== undefined) return v === 1 ? 'wet' : v === 2 ? 'dry' : v === 3 ? 'sand' : null;
     if (C.has(e)) return C.get(e);
     const s = ghostSampleAt(d, q), sgd = shineDemo(g);
     let k = null;
@@ -7601,7 +7601,7 @@ void main() {
         if (!h) break;
         const hy = top + (s.y - 40 - top) * h.f;
         if (h.water) { if (hy > s.y) under = true; top = hy - 0.5; continue; }
-        if (h.ground) { wet = WET_GROUND.has(h.ty); k = wet ? 'wet' : SAND_GROUND.has(h.ty) || under ? null : 'dry'; }
+        if (h.ground) { wet = WET_GROUND.has(h.ty); k = wet ? 'wet' : under ? null : SAND_GROUND.has(h.ty) ? 'sand' : 'dry'; }
         break;
       }
     }
@@ -7665,11 +7665,37 @@ void main() {
     { res: 'watslide_b', on: (g, e) => jpaSlide(g, e) === 'wet', mat: (g, e) => jpaJoints(g, e).center },
     { res: 'watslide_c', on: (g, e) => jpaSlide(g, e) === 'wet', mat: (g, e) => jpaJoints(g, e).center },
     { res: 'slipsmoke', on: (g, e) => jpaSlide(g, e) === 'dry', mat: (g, e) => jpaJoints(g, e).mdl1 },
+    { res: 'slidesand_b', on: (g, e) => jpaSlide(g, e) === 'sand', mat: (g, e) => sandMtx(g, e) },
+    { res: 'slidesand_a', on: (g, e) => jpaSlide(g, e) === 'sand', mat: (g, e) => { const c = jpaJoints(g, e).center; return c ? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, c[12], c[13], c[14], 1] : null; } },
     { res: 'gesosurf_a', on: (g, e) => jpaSurf(g, e) > 0, mat: (g, e, r) => jpaScaled(r, jpaSurf(g, e), jpaJoints(g, e).mdl1) },
     { res: 'gesosurf_b', on: (g, e) => jpaSurf(g, e) > 0, mat: (g, e, r) => jpaScaled(r, jpaSurf(g, e), surfMtx(g, e)) },
     { res: 'gesosurf_d', on: (g, e) => jpaSurf(g, e) > 0, mat: (g, e, r) => jpaScaled(r, jpaSurf(g, e), surfMtx(g, e)) },
     { res: 'gesosurf_c', on: (g, e) => jpaSurf(g, e) > 0, mat: (g, e, r) => jpaScaled(r, jpaSurf(g, e), surfMtx(g, e)) },
   ];
+  // On sand (TMario::frontSlipEffect with MARIO_FLAG_ON_SAND): ms_m_slidesand_b on calcGroundMtx(mCenterPos),
+  // x and z along the ground a unit ahead and to the side the way he faces, y up, 18 over the ground;
+  // ms_m_slidesand_a at his centre.
+  function groundUnder(x, y, z) {
+    let top = y + 30;
+    for (let tries = 0; tries < 4; tries++) {
+      const h = waterSegment([x, top, z], [x, y - 300, z]);
+      if (!h) return null;
+      const hy = top + (y - 300 - top) * h.f;
+      if (h.water) { top = hy - 0.5; continue; }
+      return h.ground ? hy : null;
+    }
+    return null;
+  }
+  function sandMtx(g, e) {
+    const c = jpaJoints(g, e).center;
+    if (!c) return null;
+    const a = (ghostSampleAt(g.data, e * QF_PER_FRAME).yaw / 32768) * Math.PI, ca = Math.cos(a), sa = Math.sin(a);
+    const gy = groundUnder(c[12], c[13], c[14]);
+    if (gy === null) return null;
+    const g1 = groundUnder(c[12] + ca, gy + 30, c[14] - sa), g2 = groundUnder(c[12] + sa, gy + 30, c[14] + ca);
+    const dy1 = g1 === null ? 0 : g1 - gy, dy2 = g2 === null ? 0 : g2 - gy;
+    return [ca, dy1, -sa, 0, 0, 1, 0, 0, sa, dy2, ca, 0, c[12], gy + 18, c[14], 1];
+  }
   // TMario::surfingEffect (the sim's: doSurfing on a Blooper over the water, swimPaddle with the
   // Turbo putting out water at the surface): its scale at frame e (the history's slip below 0), else 0.
   function jpaSurf(g, e) {
@@ -7932,6 +7958,7 @@ void main() {
   function setFollow(g) { followGhost = g; gameCam.at = null; renderGhostList(); updateMapNotice(); update(); }
   const GHOST_LATEST = 8;   // newest Moonshine ghost format
   function renderGhostList() {
+    document.querySelectorAll('button[data-dg-path]').forEach((b) => dgLabel(b));
     updateTasTag();
     if (typeof splitUi === 'function') try { splitUi(); } catch (e) { /* before the split view is set up */ }
     const list = $('ghostList');
@@ -8514,7 +8541,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1794549795228';
+  const BUILD_STAMP = '1794628378095';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
@@ -9459,7 +9486,7 @@ void main() {
   }
 
   // ---- Delfino Ghosts (zeldocto.github.io/delfino-ghosts): public Supabase listing + storage ----
-  const DG = { url: 'https://cvadewafbthfhvzgdgay.supabase.co', key: 'sb_publishable_mrh55bmXKXF_paQ7WTb3lA_oeJHWILU', page: 0, size: 25, total: 0, seq: 0, levels: false, loaded: new Set() };
+  const DG = { url: 'https://cvadewafbthfhvzgdgay.supabase.co', key: 'sb_publishable_mrh55bmXKXF_paQ7WTb3lA_oeJHWILU', page: 0, size: 25, total: 0, seq: 0, levels: false };
   const dgRpc = (fn, body) => fetch(`${DG.url}/rest/v1/rpc/${fn}`, { method: 'POST',
     headers: { apikey: DG.key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     .then((r) => r.ok ? r.json() : r.text().then((t) => { throw new Error(t || r.status); }));
@@ -9482,6 +9509,13 @@ void main() {
     const ok = await Promise.all(rows.map((g) => dgVersion(g).then((v) => v >= 5, () => true)));
     return rows.filter((_, i) => ok[i]);
   }
+  // A shared ghost's button says Added while a copy of it is in the ghost list (removing it makes it Load again).
+  function dgLabel(b) {
+    if (b.disabled) return;
+    const on = ghosts.some((x) => x.dgPath === b.dataset.dgPath);
+    b.textContent = on ? 'Added' : 'Load';
+    b.title = on ? 'Already added; click to add another copy' : '';
+  }
   function dgRow(g) {
     const li = document.createElement('li');
     const t = document.createElement('div'); t.className = 't'; t.textContent = g.title || g.original_filename;
@@ -9491,13 +9525,15 @@ void main() {
     if (g.time_ms != null) { const tm = document.createElement('span'); tm.className = 'time'; tm.textContent = fmtMs(g.time_ms); m.append(tm, ' · '); }
     m.append(bits.join(' · '));
     const b = document.createElement('button'); b.type = 'button'; b.className = 'primary';
-    b.textContent = DG.loaded.has(g.id) ? 'Added' : 'Load'; if (DG.loaded.has(g.id)) b.title = 'Already added; click to add another copy';
+    b.dataset.dgPath = g.file_path; dgLabel(b);
     b.onclick = async () => {
       b.disabled = true; b.textContent = 'Loading…';
       try {
         const r = await fetch(dgFileUrl(g.file_path)); if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        DG.loaded.add(g.id); b.textContent = 'Added';
-        loadBuffers([[await r.arrayBuffer(), g.original_filename || (g.title + '.smsghost'), g.file_path]]);
+        const buf = await r.arrayBuffer();
+        b.disabled = false;
+        loadBuffers([[buf, g.original_filename || (g.title + '.smsghost'), g.file_path]]);
+        dgLabel(b);
       } catch (err) { b.disabled = false; b.textContent = 'Retry'; console.warn('[delfino]', err); }
     };
     li.append(t, m, b); return li;

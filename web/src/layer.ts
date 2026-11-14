@@ -45,10 +45,10 @@ import { BTI, BTIData } from '../noclip/Common/JSYSTEM/JUTTexture.js';
 import { MantaShadowQuads, mantaVolumeMaterials, setMantaVolumeAlpha } from './mantashadow.js';
 import { MarioShadow } from './marioshadow.js';
 import { BossMantaManager } from './game/enemies/bossmanta.js';
-import { MapWireConst } from './game/mapwire.js';
+import { MapWireConst, CubeManager } from './game/mapwire.js';
 import { CLASSES } from './game/scene.js';
 import { LiveActor, MActor, AnmData, LF } from './game/engine.js';
-import { Mtx } from './game/math.js';
+import { Mtx, V3 } from './game/math.js';
 import { ModelGate } from './game/mapobj/modelgate.js';
 import { ShiningStone } from './game/mapobj/mamma.js';
 import { BathWaterManager } from './game/bathwater.js';
@@ -1585,6 +1585,28 @@ export class GameLayer {
         return this.staticWires.map((pts) => ({ pts, width: MapWireConst.mDrawWidth, height: MapWireConst.mDrawHeight, upper: [0x78, 0x78, 0x78], lower: [0x32, 0x32, 0x32] }));
     }
 
+    // ------------------------------------------------------------ mirrors
+    private mirrorCubes: CubeManager | null = null;
+    private mirrorCubesFor: SunshineRenderer | null = null;
+    /** TMirrorModelManager::perform: the mirror in use is gpCubeMirror's data number of the cube Mario (the first
+     * posed one) stands in, -1 outside them */
+    private pickMirror(r: SunshineRenderer, marios: { key: any; rig: any; yoshi: any }[]) {
+        if (!r.mirrors.length) { r.mirrorIndex = -1; return; }
+        if (this.mirrorCubesFor !== r) {
+            const t = r.rarc.findFileData('map/tables.bin');
+            this.mirrorCubes = CubeManager.fromTables(t ? t.createTypedArray(Uint8Array) : null, '鏡キューブテーブル');
+            this.mirrorCubesFor = r;
+        }
+        const mo = marios.find((m) => m.rig && m.rig.root && worldVisible(m.rig.root));
+        const C = this.mirrorCubes;
+        if (!mo || !C || !C.list.length) { r.mirrorIndex = -1; return; }
+        const e = mo.rig.root.matrixWorld.elements;
+        const i = C.getInCubeNo(new V3(e[12], e[13], e[14]));
+        const was = r.mirrorIndex;
+        r.mirrorIndex = i >= 0 ? C.list[i].unk34 : -1;
+        if (r.mirrorIndex !== was) console.info(`[mirror] ${r.mirrorIndex < 0 ? 'none' : 'mirror ' + r.mirrorIndex} (cube ${i})`);
+    }
+
     // ------------------------------------------------------------ drawing
     /**
      * Draw the frame: cam is the viewer's three.js camera (matrixWorld, fov in degrees, aspect,
@@ -1656,6 +1678,7 @@ export class GameLayer {
         this.camera.fovY = (cam.fov * Math.PI) / 180;
         this.camera.aspect = cam.aspect;
         this.camera.setClipPlanes(cam.near, cam.far);
+        this.pickMirror(r, marios);
         const vi = this.viewerInput;
         vi.time = timeMs; vi.deltaTime = 16; vi.backbufferWidth = w; vi.backbufferHeight = h;
         this.swapChain.configureSwapChain(w, h);

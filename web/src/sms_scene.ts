@@ -18,12 +18,13 @@ import * as JPA from '../noclip/Common/JSYSTEM/JPA.js';
 import { computeModelMatrixSRT, transformVec3Mat4w1 } from '../noclip/MathHelpers.js';
 import { Destroyable, SceneContext } from '../noclip/SceneBase.js';
 import { gfxDeviceNeedsFlipY } from '../noclip/gfx/helpers/GfxDeviceHelpers.js';
-import { makeBackbufferDescSimple, opaqueBlackFullClearRenderPassDescriptor } from '../noclip/gfx/helpers/RenderGraphHelpers.js';
+import { makeAttachmentClearDescriptor, makeBackbufferDescSimple, opaqueBlackFullClearRenderPassDescriptor } from '../noclip/gfx/helpers/RenderGraphHelpers.js';
 import { GfxDevice } from '../noclip/gfx/platform/GfxPlatform.js';
 import { GfxRenderCache } from '../noclip/gfx/render/GfxRenderCache.js';
 import { GfxrAttachmentSlot } from '../noclip/gfx/render/GfxRenderGraph.js';
 import { GfxRenderInstList, GfxRenderInstManager } from '../noclip/gfx/render/GfxRenderInstManager.js';
 import { EFB_HEIGHT, EFB_WIDTH, Light, lightSetWorldPosition } from '../noclip/gx/gx_material.js';
+import * as GX from '../noclip/gx/gx_enum.js';
 import { ColorKind, GXRenderHelperGfx, fillSceneParamsDataOnTemplate } from '../noclip/gx/gx_render.js';
 
 const sjisDecoder = new TextDecoder('sjis')!;
@@ -468,6 +469,31 @@ export enum SMSPass {
     SKYBOX = 1 << 0,
     MAIN = 1 << 1,
     INDIRECT = 1 << 2,
+    /** drawn only from the mirror camera (TMirrorModelManager): ReflectParts and Mario */
+    MIRROR = 1 << 3,
+    /** the mirror camera's sky (ReflectSky, DrawBuf MirrorSky) */
+    MIRROR_SKY = 1 << 4,
+}
+
+/** A stage mirror (TMirrorModel): its model and plane (initPlaneInfo, setPlane with an identity base matrix). */
+export interface StageMirror { inst: J3DModelInstanceSimple; n: vec3; d: number; }
+const MIRROR_TEX = 'mirror-texture';
+/** TMirrorModel::initPlaneInfo: the first vertex (an S16 one taken raw) and the first normal (an S16 one divided by
+ * 16384 in integers, the game's own), or straight up when the normals are of another kind. */
+function mirrorPlane(bmd: any): { n: vec3; d: number } {
+    const vat = bmd.vtx1.vat, arr = bmd.vtx1.arrayData;
+    const p = vec3.create(), n = vec3.fromValues(0, 1, 0);
+    const pa = arr[GX.Attr.POS], pf = vat[GX.Attr.POS];
+    if (pa && pf) { const v = pa.createDataView(); if (pf.compType === GX.CompType.S16) vec3.set(p, v.getInt16(0), v.getInt16(2), v.getInt16(4)); else vec3.set(p, v.getFloat32(0), v.getFloat32(4), v.getFloat32(8)); }
+    const na = arr[GX.Attr.NRM], nf = vat[GX.Attr.NRM];
+    if (na && nf) {
+        const v = na.createDataView();
+        if (nf.compType === GX.CompType.S16) vec3.set(n, Math.trunc(v.getInt16(0) / 16384), Math.trunc(v.getInt16(2) / 16384), Math.trunc(v.getInt16(4) / 16384));
+        else if (nf.compType === GX.CompType.F32) vec3.set(n, v.getFloat32(0), v.getFloat32(4), v.getFloat32(8));
+    }
+    if (vec3.length(n) < 1e-6) vec3.set(n, 0, 1, 0);
+    vec3.normalize(n, n);
+    return { n, d: -vec3.dot(n, p) };
 }
 
 class LightConfig {
@@ -571,6 +597,13 @@ export class SunshineRenderer implements Viewer.SceneGfx {
     public renderInstListSky = new GfxRenderInstList();
     public renderInstListMain = new GfxRenderInstList();
     public renderInstListInd = new GfxRenderInstList();
+    public renderInstListMirrorSky = new GfxRenderInstList();
+    public renderInstListMirror = new GfxRenderInstList();
+    /** the stage's mirrors (map/mirror/mirrorNN.bmd), the one in use (gpCubeMirror's data at Mario's place), -1 none */
+    public mirrors: StageMirror[] = [];
+    public mirrorIndex = -1;
+    private mirrorCamera = new Camera();
+    private mirrorOn = false;
     public modelInstances: J3DModelInstanceSimple[] = [];
     /** map/map/map.bmd's instance (layer.ts moves its joints with the stage's game code) */
     public mapInstance: J3DModelInstanceSimple | null = null;
@@ -657,6 +690,7 @@ export class SunshineRenderer implements Viewer.SceneGfx {
                     this.objLightConfig.setOnModelInstance(this.modelInstances[i], viewerInput.camera);
 
         const _t1 = performance.now(); this.perf.lights += _t1 - _t0;
+        const mirrorInput = this.setUpMirror(device, viewerInput);
         const template = this.renderHelper.pushTemplateRenderInst();
         fillSceneParamsDataOnTemplate(template, viewerInput);
         this.preparePass(device, this.renderInstListSky, SMSPass.SKYBOX, viewerInput);
@@ -669,7 +703,54 @@ export class SunshineRenderer implements Viewer.SceneGfx {
         this.preparePass(device, this.renderInstListMain, SMSPass.MAIN, viewerInput);
         this.preparePass(device, this.renderInstListInd, SMSPass.INDIRECT, viewerInput);
         this.renderHelper.renderInstManager.popTemplate();
+        if (mirrorInput !== null) {
+            const mt = this.renderHelper.pushTemplateRenderInst();
+            fillSceneParamsDataOnTemplate(mt, mirrorInput);
+            this.preparePass(device, this.renderInstListMirrorSky, SMSPass.MIRROR_SKY, mirrorInput);
+            const rim = this.renderHelper.renderInstManager;
+            rim.setCurrentList(this.renderInstListMirror);
+            for (const m of this.modelInstances)
+                if ((m.passMask & SMSPass.MIRROR) || ((m as any).isPlayer && m.visible))
+                    m.prepareToRender(device, rim, mirrorInput);
+            rim.popTemplate();
+        }
         this.perf.prepare += performance.now() - _t1;
+    }
+
+    /**
+     * TMirrorModelManager::perform / TMirrorModel::entry: with a mirror in use, the mirror camera is the view's
+     * eye, target and up reflected in the mirror's plane (TMirrorCamera::makeMirrorViewMtx) with 1.3 times the
+     * field of view; the mirror model maps that camera's picture onto itself (its texture matrix's effect matrix:
+     * TMirrorCamera::calcEffectMtx, here for the render target's own orientation). The others aren't drawn.
+     */
+    private setUpMirror(device: GfxDevice, viewerInput: Viewer.ViewerRenderInput): Viewer.ViewerRenderInput | null {
+        const mi = (globalThis as any).__noMirror ? -1 : this.mirrorIndex, mir = mi >= 0 && mi < this.mirrors.length ? this.mirrors[mi] : null;
+        for (const m of this.mirrors) m.inst.visible = m === mir;
+        this.mirrorOn = mir !== null;
+        if (mir === null) return null;
+        const cam = viewerInput.camera, w = cam.worldMatrix;
+        const eye = vec3.fromValues(w[12], w[13], w[14]);
+        const at = vec3.fromValues(w[12] - w[8] * 100, w[13] - w[9] * 100, w[14] - w[10] * 100);
+        const up = vec3.fromValues(w[4], w[5], w[6]);
+        const reflP = (v: vec3) => { const k = 2 * (vec3.dot(mir.n, v) + mir.d); vec3.scaleAndAdd(v, v, mir.n, -k); };
+        reflP(eye); reflP(at);
+        const ku = 2 * vec3.dot(mir.n, up); vec3.scaleAndAdd(up, up, mir.n, -ku);
+        const mc = this.mirrorCamera;
+        mat4.lookAt(mc.viewMatrix, eye, at, up);
+        mat4.invert(mc.worldMatrix, mc.viewMatrix);
+        mc.setPerspective(Math.min(cam.fovY * 1.3, Math.PI * 0.95), cam.aspect, cam.near, cam.far);
+        mc.worldMatrixUpdated();
+        // texture coordinates from the mirror camera's clip space: s = (x + w) / 2w, t likewise (flipped for a
+        // render target stored the other way up), q = w
+        const C = mc.clipFromWorldMatrix, ty = gfxDeviceNeedsFlipY(device) ? 0.5 : -0.5;
+        const E = mat4.create();
+        for (let c = 0; c < 4; c++) {
+            const x = C[c * 4], y = C[c * 4 + 1], wv = C[c * 4 + 3];
+            E[c * 4] = 0.5 * x + 0.5 * wv; E[c * 4 + 1] = ty * y + 0.5 * wv; E[c * 4 + 2] = wv; E[c * 4 + 3] = c === 3 ? 1 : 0;
+        }
+        const md = mir.inst.modelMaterialData.materialData;
+        if (md) for (const d of md) { const tm = d.material.texMatrices[0]; if (tm) mat4.copy(tm.effectMatrix, E); }
+        return { ...viewerInput, camera: mc, backbufferWidth: 256, backbufferHeight: 256 };
     }
 
     public render(device: GfxDevice, viewerInput: Viewer.ViewerRenderInput) {
@@ -683,6 +764,29 @@ export class SunshineRenderer implements Viewer.SceneGfx {
         const mainDepthDesc = makeBackbufferDescSimple(GfxrAttachmentSlot.DepthStencil, viewerInput, opaqueBlackFullClearRenderPassDescriptor);
 
         const mainColorTargetID = builder.createRenderTargetID(mainColorDesc, 'Main Color');
+
+        // TMirrorCamera's 256 x 256 picture (mFrameBuffer, RGB5A3)
+        let mirrorTexID: any = null;
+        (globalThis as any).__smsMirror = { on: this.mirrorOn, idx: this.mirrorIndex, sky: this.renderInstListMirrorSky.renderInsts.length, main: this.renderInstListMirror.renderInsts.length, models: this.modelInstances.filter((m) => m.passMask & (SMSPass.MIRROR | SMSPass.MIRROR_SKY)).map((m) => m.name) };
+        if (this.mirrorOn) {
+            const mvi = { ...viewerInput, backbufferWidth: 256, backbufferHeight: 256 };
+            const mcDesc = makeBackbufferDescSimple(GfxrAttachmentSlot.Color0, mvi, (globalThis as any).__mirClear ? makeAttachmentClearDescriptor({ r: 1, g: 0, b: 1, a: 1 }) : opaqueBlackFullClearRenderPassDescriptor);
+            const mdDesc = makeBackbufferDescSimple(GfxrAttachmentSlot.DepthStencil, mvi, opaqueBlackFullClearRenderPassDescriptor);
+            const mcID = builder.createRenderTargetID(mcDesc, 'Mirror Color');
+            builder.pushPass((pass) => {
+                pass.setDebugName('Mirror Sky');
+                pass.attachRenderTargetID(GfxrAttachmentSlot.Color0, mcID);
+                pass.attachRenderTargetID(GfxrAttachmentSlot.DepthStencil, builder.createRenderTargetID(mdDesc, 'Mirror Sky Depth'));
+                pass.exec((passRenderer) => { this.renderInstListMirrorSky.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer); });
+            });
+            builder.pushPass((pass) => {
+                pass.setDebugName('Mirror');
+                pass.attachRenderTargetID(GfxrAttachmentSlot.Color0, mcID);
+                pass.attachRenderTargetID(GfxrAttachmentSlot.DepthStencil, builder.createRenderTargetID(mdDesc, 'Mirror Depth'));
+                pass.exec((passRenderer) => { this.renderInstListMirror.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer); });
+            });
+            mirrorTexID = builder.resolveRenderTarget(mcID);
+        }
 
         builder.pushPass((pass) => {
             pass.setDebugName('Skybox');
@@ -699,7 +803,9 @@ export class SunshineRenderer implements Viewer.SceneGfx {
             pass.setDebugName('Main');
             pass.attachRenderTargetID(GfxrAttachmentSlot.Color0, mainColorTargetID);
             pass.attachRenderTargetID(GfxrAttachmentSlot.DepthStencil, mainDepthTargetID);
-            pass.exec((passRenderer) => {
+            if (mirrorTexID !== null) pass.attachResolveTexture(mirrorTexID);
+            pass.exec((passRenderer, scope) => {
+                if (mirrorTexID !== null) this.renderInstListMain.resolveLateSamplerBinding(MIRROR_TEX, { gfxTexture: scope.getResolveTextureForID(mirrorTexID), gfxSampler: null });
                 this.renderInstListMain.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer);
             });
         });
@@ -734,6 +840,8 @@ export class SunshineRenderer implements Viewer.SceneGfx {
         this.renderInstListSky.reset();
         this.renderInstListMain.reset();
         this.renderInstListInd.reset();
+        this.renderInstListMirrorSky.reset();
+        this.renderInstListMirror.reset();
     }
 
     public destroy(device: GfxDevice) {
@@ -819,6 +927,7 @@ export class SunshineSceneDesc implements Viewer.SceneDesc {
                 renderer.modelInstances.push(seaIndirect);
 
             this.createSceneBinObjects(device, cache, renderer, rarc, sceneBinObj);
+            this.createMirrors(device, cache, renderer, rarc);
 
             for (let i = 0; i < renderer.modelInstances.length; i++) {
                 this.setUpAmbientLight(renderer.modelInstances[i]);
@@ -826,6 +935,37 @@ export class SunshineSceneDesc implements Viewer.SceneDesc {
 
             return renderer;
         });
+    }
+
+    /**
+     * TMirrorModelManager::load: map/mirror/mirrorNN.bmd (Hotel Delfino's mirror205), each mapping the mirror
+     * camera's picture (TMirrorModelManager::loadAfter points its texture 0 at it); ReflectSky and ReflectParts,
+     * the scenery the mirror camera draws (TMapStaticObj: ReflectSky with the sky's material table).
+     */
+    private createMirrors(device: GfxDevice, cache: GfxRenderCache, renderer: SunshineRenderer, rarc: RARC.JKRArchive): void {
+        const names = rarc.findFile('map/mirror/mirror205.bmd') ? ['205'] : [];
+        if (!names.length) for (let i = 0; rarc.findFile(`map/mirror/mirror${String(i).padStart(2, '0')}.bmd`); i++) names.push(String(i).padStart(2, '0'));
+        for (const nm of names) {
+            const f = rarc.findFile(`map/mirror/mirror${nm}.bmd`)!;
+            const bmd = BMD.parse(f.buffer);
+            const inst = new J3DModelInstanceSimple(new J3DModelData(device, cache, bmd));
+            inst.name = `map/mirror/mirror${nm}`;
+            inst.passMask = SMSPass.MAIN;
+            inst.visible = false;
+            const m = inst.materialInstanceState.textureMappings[0];
+            if (m) { m.lateBinding = MIRROR_TEX; m.width = 256; m.height = 256; m.flipY = false; }
+            renderer.modelInstances.push(inst);
+            renderer.mirrors.push({ inst, ...mirrorPlane(bmd) });
+        }
+        if (!renderer.mirrors.length) return;
+        const sky = SunshineSceneDesc.createSunshineSceneForBasename(device, cache, SMSPass.MIRROR_SKY, rarc, 'map/map/reflectsky', false);
+        const skyBmt = rarc.findFile('map/map/sky.bmt');
+        if (sky !== null) {
+            if (skyBmt !== null) sky.setModelMaterialDataOwned(new J3DModelMaterialData(device, cache, BMT.parse(skyBmt.buffer)));
+            renderer.modelInstances.push(sky);
+        }
+        const parts = SunshineSceneDesc.createSunshineSceneForBasename(device, cache, SMSPass.MIRROR, rarc, 'map/map/reflectparts', false);
+        if (parts !== null) renderer.modelInstances.push(parts);
     }
 
     private createSceneBinObjects(device: GfxDevice, cache: GfxRenderCache, renderer: SunshineRenderer, rarc: RARC.JKRArchive, obj: SceneBinObj): void {
@@ -1244,6 +1384,9 @@ export class SunshineSceneDesc implements Viewer.SceneDesc {
             // (TMapStaticObj's table entries with neither model nor particle: sounds, an air wall, a sea)
             { k: 'falls' }, { k: 'fountain' }, { k: 'MareFalls' }, { k: 'SoundObjRiver' }, { k: 'SoundObjWaterIntoWater' },
             { k: 'BiancoAirWall' }, { k: 'riccoSea' }, { k: 'mareSeaPollutionS34567' },
+            // (drawn elsewhere: SeaIndirect is the scene's seaindirect model above; ReflectSky and ReflectParts
+            // draw only into the mirror's buffers, TMirrorModelManager, which the viewer doesn't have)
+            { k: 'SeaIndirect' }, { k: 'ReflectSky' }, { k: 'ReflectParts' },
         ];
 
         let modelEntry = modelLookup.find((lt) => obj.model === lt.k);

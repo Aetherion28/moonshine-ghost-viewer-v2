@@ -488,6 +488,9 @@ export async function buildArea(entry: AreaEntry, table: string[][], sceneArc: (
             let [[px, py, pz], [rx, ry, rz], [sx, sy, sz]] = pl;
             const bs = P.bodyScale(arc, typ);
             if (bs !== null) sx = sy = sz = bs;
+            // TSandLeafBase / TSandBombBase (and the sand castle) start flat: initMapObj sets mScale.y to
+            // TSandBase::mScaleMin (0.00001) until watering or the bomb raises them (kept a hair above 0 here)
+            if (typ === 'SandLeafBase' || typ === 'SandBombBase' || typ === 'SandCastle') sy = 0.001;
             if (typ === 'BossWanwan') {
                 const pk = P.libAdd(ctx, 'bwpicket', () => (arc.has('bwanwan/bwanwan_picket.bmd') ? [bmd.parse(arc.get('bwanwan/bwanwan_picket.bmd')!)] : null), { f: 'bwanwan/bwanwan_picket.bmd' });
                 const ch = P.libAdd(ctx, 'bwchain', () => (arc.has('bwanwan/bwanwan_chain.bmd') ? [bmd.parse(arc.get('bwanwan/bwanwan_chain.bmd')!)] : null), { f: 'bwanwan/bwanwan_chain.bmd' });
