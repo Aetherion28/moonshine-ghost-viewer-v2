@@ -1,14 +1,11 @@
 {
-  "name": "web",
+  "name": "moonshine-ghost-viewer",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "description": "Super Mario Sunshine ghosts and replays recorded with Moonshine, played back in the game's own stages (the site is built into ../site)",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "node build.mjs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "@webgpu/types": "^0.1.74",
     "crc-32": "^1.2.2",

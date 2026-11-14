@@ -1236,7 +1236,6 @@ export class SunshineSceneDesc implements Viewer.SceneDesc {
         if (modelEntry === undefined || (modelEntry.t && !modelEntry.m)) {
             const bmdFile = rarc.findFile(`mapobj/${obj.model.toLowerCase()}.bmd`);
             if (bmdFile) {
-                //console.log("trying bmd heuristic for "+obj.model);
                 if (modelEntry === undefined)
                     modelEntry = { k: obj.model, m: `${obj.model}.bmd` };
                 else

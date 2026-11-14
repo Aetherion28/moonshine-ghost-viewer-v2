@@ -5,63 +5,10 @@ Read all of it before you change anything.
 It is the shared memory of every agent that worked here before you.
 **Update it in the same commit as every fix, refutation or new finding**: the "Open threads", "Refuted" and "Fix log" sections at the end.
 
-## 0. First thing to do: hand over to doge
+## 0. Start here
 
-**Newer (2026-11-14): read `HANDOFF.md` first.** It is the short, current state; the list below is from 2026-11-08 and out of date (section 11 has the newer numbers).
-
-doge is taking over development. **After reading this file, before any other work, tell doge (the person you're talking to) the list below in full, then explain what was being worked on** (use sections 11–12 for that: the current numbers, the open threads, and the last thing in progress).
-
-The 47 batch traces that still aren't in sync (runs77, 2026-11-08), earliest drift first. Paths are under `/tmp/claude-0/up3/` (the user's three trace archives, section 6):
-
-- `a/trace_81BCC929_263FE90D.msgt` (first drift at tick 600, 5.0 s)
-- `b/trace_A7E1056F_8000000B.msgt` (first drift at tick 1248, 10.4 s)
-- `b/trace_41726535_80000024.msgt` (first drift at tick 1428, 11.9 s)
-- `b/trace_1DD461CB_80000026.msgt` (first drift at tick 1436, 12.0 s)
-- `a/trace_2A1D8909_80000036.msgt` (first drift at tick 1500, 12.5 s)
-- `b/trace_1DD461CB_80000007.msgt` (first drift at tick 1676, 14.0 s)
-- `a/trace_2A1D8909_80000028.msgt` (first drift at tick 1712, 14.3 s)
-- `c/trace_A7E1056F_80000076.msgt` (first drift at tick 1792, 14.9 s)
-- `c/trace_A7E1056F_80000066.msgt` (first drift at tick 1832, 15.3 s)
-- `c/trace_A7E1056F_80000071.msgt` (first drift at tick 1848, 15.4 s)
-- `b/trace_A7E1056F_80000041.msgt` (first drift at tick 1904, 15.9 s)
-- `a/trace_2A1D8909_80000025.msgt` (first drift at tick 2040, 17.0 s)
-- `b/trace_41726535_80000041.msgt` (first drift at tick 2084, 17.4 s)
-- `c/trace_A7E1056F_80000055.msgt` (first drift at tick 2148, 17.9 s)
-- `a/trace_C1A6804B_2C9DE32C.msgt` (first drift at tick 2296, 19.1 s)
-- `a/trace_C1A6804B_3F630002.msgt` (first drift at tick 2296, 19.1 s)
-- `a/trace_41726535_8000001B.msgt` (first drift at tick 2324, 19.4 s)
-- `a/trace_41726535_8000000D.msgt` (first drift at tick 2328, 19.4 s)
-- `c/trace_A7E1056F_8000007F.msgt` (first drift at tick 2344, 19.5 s)
-- `c/trace_A7E1056F_8000004B.msgt` (first drift at tick 2388, 19.9 s)
-- `a/trace_41726535_80000003.msgt` (first drift at tick 2400, 20.0 s)
-- `b/trace_41726535_80000042.msgt` (first drift at tick 2428, 20.2 s)
-- `b/trace_A7E1056F_80000011.msgt` (first drift at tick 2496, 20.8 s)
-- `c/trace_A7E1056F_80000048.msgt` (first drift at tick 2508, 20.9 s)
-- `c/trace_A7E1056F_80000077.msgt` (first drift at tick 2664, 22.2 s)
-- `c/trace_A7E1056F_8000002B.msgt` (first drift at tick 2696, 22.5 s)
-- `c/trace_A7E1056F_80000050.msgt` (first drift at tick 2840, 23.7 s)
-- `a/trace_95461209_01BCF022.msgt` (first drift at tick 2844, 23.7 s)
-- `c/trace_A7E1056F_80000078.msgt` (first drift at tick 2880, 24.0 s)
-- `b/trace_1DD461CB_8000002D.msgt` (first drift at tick 2908, 24.2 s)
-- `a/trace_2A1D8909_80000014.msgt` (first drift at tick 3128, 26.1 s)
-- `b/trace_41726535_80000037.msgt` (first drift at tick 3140, 26.2 s)
-- `b/trace_41726535_80000040.msgt` (first drift at tick 3368, 28.1 s)
-- `a/trace_FD32EADF_2188D751.msgt` (first drift at tick 3484, 29.0 s)
-- `b/trace_A7E1056F_80000042.msgt` (first drift at tick 4684, 39.0 s)
-- `b/trace_1DD461CB_80000006.msgt` (first drift at tick 4688, 39.1 s)
-- `b/trace_A7E1056F_80000013.msgt` (first drift at tick 4860, 40.5 s)
-- `a/trace_81BCC929_0A1F0679.msgt` (first drift at tick 4928, 41.1 s)
-- `c/trace_A7E1056F_80000058.msgt` (first drift at tick 4960, 41.3 s)
-- `a/trace_EA96A493_2E4A947B.msgt` (first drift at tick 5052, 42.1 s)
-- `a/trace_EA96A493_3F630001.msgt` (first drift at tick 5052, 42.1 s)
-- `a/trace_FD32EADF_35F282E1.msgt` (first drift at tick 5056, 42.1 s)
-- `c/trace_A7E1056F_80000051.msgt` (first drift at tick 5292, 44.1 s)
-- `b/trace_A7E1056F_80000009.msgt` (first drift at tick 5684, 47.4 s)
-- `b/trace_A7E1056F_80000027.msgt` (first drift at tick 5980, 49.8 s)
-- `b/trace_41726535_8000003F.msgt` (first drift at tick 6408, 53.4 s)
-- `b/trace_41726535_80000023.msgt` (first drift at tick 12488, 104.1 s)
-
-What was being worked on last (2026-11-08): replacing the sim's remaining stand-ins with the decomp's code, one batch each. Three ports were ready as patches in `/tmp/claude-0/fx/` (they may be lost with the workspace; each is small, see below): TResetFruit::perform (`27_resetfruit.patch`, mapobj/fruit.ts, stage 7). The other stand-ins found by searching the sim for TODO / stand-in / approximated are listed in section 12 under "Stand-ins to replace". Just before that, Gelato Beach 5 (`b/trace_1DD461CB_80000011.msgt`) was brought to full sync (fix log, 2026-11-08).
+Read `HANDOFF.md` first: the short, current state (what the last session did, what is open, the user's decisions still pending).
+Section 11 below has the current batch numbers and section 12 the open threads; the per-trace list of drifts that used to be here (2026-11-08) is in git history.
 
 ## 1. What this project is
 
@@ -104,6 +51,8 @@ The viewer also draws what the game draws, so a ported object that the viewer ca
 - A stale `site/` is a stale website, so rebuild before every commit that changes source.
 - Push: `git push origin HEAD:main`. GitHub Pages deploys from the workflow; check with `gh run list`.
 - `npm install` in `web` after a container reset.
+- The page loads nothing from other sites but Delfino Ghosts' listing: three.js r128 and the fonts are in `web/vendor/` (build.mjs copies it to `site/vendor/`, with the noclip and gl-matrix licences the legal page links). Don't add CDN or Google Fonts links back.
+- There is no tsconfig in the repo. A lenient type-check (`strict` off, `noImplicitAny` off, `noFallthroughCasesInSwitch` on, include `web/src/**/*.ts`) runs in seconds with `web/node_modules/.bin/tsc -p <that config>` and finds real bugs: an import that's missing or doubled, a function passed where its result belongs. The remaining errors are noise (mixins, noclip stubs, DOM typing).
 
 ## 4. Where things are
 
@@ -126,6 +75,8 @@ The viewer also draws what the game draws, so a ported object that the viewer ca
 | `web/src/ghost/mstr.ts`, `mstrghost.ts` | Trace (MSTR / .msgt) reader and its conversion to a ghost with `g.trace`; `trace.session` keeps every session record. |
 | `web/src/hud/` | HUD, menus (`menu.ts`), the pause menu replay. |
 | `web/viewer.html` | The viewer page (the Info box is off by default; localStorage `ghostViewer.infoBox`). |
+| `web/legacy/` | v1's scripts, the pixel sprites, `favicon.png`, `social.png` (the link preview) and `legal.html` (legal notice, privacy, credits and licences); copied to the site's root. |
+| `web/vendor/` | three.js r128 and the two fonts, served from the site (each with its licence). |
 | `web/tools/harness/` | The command-line test harness (section 6). |
 | `REGIONS.md` | How the regions differ and how `src/game/version.ts` follows the decomp's `VERSION_*`. |
 | `SUGGESTIONS.md` | Suggestions kept for the user. |
@@ -177,6 +128,8 @@ Everything above that used to live only in `/tmp/claude-0/ct` is now in `web/too
 ### Rebuilding the workspace after a container reset
 - The batch folders come from the user's three archives in `/mnt/user-data/uploads`: `a` = trace_A4362729_8C9D5ED7.zip, `b` = ref_41726535_80000018_….zip, `c` = trace_A7E1056F_8000002E.7z (py7zr), each flattened to its `.msgt` files.
 - JP game files come from the user's computer when it is linked: tar `~/mnt/Games/_ghostviewer_extract` into `~/mnt/ghosts/_incoming/gve.tar`, stage it, unpack into `/mnt/user-data/uploads/Games/`. PAL scenes: `~/mnt/ghosts/_incoming/pal_scene.tar` into `/tmp/claude-0/palscene`.
+- The user's PC keeps the archives and the extract in two folders the user connects with the desktop app's Add folder button (they show up in device_bash as `~/mnt/ghosts` and `~/mnt/Games`; they aren't under the home folder or `C:\`, so ask rather than search).
+- `pm.ts` imports `/tmp/claude-0/ct/files.ts`: copy `web/tools/harness/files.ts` there first, or the bundle fails.
 - Bundle the readers from `web/tools/harness/` into `/tmp/claude-0/ct`, copy `list5.txt` and `cmp.py` into `up3`, copy `scans/doldis.py` to `/tmp/claude-0/s/` (and `pip install --break-system-packages capstone`), run `npm install` in `web`, and run a baseline batch at HEAD before you compare anything: old runsNN don't survive.
 
 ## 7. How to investigate a drift (the workflow that has worked)
@@ -323,6 +276,8 @@ The big port of 2026-11-06 (one commit, see the fix log) added most of the decom
 - Carrying `checkStickRotate`'s q[4] over between calls: 57 worse, 3 better (runs21 vs runs20).
 
 ## 14. Fix log (newest first)
+
+- 2026-11-14 Polish before the public announcement (viewer only, plus two behaviour-identical sim cleanups). The name is Moonshine Ghost Viewer everywhere (the user's choice, no "v2" tag; the repo keeps its name). three.js r128 and the fonts are served from `web/vendor/` (the user OK'd the download from npm): the page makes no CDN or Google Fonts requests. Meta description, Open Graph / Twitter tags, `social.png` and `favicon.png` (from the site's own sprites and font). The legal page gained Privacy and Credits and licences sections. The comparison view's checkbox had been bare since 2026-10-19 (its label went when the view was turned off and didn't come back when it was turned on): "Comparison view" restored. "Water reflections (experimental)" (the user's choice). The frame-rate box shows the frame rate only (`?perf` adds the split). A browser that can't create a WebGL context gets a message in the disc box instead of an uncaught error and a dead page (seen once in the user's Chrome); a lost context shows a notice. The old-format ⚠ no longer says "current is v8" (`GHOST_FULL` 8: v9 only adds the RNG seed). The drop zone and help mention `.msgt`. README rewritten; `web/package.json` private, no ISC licence. Sim, found by the lenient type-check (section 3): `game/mario.ts` used `fr` without importing it (MarioProxy, only when no player sim runs, so never in the batch: a ReferenceError when a ghost sprays something it touches), and duplicate imports in `enemies/bosshanachan.ts` and `mapobj/bianco.ts`; both behaviour-identical for the batch, no batch run.
 
 - 2026-11-13 Viewer: Gelato's Shine stone (TShiningStone: ShiningStone.bmd and the four coloured stones on one base matrix) is placed for ghosts too (v1data/objects.ts); with a trace the sim's own stone replaces it. Where the mirrors are (map/mirror vertices): Bianco's mirror00 covers its water (plane y 2303), Pinna Park's the park's pond (y 710), Gelato's four the wet slopes high up at (-7000, 2500..3350, -4000) with the game's integer-divided normals ((0,1,1) for the first), Hotel Delfino's mirror205 is a wall mirror whose plane the game takes from the raw S16 first vertex (z -8354, the mirror itself is at z -1044); a mirror is in use only while Mario is in its 鏡キューブ.
 

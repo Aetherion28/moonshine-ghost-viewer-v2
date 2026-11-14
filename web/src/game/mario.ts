@@ -4,7 +4,7 @@
 // Mario's own reactions (damage, being thrown back) aren't simulated: the ghost already shows
 // what really happened. What he does to others is: TMario::checkCollision's messages.
 
-import { V3 } from './math.js';
+import { V3, fr } from './math.js';
 import { AT } from './actortypes.js';
 import { HitActor, TakeActor, HC, MSG, World, LiveActor, calcKeyCode } from './engine.js';
 import type { BGCheckData } from './collision.js';

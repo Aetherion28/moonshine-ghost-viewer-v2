@@ -2,7 +2,6 @@
 
 Start here, then read `CLAUDE.md` (the long shared memory; its sections 2, 3, 6, 12 and 14 matter most).
 This file is the short version: what was just done, what is open, where everything is.
-Section 0 of `CLAUDE.md` (the "47 traces" list for doge) is out of date: the numbers in section 11 and here are newer.
 
 ## Who and how
 
@@ -26,6 +25,8 @@ Section 0 of `CLAUDE.md` (the "47 traces" list for doge) is out of date: the num
 ## Workspace (lost on a container reset)
 
 - Traces: `/tmp/claude-0/up3/{a,b,c}/*.msgt` (rebuild from the user's archives: `CLAUDE.md` section 6).
+  The user's PC holds them in two folders the user connects with the desktop app's Add folder button ("Games" with `_ghostviewer_extract`, "ghosts" with the archives and `_incoming`); they are not under the home folder or `C:\`.
+  `pm.ts` imports `/tmp/claude-0/ct/files.ts`: copy `web/tools/harness/files.ts` there before bundling.
 - A clean JP disc folder for headless tests: `/tmp/claude-0/jpdisc` (`files/` hard links to `/mnt/user-data/uploads/Games/_ghostviewer_extract/data` plus its `jp/` files, and `sys/boot.bin` = `GMSJ01`).
   The extract's root mixes JP and PAL, so don't point the viewer at it directly.
 - Playwright is at `/opt/npm-tools/node_modules/playwright` (the scripts load it from there).
@@ -39,22 +40,27 @@ Section 0 of `CLAUDE.md` (the "47 traces" list for doge) is out of date: the num
   A background tab is throttled to near nothing (timers and rAF), so long scripted sweeps there stall; use headless for sweeps, Chrome for looking.
   Local files can't be uploaded through the extension (only files shared with the session), so in Chrome use the shared ghosts.
 
-## What the last session did (all live on main)
+## What the last session did (2026-11-14: polish before the public announcement, live on main)
 
-- Long recordings load again: `traceRngByState` (feedback.ts) used a Map that ran past its size limit on a 9:52 trace; now a radix-sorted index (identical answers, checked on 200,000 lookups).
-- Gelato: the sand dunes (TSandLeafBase / TSandBombBase / sand castle) start flat; the Shine stone at the top of the tower is placed for ghosts too (with its BPK; the coloured stones unanimated).
-- A shared ghost's button goes back to Load when that ghost is removed.
-- The header palm hides when it would wrap; phones keep the view at least 40% of the screen.
-- Sliding on sand shows ms_m_slidesand_a / _b.
-- Stage mirrors (TMirrorModelManager) are ported but off unless "Water reflections (test)" is ticked (`sms_scene.ts` setUpMirror, `layer.ts` pickMirror).
-- A headless sweep of one recording per stage (82 stages) found no other errors.
+- The name is **Moonshine Ghost Viewer** everywhere (page title and header, README, legal page; the user dropped the "v2" tag). The repo and URL keep `-v2`.
+- The page serves three.js r128 and its two fonts itself (`web/vendor/`, copied to `site/vendor/` by build.mjs with their licences): no CDN or Google Fonts requests.
+- Link previews: a meta description, Open Graph / Twitter tags, `social.png` (1200x630, made from the site's own pixel sprites and font, no game art) and `favicon.png` (the sun sprite).
+- The legal page has Privacy and Credits and licences sections (noclip, three.js, gl-matrix, mp4-muxer, the fonts; licence files in `site/vendor/`).
+- The comparison view's checkbox had lost its label in October (a bare checkbox under Wireframe stage): "Comparison view" is back.
+- "Water reflections (experimental)" (the user's choice: keep it, off by default, labelled as not yet checked).
+- The frame-rate box shows only the frame rate; `?perf` in the address adds the timing split.
+- A browser that can't start WebGL gets a message in the disc box (it used to throw and leave a dead page; seen once in the user's Chrome); a lost context shows a notice.
+- An old-format ghost's ⚠ no longer says "current is v8" (v9 exists); the drop zone and help text mention `.msgt` replays.
+- README rewritten for visitors. `web/package.json` no longer claims an ISC licence (private, no licence chosen yet).
+- Type-checking (no tsconfig in the repo; a lenient one in /tmp found these) turned up: `game/mario.ts` used `fr` without importing it (a ReferenceError when the ghost-following Mario sprays something), two duplicate imports, and five enemies' changeOut (TSmallEnemy, TBombHei, TKiller, TTelesa, TTobiPuku) passing `ANM_FRAME_RATE` uncalled to setFrameRate (the decomp has `SMSGetAnmFrameRate()`), which made their animation NaN after Yoshi's juice. The first two are committed (behaviour-identical for the batch); the juice fix waits for a full batch (see `CLAUDE.md` fix log).
 
 ## Open on the viewer
 
 - **Ask the user**: is the yellow-green glow and the two beams over Gelato's tower right (are they always there in the game)? They may come from the stone's model or from the static `sun_mirror` object.
 - **Mirrors**: not confirmed against the game. A mirror is used only while Mario is inside its 鏡キューブ (from map/tables.bin): Bianco's covers its water (plane y 2303), Pinna Park's the pond (y 710), Gelato's only the wet slopes high up, Hotel Delfino's is a wall mirror whose plane the game takes from the raw S16 vertex (z -8354; the mirror is at z -1044).
   Not done: TMirrorActor's coins, enemies and Yoshi; the lean mirrors' TMirrorModelObj (Gelato episode 2); lights in the mirror pass use the main camera.
-  When the user confirms the look, turn it on by default (the `__mirrors` check in setUpMirror and the option).
+  When the user confirms the look, turn it on by default (the `__mirrors` check in setUpMirror and the option) and drop "(experimental)" from its label.
+- **For the user to decide**: a licence for the repository (there is none, so all rights are reserved); whether to wire in `web/src/discformats.ts` (RVZ / WIA / GCZ / CISO readers, written but never imported or tested; most Dolphin libraries are RVZ).
 - Specular light on Mario and NPCs is still off (turning it on washed them white; cause not found; `layer.ts`, search "specular").
 - `CLAUDE.md` section 11, "Still not ported", lists the remaining rendering plumbing.
 

@@ -39,7 +39,6 @@ import { AT } from '../actortypes.js';
 import { Skeleton, parseBCK, jointMatricesBlendExact } from '../skeleton.js';
 import { mapObjGlobals } from '../mapobj/base.js';
 import { marioGroundPlane, marioTouchGround4cm } from '../mapobj/lib.js';
-import { ratioF } from '../camera/lib.js';
 import type { ItemManager } from '../mapobj/item.js';
 import type { BGCheckData } from '../collision.js';
 import { NpcInbetween, palFrame } from '../npc/base.js';

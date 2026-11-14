@@ -19,7 +19,6 @@ import { DONT_MOVE_XZ, WallCheck, BGCheckData } from '../collision.js';
 import { SE } from '../soundids.js';
 import '../sound.js';
 import { MapObjBase, STATE_NORMAL, mapObjGlobals, newAndRegisterObj } from './base.js';
-import { vtxPosArray } from './lib.js';
 import { HideObjBase } from './hide.js';
 import type { ItemManager } from './item.js';
 import {

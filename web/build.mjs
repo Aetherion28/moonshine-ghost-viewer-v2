@@ -36,6 +36,13 @@ const stamp = String(Date.now());
 fs.writeFileSync(path.join(here, '../site/index.html'), fs.readFileSync(path.join(here, 'viewer.html'), 'utf8').replace(/\.js"><\\\/script>'\);/g, `.js?v=${stamp}"><\\/script>');`).replace("const BUILD_STAMP = '';", `const BUILD_STAMP = '${stamp}';`));
 fs.writeFileSync(path.join(here, '../site/build.txt'), stamp);
 for (const f of fs.readdirSync(path.join(here, 'legacy'))) fs.copyFileSync(path.join(here, 'legacy', f), path.join(here, '../site', f));
+// three.js r128 and the fonts, served from the site itself (vendor/: each with its licence)
+fs.rmSync(path.join(here, '../site/vendor'), { recursive: true, force: true });
+fs.cpSync(path.join(here, 'vendor'), path.join(here, '../site/vendor'), { recursive: true });
+// the licences of the code bundled into game.js / hud.js / audio.js (the legal page links them)
+fs.mkdirSync(path.join(here, '../site/vendor/licenses'), { recursive: true });
+fs.copyFileSync(path.join(here, 'noclip/LICENSE'), path.join(here, '../site/vendor/licenses/noclip.txt'));
+fs.copyFileSync(path.join(here, 'node_modules/gl-matrix/LICENSE.md'), path.join(here, '../site/vendor/licenses/gl-matrix.txt'));
 // the game audio: the page side (audio.js) and its worklet (audio-worklet.js); the HUD (hud.js)
 const audio = [
   { ...opts, entryPoints: [path.join(here, 'src/audio/index.ts')], outfile: path.join(here, '../site/audio.js'), metafile: false },

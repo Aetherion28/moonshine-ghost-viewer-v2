@@ -8,9 +8,21 @@
 // own scripts load from its folder (V2).
 window.V2 = location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, '');
 </script>
-<title>Sunshine Ghost Viewer v2</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<title>Moonshine Ghost Viewer</title>
+<meta name="description" content="Watch Super Mario Sunshine ghosts and replays recorded with Moonshine, played back in the game's own stages with its own models, read from your own copy of the game. Nothing is uploaded.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Moonshine Ghost Viewer">
+<meta property="og:title" content="Moonshine Ghost Viewer">
+<meta property="og:description" content="Super Mario Sunshine ghosts and replays, played back in the game's own stages. Reads your own copy of the game; nothing is uploaded.">
+<meta property="og:url" content="https://aetherion28.github.io/moonshine-ghost-viewer-v2/">
+<meta property="og:image" content="https://aetherion28.github.io/moonshine-ghost-viewer-v2/social.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Moonshine Ghost Viewer: pixel-art sun, ship, fish and palm on green">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="favicon.png">
+<!-- three.js r128 and the fonts are served from the site itself (vendor/, each with its licence) -->
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
 <style>
 /* Layout: one-screen tool. Top bar (stage + ghosts), 3D stage fills the middle, transport strip at the bottom.
    Wide screens get a right-hand ghost panel; phones stack it under the transport.
@@ -86,7 +98,6 @@ header .seg button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--trim
 .stage { grid-area: stage; position: relative; min-height: 0; background: var(--scene-bg); }
 .stage canvas { display: block; width: 100%; height: 100%; touch-action: none; position: relative; }
 .stage canvas.gameLayer { position: absolute; inset: 0; pointer-events: none; }
-.v2tag { font-size: 11px; font-weight: 800; color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 1px 7px; box-shadow: 0 0 0 1.5px var(--trim); }
 .discInfo { color: var(--muted); font-size: 12px; }
 .linkBtn { border: 0; background: none; padding: 0; color: var(--water); font-weight: 600; text-decoration: underline; cursor: pointer; }
 .sgOverlay { position: absolute; inset: 0; pointer-events: none; }
@@ -270,9 +281,8 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
   .themeSeg { display: none; }
 }
 @media (max-width: 480px) {
-  /* one row for the sun, the v2 tag and the world menus */
+  /* one row for the sun and the world menus (the title text gives its room) */
   header h1 { font-size: 0 !important; gap: 0; }
-  header h1 .v2tag { font-size: 12px; }
   header .field { flex: 1 1 200px; }
   header .field label { display: none; }
   .discGateBox { max-height: calc(100% - 16px); overflow-y: auto; padding: 12px 14px; }
@@ -356,7 +366,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <div class="app">
   <header>
     <span class="sprite sp-sun" aria-hidden="true"></span>
-    <h1>Sunshine Ghost Viewer <span class="v2tag">v2</span></h1>
+    <h1>Moonshine Ghost Viewer</h1>
     <div class="field">
       <label for="mapSelect">World</label>
       <select id="mapSelect"></select>
@@ -428,6 +438,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
     <div class="discGate" id="discGate">
       <div class="discGateBox">
         <h2>Load your Super Mario Sunshine disc</h2>
+        <p>Watch ghosts and replays recorded with the <a href="https://dogecyanide.github.io/moonshine-site/" target="_blank" rel="noopener">Moonshine</a> practice mod, played back in the game's own stages.</p>
         <p>The viewer draws and plays everything with the game itself, read from your own copy: a disc image (.iso / .gcm) or an extracted game folder. Nothing is uploaded, and the site hosts no game data.</p>
         <div class="discGateBtns">
           <button class="primary" id="gateDisc" type="button">Choose disc image…</button>
@@ -461,7 +472,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <div class="ceProg" id="ceProg" hidden><div id="ceBar"></div></div>
     </div>
     <div class="splitLbl" id="splitLbl" hidden><span id="lblA"></span><span id="lblB"></span></div>
-    <div class="drop" id="drop" hidden>Drop .smsghost files to add them</div>
+    <div class="drop" id="drop" hidden>Drop ghosts (.smsghost), replays (.msgt) or a disc image to load them</div>
     <button class="fsBtn" id="fullScreen" title="Full screen" aria-label="Full screen" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="in" d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><path class="out" d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/></svg></button>
   </div>
 
@@ -540,7 +551,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="The coloured circle at each ghost's feet that tells ghosts apart"><input type="checkbox" id="optRing" checked> Show ghost circles</label>
       <label title="Only how Mario looks: the replay still uses Mario's own body and hit sizes. The other models come from your disc">Mario's model <select id="optSkin"><option value="mario">Mario</option><option value="shadow">Shadow Mario</option><option value="piantissimo">Il Piantissimo</option><option value="bigdaddy">Blooper-racing Pianta</option><option value="bowser">Bowser</option><option value="bowserjr">Bowser Jr.</option><option value="cataquack">Cataquack</option></select></label>
       <label><input type="checkbox" id="optObjects" checked> Show objects</label>
-      <label title="The game's water mirrors (TMirrorModelManager): Bianco Hills, Gelato Beach, Pinna Park and Hotel Delfino reflect the scenery and Mario. Still being checked against the game."><input type="checkbox" id="optMirror"> Water reflections (test)</label>
+      <label title="The game's water mirrors: Bianco Hills, Gelato Beach, Pinna Park and Hotel Delfino reflect the scenery and Mario. Experimental: not yet checked against the game, so it may not look the same."><input type="checkbox" id="optMirror"> Water reflections (experimental)</label>
       <div class="discLine">Disc: <span class="discInfo" id="discInfo">none loaded</span> <span class="discInfo" id="padInfo" hidden></span> <span class="discInfo" id="padRec" hidden></span></div>
       <label title="The game's HUD from the disc (life meter, coins, Shines, blue and red coins, FLUDD's tank) and the stage's opening words"><input type="checkbox" id="optHud" checked disabled> Show HUD</label>
       <label title="With a replay (.msgt). Play recording: the game's own code plays Mario from his controller inputs, and every tick he is put where the trace recorded him, so the stage reacts to exactly what happened. Recorded positions: Mario follows his recorded positions and animation. A .smsghost always plays its recorded positions and animation."><select id="optReplayMode" disabled><option value="record" selected>Play recording</option><option value="positions">Recorded positions</option></select> <span class="discInfo" id="replayInfo"></span></label>
@@ -554,7 +565,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <label title="Off: playback steps one game frame at a time, as the game does. On: motion is smoothed between frames."><input type="checkbox" id="optSmooth"> Cinematic playback</label>
       <label title="An on-screen stick that flies the camera around the stage, with buttons to raise and lower it. On by default on touch screens."><input type="checkbox" id="optJoy"> Movement joystick</label>
       <label><input type="checkbox" id="optWire"> Wireframe stage</label>
-      <input type="checkbox" id="optSplit" disabled>
+      <label title="Two ghosts, each in its own view with its own time slider (needs two ghosts loaded)"><input type="checkbox" id="optSplit" disabled> Comparison view</label>
     </div>
     <h2>Inputs</h2>
     <div class="opts">
@@ -583,7 +594,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       </div>
     </div>
     <p class="help">Click the stage to play or pause. Drag to orbit, scroll or pinch to zoom. <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or the arrow keys move the camera, <kbd>Q</kbd> <kbd>E</kbd> lower and raise it, hold <kbd>Shift</kbd> to go faster. <kbd>Space</kbd> play, <kbd>,</kbd> <kbd>.</kbd> step one frame, <kbd>F</kbd> follow camera. The button in the scene's top right corner goes full screen. On a touch screen, tick <b>Movement joystick</b> for an on-screen stick that flies the camera; dragging with one finger then turns the camera where it stands.</p>
-    <p class="help">To load a ghost, drag .smsghost files from your computer and drop them anywhere on the page, use <b>Add ghost</b>, or pick one from <b>Shared ghosts</b>.</p>
+    <p class="help">To load a ghost, drag .smsghost files (or .msgt replays) from your computer and drop them anywhere on the page, use <b>Add ghost</b>, or pick one from <b>Shared ghosts</b>.</p>
     <div class="doodles" aria-hidden="true"><span class="sprite sp-fish"></span><span class="sprite sp-ship"></span><span class="sprite sp-pad"></span><span class="sprite sp-hand"></span></div>
   </aside>
 </div>
@@ -612,10 +623,10 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
   document.addEventListener('input', save, true);
 })();
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+<script src="vendor/three/three.min.js"></script>
+<script src="vendor/three/OrbitControls.js"></script>
+<script src="vendor/three/GLTFLoader.js"></script>
+<script src="vendor/three/SkeletonUtils.js"></script>
 <script>
 document.write('<script src="' + V2 + 'ghost.js"><\/script>');
 document.write('<script src="' + V2 + 'mario_anims.js"><\/script>');
@@ -693,7 +704,25 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     };
   })();
   const stageEl = $('stage');
-  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, alpha: true });
+  // No WebGL at all (hardware acceleration off, a GPU reset, too many 3D tabs): say so in the disc
+  // box instead of leaving a page that does nothing, and stop here.
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, alpha: true }); }
+  catch (e) {
+    console.warn('[webgl]', e);
+    const box = document.querySelector('#discGate .discGateBox');
+    if (box) {
+      const h = document.createElement('h2'), p = document.createElement('p'), b = document.createElement('button');
+      h.textContent = 'This browser couldn’t start WebGL';
+      p.textContent = 'The viewer draws with WebGL. Check that hardware (graphics) acceleration is on in your browser’s settings and close other tabs that show 3D, then reload the page.';
+      b.type = 'button'; b.className = 'primary'; b.textContent = 'Reload'; b.onclick = () => location.reload();
+      box.replaceChildren(h, p, b);
+    }
+    return;
+  }
+  // A lost context (a GPU reset, the driver taking it back) leaves the view frozen: say how to recover.
+  const contextLost = () => showNotice('The browser reset its graphics (WebGL context lost). Reload the page to carry on.');
+  renderer.domElement.addEventListener('webglcontextlost', contextLost);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   // Shaders compiled a few a frame: a material three hasn't made a program for yet is drawn only while
   // the frame's budget lasts (its mesh is hidden this frame otherwise), so a stage's ~80 programs don't
@@ -7988,7 +8017,9 @@ void main() {
   let split = null, splitNoStage = false;   // the comparison view (see renderSplit)
   function leadGhost() { return followGhost && followGhost.visible && ghosts.includes(followGhost) ? followGhost : ghosts.find((x) => x.visible); }
   function setFollow(g) { followGhost = g; gameCam.at = null; renderGhostList(); updateMapNotice(); update(); }
-  const GHOST_LATEST = 8;   // newest Moonshine ghost format
+  // The first ghost format with everything the viewer shows (v8 adds the camera; v9 only adds the
+  // stage's starting RNG state, ghost.js header.initialRng). Older ghosts get a ⚠ saying what's missing.
+  const GHOST_FULL = 8;
   function renderGhostList() {
     document.querySelectorAll('button[data-dg-path]').forEach((b) => dgLabel(b));
     updateTasTag();
@@ -7998,7 +8029,7 @@ void main() {
     if (!ghosts.length) {
       const p = document.createElement('p');
       p.className = 'empty';
-      p.textContent = 'No ghosts loaded. Add a .smsghost file exported from Moonshine. Exports are in the share folder on your SD card.';
+      p.textContent = 'No ghosts loaded. Add a .smsghost file exported from Moonshine (or a .msgt replay). Exports are in the share folder on your SD card.';
       list.append(p);
       return;
     }
@@ -8033,12 +8064,12 @@ void main() {
         }
       }
       // Older ghost formats (an older Moonshine): a ⚠ with what the file is missing.
-      if (h.version < GHOST_LATEST) {
+      if (typeof h.version === 'number' && h.version < GHOST_FULL) {
         const list = (a) => a.join(', ').replace(/, ([^,]*)$/, a.length > 2 ? ', or $1' : ' or $1');
         const miss = [h.version < 4 && 'Yoshi and held objects', h.version < 5 && 'controller inputs', h.version < 6 && 'FLUDD',
           h.version === 6 && 'spam spray', h.version === 6 && 'Yoshi animation', 'camera'].filter(Boolean);
         const guess = [h.version < 5 && 'the inputs', h.version < 6 && 'FLUDD', h.version === 6 && 'spam sprays', h.version === 6 && 'Yoshi\'s animation'].filter(Boolean);
-        const msg = `Ghost format v${h.version} (current is v${GHOST_LATEST}), recorded with an older Moonshine. It has no ${list(miss)} data, so ${guess.length ? `the viewer guesses ${list(guess).replace(' or ', ' and ')}, and ` : ''}Follow uses the viewer's own camera rather than the run's.`;
+        const msg = `Ghost format v${h.version}, recorded with an older Moonshine. It has no ${list(miss)} data, so ${guess.length ? `the viewer guesses ${list(guess).replace(' or ', ' and ')}, and ` : ''}Follow uses the viewer's own camera rather than the run's.`;
         const w = document.createElement('button');
         w.className = 'old'; w.type = 'button'; w.textContent = '\u26a0\ufe0f';
         w.title = msg; w.setAttribute('aria-label', msg);
@@ -8545,8 +8576,10 @@ void main() {
   let playClock = null;
   let last = performance.now();
   // The view draws at a constant 720 pixels tall, whatever the window's size or the screen's density.
-  // frame rate readout: frames drawn in the last second (and, live, game frames run)
+  // frame rate readout: frames drawn in the last second (and, live, game frames run); with ?perf in
+  // the address, also where each frame's time went (the [slow frame] console line has the same split)
   const fpsMeter = { t0: 0, n: 0, g0: 0 };
+  const PERF_DETAIL = /[?&]perf\b/.test(location.search);
   var perfAcc = { sim: 0, game: 0, three: 0, loop: 0 };
   function fpsTick(now) {
     const el = $('fpsBox'); if (!el) return;
@@ -8561,7 +8594,7 @@ void main() {
       const ms = (v) => (v / fpsMeter.n).toFixed(1);
       const G = gameLayer && gameLayer.perf;
       const gd = G ? ` (sync ${ms(G.sync)}, shadows ${ms(G.shadow)}, objects ${ms(G.objects)}, render ${ms(G.gpu)})` : '';
-      el.textContent = `${fps.toFixed(0)} fps${game} · ms/frame: total ${ms(perfAcc.loop)}, game logic ${ms(perfAcc.sim)}, game draw ${ms(perfAcc.game)}${gd}, overlay ${ms(perfAcc.three)}`;
+      el.textContent = `${fps.toFixed(0)} fps${game}` + (PERF_DETAIL ? ` · ms/frame: total ${ms(perfAcc.loop)}, game logic ${ms(perfAcc.sim)}, game draw ${ms(perfAcc.game)}${gd}, overlay ${ms(perfAcc.three)}` : '');
       const RP = gameLayer && gameLayer.renderer && gameLayer.renderer.perf;
       if (window.__benchAdd) window.__benchAdd({ n: fpsMeter.n, total: perfAcc.loop, logic: perfAcc.sim, draw: perfAcc.game, overlay: perfAcc.three, sync: G ? G.sync : 0, shadows: G ? G.shadow : 0, objects: G ? G.objects : 0, render: G ? G.gpu : 0,
         lights: RP ? RP.lights : 0, prepare: RP ? RP.prepare : 0, submit: RP ? RP.execute : 0 });
@@ -9853,6 +9886,7 @@ void main() {
     const canvas = document.createElement('canvas');
     canvas.className = 'gameLayer';
     canvas.hidden = true;
+    canvas.addEventListener('webglcontextlost', contextLost);
     stageEl.prepend(canvas);
     let layer = null;
     try { layer = new GameLayer(canvas); } catch (e) { console.warn('[game layer]', e); }
