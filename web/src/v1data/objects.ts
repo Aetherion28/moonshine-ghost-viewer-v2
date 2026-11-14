@@ -508,7 +508,9 @@ export async function buildArea(entry: AreaEntry, table: string[][], sceneArc: (
                 names.forEach((f, k) => {
                     const path = [...arc.keys()].find((x) => x.toLowerCase() === `mapobj/${f}.bmd`);
                     if (!path) return;
-                    const idx = P.libAdd(ctx, 'stone:' + P.digest(arc.get(path)!), () => [bmd.parse(arc.get(path)!)], { f: path });
+                    // (the stone plays its BTK and BPK; the coloured ones start unanimated: putOnLight sets their BCK / BRK)
+                    const bpk = k ? null : [...arc.keys()].find((x) => x.toLowerCase() === 'mapobj/shiningstone.bpk') || null;
+                    const idx = P.libAdd(ctx, 'stone:' + P.digest(arc.get(path)!), () => [bmd.parse(arc.get(path)!)], k ? { f: path, noAnm: 1 } : { f: path, bpk });
                     if (idx >= 0) instances.push([idx, typ, f, pyRound(px, 2), pyRound(py, 2), pyRound(pz, 2), pyRound(rx, 2), pyRound(ry, 2), pyRound(rz, 2), 1, 1, 1, '', 0, 0, k ? 0 : o.hash, '']);
                 });
                 continue;

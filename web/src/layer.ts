@@ -60,7 +60,7 @@ import { ThpPlayer } from './movie/player.js';
 import { GfxFormat, GfxTexture, makeTextureDescriptor2D } from './../noclip/gfx/platform/GfxPlatform.js';
 
 /** Where a viewer library model comes from on the disc (tools/build_objects.py, data["mp"]). */
-interface Spec { f: string; bmt?: string; tex?: number; bck?: string; shrink?: string; parts?: [string, string][]; lift?: number; swap?: [string, string]; }
+interface Spec { f: string; bmt?: string; tex?: number; bck?: string; shrink?: string; parts?: [string, string][]; lift?: number; swap?: [string, string]; /** no material animations of its own (it starts unanimated in the game) */ noAnm?: number; /** a colour animation (BPK) to play */ bpk?: string; }
 
 /**
  * A Boo's materials (telesa.bmd): their last TEV stage mixes the screen behind it (the indirect
@@ -678,7 +678,8 @@ export class GameLayer {
         const base = spec.f.replace(/\.(bmd|bdl)$/, '');
         // (the Chain Chomp's colours are the viewer's: its heat, then gold once cooled)
         const btk = this.files.get(base + '.btk'), brk = spec.f.startsWith('bwanwan/') ? null : this.files.get(base + '.brk');
-        try { if (btk) m.bindTTK1(BTK.parse(btk.buffer)); if (brk) m.bindTRK1(BRK.parse(brk.buffer)); } catch { }
+        if (!spec.noAnm) try { if (btk) m.bindTTK1(BTK.parse(btk.buffer)); if (brk) m.bindTRK1(BRK.parse(brk.buffer)); } catch { }
+        if (spec.bpk) { const f = this.files.get(spec.bpk); try { if (f) m.bindTRK1(BPK.parse(f.buffer)); } catch { } }
         if (spec.bck) { const f = this.files.get(spec.bck); try { if (f) m.bindANK1(BCK.parse(f.buffer)); } catch { } }
         return m;
     }
