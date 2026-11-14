@@ -501,6 +501,18 @@ export async function buildArea(entry: AreaEntry, table: string[][], sceneArc: (
                 if ('bwanwan' in rails) usedGraphs.add('bwanwan');
                 px = 5741.72; py = -100.0; pz = 6311.62;
             }
+            // TShiningStone::load: the stone (ShiningStone.bmd, its BTK) and the four coloured stones on one base
+            // matrix, all drawn (TShiningStone::perform)
+            if (typ === 'ShiningStone') {
+                const names = ['shiningstone', 'shiningstonegreen', 'shiningstoneblue', 'shiningstonered', 'shiningstonewhite'];
+                names.forEach((f, k) => {
+                    const path = [...arc.keys()].find((x) => x.toLowerCase() === `mapobj/${f}.bmd`);
+                    if (!path) return;
+                    const idx = P.libAdd(ctx, 'stone:' + P.digest(arc.get(path)!), () => [bmd.parse(arc.get(path)!)], { f: path });
+                    if (idx >= 0) instances.push([idx, typ, f, pyRound(px, 2), pyRound(py, 2), pyRound(pz, 2), pyRound(rx, 2), pyRound(ry, 2), pyRound(rz, 2), 1, 1, 1, '', 0, 0, k ? 0 : o.hash, '']);
+                });
+                continue;
+            }
             if (mi < 0 && !pick) continue;
             const inst: any[] = [mi, typ, key || '', pyRound(px, 2), pyRound(py, 2), pyRound(pz, 2), pyRound(rx, 2), pyRound(ry, 2), pyRound(rz, 2), pyRound(sx, 3), pyRound(sy, 3), pyRound(sz, 3),
                 pick, hit[0], hit[1], o.hash, P.CARRY_TYPES[typ] || ''];
