@@ -81,17 +81,36 @@ export function traceStatusByTick(ticks: { qf: number; mario: { status: number }
 export const traceRngCtx: { next: ((state: number) => number | null) | null } = { next: null };
 export function traceNextRollCaller(state: number): number | null { return traceRngCtx.next ? traceRngCtx.next(state) : null; }
 export function traceRngByState(tape: { count: number; seed: Uint32Array; caller: Uint32Array }) {
-    const at = new Map<number, number[]>();
-    for (let i = 0; i < tape.count; i++) { const k = tape.seed[i] >>> 0; (at.get(k) || at.set(k, []).get(k)!).push(i); }
+    // the record indices sorted by seed, then by index (a Map of lists ran past its size limit on a 10-minute run)
+    const n = tape.count, seed = tape.seed;
+    let ord = new Uint32Array(n), tmp = new Uint32Array(n);
+    for (let i = 0; i < n; i++) ord[i] = i;
+    // (an LSD radix sort on the seed's two halves: stable, so equal seeds keep their records in order)
+    const cnt = new Uint32Array(65537);
+    for (const shift of [0, 16]) {
+        cnt.fill(0);
+        for (let i = 0; i < n; i++) cnt[((seed[ord[i]] >>> shift) & 0xFFFF) + 1]++;
+        for (let b = 0; b < 65536; b++) cnt[b + 1] += cnt[b];
+        for (let i = 0; i < n; i++) { const j = ord[i]; tmp[cnt[(seed[j] >>> shift) & 0xFFFF]++] = j; }
+        const t = ord; ord = tmp; tmp = t;
+    }
+    const lower = (k: number, from: number) => {   // the first slot with (seed, index) >= (k, from)
+        let lo = 0, hi = n;
+        while (lo < hi) { const m = (lo + hi) >>> 1, j = ord[m], s = seed[j] >>> 0; if (s < k || (s === k && j < from)) lo = m + 1; else hi = m; }
+        return lo;
+    };
     let last = -1;
     return (state: number) => {
-        const L = at.get(state >>> 0);
-        if (!L) return null;
+        const k = state >>> 0;
         // (the first record with this seed at or after the last one asked for: a seed can repeat over a long run)
-        let i = L.find((j) => j >= last);
-        if (i === undefined) i = L[L.length - 1];
+        let p = lower(k, Math.max(0, last));
+        if (p >= n || (seed[ord[p]] >>> 0) !== k) {
+            p = lower(k + 1, 0) - 1;   // else the seed's last record
+            if (p < 0 || (seed[ord[p]] >>> 0) !== k) return null;
+        }
+        const i = ord[p];
         last = i;
-        return i + 1 < tape.count ? tape.caller[i + 1] >>> 0 : null;
+        return i + 1 < n ? tape.caller[i + 1] >>> 0 : null;
     };
 }
 
