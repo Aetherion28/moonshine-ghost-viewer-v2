@@ -724,7 +724,8 @@ export class SunshineRenderer implements Viewer.SceneGfx {
      * TMirrorCamera::calcEffectMtx, here for the render target's own orientation). The others aren't drawn.
      */
     private setUpMirror(device: GfxDevice, viewerInput: Viewer.ViewerRenderInput): Viewer.ViewerRenderInput | null {
-        const mi = (globalThis as any).__noMirror ? -1 : this.mirrorIndex, mir = mi >= 0 && mi < this.mirrors.length ? this.mirrors[mi] : null;
+        // (off until its look matches the game's: globalThis.__mirrors = 1 turns it on for testing)
+        const mi = !(globalThis as any).__mirrors || (globalThis as any).__noMirror ? -1 : this.mirrorIndex, mir = mi >= 0 && mi < this.mirrors.length ? this.mirrors[mi] : null;
         for (const m of this.mirrors) m.inst.visible = m === mir;
         this.mirrorOn = mir !== null;
         if (mir === null) return null;
@@ -777,13 +778,13 @@ export class SunshineRenderer implements Viewer.SceneGfx {
                 pass.setDebugName('Mirror Sky');
                 pass.attachRenderTargetID(GfxrAttachmentSlot.Color0, mcID);
                 pass.attachRenderTargetID(GfxrAttachmentSlot.DepthStencil, builder.createRenderTargetID(mdDesc, 'Mirror Sky Depth'));
-                pass.exec((passRenderer) => { this.renderInstListMirrorSky.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer); });
+                pass.exec((passRenderer) => { if (!(globalThis as any).__mirNoDraw) this.renderInstListMirrorSky.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer); });
             });
             builder.pushPass((pass) => {
                 pass.setDebugName('Mirror');
                 pass.attachRenderTargetID(GfxrAttachmentSlot.Color0, mcID);
                 pass.attachRenderTargetID(GfxrAttachmentSlot.DepthStencil, builder.createRenderTargetID(mdDesc, 'Mirror Depth'));
-                pass.exec((passRenderer) => { this.renderInstListMirror.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer); });
+                pass.exec((passRenderer) => { if (!(globalThis as any).__mirNoDraw) this.renderInstListMirror.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer); });
             });
             mirrorTexID = builder.resolveRenderTarget(mcID);
         }
