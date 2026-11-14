@@ -282,7 +282,7 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
 .sprite { animation: pose 1.5s steps(1) infinite; }
 .sp-sun { width: 32px; height: 36px; background-image: url(sprite-sun.png); transform-origin: 50% 100%; animation: lean 1.5s steps(1) infinite; }
 .sp-palm { width: 40px; height: 36px; background-image: url(sprite-palm.png); display: none; }
-@media (min-width: 1760px) { .sp-palm { display: inline-block; } }
+@media (min-width: 1480px) { .sp-palm { display: inline-block; } }
 @media (max-width: 760px) { .sp-sun { width: 24px; height: 27px; } }
 .sp-fish { width: 48px; height: 48px; background-image: url(sprite-fish.png); }
 .sp-ship { width: 96px; height: 72px; background-image: url(sprite-ship.png); }
@@ -389,6 +389,21 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       });
       if (mq.addEventListener) mq.addEventListener('change', paint);
       paint();
+      // The palm is decoration: left out when it would wrap onto a row of its own.
+      var palm = document.querySelector('header .sp-palm'), hdr = document.querySelector('header');
+      var lastW = -1, lastN = -1;
+      function fitPalm() {
+        if (!palm || !hdr) return;
+        var n = hdr.querySelectorAll(':scope > *:not([hidden])').length;
+        if (hdr.clientWidth === lastW && n === lastN) return;
+        lastW = hdr.clientWidth; lastN = n;
+        palm.style.display = '';
+        var first = hdr.firstElementChild;
+        if (palm.offsetParent && first && palm.offsetTop > first.offsetTop + first.offsetHeight / 2) palm.style.display = 'none';
+      }
+      if (window.ResizeObserver && hdr) new ResizeObserver(fitPalm).observe(hdr);
+      addEventListener('resize', fitPalm);
+      setTimeout(fitPalm, 0);
     })();
     </script>
   </header>
@@ -585,14 +600,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1794629038677"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1794629038677"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1794629038677"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1794629038677"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1794629038677"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1794629038677"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1794629038677"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1794629038677"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1794629258189"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1794629258189"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1794629258189"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1794629258189"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1794629258189"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1794629258189"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1794629258189"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1794629258189"><\/script>');
 </script>
 <script>
 (() => {
@@ -8541,7 +8556,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1794629038677';
+  const BUILD_STAMP = '1794629258189';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)

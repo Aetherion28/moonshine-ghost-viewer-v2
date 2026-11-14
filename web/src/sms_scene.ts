@@ -18,7 +18,7 @@ import * as JPA from '../noclip/Common/JSYSTEM/JPA.js';
 import { computeModelMatrixSRT, transformVec3Mat4w1 } from '../noclip/MathHelpers.js';
 import { Destroyable, SceneContext } from '../noclip/SceneBase.js';
 import { gfxDeviceNeedsFlipY } from '../noclip/gfx/helpers/GfxDeviceHelpers.js';
-import { makeAttachmentClearDescriptor, makeBackbufferDescSimple, opaqueBlackFullClearRenderPassDescriptor } from '../noclip/gfx/helpers/RenderGraphHelpers.js';
+import { makeBackbufferDescSimple, opaqueBlackFullClearRenderPassDescriptor } from '../noclip/gfx/helpers/RenderGraphHelpers.js';
 import { GfxDevice } from '../noclip/gfx/platform/GfxPlatform.js';
 import { GfxRenderCache } from '../noclip/gfx/render/GfxRenderCache.js';
 import { GfxrAttachmentSlot } from '../noclip/gfx/render/GfxRenderGraph.js';
@@ -725,7 +725,7 @@ export class SunshineRenderer implements Viewer.SceneGfx {
      */
     private setUpMirror(device: GfxDevice, viewerInput: Viewer.ViewerRenderInput): Viewer.ViewerRenderInput | null {
         // (off until its look matches the game's: globalThis.__mirrors = 1 turns it on for testing)
-        const mi = !(globalThis as any).__mirrors || (globalThis as any).__noMirror ? -1 : this.mirrorIndex, mir = mi >= 0 && mi < this.mirrors.length ? this.mirrors[mi] : null;
+        const mi = !(globalThis as any).__mirrors ? -1 : this.mirrorIndex, mir = mi >= 0 && mi < this.mirrors.length ? this.mirrors[mi] : null;
         for (const m of this.mirrors) m.inst.visible = m === mir;
         this.mirrorOn = mir !== null;
         if (mir === null) return null;
@@ -768,23 +768,22 @@ export class SunshineRenderer implements Viewer.SceneGfx {
 
         // TMirrorCamera's 256 x 256 picture (mFrameBuffer, RGB5A3)
         let mirrorTexID: any = null;
-        (globalThis as any).__smsMirror = { on: this.mirrorOn, idx: this.mirrorIndex, sky: this.renderInstListMirrorSky.renderInsts.length, main: this.renderInstListMirror.renderInsts.length, models: this.modelInstances.filter((m) => m.passMask & (SMSPass.MIRROR | SMSPass.MIRROR_SKY)).map((m) => m.name) };
         if (this.mirrorOn) {
             const mvi = { ...viewerInput, backbufferWidth: 256, backbufferHeight: 256 };
-            const mcDesc = makeBackbufferDescSimple(GfxrAttachmentSlot.Color0, mvi, (globalThis as any).__mirClear ? makeAttachmentClearDescriptor({ r: 1, g: 0, b: 1, a: 1 }) : opaqueBlackFullClearRenderPassDescriptor);
+            const mcDesc = makeBackbufferDescSimple(GfxrAttachmentSlot.Color0, mvi, opaqueBlackFullClearRenderPassDescriptor);
             const mdDesc = makeBackbufferDescSimple(GfxrAttachmentSlot.DepthStencil, mvi, opaqueBlackFullClearRenderPassDescriptor);
             const mcID = builder.createRenderTargetID(mcDesc, 'Mirror Color');
             builder.pushPass((pass) => {
                 pass.setDebugName('Mirror Sky');
                 pass.attachRenderTargetID(GfxrAttachmentSlot.Color0, mcID);
                 pass.attachRenderTargetID(GfxrAttachmentSlot.DepthStencil, builder.createRenderTargetID(mdDesc, 'Mirror Sky Depth'));
-                pass.exec((passRenderer) => { if (!(globalThis as any).__mirNoDraw) this.renderInstListMirrorSky.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer); });
+                pass.exec((passRenderer) => { this.renderInstListMirrorSky.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer); });
             });
             builder.pushPass((pass) => {
                 pass.setDebugName('Mirror');
                 pass.attachRenderTargetID(GfxrAttachmentSlot.Color0, mcID);
                 pass.attachRenderTargetID(GfxrAttachmentSlot.DepthStencil, builder.createRenderTargetID(mdDesc, 'Mirror Depth'));
-                pass.exec((passRenderer) => { if (!(globalThis as any).__mirNoDraw) this.renderInstListMirror.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer); });
+                pass.exec((passRenderer) => { this.renderInstListMirror.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer); });
             });
             mirrorTexID = builder.resolveRenderTarget(mcID);
         }
