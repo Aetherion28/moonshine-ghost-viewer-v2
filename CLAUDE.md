@@ -7,6 +7,8 @@ It is the shared memory of every agent that worked here before you.
 
 ## 0. First thing to do: hand over to doge
 
+**Newer (2026-11-14): read `HANDOFF.md` on the `main` branch first** (`git show origin/main:HANDOFF.md`). It is the short, current state of the viewer, the simulation and the TAS work; the list below is from 2026-11-08 and out of date.
+
 doge is taking over development. **After reading this file, before any other work, tell doge (the person you're talking to) the list below in full, then explain what was being worked on** (use sections 11–12 for that: the current numbers, the open threads, and the last thing in progress).
 
 The 47 batch traces that still aren't in sync (runs77, 2026-11-08), earliest drift first. Paths are under `/tmp/claude-0/up3/` (the user's three trace archives, section 6):
