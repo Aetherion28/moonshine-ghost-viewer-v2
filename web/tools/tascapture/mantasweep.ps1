@@ -32,10 +32,10 @@ foreach ($l in Get-Content $queue) {
 }
 if (-not $entry) { Log 'queue empty'; exit 2 }
 $parts = $entry -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0; $gecko = @(); $pokes = ''; $kill = 0; $grab = 0; $adapter = 0; $logall = 0; $shots = ''; $saveat = ''; $follow = 0; $speed = '0.00000000'
+$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0; $gecko = @(); $pokes = ''; $kill = 0; $grab = 0; $adapter = 0; $logall = 0; $shots = ''; $saveat = ''; $follow = 0; $speed = '0.00000000'; $mlog = ''; $savefield = 0; $splitshots = 0; $seedk = 'none'
 foreach ($p in $parts[1..($parts.Count - 1)]) {
     $k, $v = $p -split '=', 2
-    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v } elseif ($k -eq 'gecko') { $gecko += $v } elseif ($k -eq 'poke') { $pokes = $v } elseif ($k -eq 'kill') { $kill = [int]$v } elseif ($k -eq 'grab') { $grab = [int]$v } elseif ($k -eq 'adapter') { $adapter = [int]$v } elseif ($k -eq 'logall') { $logall = [int]$v } elseif ($k -eq 'shots') { $shots = $v } elseif ($k -eq 'saveat') { $saveat = $v } elseif ($k -eq 'follow') { $follow = [int]$v } elseif ($k -eq 'speed') { $speed = $v }
+    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v } elseif ($k -eq 'gecko') { $gecko += $v } elseif ($k -eq 'poke') { $pokes = $v } elseif ($k -eq 'kill') { $kill = [int]$v } elseif ($k -eq 'grab') { $grab = [int]$v } elseif ($k -eq 'adapter') { $adapter = [int]$v } elseif ($k -eq 'logall') { $logall = [int]$v } elseif ($k -eq 'shots') { $shots = $v } elseif ($k -eq 'saveat') { $saveat = $v } elseif ($k -eq 'follow') { $follow = [int]$v } elseif ($k -eq 'speed') { $speed = $v } elseif ($k -eq 'mlog') { $mlog = $v } elseif ($k -eq 'savefield') { $savefield = [int]$v } elseif ($k -eq 'splitshots') { $splitshots = [int]$v } elseif ($k -eq 'seedk') { $seedk = $v }
     else { $s, $key = $k -split '\.', 2; if (-not $game.ContainsKey($s)) { $game[$s] = @() }; $game[$s] += "$key = $v" }
 }
 Log "attempt $name : $entry"
@@ -150,8 +150,22 @@ public static class Sweep {
         return l;
     }
     const uint VT_MANTA = 0x803E1874, VT_SHINE = 0x803C11E4;
+    static double[] shotErr = new double[2];
+    // the TAS video's Manta centroid (320x240, salmon pixels left of the text box), field:x:y
+    const string VID = "173236:127.6:129.0,173237:128.8:128.8,173238:128.8:128.8,173239:128.1:127.4,173240:128.1:127.4,173241:128.2:126.1,173242:128.2:126.1,173243:131.7:126.2,173244:131.7:126.2,173245:129.8:124.0,173246:129.8:124.0,173247:130.8:122.0,173248:130.8:122.0,173249:130.4:120.4,173250:130.4:120.4,173251:130.1:119.7,173252:130.1:119.7,173253:132.1:117.4,173254:132.1:117.4,173255:132.3:115.2,173256:132.3:115.2,173257:133.5:112.6,173258:133.5:112.6,173259:132.8:111.2,173260:132.8:111.2,173261:133.7:109.9,173262:133.7:109.9,173263:135.0:107.3,173264:135.0:107.3,173265:136.2:105.5,173266:136.2:105.5,173267:137.1:104.3,173268:137.1:104.3,173269:138.4:103.2,173270:138.4:103.2,173271:139.3:103.4,173272:139.3:103.4,173273:139.5:102.3,173274:139.5:102.3,173275:140.6:102.5,173276:140.6:102.5,173277:140.8:101.9,173278:140.8:101.9,173279:141.0:100.5,173280:141.0:100.5,173281:142.0:102.4,173282:142.0:102.4,173283:139.5:98.3,173284:139.5:98.3,173285:135.6:91.9,173286:135.6:91.9,173287:132.0:91.3,173288:132.0:91.3,173289:124.5:90.5,173290:124.5:90.5,173291:124.1:93.7,173292:124.1:93.7,173293:132.2:106.1,173294:132.2:106.1,173295:138.0:112.1,173296:138.0:112.1,173297:137.8:108.5,173298:137.8:108.5,173299:137.6:106.9,173300:137.6:106.9";
+    static void vidAt(uint f, out double x, out double y) { x = 0; y = 0; uint best = uint.MaxValue;
+        foreach (string e in VID.Split(',')) { string[] t = e.Split(':'); uint ff = uint.Parse(t[0]); uint d = ff > f ? ff - f : f - ff;
+            if (d < best) { best = d; x = double.Parse(t[1], System.Globalization.CultureInfo.InvariantCulture); y = double.Parse(t[2], System.Globalization.CultureInfo.InvariantCulture); } } }
+    static int centroid(string path, out double cx, out double cy) { cx = 0; cy = 0; if (path == null) return 0;
+        using (var src = new System.Drawing.Bitmap(path)) using (var bm = new System.Drawing.Bitmap(320, 240)) {
+            using (var g = System.Drawing.Graphics.FromImage(bm)) { g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear; g.DrawImage(src, 0, 0, 320, 240); }
+            double sx = 0, sy = 0; int n = 0;
+            for (int y = 20; y < 240; y++) for (int x = 0; x < 205; x++) { var c = bm.GetPixel(x, y);
+                if (c.R > 200 && c.G > 110 && c.G < 190 && c.B > 80 && c.B < 160 && c.R - c.G > 50) { sx += x; sy += y; n++; } }
+            if (n > 0) { cx = sx / n; cy = sy / n; } return n; } }
+    static int mantasAlive() { int n = 0; foreach (uint m in objects(VT_MANTA)) if ((u32(m + 0xF0) & 1) == 0) n++; return n; }
     // returns "SUCCESS ..." or "FAIL ..." or "ERROR ..."
-    public static string Run(string exe, string args, string trackPath, string logPath, int loadState, int saveState, string pokes, int killRc, int grabRc, int logAll, string shots, string saveAt, int follow) {
+    public static string Run(string exe, string args, string trackPath, string logPath, int loadState, int saveState, string pokes, int killRc, int grabRc, int logAll, string shots, string saveAt, int follow, string mlog, int saveField, int splitShots, string shotDir, string seedK) {
         SetThreadExecutionState(0x80000001u);   // ES_CONTINUOUS | ES_SYSTEM_REQUIRED: no idle sleep while this runs
         var track = new StreamWriter(trackPath); track.AutoFlush = true;
         var log = new StreamWriter(logPath, true); log.AutoFlush = true;
@@ -179,7 +193,7 @@ public static class Sweep {
             bool inSirena = false; int refIdx = 0; uint sirenaRc = 0, lastTrackRc = 0;
             var shotList = new System.Collections.Generic.List<uint>(); int shotIdx = 0;
             if (shots.Length > 0) foreach (string sh in shots.Split(',')) shotList.Add(Convert.ToUInt32(sh.Trim()));
-            bool savedAt = false; uint followStart = 0;
+            bool savedAt = false; bool seedDone = false; uint followStart = 0; int hp0 = -1; bool splitChecked = false; uint victoryRc = 0, lastVictoryCheck = 0; bool hitFail = loadState > 0 && killRc == 0 && grabRc == 0;
             bool killed = false, sirenaShine = false, freed = false; uint shineRc = 0, grabTarget = 0, lastKillCheck = 0; int afterArea = -1;
             var shineFlags = new System.Collections.Generic.Dictionary<uint, uint>();
             Action<string> L = (msg) => log.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "   " + msg);
@@ -244,6 +258,37 @@ public static class Sweep {
                     if (rc - followStart > follow) return "DONE followed " + follow + " fields from " + followStart;
                     System.Threading.Thread.Sleep(1); continue;
                 }
+                // seedk=K: once at field 173150 (before the first split), step rand's seed K times forward (K < 0: back)
+                if (seedK != "none" && !seedDone && rc >= 173150) { seedDone = true; int k = int.Parse(seedK); uint sd = u32(0x80408CF0), s0 = sd;
+                    unchecked { for (int i = 0; i < Math.Abs(k); i++) sd = k > 0 ? sd * 1103515245u + 12345u : (sd - 12345u) * 0xEEB9EB65u; }
+                    w32(0x80408CF0, sd); L("seed at field " + rc + ": " + s0.ToString("X8") + " stepped " + k + " -> " + sd.ToString("X8")); track.WriteLine("seed " + rc + " " + s0.ToString("X8") + " " + k + " " + sd.ToString("X8")); }
+                if (saveField > 0 && rc >= saveField) { L("save state " + saveState + " at field " + rc + ": " + stateCommand(p.Id, "Save State", saveState)); System.Threading.Thread.Sleep(4000); return "DONE saved slot " + saveState + " at field " + rc; }
+                // splitshots=1: screenshots at 173240 and 173280; the Mantas' place on screen against the TAS video's, else the value is wrong
+                if (splitShots > 0 && shotIdx < 2 && rc >= (shotIdx == 0 ? 173240u : 173280u)) {
+                    L("split pause " + menuCmd(p.Id, "Pause")); System.Threading.Thread.Sleep(800); uint prc = u32(0x80409F00);
+                    var before = new System.Collections.Generic.HashSet<string>(Directory.GetFiles(shotDir, "*.png"));
+                    L("  " + menuCmd(p.Id, "Take Screenshot") + " into " + shotDir); string shot = null;
+                    for (int w = 0; w < 50 && shot == null; w++) { System.Threading.Thread.Sleep(200); foreach (string fn in Directory.GetFiles(shotDir, "*.png")) if (!before.Contains(fn)) shot = fn; }
+                    System.Threading.Thread.Sleep(500);
+                    double cx, cy; int cn = centroid(shot, out cx, out cy); double vx, vy; vidAt(prc, out vx, out vy);
+                    double err = Math.Sqrt((cx - vx) * (cx - vx) + (cy - vy) * (cy - vy));
+                    shotErr[shotIdx] = err; L("split shot at field " + prc + ": Mantas at " + cx.ToString("F1") + "," + cy.ToString("F1") + " (" + cn + " px), the TAS's " + vx.ToString("F1") + "," + vy.ToString("F1") + ", off " + err.ToString("F1") + " (" + Path.GetFileName(shot) + ")");
+                    track.WriteLine("splitshot " + prc + " " + cx.ToString("F1") + " " + cy.ToString("F1") + " " + err.ToString("F1"));
+                    menuCmd(p.Id, "Play"); shotIdx++; lastRcChange = sw.ElapsedMilliseconds;
+                    if (err > 8) return "FAIL split direction: Mantas off the TAS's by " + err.ToString("F1") + " px at field " + prc + (shotIdx == 2 ? " (first shot " + shotErr[0].ToString("F1") + ")" : "");
+                    if (shotIdx == 2) L("split matches: off " + shotErr[0].ToString("F1") + " and " + shotErr[1].ToString("F1") + " px");
+                    continue;
+                }
+                // mlog=F1-F2: every Manta's place and speed (0x170) on each field from F1 to F2, then DONE
+                if (mlog.Length > 0) {
+                    string[] mr = mlog.Split('-'); uint m1 = Convert.ToUInt32(mr[0]), m2 = Convert.ToUInt32(mr[1]);
+                    if (rc >= m1 && rc != lastTrackRc) { lastTrackRc = rc; var sb = new System.Text.StringBuilder(); sb.Append("m " + rc + " cave " + u32(0x80001800).ToString("X8") + " " + u32(0x803212D4).ToString("X8"));
+                        uint cam = u32(0x8040B370); if (okp(cam)) { sb.Append(" cam"); for (uint o = 0x10; o < 0x21C; o += 4) sb.Append(" " + f32(cam + o).ToString("R")); }
+                        foreach (uint m in objects(VT_MANTA)) { if ((u32(m + 0xF0) & 1) != 0) continue; sb.Append(" | " + m.ToString("X8") + " " + f32(m + 0x10) + " " + f32(m + 0x14) + " " + f32(m + 0x18) + " v " + f32(m + 0x170) + " " + f32(m + 0x174) + " " + f32(m + 0x178)); }
+                        track.WriteLine(sb.ToString()); }
+                    if (rc > m2) return "DONE mlog";
+                    System.Threading.Thread.Sleep(1); continue;
+                }
                 if (shotIdx < shotList.Count && rc >= shotList[shotIdx]) {
                     // pause, screenshot (Dolphin's own, into User\ScreenShots), go on
                     L("shot " + shotList[shotIdx] + ": pause " + menuCmd(p.Id, "Pause")); System.Threading.Thread.Sleep(800);
@@ -260,10 +305,22 @@ public static class Sweep {
                     if (area != 6 || ep != 0) return "FAIL left Sirena without the Shine at field " + rc + " (" + (rc - sirenaRc) + " in)";
                     if (okp(mario)) {
                         uint st = u32(mario + 0x7C);
-                        if (st == 0x1302) return "SUCCESS Shine touch at field " + rc + " (" + (rc - sirenaRc) + " in)";
+                        int hp = (int)(u32(mario + 0x120) >> 16);
+                        // the first split (~173182): in the TAS its two halves stay together; ours fly apart with f26 = 0
+                        if (hitFail && !splitChecked && rc >= 173260) { splitChecked = true;
+                            float dx = f32(0x81452AD4 + 0x10) - f32(0x81455120 + 0x10), dz = f32(0x81452AD4 + 0x18) - f32(0x81455120 + 0x18);
+                            double dd = Math.Sqrt(dx * dx + dz * dz); L("first split halves " + dd.ToString("F1") + " apart at field " + rc); track.WriteLine("split " + rc + " " + dd.ToString("F1"));
+                            }
+                        if (hitFail && hp > 0 && hp <= 8) { if (hp0 < 0) hp0 = hp; else if (hp < hp0) return "FAIL hit at field " + rc + " (" + (rc - sirenaRc) + " in), health " + hp0 + " -> " + hp + ", Mantas alive " + mantasAlive() + (victoryRc > 0 ? ", victory at " + victoryRc : ""); }
+                        // the victory: every Manta dead (the TAS's victory demo starts near field 174224)
+                        if (hitFail && victoryRc == 0 && rc > 173300 && rc - lastVictoryCheck >= 10) { lastVictoryCheck = rc;
+                            if (mantasAlive() == 0) { victoryRc = rc; L("all Mantas dead at field " + rc + " (TAS ~174224, " + ((int)rc - 174224) + ")"); track.WriteLine("victory " + rc);
+                                if (rc + 300 < 174224) return "FAIL victory too early at field " + rc + " (TAS ~174224)"; } }
+                        if (hitFail && victoryRc == 0 && rc > 174224 + 300) return "FAIL no victory by field " + rc + " (TAS ~174224 + 5 s), Mantas alive " + mantasAlive();
+                        if (st == 0x1302) return "SUCCESS Shine touch at field " + rc + " (" + (rc - sirenaRc) + " in)" + (victoryRc > 0 ? ", victory at " + victoryRc + " (TAS ~174224)" : "");
                         if (rc - lastTrackRc >= 10) {
                             lastTrackRc = rc;
-                            track.WriteLine(rc + " " + st.ToString("X") + " " + f32(mario + 0x10) + " " + f32(mario + 0x14) + " " + f32(mario + 0x18) + " " + u32(0x80408CF0).ToString("X"));
+                            track.WriteLine(rc + " " + st.ToString("X") + " " + f32(mario + 0x10) + " " + f32(mario + 0x14) + " " + f32(mario + 0x18) + " " + u32(0x80408CF0).ToString("X") + " h" + (u32(mario + 0x120) >> 16) + " n" + mantasAlive());
                         }
                     }
                     if (rc - sirenaRc > 30000) return "FAIL no Shine after 30000 fields in Sirena";
@@ -282,7 +339,7 @@ public static class Sweep {
     }
 }
 "@
-Add-Type -TypeDefinition $src 
+Add-Type -TypeDefinition $src -ReferencedAssemblies System.Drawing 
 $safe = $name -replace '[^A-Za-z0-9_-]', '_'
 New-Item -ItemType Directory -Force -Path (Join-Path $here 'sweep') | Out-Null
 $dargs = "-b -e `"$iso`" -m `"$dtm`""
@@ -290,7 +347,7 @@ $t0 = Get-Date
 $st = Join-Path $dol "User\StateSaves\GMSJ01.s0$loadstate"
 if ($loadstate -gt 0 -and -not (Test-Path $st)) { Log "waiting for the savestate $st"; exit 2 }
 if ($true) {
-$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate, $pokes, $kill, $grab, $logall, $shots, $saveat, $follow) }
+$r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate, $pokes, $kill, $grab, $logall, $shots, $saveat, $follow, $mlog, $savefield, $splitshots, (Join-Path $dol 'User\ScreenShots\GMSJ01'), $seedk) }
 $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
 Log "result $name : $r ($mins min)"
 Add-Content -Path $results -Value "$name | $r | $mins min | $entry"
