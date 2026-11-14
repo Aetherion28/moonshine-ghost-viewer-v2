@@ -1,0 +1,23 @@
+import { createRequire } from 'node:module';
+const { chromium } = createRequire('/opt/npm-tools/node_modules/')('playwright');
+import http from 'node:http'; import { readFileSync, existsSync, statSync, mkdirSync } from 'node:fs'; import { extname, join } from 'node:path';
+const [site, disc, out, file, times, flag] = process.argv.slice(2); mkdirSync(out, { recursive: true });
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.wasm': 'application/wasm', '.png': 'image/png' };
+const srv = http.createServer((q, s) => { let p = join(site, decodeURIComponent(q.url.split('?')[0])); if (existsSync(p) && statSync(p).isDirectory()) p = join(p, 'index.html'); if (!existsSync(p)) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'content-type': types[extname(p)] || 'application/octet-stream' }); s.end(readFileSync(p)); });
+await new Promise((r) => srv.listen(0, r));
+const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const pg = await b.newPage({ viewport: { width: 1280, height: 800 } });
+pg.on('pageerror', (e) => console.log('[pe]', String(e).slice(0, 300)));
+pg.on('console', (m) => { if (m.type() === 'error' || /\[mirror\]/.test(m.text())) console.log('[c]', m.text().slice(0, 200)); });
+await pg.goto(`http://127.0.0.1:${srv.address().port}/index.html`);
+if (flag) await pg.evaluate((f) => { globalThis[f] = 1; }, flag);
+await pg.waitForTimeout(1500);
+await pg.setInputFiles('#folderFile', disc); await pg.waitForTimeout(4000);
+await pg.setInputFiles('#ghostFile', file); await pg.waitForTimeout(15000);
+for (const t of times.split(',')) {
+  await pg.evaluate((t) => { const s = document.getElementById('scrub'); s.value = t; s.dispatchEvent(new Event('input')); }, t);
+  await pg.waitForTimeout(6000);
+  console.log(t, JSON.stringify(await pg.evaluate(() => globalThis.__smsMirror)));
+  await pg.screenshot({ path: join(out, `t${t}.png`) });
+}
+await b.close(); srv.close();
