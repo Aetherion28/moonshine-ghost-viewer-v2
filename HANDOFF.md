@@ -1,4 +1,4 @@
-# Handoff (2026-11-14)
+# Handoff (2026-11-15)
 
 Start here, then read `CLAUDE.md` (the long shared memory; its sections 2, 3, 6, 12 and 14 matter most).
 This file is the short version: what was just done, what is open, where everything is.
@@ -40,7 +40,7 @@ This file is the short version: what was just done, what is open, where everythi
   A background tab is throttled to near nothing (timers and rAF), so long scripted sweeps there stall; use headless for sweeps, Chrome for looking.
   Local files can't be uploaded through the extension (only files shared with the session), so in Chrome use the shared ghosts.
 
-## What the last session did (2026-11-14: polish before the public announcement, live on main)
+## What the last session did (2026-11-14/15: polish before the public announcement, live on main)
 
 - The name is **Moonshine Ghost Viewer** everywhere (page title and header, README, legal page; the user dropped the "v2" tag). The repo and URL keep `-v2`.
 - The page serves three.js r128 and its two fonts itself (`web/vendor/`, copied to `site/vendor/` by build.mjs with their licences): no CDN or Google Fonts requests.
@@ -66,15 +66,15 @@ This file is the short version: what was just done, what is open, where everythi
 
 ## Open on the simulation (v2)
 
-- 141 batch traces, runs97: 103 never drift. The open threads with their next steps are in `CLAUDE.md` section 12; start each with the v3 oracle (section 12, "The oracle").
+- 140 batch traces, runs99 (2026-11-15): 103 never drift. The open threads with their next steps are in `CLAUDE.md` section 12; start each with the v3 oracle (section 12, "The oracle").
 - Any change to `web/src/game` needs a full batch (section 6) unless it is provably behaviour-identical (say so in the fix log).
 
 ## The any% TAS work (paused)
 
 Everything is in the `v3` branch's `CLAUDE.md` (section 12, "The any% TAS through Dolphin") and `web/tools/tascapture/`.
 - The TAS (TASVideos 3731M, 2018, Dolphin 5.0-114, GMSJ01) plays in real Dolphin on the user's PC up to Manta Storm, where it parts.
-  35 per-level ghosts (.smsghost V9) and traces were made from the synced part (`convert.ts`, `mkghost.py`); they are in the user's `Desktop\ghosts\SMS any% TAS 3731M - ghosts`.
-- The sweep runner is `mantasweep.ps1` on the user's PC (`Desktop\ghosts\_incoming\tas`; queue `sweep_queue.txt`, results `sweep_results.txt`, the loop `run_mantasweep.cmd`, which the user starts).
+  35 per-level ghosts (.smsghost V9) and traces were made from the synced part (`convert.ts`, `mkghost.py`); they are in the user's `Desktop\SMS\ghosts\SMS any% TAS 3731M - ghosts`.
+- The sweep runner is `mantasweep.ps1` on the user's PC (`Desktop\SMS\ghosts\_incoming\tas`; queue `sweep_queue.txt`, results `sweep_results.txt`, the loop `run_mantasweep.cmd`, which the user starts).
 - **What was found**: the run really parts at Manta Storm's first split (~field 173182). The split's angle is a `rand()` in TBossMantaManager::spawn, so our RNG is already out of step there (a GPU-dependent consumer before it). The never-set f26 in spawn is not the cause.
   Only the savestate at Sirena's start (slot 1, field 170554) is faithful; a state saved mid-stage (slot 4) is not.
 - Paused there: a seed-offset test (`seedk=K`, queued as `seed1k_*`, commented out) to see how many rand steps we are off.
