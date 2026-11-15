@@ -25,7 +25,7 @@ This file is the short version: what was just done, what is open, where everythi
 ## Workspace (lost on a container reset)
 
 - Traces: `/tmp/claude-0/up3/{a,b,c}/*.msgt` (rebuild from the user's archives: `CLAUDE.md` section 6).
-  The user's PC holds them in two folders the user connects with the desktop app's Add folder button ("Games" with `_ghostviewer_extract`, "ghosts" with the archives and `_incoming`); they are not under the home folder or `C:\`.
+  The user's PC holds them in `C:\Users\Aetherion\Desktop\SMS\ghosts\_incoming` (the user connects the SMS folder with the desktop app's Add folder button): `moonshine-ghosts.tgz.part*` (the traces), `gve.tar` (the JP extract), `pal_scene.tar`; `CLAUDE.md` section 6 says where each goes.
   `pm.ts` imports `/tmp/claude-0/ct/files.ts`: copy `web/tools/harness/files.ts` there before bundling.
 - A clean JP disc folder for headless tests: `/tmp/claude-0/jpdisc` (`files/` hard links to `/mnt/user-data/uploads/Games/_ghostviewer_extract/data` plus its `jp/` files, and `sys/boot.bin` = `GMSJ01`).
   The extract's root mixes JP and PAL, so don't point the viewer at it directly.
@@ -52,7 +52,7 @@ This file is the short version: what was just done, what is open, where everythi
 - A browser that can't start WebGL gets a message in the disc box (it used to throw and leave a dead page; seen once in the user's Chrome); a lost context shows a notice.
 - An old-format ghost's ⚠ no longer says "current is v8" (v9 exists); the drop zone and help text mention `.msgt` replays.
 - README rewritten for visitors. `web/package.json` no longer claims an ISC licence (private, no licence chosen yet).
-- Type-checking (no tsconfig in the repo; a lenient one in /tmp found these) turned up: `game/mario.ts` used `fr` without importing it (a ReferenceError when the ghost-following Mario sprays something), two duplicate imports, and five enemies' changeOut (TSmallEnemy, TBombHei, TKiller, TTelesa, TTobiPuku) passing `ANM_FRAME_RATE` uncalled to setFrameRate (the decomp has `SMSGetAnmFrameRate()`), which made their animation NaN after Yoshi's juice. The first two are committed (behaviour-identical for the batch); the juice fix waits for a full batch (see `CLAUDE.md` fix log).
+- Type-checking (no tsconfig in the repo; a lenient one in /tmp found these) turned up: `game/mario.ts` used `fr` without importing it (a ReferenceError when the ghost-following Mario sprays something), two duplicate imports, and five enemies' changeOut (TSmallEnemy, TBombHei, TKiller, TTelesa, TTobiPuku) passing `ANM_FRAME_RATE` uncalled to setFrameRate (the decomp has `SMSGetAnmFrameRate()`), which made their animation NaN after Yoshi's juice. All three are committed; the juice fix after a full batch (runs99 vs runs98, 2026-11-15: all 140 the same).
 
 ## Open on the viewer
 

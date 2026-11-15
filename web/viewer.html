@@ -9560,7 +9560,7 @@ void main() {
   const dgFileUrl = (path) => `${DG.url}/storage/v1/object/public/ghosts/${path.split('/').map(encodeURIComponent).join('/')}`;
   const fmtMs = (ms) => { if (ms == null) return ''; const m = Math.floor(ms / 60000), sec = (ms % 60000) / 1000;
     return m ? `${m}:${sec.toFixed(3).padStart(6, '0')}` : sec.toFixed(3); };
-  // Ghosts older than v5 carry no controller inputs, which the viewer plays from: they're not listed.
+  // Ghosts older than v5 carry no controller inputs, which the viewer needs: they're not listed.
   // The listing doesn't say a ghost's format, so its header's version (bytes 4–5) is read with a range request.
   const dgVer = new Map();
   function dgVersion(g) {

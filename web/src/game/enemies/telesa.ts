@@ -290,7 +290,7 @@ export class Telesa extends WalkerEnemy {
         this.world.sound(SE.EN_TELSA_RECOVER, this.pos);
         this.offLiveFlag(LF.HIDDEN);
         this.pos.set(this.juiceBlock.pos);
-        this.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK);
+        this.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BCK);
         this.juiceBlock.kill();
         this.juiceBlock = null;
     }

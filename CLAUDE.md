@@ -100,7 +100,7 @@ Paths under `/tmp/claude-0` are the cloud workspace's and are lost when the cont
 
 ### The batch set
 - Traces: `/tmp/claude-0/up3/{a,b,c}/*.msgt`. `web/tools/harness/list4.txt` lists 143 (path, region, end QF) and `catalog.tsv` describes them.
-  `list5.txt` (in `up3`) is the batch list: 141, without the TAS runs, which the viewer plays from their recording.
+  `list5.txt` (in `up3`) is the batch list: 140, without the TAS runs, which the viewer plays from their recording.
   Never commit traces.
 - Game files: the user's extracted JP disc at `/mnt/user-data/uploads/Games/_ghostviewer_extract/`; PAL scenes at `/tmp/claude-0/palscene/data/scene` (`SCENEDIR`).
 
@@ -128,7 +128,7 @@ Everything above that used to live only in `/tmp/claude-0/ct` is now in `web/too
 ### Rebuilding the workspace after a container reset
 - The batch folders come from the user's three archives in `/mnt/user-data/uploads`: `a` = trace_A4362729_8C9D5ED7.zip, `b` = ref_41726535_80000018_….zip, `c` = trace_A7E1056F_8000002E.7z (py7zr), each flattened to its `.msgt` files.
 - JP game files come from the user's computer when it is linked: tar `~/mnt/Games/_ghostviewer_extract` into `~/mnt/ghosts/_incoming/gve.tar`, stage it, unpack into `/mnt/user-data/uploads/Games/`. PAL scenes: `~/mnt/ghosts/_incoming/pal_scene.tar` into `/tmp/claude-0/palscene`.
-- The user's PC keeps the archives and the extract in two folders the user connects with the desktop app's Add folder button (they show up in device_bash as `~/mnt/ghosts` and `~/mnt/Games`; they aren't under the home folder or `C:\`, so ask rather than search).
+- On the user's PC it is all in `C:\Users\Aetherion\Desktop\SMS` (ask the user to connect it with the desktop app's Add folder button; device_bash sees it as `~/mnt/SMS`): the disc images at its root and, in `ghosts/_incoming`, the batch traces as `moonshine-ghosts.tgz.part00`…`22` (cat them into `tar xzf - a b c` in `up3`; its `sum.txt` is stale, the parts are good), the JP extract `gve.tar` (unpack into `/mnt/user-data/uploads/Games/`) and `pal_scene.tar` (into `/tmp/claude-0/palscene`). Each is under the 400 MB staging limit; staging and unpacking take a few minutes.
 - `pm.ts` imports `/tmp/claude-0/ct/files.ts`: copy `web/tools/harness/files.ts` there first, or the bundle fails.
 - Bundle the readers from `web/tools/harness/` into `/tmp/claude-0/ct`, copy `list5.txt` and `cmp.py` into `up3`, copy `scans/doldis.py` to `/tmp/claude-0/s/` (and `pip install --break-system-packages capstone`), run `npm install` in `web`, and run a baseline batch at HEAD before you compare anything: old runsNN don't survive.
 
@@ -211,15 +211,15 @@ Common JP callers: 0x800c2458/24ac/2504 TTrembleModelEffect::tremble (Mario's ca
 - Object order inside a perform list decides RNG order; check it against the trace's callers.
 - Moonshine patches the game's code for some settings (pr69 src/features.cpp: FBEGIN / FWORD / FHALFHI lines with the JP / US / PAL addresses). When the game does something the decomp can't explain, map the function's address against features.cpp and check the setting in the trace's session record (all session fields: include/susamune/ghost_simulation.hxx).
 
-## 11. Current state (2026-11-09)
+## 11. Current state (2026-11-15)
 
-First drift per trace, 141 batch traces (runs97, 2026-11-12):
+First drift per trace, the 140 traces in `list5.txt` (runs99, 2026-11-15; runs97 on 2026-11-12 counted 141 with 17 in 15–30 s):
 
 | Desync | Runs |
 |---|---|
 | under 5 s | 0 |
 | 5–15 s | 3 |
-| 15–30 s | 17 |
+| 15–30 s | 16 |
 | 30 s+ | 18 |
 | never | 103 |
 
@@ -276,6 +276,8 @@ The big port of 2026-11-06 (one commit, see the fix log) added most of the decom
 - Carrying `checkStickRotate`'s q[4] over between calls: 57 worse, 3 better (runs21 vs runs20).
 
 ## 14. Fix log (newest first)
+
+- 2026-11-15 changeOut as the decomp in TSmallEnemy, TBombHei, TKiller, TTelesa and TTobiPuku (`setFrameRate(SMSGetAnmFrameRate(), ANM_TYPE_BCK)`): the port passed `ANM_FRAME_RATE` itself, a function, so an enemy freed from Yoshi's juice had a NaN animation frame. Found by the lenient type-check (section 3). Batch runs99 vs runs98 (the baseline at HEAD after a container reset; the workspace was rebuilt from the user's `ghosts/_incoming` on the Desktop SMS folder: `moonshine-ghosts.tgz.part*` (a, b, c; its `sum.txt` is stale, the parts are good), `gve.tar`, `pal_scene.tar`): all 140 the same. Also the v4-ghost error no longer says the viewer plays ghosts from their inputs (only replays are).
 
 - 2026-11-14 Polish before the public announcement (viewer only, plus two behaviour-identical sim cleanups). The name is Moonshine Ghost Viewer everywhere (the user's choice, no "v2" tag; the repo keeps its name). three.js r128 and the fonts are served from `web/vendor/` (the user OK'd the download from npm): the page makes no CDN or Google Fonts requests. Meta description, Open Graph / Twitter tags, `social.png` and `favicon.png` (from the site's own sprites and font). The legal page gained Privacy and Credits and licences sections. The comparison view's checkbox had been bare since 2026-10-19 (its label went when the view was turned off and didn't come back when it was turned on): "Comparison view" restored. "Water reflections (experimental)" (the user's choice). The frame-rate box shows the frame rate only (`?perf` adds the split). A browser that can't create a WebGL context gets a message in the disc box instead of an uncaught error and a dead page (seen once in the user's Chrome); a lost context shows a notice. The old-format ⚠ no longer says "current is v8" (`GHOST_FULL` 8: v9 only adds the RNG seed). The drop zone and help mention `.msgt`. README rewritten; `web/package.json` private, no ISC licence. Sim, found by the lenient type-check (section 3): `game/mario.ts` used `fr` without importing it (MarioProxy, only when no player sim runs, so never in the batch: a ReferenceError when a ghost sprays something it touches), and duplicate imports in `enemies/bosshanachan.ts` and `mapobj/bianco.ts`; both behaviour-identical for the batch, no batch run.
 

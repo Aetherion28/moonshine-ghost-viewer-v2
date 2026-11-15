@@ -60,8 +60,8 @@ function parseSmsGhost(buffer) {
   if (magic !== 'SGHF') fail('Not a Moonshine ghost (missing SGHF header).');
   const version = dv.getUint16(4);
   if (version > 9) fail(`Ghost version ${version} is newer than this viewer supports (5–9). The viewer needs an update for it.`);
-  // The viewer plays a run from its controller inputs (SGTI, V5+); older ghosts recorded none.
-  if (version < 5) fail(`This ghost is format v${version}, recorded before Moonshine saved controller inputs. The viewer plays ghosts from their inputs, so it needs v5 or newer — re-record the run with a current Moonshine.`);
+  // The viewer needs a run's controller inputs (SGTI, V5+); older ghosts recorded none.
+  if (version < 5) fail(`This ghost is format v${version}, recorded before Moonshine saved controller inputs, which the viewer needs (v5 or newer). Re-record the run with a current Moonshine.`);
   const fileSize = dv.getUint32(8);
   if (fileSize !== bytes.length) fail('Ghost file is truncated or has extra bytes.');
 

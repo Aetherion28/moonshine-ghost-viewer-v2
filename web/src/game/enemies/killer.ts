@@ -227,7 +227,7 @@ export class Killer extends FlyEnemy {
         this.genEventCoin();
         this.onHitFilter(HF.NO_COLLISION);
         this.pos.set(this.juiceBlock.pos);
-        this.mactor!.setFrameRate(ANM_FRAME_RATE, ANM_BCK);
+        this.mactor!.setFrameRate(ANM_FRAME_RATE(), ANM_BCK);
         this.juiceBlock.kill();
         this.juiceBlock = null;
     }
