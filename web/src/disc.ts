@@ -48,15 +48,19 @@ class DiscImage implements GameFS {
         if (fst.length < fstLen || fstLen < 12) throw tooShort(name);
         const v = new DataView(fst.buffer, fst.byteOffset, fst.byteLength);
         const n = v.getUint32(8);
+        if (n < 1 || n * 12 > fst.length) throw damagedDisc(name);
         const strings = n * 12, dec = new TextDecoder('shift_jis');
         const nameAt = (o: number) => { let e = strings + o; while (fst[e]) e++; return dec.decode(fst.subarray(strings + o, e)); };
         // Walk the tree: a directory's children run to its "next" index.
-        const walk = (first: number, end: number, prefix: string) => {
+        const discName = name;
+        const walk = (first: number, end: number, prefix: string, depth = 0) => {
             for (let i = first; i < end;) {
                 const flags = fst[i * 12], name = nameAt(v.getUint32(i * 12) & 0xFFFFFF);
                 if (flags === 1) {
                     const next = v.getUint32(i * 12 + 8);
-                    walk(i + 1, next, prefix + name + '/');
+                    // (a folder ends after itself and inside its parent: anything else would loop for ever)
+                    if (!(next > i && next <= end) || depth > 64) throw damagedDisc(discName);
+                    walk(i + 1, next, prefix + name + '/', depth + 1);
                     i = next;
                 } else {
                     disc.files.set((prefix + name).toLowerCase(), { off: v.getUint32(i * 12 + 4), len: v.getUint32(i * 12 + 8) });
@@ -89,6 +93,7 @@ class DiscImage implements GameFS {
     size(path: string) { const f = this.files.get(path.toLowerCase()); return f ? f.len : 0; }
 }
 
+const damagedDisc = (name: string) => new Error(`${name} has a damaged file table and can't be read.`);
 const tooShort = (name: string) => new Error(`${name} is incomplete: the file ends before the disc's data does. Copy or dump it again.`);
 
 /** The bytes as an ArrayBuffer of their own (a plain ISO read already is one: no copy). */

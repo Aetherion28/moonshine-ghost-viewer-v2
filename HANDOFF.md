@@ -44,6 +44,10 @@ This file is the short version: what was just done, what is open, where everythi
   A background tab is throttled to near nothing (timers and rAF), so long scripted sweeps there stall; use headless for sweeps, Chrome for looking.
   Local files can't be uploaded through the extension (only files shared with the session), so in Chrome use the shared ghosts.
 
+## Security audit (2026-11-16, live on main)
+
+- A security-expert agent audited the viewer: no way found to run code in another visitor's browser. The denial-of-service holes it found are closed (ghost RNG tape count, share-link limits, disc file table, image header sizes), a Content-Security-Policy is in place, and the deploy now runs the checks first. `CLAUDE.md` fix log has the list and what was left (shared github.io storage, cache keyed by disc ID, actions pinned by tag).
+
 ## What the last session did (2026-11-16: a deep search, live on main)
 
 - Two leaks fixed: the sim's byte-keyed caches (WeakMaps now) and the particle batches that grew with every stage load. Memory is flat across repeated stage loads.

@@ -94,6 +94,9 @@ function lz4Block(src: Uint8Array, p: number, len: number, out: Uint8Array, o: n
     return o - o0;
 }
 
+/** the most unpacked record data a replay may hold (a packed file can unpack to far more than its size) */
+const MAX_PAYLOAD = 768 << 20;
+
 export function readMstr(buf: ArrayBuffer, visit?: (r: MstrRecord) => void): MstrSummary {
     const bytes = new Uint8Array(buf), dv = new DataView(buf);
     const fail = (m: string): never => { throw new MstrError(m); };
@@ -127,6 +130,7 @@ export function readMstr(buf: ArrayBuffer, visit?: (r: MstrRecord) => void): Mst
         // v3: a chunk may be stored LZ4-compressed (r0 = 1) in blocks of r1 bytes: each block a u32 raw size and
         // a u32 stored size (high bit: LZ4 block format, else the raw bytes); n is the decompressed size
         const packed = header.version >= 3 && r0 === 1;
+        if (payload > MAX_PAYLOAD) fail('The replay is too long to load in a browser.');
         if (run !== header.run || seq !== chunks + 1 || !(n > 0 && n <= 0x80000) || (packed ? !(r1 > 0 && r1 <= 0x80000) : (r0 || r1)) || first > last) cut('Invalid chunk boundary');
         let cbytes = bytes, cdv = dv, start = at + 32, stored = n;
         if (packed) {

@@ -295,6 +295,9 @@ function parseRngTape(bytes, dv, at, startQf) {
   if (dv.getUint16(at + 4) !== 1 || dv.getUint16(at + 6) !== 32) throw new Error('unknown tape version');
   if (nCallers > 255 || nActors > 255 || (flags & ~0x1f) || dv.getUint32(at + 28)) throw new Error('bad tape header');
   if (at + size > bytes.length) throw new Error('tape runs past the end of the file');
+  // (the count sizes seven arrays: no more calls than the stream can hold, at most 128 to 3 bytes,
+  // and no more than a tab can keep, 20 bytes a call)
+  if (callCount > Math.ceil(streamSize / 3) * 128 || callCount > 16e6) throw new Error('too many calls');
   const body = bytes.subarray(at + 32, at + size);
   if (ghostCrc32(body) !== dv.getUint32(at + 20)) throw new Error('checksum mismatch');
   const callers = [], actors = [], seen = new Map();

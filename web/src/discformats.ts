@@ -16,6 +16,9 @@ export interface DiscSource {
     read(off: number, len: number): Promise<Uint8Array>;
 }
 
+const badImage = (kind: string) => new Error(`This ${kind} image's header is damaged and it can't be read.`);
+/** a block size the formats use: a power of two from 32 KiB up */
+const saneBlock = (n: number, max: number) => n >= 0x8000 && n <= max && (n & (n - 1)) === 0;
 const incomplete = (kind: string) => new Error(`This ${kind} image is incomplete: the file ends before the disc's data does. Copy or convert it again.`);
 
 const u64 = (v: DataView, o: number, le = false) => v.getUint32(o + (le ? 4 : 0), le) * 0x100000000 + v.getUint32(o + (le ? 0 : 4), le);
@@ -72,6 +75,7 @@ class CisoSource implements DiscSource {
     constructor(private blob: Blob, head: Uint8Array) {
         const v = new DataView(head.buffer, head.byteOffset);
         this.blockSize = v.getUint32(4, true);
+        if (!saneBlock(this.blockSize, 0x4000000)) throw badImage('CISO');
         const n = 0x8000 - 8;
         this.map = new Int32Array(n);
         let c = 0;
@@ -117,6 +121,8 @@ class GczSource implements DiscSource {
         this.size = u64(v, 16, true);
         this.blockSize = v.getUint32(24, true);
         const n = v.getUint32(28, true);
+        // (the tables must fit in the file, and the blocks must be of a sane size)
+        if (!saneBlock(this.blockSize, 0x1000000) || 32 + n * 12 > this.blob.size || this.size > n * this.blockSize) throw badImage('GCZ');
         const t = new DataView((await bytes(this.blob, 32, n * 8)).buffer);
         for (let i = 0; i < n; i++) {
             const hi = t.getUint32(i * 8 + 4, true);
@@ -199,7 +205,16 @@ class WiaRvzSource implements DiscSource {
             case 2: return bunzip2(data, expected);
             case 3: return unlzma(data, this.comprData, expected);
             case 4: return unlzma2(data, expected);
-            case 5: return zstdDecompress(data);
+            case 5: {
+                // (a frame that says how big it is isn't opened past what's expected: fzstd would allocate it all)
+                const d = (data[4] ?? 0), fcs = d >> 6, single = (d >> 5) & 1, at = 5 + (single ? 0 : 1) + [0, 1, 2, 4][d & 3];
+                if (data.length >= at + 8 && (fcs || single)) {
+                    const v = new DataView(data.buffer, data.byteOffset, data.byteLength);
+                    const size = fcs === 0 ? data[at] : fcs === 1 ? v.getUint16(at, true) + 256 : fcs === 2 ? v.getUint32(at, true) : v.getUint32(at, true) + v.getUint32(at + 4, true) * 0x100000000;
+                    if (size > Math.max(expected, 0x10000) * 2 + 0x100000) throw badImage(this.kind);
+                }
+                return zstdDecompress(data);
+            }
         }
         throw new Error(`This ${this.kind} image uses a compression the viewer doesn't know (type ${this.comp}). In Dolphin, right-click the game, pick Convert File and convert it to RVZ or ISO.`);
     }
@@ -213,11 +228,15 @@ class WiaRvzSource implements DiscSource {
         this.comp = v.getUint32(4);
         this.comprData = h2.slice(0xD5, 0xD5 + Math.min(7, h2[0xD4]));
         this.chunk = v.getUint32(0x0C);
+        if (!saneBlock(this.chunk, 0x4000000)) throw badImage(this.kind);
         // about 32 MB of decoded chunks (Dolphin's chunk size runs from 32 KiB to 2 MiB)
         this.cache = new BlockCache(Math.max(4, Math.floor((32 << 20) / this.chunk)));
         this.header = h2.slice(0x10, 0x90);
         const nRaw = v.getUint32(0xB4), rawOff = u64(v, 0xB8), rawSize = v.getUint32(0xC0);
         const nGroups = v.getUint32(0xC4), groupOff = u64(v, 0xC8), groupSize = v.getUint32(0xD0);
+        // (the tables are in the file, and no longer than the disc could need)
+        const most = Math.ceil(this.size / this.chunk) + 0x10000;
+        if (nRaw > 0x10000 || nGroups > most || rawOff + rawSize > this.blob.size || groupOff + groupSize > this.blob.size || this.size > 0x400000000) throw badImage(this.kind);
         const rawTab = this.decompress(await bytes(this.blob, rawOff, rawSize), nRaw * 0x18);
         const rv = new DataView(rawTab.buffer, rawTab.byteOffset);
         for (let i = 0; i < nRaw; i++) this.raw.push({ off: u64(rv, i * 0x18), size: u64(rv, i * 0x18 + 8), group: rv.getUint32(i * 0x18 + 16), groups: rv.getUint32(i * 0x18 + 20) });
