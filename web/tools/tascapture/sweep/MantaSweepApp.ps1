@@ -281,7 +281,7 @@ function UpdateAll { try {
         Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $here 'parallel.ps1')`"" -WorkingDirectory $here -WindowStyle Hidden }
     # keep searching by itself
     if ($cAuto.Checked -and $empty -and -not $paused -and $w -gt 0 -and $priLeft -eq 0) { $n = AddNextSearch ([int]$nK.Value) ([int]$nM.Value); if ($n -gt 0) { $ni.ShowBalloonTip(5000, 'Manta Sweep', "Everything queued was finished: added $n next-search runs.", 'Info') } }
-    if ($win -gt [int]$script:lastWin) { if ($script:lastWin -ne $null) { $ni.ShowBalloonTip(10000, 'Manta Sweep', 'A run grabbed the Shine! See the Winners tab.', 'Info'); for ($q = 0; $q -lt 4; $q++) { [System.Media.SystemSounds]::Exclamation.Play(); Start-Sleep -Milliseconds 500 } }; FillWinners }; $script:lastWin = $win
+    if ($win -gt [int]$script:lastWin) { FillWinners }; $script:lastWin = $win
 } catch { LogErr $_ } }
 
 # ---------- tray icon ----------

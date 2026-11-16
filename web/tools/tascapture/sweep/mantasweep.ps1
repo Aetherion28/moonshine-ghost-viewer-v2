@@ -95,6 +95,10 @@ using System;
 using System.IO;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+public class GlowForm : System.Windows.Forms.Form {
+    protected override bool ShowWithoutActivation { get { return true; } }
+    protected override System.Windows.Forms.CreateParams CreateParams { get { var cp = base.CreateParams; cp.ExStyle |= 0x80000 | 0x20 | 0x80 | 0x08000000 | 0x8; return cp; } }
+}
 public class SweepLabel : System.Windows.Forms.Form {
     protected override bool ShowWithoutActivation { get { return true; } }
     protected override System.Windows.Forms.CreateParams CreateParams { get { var cp = base.CreateParams; cp.ExStyle |= 0x08000000 | 0x80 | 0x20 | 0x8; return cp; } }
@@ -116,7 +120,37 @@ public static class Sweep {
             ov = f; System.Windows.Forms.Application.Run(f); });
         t.SetApartmentState(System.Threading.ApartmentState.STA); t.IsBackground = true; t.Start();
     }
-    static void overlayClose() { try { if (cellFile.Length > 0 && File.Exists(cellFile)) File.WriteAllText(cellFile, ""); } catch { }
+    // the winner's glow: a soft gold light from the edges of the game's cell inwards (a click-through layered window)
+    [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr h);
+    [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr h, IntPtr dc);
+    [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr o);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
+    [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
+    [StructLayout(LayoutKind.Sequential)] struct GPT { public int x, y; }
+    [StructLayout(LayoutKind.Sequential)] struct GSZ { public int cx, cy; }
+    [StructLayout(LayoutKind.Sequential, Pack = 1)] struct GBLEND { public byte op, flags, alpha, fmt; }
+    [DllImport("user32.dll")] static extern bool UpdateLayeredWindow(IntPtr h, IntPtr dst, ref GPT pos, ref GSZ size, IntPtr src, ref GPT srcPos, int key, ref GBLEND b, int flags);
+    static GlowForm gf;
+    public static void glow() {
+        if (cellW <= 0 || gf != null) return;
+        var t = new System.Threading.Thread(() => {
+            var f = new GlowForm(); f.FormBorderStyle = System.Windows.Forms.FormBorderStyle.None; f.ShowInTaskbar = false; f.TopMost = true;
+            f.StartPosition = System.Windows.Forms.FormStartPosition.Manual; f.Bounds = new System.Drawing.Rectangle(cellX, cellY, cellW, cellH);
+            f.Shown += (s2, e2) => {
+                using (var bmp = new System.Drawing.Bitmap(cellW, cellH, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
+                    using (var g = System.Drawing.Graphics.FromImage(bmp)) { g.Clear(System.Drawing.Color.Transparent); int depth = Math.Max(40, cellH / 6);
+                        for (int i = 0; i < depth; i++) { double k = 1.0 - (double)i / depth; int a = (int)(215 * k * k);
+                            using (var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(a, 255, 200, 60))) g.DrawRectangle(pen, i, i, cellW - 1 - 2 * i, cellH - 1 - 2 * i); } }
+                    IntPtr screen = GetDC(IntPtr.Zero), mem = CreateCompatibleDC(screen), hb = bmp.GetHbitmap(System.Drawing.Color.FromArgb(0)), old = SelectObject(mem, hb);
+                    var pos = new GPT { x = cellX, y = cellY }; var size = new GSZ { cx = cellW, cy = cellH }; var src = new GPT(); var bl = new GBLEND { op = 0, flags = 0, alpha = 255, fmt = 1 };
+                    UpdateLayeredWindow(f.Handle, screen, ref pos, ref size, mem, ref src, 0, ref bl, 2);
+                    SelectObject(mem, old); DeleteObject(hb); DeleteDC(mem); ReleaseDC(IntPtr.Zero, screen); } };
+            gf = f; System.Windows.Forms.Application.Run(f); });
+        t.SetApartmentState(System.Threading.ApartmentState.STA); t.IsBackground = true; t.Start();
+    }
+    public static void glowClose() { try { var f = gf; gf = null; if (f != null) f.BeginInvoke((Action)(() => f.Close())); } catch { } }
+    static void overlayClose() { glowClose(); try { if (cellFile.Length > 0 && File.Exists(cellFile)) File.WriteAllText(cellFile, ""); } catch { }
         try { var f = ov; if (f != null) f.BeginInvoke((Action)(() => f.Close())); } catch { } }
     [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int a, bool b, int pid);
     [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] buf, IntPtr n, out IntPtr r);
@@ -296,7 +330,7 @@ public static class Sweep {
             bool inSirena = false; int refIdx = 0; uint sirenaRc = 0, lastTrackRc = 0;
             var shotList = new System.Collections.Generic.List<uint>(); int shotIdx = 0;
             if (shots.Length > 0) foreach (string sh in shots.Split(',')) shotList.Add(Convert.ToUInt32(sh.Trim()));
-            bool savedAt = false; bool seedDone = false; uint followStart = 0; int hp0 = -1; bool splitChecked = false; bool ovChecked = false; uint victoryRc = 0, lastVictoryCheck = 0; bool hitFail = loadState > 0 && killRc == 0 && grabRc == 0;
+            bool savedAt = false; bool seedDone = false; uint followStart = 0; int hp0 = -1; bool splitChecked = false; bool ovChecked = false; bool won = false, wonPlaza = false; uint wonRc = 0; string wonText = ""; uint victoryRc = 0, lastVictoryCheck = 0; bool hitFail = loadState > 0 && killRc == 0 && grabRc == 0;
             bool killed = false, sirenaShine = false, freed = false; uint shineRc = 0, grabTarget = 0, lastKillCheck = 0; int afterArea = -1;
             var shineFlags = new System.Collections.Generic.Dictionary<uint, uint>();
             Action<string> L = (msg) => log.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "   " + msg);
@@ -403,6 +437,12 @@ public static class Sweep {
                     if (shotIdx == shotList.Count) return "DONE shots";
                     lastRcChange = sw.ElapsedMilliseconds; continue;
                 }
+                if (inSirena && won) {
+                    // a winner plays on, glowing, through the Shine and the plaza until Mario leaves the plaza (the pipe to the next level)
+                    if (area == 1 && okp(md)) wonPlaza = true;
+                    if ((wonPlaza && area != 1) || rc - wonRc > 9000) return wonText + ", played on to field " + rc + (wonPlaza && area != 1 ? " (left the plaza for " + area + "," + ep + ")" : " (did not leave the plaza)");
+                    System.Threading.Thread.Sleep(1); continue;
+                }
                 if (inSirena) {
                     if (okp(mario) && (killRc > 0 || grabRc > 0) && u32(mario + 0x7C) == 0x1302) { sirenaShine = true; shineRc = rc; track.WriteLine("sirena shine " + rc); L("Sirena Shine touched at field " + rc); continue; }
                     if (!okp(md)) return "FAIL the stage ended without the Shine at field " + rc + " (" + (rc - sirenaRc) + " in)";
@@ -423,7 +463,8 @@ public static class Sweep {
                             if (mantasAlive() == 0) { victoryRc = rc; L("all Mantas dead at field " + rc + " (TAS ~174224, " + ((int)rc - 174224) + ")"); track.WriteLine("victory " + rc);
                                 if (rc + 600 < 174224) L("victory early: field " + rc + " (TAS ~174224)"); } }
                         if (hitFail && victoryRc == 0 && rc > 174224 + 600) return "FAIL no victory by field " + rc + " (TAS ~174224 + 10 s), Mantas alive " + mantasAlive();
-                        if (st == 0x1302) return "SUCCESS Shine touch at field " + rc + " (" + (rc - sirenaRc) + " in)" + (victoryRc > 0 ? ", victory at " + victoryRc + " (TAS ~174224)" : "");
+                        if (st == 0x1302) { won = true; wonRc = rc; wonText = "SUCCESS Shine touch at field " + rc + " (" + (rc - sirenaRc) + " in)" + (victoryRc > 0 ? ", victory at " + victoryRc + " (TAS ~174224)" : "");
+                            L("WINNER: Shine touch at field " + rc); track.WriteLine("winner " + rc); glow(); continue; }
                         if (rc - lastTrackRc >= 10) {
                             lastTrackRc = rc;
                             track.WriteLine(rc + " " + st.ToString("X") + " " + f32(mario + 0x10) + " " + f32(mario + 0x14) + " " + f32(mario + 0x18) + " " + u32(0x80408CF0).ToString("X") + " h" + (u32(mario + 0x120) >> 16) + " n" + mantasAlive());

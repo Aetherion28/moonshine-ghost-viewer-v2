@@ -99,8 +99,10 @@ Q: The games do not appear.                A: Press START. If the status stays S
 Q: A game window is frozen or black.       A: Do nothing: after 3 minutes it is closed and that run is redone.
 Q: It got stuck while I was away.          A: The program restarts the six games by itself after 10 minutes of
                                               nothing happening. You do not need to do anything.
-Q: Will I notice a winner?                 A: The program beeps four times, shows a message near the clock, and the
-                                              status line says WINNERS. The sweep keeps going.
+Q: Will I notice a winner?                 A: The winning game gets a soft gold glow around its edges and keeps
+                                              playing: the Shine, back to the plaza, until Mario enters the pipe to the
+                                              next level. Then that game closes like any other. No sound, no pop-up.
+                                              The status line says WINNERS and the Winners tab lists it.
 Q: Did I get a winner?                     A: The status line says "WINNERS: n", and the Winners tab lists them.
 Q: What do I do with a winner?             A: Winners tab, "Capture the winners". Then see the end of section 7.
 Q: Nothing won after the whole sweep.      A: Section 8. Tick "Keep searching by itself", or add runs by hand.
