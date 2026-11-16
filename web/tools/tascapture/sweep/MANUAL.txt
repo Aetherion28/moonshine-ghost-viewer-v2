@@ -25,6 +25,10 @@ PAUSE            The six games finish the run they are on (about 2 minutes), the
 Stop right now   Closes the six games immediately. Their unfinished runs are done again later. Nothing is lost.
 Hide/show mouse pointer (Ctrl+Alt+M)   Makes the mouse pointer invisible everywhere (for recording), or visible again.
                  The pointer always comes back when the program is closed.
+Check that everything is in place   Looks for every file the sweep needs and says in plain words what is missing.
+                 Use it first whenever something seems wrong.
+Start with Windows and continue the sweep by itself (tick box)   After a restart or a power cut the program opens by
+                 itself (as the manta icon) and presses START for you, unless you had paused. Untick to turn this off.
 Open the sweep folder           Opens the folder with all the files.
 Put a shortcut on my Desktop    Makes a "Manta Sweep" icon on the Desktop that opens this program.
 
@@ -93,6 +97,10 @@ Q: Can I turn the PC off?                  A: Yes. Press PAUSE first if you can.
 Q: The games do not appear.                A: Press START. If the status stays STOPPED for a minute, restart the PC
                                               and try again. If it still fails, see section 11.
 Q: A game window is frozen or black.       A: Do nothing: after 3 minutes it is closed and that run is redone.
+Q: It got stuck while I was away.          A: The program restarts the six games by itself after 10 minutes of
+                                              nothing happening. You do not need to do anything.
+Q: Will I notice a winner?                 A: The program beeps four times, shows a message near the clock, and the
+                                              status line says WINNERS. The sweep keeps going.
 Q: Did I get a winner?                     A: The status line says "WINNERS: n", and the Winners tab lists them.
 Q: What do I do with a winner?             A: Winners tab, "Capture the winners". Then see the end of section 7.
 Q: Nothing won after the whole sweep.      A: Section 8. Tick "Keep searching by itself", or add runs by hand.
@@ -128,6 +136,9 @@ manta_mcp.ps1          For AI assistants: see section 12.
 
 11. IF SOMETHING IS REALLY BROKEN
 ---------------------------------
+0. Home tab, "Check that everything is in place". Fix what it lists as MISSING.
+   Help tab, "Make a help file for an AI helper": it writes help_bundle.txt (status, the check, the last lines of
+   every log, and this manual) and shows it in the folder. Give that one file to any AI helper and describe the problem.
 1. Close the program (manta icon, "Close this program"). Open it again. Press START.
 2. Restart the PC. Open the program. Press START.
 3. Look at  app_error.txt  and the last lines of  sweep_log.txt . Give those lines and this manual to an AI helper.

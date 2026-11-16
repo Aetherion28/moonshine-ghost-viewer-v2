@@ -1,7 +1,7 @@
 # Manta Sweep: the control program for the Manta Storm split sweep (see MANUAL.txt).
 # A window with tabs (Home, Results, Winners, Next search, Help), a manta icon near the clock, and the Stage: one window
 # that houses the six game panels over the logo, for capturing. Started by "Manta Sweep.vbs" (no console window).
-param([switch]$Tray)
+param([switch]$Tray, [switch]$AutoStart)
 $ErrorActionPreference = 'Continue'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -140,6 +140,27 @@ function CancelNext { if (-not (Test-Path $queue1)) { return 0 }; $done = @{}; f
         $v = ((($t -split ';')[0].Trim()) -replace '^split\d*_', '') -replace '_', '+'; if ($done.ContainsKey($v)) { $l } else { $n++; '#X ' + $l } }
     Set-Content -Path $queue1 -Value $out; return $n }
 
+# is everything the sweep needs in place? (plain words, for the Check button and the help file)
+function SelfCheck { $out = New-Object System.Collections.ArrayList; $script:checkBad = 0
+    $items = @(@('The game disc image', 'C:\Users\devon\OneDrive\Desktop\Dolphin-x64\Games\SMS\JP 1.0 (GMSJ01).iso'), @('The TAS movie', (Join-Path $here 'sms-anypct-tas.dtm')),
+        @('The list of runs', (Join-Path $here 'sweep_queue.txt')), @('The run script', (Join-Path $here 'mantasweep.ps1')), @('The worker script', (Join-Path $here 'run_worker.cmd')),
+        @('The starter of the six games', (Join-Path $here 'parallel.ps1')), @('The first emulator', (Join-Path $here 'Dolphin-x64\Dolphin.exe')), @('Its savestate (start of Manta Storm)', (Join-Path $here 'Dolphin-x64\User\StateSaves\GMSJ01.s01')))
+    foreach ($i in $items) { if (Test-Path -LiteralPath $i[1]) { [void]$out.Add("OK        $($i[0])") } else { $script:checkBad++; [void]$out.Add("MISSING   $($i[0]):  $($i[1])") } }
+    for ($n = 1; $n -le 5; $n++) { $d = Join-Path $here "Dolphin-x64-w$n"
+        if (-not (Test-Path $d)) { [void]$out.Add("note      Emulator copy $n is not there; START makes it again by itself") }
+        elseif (-not (Test-Path (Join-Path $d 'User\StateSaves\GMSJ01.s01'))) { $script:checkBad++; [void]$out.Add("MISSING   The savestate of emulator copy $n (fix: delete the folder Dolphin-x64-w$n, then press START)") }
+        else { [void]$out.Add("OK        Emulator copy $n") } }
+    try { $free = [math]::Round((Get-Item $here).PSDrive.Free / 1GB, 1); if ($free -lt 3) { $script:checkBad++; [void]$out.Add("LOW       Only $free GB free on the disk. Free some space.") } else { [void]$out.Add("OK        Free disk space: $free GB") } } catch { }
+    [void]$out.Add("info      Games running now: $(Workers).  Paused: $(Test-Path $pause).  Minutes since the last activity: $([math]::Round((Idle), 1))")
+    return ($out -join "`r`n") }
+function HelpBundle { $f = Join-Path $here 'help_bundle.txt'
+    $t = "MANTA SWEEP HELP FILE, made " + (Get-Date -Format 'yyyy-MM-dd HH:mm') + "`r`nGive this whole file to an AI helper and describe your problem.`r`n`r`n== STATUS ==`r`n" + $lblState.Text + "`r`n" + ($lblNums.Text -replace "`n", "`r`n") + "`r`n`r`n== CHECK ==`r`n" + (SelfCheck)
+    foreach ($l in @(Get-ChildItem (Join-Path $here 'sweep_log*.txt') -ErrorAction SilentlyContinue)) { $t += "`r`n`r`n== LAST LINES OF $($l.Name) ==`r`n" + ((@(Lines $l.FullName) | Select-Object -Last 25 | ForEach-Object { if ($_.Length -gt 300) { $_.Substring(0, 300) } else { $_ } }) -join "`r`n") }
+    if (Test-Path $errlog) { $t += "`r`n`r`n== app_error.txt ==`r`n" + ((@(Lines $errlog) | Select-Object -Last 30) -join "`r`n") }
+    if (Test-Path $man) { $t += "`r`n`r`n== THE MANUAL ==`r`n" + [IO.File]::ReadAllText($man) }
+    Set-Content -Path $f -Value $t; Start-Process explorer.exe "/select,`"$f`"" }
+$man = Join-Path $here 'MANUAL.txt'; $script:lastRecover = (Get-Date).AddHours(-1)
+
 # ---------- the control window ----------
 $form = New-Object Windows.Forms.Form
 $form.SuspendLayout(); $form.AutoScaleDimensions = New-Object Drawing.SizeF(96, 96); $form.AutoScaleMode = 'Dpi'
@@ -162,6 +183,8 @@ $bStop = Btn $tHome 'Stop right now' 520 190 230 60; $bStop.BackColor = [Drawing
 $lblStageHead = Lbl $tHome 'The stage (one window with all six games over your logo, for recording):' 20 328 730 22 10 $true
 $bStage = Btn $tHome 'Show the stage' 20 354 230 40
 $bFull = Btn $tHome 'Stage full screen on / off  (Ctrl+Alt+F)' 270 354 300 40
+$bCheck = Btn $tHome 'Check that everything is in place' 20 354 300 40
+$cBoot = New-Object Windows.Forms.CheckBox; $cBoot.Text = 'Start with Windows and continue the sweep by itself'; $cBoot.Location = New-Object Drawing.Point(340, 354); $cBoot.Size = New-Object Drawing.Size(410, 40); $tHome.Controls.Add($cBoot)
 $bPointer = Btn $tHome 'Hide / show mouse pointer  (Ctrl+Alt+M)' 20 420 300 40
 $bFolder = Btn $tHome 'Open the sweep folder' 340 420 200 40
 $bShortcut = Btn $tHome 'Put a shortcut on my Desktop' 560 420 190 40
@@ -200,7 +223,8 @@ $cAuto = New-Object Windows.Forms.CheckBox; $cAuto.Text = 'Keep searching by its
 $tHelp = Tab 'Help'
 $txtHelp = New-Object Windows.Forms.TextBox; $txtHelp.Multiline = $true; $txtHelp.ReadOnly = $true; $txtHelp.ScrollBars = 'Vertical'; $txtHelp.Location = New-Object Drawing.Point(10, 10); $txtHelp.Size = New-Object Drawing.Size(755, 455); $txtHelp.Font = New-Object Drawing.Font('Consolas', 9.5); $txtHelp.BackColor = [Drawing.Color]::White; $tHelp.Controls.Add($txtHelp)
 $bManual = Btn $tHelp 'Open the manual as a text file (give it to any AI helper)' 10 475 420 40
-$man = Join-Path $here 'MANUAL.txt'; if (Test-Path $man) { $txtHelp.Text = ([IO.File]::ReadAllText($man)) -replace "(?<!`r)`n", "`r`n" }
+$bBundle = Btn $tHelp 'Make a help file for an AI helper' 445 475 320 40
+if (Test-Path $man) { $txtHelp.Text = ([IO.File]::ReadAllText($man)) -replace "(?<!`r)`n", "`r`n" }
 # the stage (one window housing the games) is not offered: the games sit on the desktop grid
 $bStage.Visible = $false; $bFull.Visible = $false; $lblStageHead.Visible = $false
 $form.Controls.Add($tabs); $form.ResumeLayout()
@@ -250,9 +274,12 @@ function UpdateAll { try {
     $mStart.Enabled = $bStart.Enabled; $mPause.Enabled = $bPause.Enabled
     $lblNext.Text = "Added so far: $priTotal next-search runs ($($script:donePri) done, $priLeft waiting)."
     Cost
+    # stuck for 10 minutes while it should be running: restart the six games (at most every 20 minutes)
+    if (-not $paused -and $w -gt 0 -and -not $empty -and $idle -gt 10 -and ((Get-Date) - $script:lastRecover).TotalMinutes -gt 20) { $script:lastRecover = Get-Date; LogErr 'stuck for 10 minutes: restarting the six games'
+        Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $here 'parallel.ps1')`"" -WorkingDirectory $here -WindowStyle Hidden }
     # keep searching by itself
     if ($cAuto.Checked -and $empty -and -not $paused -and $w -gt 0 -and $priLeft -eq 0) { $n = AddNextSearch ([int]$nK.Value) ([int]$nM.Value); if ($n -gt 0) { $ni.ShowBalloonTip(5000, 'Manta Sweep', "Everything queued was finished: added $n next-search runs.", 'Info') } }
-    if ($win -gt [int]$script:lastWin) { if ($script:lastWin -ne $null) { $ni.ShowBalloonTip(10000, 'Manta Sweep', 'A run grabbed the Shine! See the Winners tab.', 'Info') }; FillWinners }; $script:lastWin = $win
+    if ($win -gt [int]$script:lastWin) { if ($script:lastWin -ne $null) { $ni.ShowBalloonTip(10000, 'Manta Sweep', 'A run grabbed the Shine! See the Winners tab.', 'Info'); for ($q = 0; $q -lt 4; $q++) { [System.Media.SystemSounds]::Exclamation.Play(); Start-Sleep -Milliseconds 500 } }; FillWinners }; $script:lastWin = $win
 } catch { LogErr $_ } }
 
 # ---------- tray icon ----------
@@ -283,6 +310,12 @@ $nK.Add_ValueChanged({ Cost }); $nM.Add_ValueChanged({ Cost })
 $bAdd.Add_Click({ ReadRuns; $n = AddNextSearch ([int]$nK.Value) ([int]$nM.Value); [void][Windows.Forms.MessageBox]::Show($(if ($n -gt 0) { "Added $n runs. They are done before the rest of the normal sweep. If the sweep is running you do not need to do anything else." } else { 'Nothing new to add: these runs were already added (or the best runs already have 4 splits chosen). Try bigger numbers.' }), 'Manta Sweep'); UpdateAll })
 $bCancel.Add_Click({ $n = CancelNext; [void][Windows.Forms.MessageBox]::Show("Cancelled $n added runs that had not been done yet.", 'Manta Sweep'); UpdateAll })
 $cAuto.Add_CheckedChanged({ if ($cAuto.Checked) { Set-Content -Path $autoFile -Value 'on' } else { Remove-Item -ErrorAction SilentlyContinue $autoFile } })
+$bBundle.Add_Click({ HelpBundle })
+$bCheck.Add_Click({ $t = SelfCheck; [void][Windows.Forms.MessageBox]::Show($(if ($script:checkBad -eq 0) { "Everything is in place.`r`n`r`n" } else { "$($script:checkBad) problem(s) found (lines starting with MISSING or LOW):`r`n`r`n" }) + $t, 'Manta Sweep check') })
+$bootLnk = Join-Path ([Environment]::GetFolderPath('Startup')) 'Manta Sweep.lnk'; $cBoot.Checked = Test-Path $bootLnk
+$cBoot.Add_CheckedChanged({ try { if ($cBoot.Checked) { $sh = New-Object -ComObject WScript.Shell; $l = $sh.CreateShortcut($bootLnk); $l.TargetPath = 'powershell.exe'
+            $l.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $here 'MantaSweepApp.ps1') + '" -Tray -AutoStart'; $l.WorkingDirectory = $here; $l.WindowStyle = 7; $l.IconLocation = (Join-Path $here 'manta.ico'); $l.Save() }
+        else { Remove-Item -ErrorAction SilentlyContinue $bootLnk } } catch { LogErr $_ } })
 $bManual.Add_Click({ if (Test-Path $man) { Start-Process notepad.exe $man } })
 $tabs.Add_SelectedIndexChanged({ if ($tabs.SelectedTab -eq $tRes) { ReadRuns; FillResults } elseif ($tabs.SelectedTab -eq $tWin) { FillWinners } })
 $form.Add_FormClosing({ param($s, $e) if (-not $script:reallyExit) { $e.Cancel = $true; $form.Hide(); if (-not $script:told) { $script:told = $true; $ni.ShowBalloonTip(5000, 'Manta Sweep', 'Still running: click the manta icon near the clock to open this window again.', 'Info') } } })
@@ -294,5 +327,6 @@ try { $ico = Join-Path $here 'manta.ico'; if (-not (Test-Path $ico)) { $fs = [IO
     $lnkPath = Join-Path $here 'Manta Sweep.lnk'
     if (-not (Test-Path $lnkPath)) { $sh = New-Object -ComObject WScript.Shell; $lnk = $sh.CreateShortcut($lnkPath); $lnk.TargetPath = 'wscript.exe'; $lnk.Arguments = '"' + (Join-Path $here 'Manta Sweep.vbs') + '"'; $lnk.WorkingDirectory = $here; $lnk.IconLocation = $ico; $lnk.Description = 'Manta Sweep control program'; $lnk.Save() } } catch { LogErr $_ }
 if (-not $Tray) { $form.Show() }
+if ($AutoStart -and -not (Test-Path $pause) -and (Workers) -eq 0) { Start-Sleep -Seconds 20; DoStart }
 UpdateAll
 try { [Windows.Forms.Application]::Run() } finally { $keys.ShowPointer(); Remove-Item -ErrorAction SilentlyContinue $stageFile; $ni.Dispose() }
