@@ -1,0 +1,164 @@
+MANTA SWEEP - THE MANUAL
+========================
+(Written so that a person, or any AI helper given this file, can answer questions about it. Everything is in the
+folder  Desktop\ghosts\_incoming\tas  on this PC. Nothing here needs the internet.)
+
+1. WHAT THIS IS, IN ONE PARAGRAPH
+---------------------------------
+A tool-assisted speedrun (TAS) of Super Mario Sunshine is being replayed in the Dolphin emulator. It plays back
+correctly until the boss fight "Manta Storm" (Sirena Beach episode 1), where the big Manta splits in two in a random
+direction. On this PC the random direction comes out different from the original, so Mario gets hit and the replay
+fails. The SWEEP tries every possible direction (there are 32768) to find one where Mario survives the fight and
+grabs the Shine. A run that does is called a WINNER. Six copies of the game run at the same time to go faster.
+
+2. HOW DO I OPEN THE PROGRAM?
+-----------------------------
+Double-click  "Manta Sweep.vbs"  in the folder above (or the "Manta Sweep" shortcut on the Desktop, if you made one
+with the button on the Home tab). A window called "Manta Sweep" opens. A manta-ray icon also appears near the clock (it may be hidden under the ^ arrow).
+Closing the window does NOT stop anything; click the manta icon to get the window back.
+
+3. THE BUTTONS (HOME TAB)
+-------------------------
+START            Run the tests. Also use it after a pause, after the PC restarted, or if the status says STOPPED or STUCK.
+PAUSE            The six games finish the run they are on (about 2 minutes), then no new ones start.
+                 Use this when you want to use the PC for something else. Press START to continue later.
+Stop right now   Closes the six games immediately. Their unfinished runs are done again later. Nothing is lost.
+Hide/show mouse pointer (Ctrl+Alt+M)   Makes the mouse pointer invisible everywhere (for recording), or visible again.
+                 The pointer always comes back when the program is closed.
+Open the sweep folder           Opens the folder with all the files.
+Put a shortcut on my Desktop    Makes a "Manta Sweep" icon on the Desktop that opens this program.
+
+4. THE STATUS LINE (TOP OF THE HOME TAB) AND THE ICON COLOUR
+------------------------------------------------------------
+RUNNING  (green manta)   Everything is fine. Leave it alone.
+PAUSING / PAUSED (yellow) You pressed PAUSE. Press START to continue.
+STOPPED  (red)           No games are running. Press START.
+STUCK    (red)           Nothing happened for 5 minutes. Press START (it restarts the six games safely).
+FINISHED (yellow)        Every queued run is done. See section 8 (Next search).
+"WINNERS: n" appears in the status line as soon as a run grabs the Shine.
+The sweep always continues where it left off. Finished runs are never repeated. You cannot break it by pressing
+START or PAUSE at the wrong time.
+
+5. WHAT YOU SEE ON SCREEN (FOR RECORDING OR STREAMING)
+------------------------------------------------------
+The six games sit directly on the desktop in a grid (3 across, 2 down) with no borders, filling the whole screen.
+At the top right of each game is its ATTEMPT NUMBER, for example  "#1234 / 32768  (value 18992)":
+attempt 1234 of the 32768 queued, trying split direction 18992. Record the whole screen.
+When a game ends, its place shows the desktop background until the next game starts there (a few seconds).
+If a winner happens while you record, note the attempt number: the Winners tab and the spreadsheet use the same number.
+
+6. RESULTS TAB
+--------------
+Shows the 40 runs that got furthest. "Field of the first hit" is the moment Mario was first hit; one field is 1/60 of
+a second of game time. Bigger is better. The TAS itself wins the fight at about field 174224.
+"Open the full spreadsheet" opens  sweep_results.csv  (every run) in Excel. Columns: attempt, value, outcome
+(hit = Mario was hit; fail = no victory in time or he died; WINNER = he grabbed the Shine; error (retried) = the
+game did not start properly and the run was done again), field, minutes, worker, finished, result.
+
+7. WINNERS TAB
+--------------
+Lists every winner. "Capture the winners" replays each winner from the start of Manta Storm to the end of the TAS
+and records the game (needed later to make ghost and trace files). It pauses the sweep, takes about 25 minutes per
+winner (six at a time) and then lets the sweep continue. The recordings are in the  captures  folder
+(split_<value>.bin, a _log.txt, and a .done file when finished). The log shows which area of the game was reached
+every 10 seconds, which tells whether the TAS stayed in sync after Manta Storm.
+Turning a capture into ghost and trace files is NOT done by this program. It needs the converter in the project's
+code repository (web/tools/tascapture/convert.ts and mkghost.py, branch v3 of Aetherion28/moonshine-ghost-viewer-v2)
+and someone (or an AI coding assistant) who can run it.
+
+8. NEXT SEARCH TAB: WHAT IF THERE IS NO WINNER?
+-----------------------------------------------
+The normal sweep only chooses the direction of the FIRST split. The Manta pieces split again later (2 pieces, then
+4, and so on), and those later directions are left to chance. If no first direction wins, the next step is to take
+the runs that got furthest and also choose the direction of the NEXT split for each of them. That is what
+"Add these runs now" does. Two numbers:
+  "How many of the best runs to build on"    (default 20)
+  "Directions to try for the next split"     (default 64)
+20 and 64 means 1280 extra runs, about 4 to 5 hours. Bigger numbers = wider search = longer.
+You can press it again later: it then builds on the new best runs, which may already have two splits chosen, and adds
+a third (up to four).
+Tick "Keep searching by itself" and the program does this automatically every time everything queued is finished,
+for as long as you leave it running. This is the "longer, wider sweep": you never need to come back.
+"Cancel the added runs that have not started" removes the added runs that were not done yet.
+Added runs are done BEFORE the rest of the normal sweep. Their attempt numbers start with P (P1, P2, ...) and their
+value shows all chosen directions, for example 18992+512.
+
+9. COMMON QUESTIONS
+-------------------
+Q: How do I know it is working?            A: The status says RUNNING and "tried" goes up by about 290 per hour.
+Q: How long will it take?                  A: The Home tab shows the time left. The full first sweep is about 5 days.
+Q: Can I use my PC meanwhile?              A: Press PAUSE, wait 2 minutes, use the PC, press START when done.
+Q: I restarted / the PC crashed.           A: Open the program, press START. It continues where it was.
+Q: Can I turn the PC off?                  A: Yes. Press PAUSE first if you can. Nothing is lost either way.
+Q: The games do not appear.                A: Press START. If the status stays STOPPED for a minute, restart the PC
+                                              and try again. If it still fails, see section 11.
+Q: A game window is frozen or black.       A: Do nothing: after 3 minutes it is closed and that run is redone.
+Q: Did I get a winner?                     A: The status line says "WINNERS: n", and the Winners tab lists them.
+Q: What do I do with a winner?             A: Winners tab, "Capture the winners". Then see the end of section 7.
+Q: Nothing won after the whole sweep.      A: Section 8. Tick "Keep searching by itself", or add runs by hand.
+Q: It may never find a winner. Then what?  A: The fallback is to give up replaying the TAS past this fight in one
+                                              piece and re-synchronise each later level on its own. That is real
+                                              programming work, not a button; it needs an AI coding assistant or a
+                                              programmer with the repository named in section 7.
+Q: Is my mouse pointer gone?               A: Press Ctrl+Alt+M, or close the program (the pointer returns).
+Q: How do I close everything?              A: PAUSE (or Stop right now), then right-click the manta icon near the
+                                              clock and choose "Close this program".
+Q: Does closing the program stop the sweep? A: No. The games keep running in the background, on the desktop.
+                                              To stop the sweep use PAUSE or Stop right now.
+
+10. THE FILES (ALL IN THE SAME FOLDER)
+--------------------------------------
+Manta Sweep.vbs        Opens the program (no black console window). sweep_control.cmd does the same.
+MantaSweepApp.ps1         The program itself (window, stage, icon).
+MANUAL.txt             This file.
+sweep_results.csv      Spreadsheet of every finished run.
+winners.txt            One line per winner: time | #attempt | name | result | settings.
+sweep\winners\         A detailed log for each winner.
+sweep_queue.txt        The list of the 32768 runs of the normal sweep (do not edit).
+sweep_queue_first.txt  The runs added by "Next search" (they go first).
+sweep_results.txt, sweep_claims.txt, sweep_log*.txt   Working files and logs of the six workers.
+pause.txt              Exists while paused. Deleting it = START. Creating it = PAUSE.
+mantasweep.ps1         Does one run. run_worker.cmd repeats it. parallel.ps1 starts the six workers.
+capture_winner(s).ps1  The winner capture.
+Dolphin-x64, Dolphin-x64-w1 ... w5    The six copies of the emulator (one per game). Do not delete.
+Dolphin-x64-c0 ... c5  Copies used for winner captures.
+captures\              Winner captures.
+app_error.txt          If the program misbehaves, the reason is written here.
+manta_mcp.ps1          For AI assistants: see section 12.
+
+11. IF SOMETHING IS REALLY BROKEN
+---------------------------------
+1. Close the program (manta icon, "Close this program"). Open it again. Press START.
+2. Restart the PC. Open the program. Press START.
+3. Look at  app_error.txt  and the last lines of  sweep_log.txt . Give those lines and this manual to an AI helper.
+The results (sweep_results.csv, winners.txt) are never deleted by any of this.
+
+12. FOR AI ASSISTANTS (MCP)
+---------------------------
+The program includes an MCP server, so an assistant that supports MCP (LM Studio, Claude Desktop and others) can
+check and control the sweep by itself. Add this server to the assistant's MCP settings (mcp.json):
+  {
+    "mcpServers": {
+      "manta-sweep": {
+        "command": "powershell",
+        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                 "C:\\Users\\devon\\OneDrive\\Desktop\\ghosts\\_incoming\\tas\\manta_mcp.ps1"]
+      }
+    }
+  }
+Tools it offers: sweep_status, sweep_start, sweep_pause, best_runs, winners, add_next_search, capture_winners,
+read_manual. Then you can simply ask the assistant things like "is the sweep running?", "pause the sweep",
+"did anything win?", "widen the search".
+An assistant without MCP can still help: give it this file.
+
+13. TECHNICAL NOTES (FOR A PROGRAMMER OR A CAPABLE AI)
+------------------------------------------------------
+Game: Super Mario Sunshine JP 1.0 (GMSJ01), Dolphin 5.0-114, movie sms-anypct-tas.dtm (TASVideos 3731M).
+Every run loads savestate slot 1 (the start of Sirena Beach 1, field 170554), then writes memory ("pokes"):
+a small routine over the unused function TRKTestForPacket (0x800888C8) and a changed call in
+TBossMantaManager::spawn (0x803211E8) so that the split's rand() returns chosen values. Normal sweep: one value at
+0x80001820. Next search: a table of up to 4 values at 0x80001830, the count at 0x80001828, and the index of the next
+one at 0x80001824 (the Nth split takes the Nth value; later splits use the game's own rand). A run ends on Mario's
+first loss of health, on death or leaving the stage, on no victory by field 174824, or on a 3-minute stall; it wins
+when Mario's status becomes 0x1302 (Shine get). Queue lines:  name; sram=stereo; backend=D3D; loadstate=1; poke=...
+Full notes: CLAUDE.md on branch v3 of the repository, section 12, "The any% TAS through Dolphin".

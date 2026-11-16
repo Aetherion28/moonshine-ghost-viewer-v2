@@ -37,9 +37,16 @@ if (Test-Path $results) { foreach ($l in [IO.File]::ReadAllLines($results)) { $f
 $ncl = @{}
 if (Test-Path $claims) { foreach ($l in [IO.File]::ReadAllLines($claims)) { if ($l.StartsWith('RESET')) { $ncl = @{}; continue }; $n = ($l -split '\|')[0].Trim(); if ($n) { $ncl[$n] = 1 + [int]$ncl[$n] } } }
 $entry = $null; $num = 0; $attemptNo = 0
+# sweep_queue_first.txt (the program's "next search" runs) goes first; its attempts are numbered P1, P2, ... by line
+$queue1 = Join-Path $here 'sweep_queue_first.txt'; $pnum = 0
+if (Test-Path $queue1) { foreach ($l in [IO.File]::ReadAllLines($queue1)) {
+    $t = $l.Trim(); if (-not $t) { continue }; $pnum++; if ($t.StartsWith('#')) { continue }
+    $n = ($t -split ';')[0].Trim(); if (-not $done.ContainsKey($n) -and [int]$ncl[$n] -le [int]$nres[$n]) { $entry = $t; $attemptNo = "P$pnum"; break } } }
+if (-not $entry) {
 foreach ($l in [IO.File]::ReadAllLines($queue)) {
     $t = $l.Trim(); if (-not $t -or $t.StartsWith('#')) { continue }
     $n = ($t -split ';')[0].Trim(); if ($n -like 'split_*') { $num++ }; if (-not $done.ContainsKey($n) -and [int]$ncl[$n] -le [int]$nres[$n]) { $entry = $t; $attemptNo = $num; break }
+}
 }
 if ($entry) { Add-Content -Path $claims -Value ((($entry -split ';')[0].Trim()) + " | w$Worker | " + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) }
 } finally { $lk.Close() }
@@ -97,6 +104,7 @@ public static class Sweep {
     public static string label = "";
     static SweepLabel ov;
     static void overlay() {
+        if (staged()) { try { File.WriteAllText(cellFile, label); } catch { } return; }
         if (label.Length == 0 || cellW <= 0) return;
         var t = new System.Threading.Thread(() => {
             var f = new SweepLabel(); f.FormBorderStyle = System.Windows.Forms.FormBorderStyle.None; f.ShowInTaskbar = false; f.TopMost = true;
@@ -108,7 +116,8 @@ public static class Sweep {
             ov = f; System.Windows.Forms.Application.Run(f); });
         t.SetApartmentState(System.Threading.ApartmentState.STA); t.IsBackground = true; t.Start();
     }
-    static void overlayClose() { try { var f = ov; if (f != null) f.BeginInvoke((Action)(() => f.Close())); } catch { } }
+    static void overlayClose() { try { if (cellFile.Length > 0 && File.Exists(cellFile)) File.WriteAllText(cellFile, ""); } catch { }
+        try { var f = ov; if (f != null) f.BeginInvoke((Action)(() => f.Close())); } catch { } }
     [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int a, bool b, int pid);
     [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] buf, IntPtr n, out IntPtr r);
     [DllImport("kernel32.dll")] static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] buf, IntPtr n, out IntPtr w);
@@ -140,10 +149,29 @@ public static class Sweep {
         return m;
     }
     // no menu, title bar or border, and the window fills its grid cell
+    [DllImport("user32.dll")] static extern IntPtr SetParent(IntPtr c, IntPtr p);
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr h, out SRECT r);
+    [StructLayout(LayoutKind.Sequential)] public struct SRECT { public int L, T, R, B; }
+    // the stage: the Manta Sweep program's window (stage\stage.txt holds its handle); the game becomes a child of it, in
+    // cell cellIndex of a 3 x 2 grid under a 24-pixel label strip, and follows the stage's size
+    public static long stage; public static int cellIndex; public static string cellFile = "";
+    static int fitW = -1, fitH = -1; static long lastFit;
+    static bool staged() { return stage != 0 && IsWindow(new IntPtr(stage)); }
+    static void fit() {
+        if (gMain == IntPtr.Zero || !staged()) return;
+        SRECT r; GetClientRect(new IntPtr(stage), out r); if (r.R == fitW && r.B == fitH) return; fitW = r.R; fitH = r.B;
+        int w = r.R / 3, h = r.B / 2, x = (cellIndex % 3) * w, y = (cellIndex / 3) * h;
+        SetWindowPos(gMain, IntPtr.Zero, x, y + 24, w, Math.Max(1, h - 24), 0x0020 | 0x0040 | 0x0010);
+    }
     static void strip(int pid) {
         if (mainOf(pid) == IntPtr.Zero || cellW <= 0) return;
         SetMenu(gMain, IntPtr.Zero);
         int st = GetWindowLong(gMain, -16);
+        if (staged()) {
+            st = (int)(((uint)st & ~(0x00C00000u | 0x00040000u | 0x00080000u | 0x00020000u | 0x00010000u | 0x80000000u)) | 0x40000000u);
+            SetWindowLong(gMain, -16, st); SetParent(gMain, new IntPtr(stage)); fitW = -1; fit(); return;
+        }
         st = (int)(((uint)st & ~(0x00C00000u | 0x00040000u | 0x00080000u | 0x00020000u | 0x00010000u)) | 0x80000000u);
         SetWindowLong(gMain, -16, st);
         SetWindowPos(gMain, IntPtr.Zero, cellX, cellY, cellW, cellH, 0x0020 | 0x0040);
@@ -275,6 +303,7 @@ public static class Sweep {
             while (true) {
                 if (p.HasExited) return "ERROR Dolphin exited at field " + lastRc;
                 long now = sw.ElapsedMilliseconds;
+                if (sw.ElapsedMilliseconds - lastFit > 500) { lastFit = sw.ElapsedMilliseconds; fit(); }
                 uint rc = u32(0x80409F00);
                 byte area = (byte)(u32(0x803E600C) >> 8), ep = (byte)u32(0x803E600C);
                 if (rc != lastRc) { lastRc = rc; lastRcChange = now; }
@@ -387,7 +416,7 @@ public static class Sweep {
                             double dd = Math.Sqrt(dx * dx + dz * dz); L("first split halves " + dd.ToString("F1") + " apart at field " + rc); track.WriteLine("split " + rc + " " + dd.ToString("F1"));
                             }
                         // the split override (pokes with 80001824): its flag must be set by the first split, else the value never took
-                        if (pokes.Contains("80001824:") && !ovChecked && rc >= 173250) { ovChecked = true; uint ovf = u32(0x80001824); track.WriteLine("override flag " + rc + " " + ovf); if (ovf != 1) return "ERROR split override not applied (flag " + ovf + ")"; }
+                        if (pokes.Contains("80001824:") && !ovChecked && rc >= 173250) { ovChecked = true; uint ovf = u32(0x80001824); track.WriteLine("override flag " + rc + " " + ovf); if (ovf < 1) return "ERROR split override not applied (flag " + ovf + ")"; }
                         if (hitFail && hp > 0 && hp <= 8) { if (hp0 < 0) hp0 = hp; else if (hp < hp0) return "FAIL hit at field " + rc + " (" + (rc - sirenaRc) + " in), health " + hp0 + " -> " + hp + ", Mantas alive " + mantasAlive() + (victoryRc > 0 ? ", victory at " + victoryRc : ""); }
                         // the victory: every Manta dead (the TAS's victory demo starts near field 174224)
                         if (hitFail && victoryRc == 0 && rc > 173300 && rc - lastVictoryCheck >= 10) { lastVictoryCheck = rc;
@@ -424,8 +453,12 @@ $t0 = Get-Date
 $st = Join-Path $dol "User\StateSaves\GMSJ01.s0$loadstate"
 if ($loadstate -gt 0 -and -not (Test-Path $st)) { Log "waiting for the savestate $st"; exit 2 }
 if ($true) {
-$value = $name -replace '^split_', ''
-[Sweep]::label = $(if ($attemptNo -gt 0) { "#$attemptNo  (value $value)" } else { $name }); [Sweep]::cellX = $wx; [Sweep]::cellY = $wy; [Sweep]::cellW = $ww; [Sweep]::cellH = $wh
+$value = ($name -replace '^split\d*_', '') -replace '_', '+'
+$stageFile = Join-Path $here 'stage\stage.txt'
+[Sweep]::stage = 0; if (Test-Path $stageFile) { try { [Sweep]::stage = [long](Get-Content $stageFile -First 1) } catch { } }
+[Sweep]::cellIndex = $Worker % 6; [Sweep]::cellFile = Join-Path $here ("stage\cell" + ($Worker % 6) + ".txt")
+$tot = if ("$attemptNo".StartsWith('P')) { @([IO.File]::ReadAllLines($queue1) | Where-Object { $_.Trim() }).Count } else { @([IO.File]::ReadAllLines($queue) | Where-Object { $_.StartsWith('split_') }).Count }
+[Sweep]::label = $(if ($attemptNo -gt 0) { "#$attemptNo / $tot  (value $value)" } else { $name }); [Sweep]::cellX = $wx; [Sweep]::cellY = $wy; [Sweep]::cellW = $ww; [Sweep]::cellH = $wh
 $r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate, $pokes, $kill, $grab, $logall, $shots, $saveat, $follow, $mlog, $savefield, $splitshots, (Join-Path $dol 'User\ScreenShots\GMSJ01'), $seedk) }
 $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
 Log "result $name : $r ($mins min)"
@@ -435,7 +468,7 @@ $kind = if ($r.StartsWith('SUCCESS')) { 'WINNER' } elseif ($r.StartsWith('FAIL h
 $rq = $r -replace '"', "'"
 $lk = Lock; try { Add-Content -Path $results -Value "$name | $r | $mins min | $entry (w$Worker, #$attemptNo)"
     if (-not (Test-Path $csv)) { Add-Content -Path $csv -Value 'attempt,value,outcome,field,minutes,worker,finished,result' }
-    if ($name -like 'split_*') { Add-Content -Path $csv -Value ("$attemptNo,$value,$kind,$hitf,$mins,w$Worker," + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ",`"$rq`"") } } finally { $lk.Close() }
+    if ($name -like 'split*_*') { Add-Content -Path $csv -Value ("$attemptNo,$value,$kind,$hitf,$mins,w$Worker," + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ",`"$rq`"") } } finally { $lk.Close() }
 if ($r.StartsWith('SUCCESS') -and ($kill -or $grab)) {
     # a forced pass: capture3 doesn't force yet, so stop here for it to be taught (stop.txt ends the loop)
     Set-Content -Path (Join-Path $here 'FORCED_WINNER.txt') -Value "$entry`r`n$r"

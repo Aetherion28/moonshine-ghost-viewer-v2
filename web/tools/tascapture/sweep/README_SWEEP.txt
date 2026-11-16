@@ -1,3 +1,6 @@
+READ MANUAL.txt FIRST: it is the current, complete guide (the program is "Manta Sweep.vbs" / the Manta Sweep shortcut).
+This older file is kept for its details.
+
 MANTA STORM SPLIT SWEEP - how to run it without Claude
 =======================================================
 

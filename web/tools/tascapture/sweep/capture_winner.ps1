@@ -307,7 +307,7 @@ Add-Type -TypeDefinition $src
 $dol = Join-Path $here "Dolphin-x64-c$Slot"
 if (-not (Test-Path $dol)) { Copy-Item -Recurse (Join-Path $here 'Dolphin-x64') $dol }
 # the winner's queue line holds its pokes
-$line = Get-Content (Join-Path $here 'sweep_queue.txt') | Where-Object { $_ -like "$Name;*" } | Select-Object -First 1
+$line = @('sweep_queue_first.txt', 'sweep_queue.txt') | ForEach-Object { Join-Path $here $_ } | Where-Object { Test-Path $_ } | ForEach-Object { Get-Content $_ } | Where-Object { $_ -like "$Name;*" } | Select-Object -First 1
 if (-not $line) { throw "no queue line for $Name" }
 $pokes = ($line -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -like 'poke=*' }) -replace '^poke=', ''
 # Dolphin: speed 1 (every tick seen), D3D, no cheats, its window in grid cell $Slot; the game ini and SRAM as the sweep left them
