@@ -84,7 +84,7 @@ This file is the short version: what was just done, what is open, where everythi
 - **Mirrors**: not confirmed against the game. A mirror is used only while Mario is inside its 鏡キューブ (from map/tables.bin): Bianco's covers its water (plane y 2303), Pinna Park's the pond (y 710), Gelato's only the wet slopes high up, Hotel Delfino's is a wall mirror whose plane the game takes from the raw S16 vertex (z -8354; the mirror is at z -1044).
   Not done: TMirrorActor's coins, enemies and Yoshi; the lean mirrors' TMirrorModelObj (Gelato episode 2); lights in the mirror pass use the main camera.
   When the user confirms the look, turn it on by default (the `__mirrors` check in setUpMirror and the option) and drop "(experimental)" from its label.
-- NKit images and WIA's Purge compression are untested (no tool here makes either). Memory still creeps by about 1–2 MB of JS heap per stage load; heap snapshots showed no single holder.
+- NKit images and WIA's Purge compression are untested (no tool here makes either). The memory creep is fixed (the sim's byte-keyed caches are weak now: `CLAUDE.md` fix log).
 - The user checks by eye: the water reflections, the Gelato tower's glow, the page on a phone.
 - Specular light on Mario and NPCs is still off (turning it on washed them white; cause not found; `layer.ts`, search "specular").
 - `CLAUDE.md` section 11, "Still not ported", lists the remaining rendering plumbing.

@@ -18,7 +18,7 @@ export class Skeleton {
     /** the rest transforms as J3DJoint keeps them (s16 rotations) */
     restTI: TI[] = [];
     loadFlags = 0;
-    static cache = new Map<Uint8Array, Skeleton | null>();
+    static cache = new WeakMap<Uint8Array, Skeleton | null>();   // (weak: keyed by a stage archive's bytes, which a Map kept alive for every stage ever loaded)
     static of(bmd: Uint8Array | null): Skeleton | null {
         if (!bmd) return null;
         if (!this.cache.has(bmd)) { let s: Skeleton | null = null; try { s = new Skeleton(bmd); } catch (e) { console.warn('[game] skeleton', e); } this.cache.set(bmd, s); }
@@ -75,7 +75,7 @@ export class Skeleton {
     index(name: string) { return this.names.indexOf(name); }
 }
 
-const bckCache = new Map<Uint8Array, ANK1 | null>();
+const bckCache = new WeakMap<Uint8Array, ANK1 | null>();
 export function parseBCK(b: Uint8Array | null): ANK1 | null {
     if (!b) return null;
     if (!bckCache.has(b)) { let a: ANK1 | null = null; try { a = BCK.parse(slice(b)); } catch { } bckCache.set(b, a); if (a) { const r = RawAnk.of(b); if (r) rawOf.set(a, r); } }

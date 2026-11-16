@@ -359,7 +359,7 @@ interface SMat {
 interface SModel { gpu: GpuModel | null; shapes: { mat: number; groups: SGroup[] }[]; mats: SMat[]; drw: { kind: number; joint: number; env: number }[]; env: { j: number; w: number }[][]; invBind: mat4[]; }
 interface ModelTask { m: SModel; draw: mat4[]; /** the draw matrices as the game's J3DModel has them (rows, 12 words) */ rows: number[][]; }
 
-const modelCache = new Map<Uint8Array, SModel | null>();
+const modelCache = new WeakMap<Uint8Array, SModel | null>();
 const col = (c: { r: number; g: number; b: number; a: number }) => [c.r, c.g, c.b, c.a].map((v) => Math.max(0, Math.min(255, Math.round(v * 255))));
 function readAttr(layout: any, buffers: ArrayBufferLike[], input: number, n: number, comps: number): Float32Array | null {
     const L = layout.singleVertexInputLayouts.find((l: any) => l.attrInput === input);
@@ -683,7 +683,7 @@ export interface CountObj { layer: Layer; jointIndex: number; min: number[]; mCo
 /** The layer model's shapes by joint (INF1: a shape's material's joint), with raw positions and UV0. */
 /** a shape's matrix group: raw positions, UV0, triangles, and SMS_CountPolygonNumInShape's count */
 interface MeshPart { pos: Float32Array; uv: Float32Array | null; idx: Uint32Array; polys: number; }
-const jointShapeCache = new Map<Uint8Array, Map<number, MeshPart[]>>();
+const jointShapeCache = new WeakMap<Uint8Array, Map<number, MeshPart[]>>();
 function jointShapes(b: Uint8Array) {
     let r = jointShapeCache.get(b);
     if (r) return r;

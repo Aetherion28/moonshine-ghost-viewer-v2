@@ -22,7 +22,7 @@ export class RawAnk {
     shift = 0; joints = 0;
     tab: KeyTab[] = [];   // (joint * 3 + axis) * 3 + {0 scale, 1 rotation, 2 translation}
     sData!: Float32Array; rData!: Int16Array; tData!: Float32Array;
-    static cache = new Map<Uint8Array, RawAnk | null>();
+    static cache = new WeakMap<Uint8Array, RawAnk | null>();   // (weak: the file bytes are a stage archive's, and go with it)
     static of(b: Uint8Array | null): RawAnk | null {
         if (!b) return null;
         if (!this.cache.has(b)) { let a: RawAnk | null = null; try { a = new RawAnk(b); } catch { } this.cache.set(b, a); }
