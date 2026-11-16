@@ -1,27 +1,28 @@
+declare const __WEB__: string;
 import fs from 'node:fs'; import vm from 'node:vm';
-import { useGhostVersion } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/version.ts';
-import { replayMstr } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstr.ts';
-import { parseMstrGhost, isMstr } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstrghost.ts';
-import { stageFiles, arc } from '/tmp/claude-0/ct/files.ts';
-import { Stage } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/scene.ts';
-import { SimRunner, recordedStickCamera, closingCopyQf, recordedCameraKeys, traceStageCarry, plazaTraceStart, traceTickSet, tracePauseExits, traceFirstSet, traceLastMove } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/runner.ts';
-import { s16, srand, rngCtx, randState } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/math.ts';
-import { setMarioArchive } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/player/base.ts';
-import { setYoshiArchive } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/player/yoshi.ts';
-import { introDemoEnd, introDemoEndInFrame, introTiming, PlayerMario } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/player/player.ts';
+import { useGhostVersion } from '../../src/game/version.ts';
+import { replayMstr } from '../../src/ghost/mstr.ts';
+import { parseMstrGhost, isMstr } from '../../src/ghost/mstrghost.ts';
+import { stageFiles, arc } from './files.ts';
+import { Stage } from '../../src/game/scene.ts';
+import { SimRunner, recordedStickCamera, closingCopyQf, recordedCameraKeys, traceStageCarry, plazaTraceStart, traceTickSet, tracePauseExits, traceFirstSet, traceLastMove } from '../../src/game/runner.ts';
+import { s16, srand, rngCtx, randState } from '../../src/game/math.ts';
+import { setMarioArchive } from '../../src/game/player/base.ts';
+import { setYoshiArchive } from '../../src/game/player/yoshi.ts';
+import { introDemoEnd, introDemoEndInFrame, introTiming, PlayerMario } from '../../src/game/player/player.ts';
 if (!process.env.CORR) PlayerMario.correctDrift = false; if (process.env.CAMLOG) { const [a, b] = process.env.CAMLOG.split('-').map(Number); (globalThis as any).__CAMLOG = (o: any) => { if (st.qf >= a && st.qf <= b) console.log('  CL', st.qf, JSON.stringify(o)); }; }
 if (process.env.FOLLOWLOG) (globalThis as any).__FOLLOWLOG = 1;
-import { calcKeyCode, shineIDofExStage } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/engine.ts';
-import { mapObjWave } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/mapobj/lib.ts';
-import { SE } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/soundids.ts';
-import { NO_PAD } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/player/pad.ts';
-import { entranceStart, decideMarioPosIdx, gotShineFromSamples } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/stagechange.ts';
-import { BoidLeader as __BL } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/enemies/boid.ts';
-import { feedbackCtx, FeedbackReplay } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/feedback.ts';
-import { npcSinkSetup } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/npc/base.ts';
+import { calcKeyCode, shineIDofExStage } from '../../src/game/engine.ts';
+import { mapObjWave } from '../../src/game/mapobj/lib.ts';
+import { SE } from '../../src/game/soundids.ts';
+import { NO_PAD } from '../../src/game/player/pad.ts';
+import { entranceStart, decideMarioPosIdx, gotShineFromSamples } from '../../src/game/stagechange.ts';
+import { BoidLeader as __BL } from '../../src/game/enemies/boid.ts';
+import { feedbackCtx, FeedbackReplay } from '../../src/game/feedback.ts';
+import { npcSinkSetup } from '../../src/game/npc/base.ts';
 const ctx: any = { console, TextDecoder, DataView, Uint8Array, ArrayBuffer, Math, Float32Array, Float64Array, Int8Array, Int16Array, Uint16Array, Uint32Array, Int32Array, Map, Set, Object, Array, Number, String, JSON, Error, BigInt };
-vm.createContext(ctx); vm.runInContext(fs.readFileSync('/home/claude/moonshine-ghost-viewer-v2/web/legacy/ghost.js', 'utf8'), ctx);
-import { parseStageArc, sceneForRoute } from '/home/claude/moonshine-ghost-viewer-v2/web/src/stagearc.ts';
+vm.createContext(ctx); vm.runInContext(fs.readFileSync(__WEB__ + '/legacy/ghost.js', 'utf8'), ctx);
+import { parseStageArc, sceneForRoute } from '../../src/stagearc.ts';
 let [scene, ghostPath, framesArg, verbose] = process.argv.slice(2);
 const b = fs.readFileSync(ghostPath); const gbuf = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
 // an MSTR trace (.msgt) plays as a ghost too (src/ghost/mstrghost.ts)
@@ -29,12 +30,12 @@ const g: any = isMstr(gbuf) ? parseMstrGhost(gbuf, ghostPath) : ctx.parseSmsGhos
 if (g.trace) console.log('trace', g.header.gameId, 'rev', g.header.discRevision, g.header.refreshHz + ' Hz', 'ticks', g.trace.ticks.length, 'scene', g.segments.map((s: any) => s.route.area + ':' + s.route.episode).join(' '));
 // the ghost's own build (game ID + disc revision); NOVER=1 keeps the old always-JP behaviour
 if (!process.env.NOVER) useGhostVersion(g);
-const sab = fs.readFileSync('/mnt/user-data/uploads/Games/_ghostviewer_extract/data/stageArc.bin');
+const sab = fs.readFileSync('/tmp/gv/extract/data/stageArc.bin');
 if (scene === 'auto') scene = sceneForRoute(parseStageArc(sab.buffer.slice(sab.byteOffset, sab.byteOffset + sab.byteLength)), g.segments[0].route.area, g.segments[0].route.episode)!;
-const mar = arc('/mnt/user-data/uploads/Games/_ghostviewer_extract/data/mario.szs'); setMarioArchive((p) => mar.files.get(p.toLowerCase()) || null);
-if (!process.env.NOYOSHI) setYoshiArchive(arc('/mnt/user-data/uploads/Games/_ghostviewer_extract/data/yoshi.szs') as any);
+const mar = arc('/tmp/gv/extract/data/mario.szs'); setMarioArchive((p) => mar.files.get(p.toLowerCase()) || null);
+if (!process.env.NOYOSHI) setYoshiArchive(arc('/tmp/gv/extract/data/yoshi.szs') as any);
 const f: any = stageFiles(scene);
-f.scenecmn = new Uint8Array(fs.readFileSync('/mnt/user-data/uploads/Games/_ghostviewer_extract/jp/scenecmn.bin'));
+f.scenecmn = new Uint8Array(fs.readFileSync('/tmp/gv/extract/jp/scenecmn.bin'));
 const seg = g.segments[0], q0 = seg.startQf - g.header.startQf;
 const samples: any[] = []; for (let i = seg.firstSample; i < seg.firstSample + seg.sampleCount; i++) samples.push({ held: g.held ? g.held[i] : -1, qf: g.qf[i] - q0, anim: g.anim[i], phase: g.phase[i], x: g.pos[i*3], y: g.pos[i*3+1], z: g.pos[i*3+2], yaw: g.yaw[i] });
 const post = samples.filter((s) => s.qf > 0);
@@ -51,7 +52,7 @@ if (!process.env.NOFB && g.trace && g.trace.stageStart && g.trace.stageStart.npc
 const TC = process.env.NOFLAGS ? null : traceStageCarry(g, 0); const FT: any = g.trace && g.trace.ticks.find((t: any) => t.mario && t.mario.status >>> 0 !== 0x133F); const EXID = shineIDofExStage(seg.route.area); const TCEX: any = TC && EXID !== 0xFF ? { exShineGot: TC.flags.getShineFlag(EXID) } : {}; const TCX: any = TC && seg.route.area === 1 && FT ? { marioPosIdx: decideMarioPosIdx(TC.flags.clone(), 1, TC.prevArea).posIdx, start: (m: any) => plazaTraceStart(m, TC, gotShineFromSamples(post), FT.mario.pos) } : {}; console.log('FLAGS', TC ? 'trace prev ' + TC.prevArea + ' shines ' + TC.flags.getFlag(0x40000) : 'none');
 const st = Stage.fresh(f, scene, seg.route.area, seg.route.episode, process.env.SEED ? (+process.env.SEED >>> 0) : g.header.fromLoad ? g.header.initialRng >>> 0 : 0, +(process.env.MT0 || 0), { ...introTiming(post, g.inputs, q0, seg.endQf - g.header.startQf), demoEndTick: t3, fromLoad: !!process.env.FROMLOAD || !!g.header.fromLoad, ...TCX, ...TCEX, ...(seg.route.area === 1 && tdir !== null ? { plazaDemo: true } : {}), ...(!process.env.NOPZ && tracePauseExits(g, 0, q0) ? { pauseExits: tracePauseExits(g, 0, q0)! } : {}) });
 npcSinkSetup.start = 0; if (process.env.EMITLOG) { const [ea, eb] = process.env.EMITLOG.split('-').map(Number); const W: any = (st.world as any).water; if (W) { const o = W.emitRequest.bind(W); W.emitRequest = (e: any) => { if (st.qf >= ea && st.qf <= eb) console.log('SIM', st.qf, 'X alive', e.alive, 'atk', e.attack, 'dirT', e.dirTremble?.toFixed(3), 'powT', e.powTremble?.toFixed(3), 'sizeT', e.sizeTremble?.toFixed(3), 'flag', (e.flag>>>0).toString(16), 'num', e.num, 'pos', e.pos.map((v: number) => v.toFixed(3)).join(','), 'v', e.v.map((v: number) => v.toFixed(3)).join(','), 'dir', e.dir.map((v: number) => v.toFixed(3)).join(','), 'pow', e.pow.toFixed(3), 'size', e.size.toFixed(3), 'type', e.type); return o(e); }; } } if (process.env.SPCLOCK !== undefined) { const EG: any = (st.world as any).eventGroup; const sel = process.env.SPCSEL; for (const w2 of (EG ? EG.watchers : [])) { if (w2.interp && (!sel || w2.file.includes(sel))) { w2.interp.mLocked = +process.env.SPCLOCK; console.log('SPCLOCK', w2.file, w2.interp.mLocked); } } } if (process.env.TALKSTK) { const T: any = (st.world as any).talk; const tt = T; if (tt) { let v = tt.unk126; Object.defineProperty(tt, 'unk126', { get: () => v, set: (x) => { if (x === 1 && v !== 1 && st.qf > +process.env.TALKSTK!) console.log('TALK126', st.qf, (st.world as any).tickCount, (globalThis as any).__curScript, (new Error().stack || '').split('\n').slice(2, 7).map((l) => l.trim().split(' ')[1]).join(' < ')); v = x; } }); } } if (process.env.KEYS) { const want = process.env.KEYS.split(',').map((k) => parseInt(k, 16)); const seen = new Set<any>(); const walk = (o: any) => { if (!o || seen.has(o)) return; seen.add(o); if (typeof o.name === 'string' && want.includes(calcKeyCode(o.name))) console.log('KEY', calcKeyCode(o.name).toString(16), o.name, o.constructor && o.constructor.name, o.pos ? [o.pos.x, o.pos.y, o.pos.z].join(',') : ''); for (const c of (o.children || o.objs || o.list || [])) walk(c); }; for (const g2 of (st.world as any).groups || []) for (const o of g2) walk(o); for (const o of (st.world as any).conductor?.managers || []) { walk(o); for (const x of (o.objs || [])) walk(x); } } if (process.env.SLATE) (globalThis as any).__STREAMLATE = 1;
-if (process.env.STREAMS) { import('/home/claude/moonshine-ghost-viewer-v2/web/src/game/mapwarp.ts').then((M: any) => { const L = M.streamCubes(st.world); (globalThis as any).__INC = (p: any) => M.inStreamCube(st.world, p); console.log('STREAMS', L.length, JSON.stringify(L.map((c: any) => ({ c: [c.c.x, c.c.y, c.c.z], r: [c.r.x, c.r.y, c.r.z], s: [c.s.x, c.s.y, c.s.z], t: c.unk38, p: c.unk40 })))); }); }
+if (process.env.STREAMS) { import('../../src/game/mapwarp.ts').then((M: any) => { const L = M.streamCubes(st.world); (globalThis as any).__INC = (p: any) => M.inStreamCube(st.world, p); console.log('STREAMS', L.length, JSON.stringify(L.map((c: any) => ({ c: [c.c.x, c.c.y, c.c.z], r: [c.r.x, c.r.y, c.r.z], s: [c.s.x, c.s.y, c.s.z], t: c.unk38, p: c.unk40 })))); }); }
 if (process.env.NKLOG) { const pad: any = (st.player as any).mGamePad; const o = pad.onNeutralMarioKey.bind(pad); pad.onNeutralMarioKey = () => { console.log('NK', st.qf, (new Error().stack || '').split('\n').slice(2, 6).map((x) => x.trim().split(' ')[1]).join(' < ')); o(); }; }
 if (process.env.TOOLS) { const C: any = (st.player as any).simCamera; for (const t of C.tables.tools) if (/開始/.test(t.name)) console.log('TOOL', t.name, 'yaw', t.yaw, 'pos', t.pos.x, t.pos.y, t.pos.z); const mpo: any = st.world.search('マリオセット位置'); if (mpo) for (let i = 0; i < mpo.count; i++) console.log('MPO', i + 1, mpo.pos[i].x, mpo.pos[i].y, mpo.pos[i].z, 'rot', mpo.rot[i].y); console.log('marioPosIdx', C.marioPosIdx); }
 const FB = !process.env.NOFB && g.trace && g.trace.feedback && g.trace.feedback.count ? new FeedbackReplay(g.trace.feedback, q0, () => st.qf) : null; if (FB && process.env.FBLOG) { const o = FB.take; const cnt = new Map<string, number>(); (FB as any).take = (c: number) => { const k = c + '@' + st.qf; cnt.set(k, (cnt.get(k) || 0) + 1); if ((cnt.get(k) || 0) > 1 && st.qf < 40) console.log('REREAD', k, (new Error().stack || '').split('\n').slice(2, 6).map((x) => x.trim().split(' ')[1]).join(' < ')); return o(c); }; }

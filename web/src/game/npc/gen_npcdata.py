@@ -3,11 +3,11 @@
 (NPC/NpcInitData.cpp sAllNpcInitData), and the animation kind -> BCK / BTP index tables with the
 per-kind BTP remaps (NPC/NpcInitAnmData.cpp sAllNpcInitAnmData). Both files match the DOL.
 
-    python3 gen_npcdata.py /path/to/sms-ai-decomp > npcdata.ts
+    python3 gen_npcdata.py /path/to/sms-decomp > npcdata.ts
 """
 import json, re, sys
 
-root = sys.argv[1] if len(sys.argv) > 1 else '/home/claude/sms-ai-decomp'
+root = sys.argv[1] if len(sys.argv) > 1 else '/tmp/gv/sms-decomp'
 init = open(root + '/src/NPC/NpcInitData.cpp', encoding='utf-8').read()
 anm = open(root + '/src/NPC/NpcInitAnmData.cpp', encoding='utf-8').read()
 

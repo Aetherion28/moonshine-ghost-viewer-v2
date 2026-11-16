@@ -1,6 +1,6 @@
-# Suggestions (kept for the user; share only when asked)
+# Suggestions
 
-Agents: add suggestions here instead of raising them in chat, newest first, with the date and the evidence.
+Ideas kept for later, newest first, with the date and the evidence.
 
 ## For Moonshine's recorder
 

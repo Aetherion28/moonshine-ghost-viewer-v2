@@ -1,13 +1,13 @@
 #!/bin/bash
 # tdiff.sh trace a b : sim vs rec per tick
-cd /tmp/claude-0/ct
-TICK=$2-$3 timeout 300 node --max-old-space-size=2500 ${PMB:-pm_fb.mjs} auto $1 $(( $3 + 1 )) 2>&1 | grep "^  tick" > /tmp/claude-0/s_t.txt
-node gv.mjs $1 $2 $3 > /tmp/claude-0/r_t.txt
+cd /tmp/gv/ct
+TICK=$2-$3 timeout 300 node --max-old-space-size=2500 ${PMB:-pm_fb.mjs} auto $1 $(( $3 + 1 )) 2>&1 | grep "^  tick" > /tmp/gv/s_t.txt
+node gv.mjs $1 $2 $3 > /tmp/gv/r_t.txt
 python3 - <<'PY'
 S={};R={}
-for l in open('/tmp/claude-0/s_t.txt'):
+for l in open('/tmp/gv/s_t.txt'):
     p=l.split(); S[int(p[1])]=p
-for l in open('/tmp/claude-0/r_t.txt'):
+for l in open('/tmp/gv/r_t.txt'):
     p=l.split()
     try: R[int(p[0])]=p
     except: pass

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { parseMstrGhost } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstrghost.ts';
+import { parseMstrGhost } from '../../src/ghost/mstrghost.ts';
 const B = readFileSync(process.argv[2]); const g: any = parseMstrGhost(B.buffer.slice(B.byteOffset, B.byteOffset + B.length), 'x');
 const f = g.trace.feedback; const fl = new Map<number, number>();
 for (const t of g.trace.ticks) if (t.mario) fl.set(t.qf, t.mario.flag & 1);

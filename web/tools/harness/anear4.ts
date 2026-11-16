@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { parseMstrGhost } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstrghost.ts';
+import { parseMstrGhost } from '../../src/ghost/mstrghost.ts';
 const B = readFileSync(process.argv[2]); const buf = B.buffer.slice(B.byteOffset, B.byteOffset + B.length);
 const g: any = parseMstrGhost(buf as ArrayBuffer, 'x'); const q0 = g.segments[0].startQf; const A = g.trace.actors;
 const X = +process.argv[3], Z = +process.argv[4], R = +process.argv[5], a = +process.argv[6], b = +process.argv[7], only = process.argv[8] ? +process.argv[8] : -1;

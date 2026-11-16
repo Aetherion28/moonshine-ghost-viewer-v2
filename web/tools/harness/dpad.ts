@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { parseMstrGhost } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstrghost.ts';
+import { parseMstrGhost } from '../../src/ghost/mstrghost.ts';
 const TRIG = new Set([0x1, 0x2, 0x4, 0x8, 0x401, 0x402, 0x404, 0x408]);
 for (const f of process.argv.slice(2)) {
   const B = readFileSync(f); let g: any; try { g = parseMstrGhost(B.buffer.slice(B.byteOffset, B.byteOffset + B.length), 'x'); } catch (e) { console.log(f, 'ERR'); continue; }

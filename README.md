@@ -22,8 +22,11 @@ own copy of the game.
 
 - Draws the stage, its objects and Mario with the game's own models, materials and HUD, and plays
   the stage's music and sound effects from your disc.
-- Replays (`.msgt`) are played by the game's own logic from the run's controller inputs, so the
-  stage reacts to exactly what happened; ghosts follow their recorded positions and animation.
+- Replays (`.msgt`) are re-run from the run's controller inputs and its recorded random numbers by
+  a reimplementation of the game's logic, so the stage tries to react the way it did in the run.
+  It is not perfect: some things depend on the hardware the run was played on, so enemies, water
+  and objects can differ from what the runner saw. When the replay parts from the recording, Mario
+  goes back to following his recorded path. Ghosts follow their recorded positions and animation.
 - Comparison view: two ghosts side by side, each with its own time slider.
 - Follow, fixed, free and top-down cameras; frame stepping, playback speed, the controller input
   display, splits and an info box (position, speed, animation, FLUDD).
@@ -39,14 +42,25 @@ it) a copy of your disc image are kept in your own browser so the next visit ope
 **Forget disc** removes the copy. The shared ghosts list comes from Delfino Ghosts' server.
 
 This project does not host, contain or distribute any copyrighted Nintendo assets or binaries.
-All game data is read in the browser from the user's own copy of the game, and nothing is uploaded.
+All game data is read in the browser from your own copy of the game, and nothing is uploaded.
 The replay logic is an independent reimplementation written for interoperability and research.
 *Super Mario Sunshine* and Mario are trademarks of Nintendo; this is a fan project, not affiliated with or endorsed by Nintendo.
 
-Copyright claims go to aetherion28+legal@gmail.com and are reviewed.
-Invalid claims, including ones filed with the hosting provider, will be contested with a counter-notice under 17 U.S.C. § 512(g).
+Copyright concerns can be sent to aetherion28+legal@gmail.com; every one is read and answered.
 See the full [legal notice](https://aetherion28.github.io/moonshine-ghost-viewer-v2/legal.html), which also lists the credits and the
 licences of the code and fonts the site uses.
+
+## Credits
+
+- The simulation is written from the [Super Mario Sunshine decompilation](https://github.com/doldecomp/sms)
+  and would not exist without its contributors' work.
+- **Dogecyanide** made [Moonshine](https://dogecyanide.github.io/moonshine-site/), which records the
+  ghosts and replays, and tested the viewer.
+- **zeldocto** made [Delfino Ghosts](https://zeldocto.github.io/delfino-ghosts/), where ghosts are
+  shared, and tested the viewer.
+- **Lotfy** tested the viewer.
+- [noclip.website](https://github.com/magcius/noclip.website) by Jasper St. Pierre and contributors
+  draws the game's models.
 
 ## Licence
 
@@ -88,4 +102,4 @@ node build.mjs          # writes ../site (minified); --dev for an unminified bui
 rebuild before committing a source change. To run it locally, serve `site/` over HTTP (for example
 `python3 -m http.server -d site`) and open it on `localhost`.
 
-Agents working on this repository: read `CLAUDE.md` (and `HANDOFF.md` for the current state) first.
+Notes for developers: `DEVELOPMENT.md` (how the simulation is built and tested) and `STATUS.md` (the current state).

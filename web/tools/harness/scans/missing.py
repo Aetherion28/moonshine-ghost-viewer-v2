@@ -1,12 +1,12 @@
 import re,os,glob,collections
-SIM='/home/claude/moonshine-ghost-viewer-v2/web/src/game'
+SIM=os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../src/game')
 src={}
 for f in glob.glob(SIM+'/**/*.ts',recursive=True): src[f]=open(f).read()
 # sim classes: name -> file text
 cls={}
 for f,s in src.items():
     for m in re.finditer(r'\bclass (\w+)',s): cls.setdefault(m.group(1),[]).append(f)
-syms=open('/home/claude/sms-ai-decomp/config/GMSJ01/symbols.txt').read().splitlines()
+syms=open('/tmp/gv/sms-decomp/config/GMSJ01/symbols.txt').read().splitlines()
 miss=collections.defaultdict(list)
 for l in syms:
     m=re.match(r'(\w+?)__(\d+)T(\w+?)F',l)

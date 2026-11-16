@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import ArrayBufferSlice from '/home/claude/moonshine-ghost-viewer-v2/web/noclip/ArrayBufferSlice.ts';
-import * as Yaz0 from '/home/claude/moonshine-ghost-viewer-v2/web/noclip/Common/Compression/Yaz0.ts';
-import * as RARC from '/home/claude/moonshine-ghost-viewer-v2/web/noclip/Common/JSYSTEM/JKRArchive.ts';
-import type { Files } from '/home/claude/moonshine-ghost-viewer-v2/web/src/game/engine.ts';
-const D = '/mnt/user-data/uploads/Games/_ghostviewer_extract/data/';
+import ArrayBufferSlice from '../../noclip/ArrayBufferSlice.ts';
+import * as Yaz0 from '../../noclip/Common/Compression/Yaz0.ts';
+import * as RARC from '../../noclip/Common/JSYSTEM/JKRArchive.ts';
+import type { Files } from '../../src/game/engine.ts';
+const D = '/tmp/gv/extract/data/';
 export function arc(path: string) {
   const raw = fs.readFileSync(path);
   let b = new ArrayBufferSlice(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));

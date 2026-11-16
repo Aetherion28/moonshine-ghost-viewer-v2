@@ -1,9 +1,9 @@
-import re,glob,collections
-SIM='/home/claude/moonshine-ghost-viewer-v2/web/src'
+import re,os,glob,collections
+SIM=os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../src')
 txt=''.join(open(f).read() for f in glob.glob(SIM+'/**/*.ts',recursive=True))
 simcls=set(re.findall(r'\bclass (\w+)',txt))
 D=collections.defaultdict(int); files={}
-for l in open('/home/claude/sms-ai-decomp/config/GMSJ01/symbols.txt'):
+for l in open('/tmp/gv/sms-decomp/config/GMSJ01/symbols.txt'):
     m=re.match(r'\w+?__(\d+)T(\w+?)F',l)
     if not m: continue
     n=int(m.group(1)); full=('T'+m.group(2))[:n]

@@ -2,7 +2,7 @@ import re, glob, os, json, sys, collections
 # cmp.py <old runs dir> <new runs dir>: Simulate's first drift per ghost, before vs after
 old, new = sys.argv[1], sys.argv[2]
 cat = {}
-for l in open('/tmp/claude-0/up3/catalog.tsv'):
+for l in open('/tmp/gv/up3/catalog.tsv'):
     p = l.rstrip('\n').split('\t')
     if len(p) >= 10: cat[p[0].replace('/', '_')] = p
 def first(path):

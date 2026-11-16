@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { replayMstr } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstr.ts';
-import { parseMstrGhost } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstrghost.ts';
+import { replayMstr } from '../../src/ghost/mstr.ts';
+import { parseMstrGhost } from '../../src/ghost/mstrghost.ts';
 const B = readFileSync(process.argv[2]); const buf = B.buffer.slice(B.byteOffset, B.byteOffset + B.length);
 const Q0 = (parseMstrGhost(buf as ArrayBuffer, 'x') as any).segments[0].startQf; const a = +process.argv[3], b = +process.argv[4];
 let wt = 0, ft: number | null = null, lm = false; let last = '';

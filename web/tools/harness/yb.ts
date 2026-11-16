@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { replayMstr, marioView } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstr.ts';
+import { replayMstr, marioView } from '../../src/ghost/mstr.ts';
 const B = readFileSync(process.argv[2]); const lo = +process.argv[3], hi = +process.argv[4];
 replayMstr(B.buffer.slice(B.byteOffset, B.byteOffset + B.length), { onTick: (s: any) => {
   if (s.tick < lo || s.tick > hi || !s.yoshi) return; const d = new DataView(s.yoshi.data.buffer, s.yoshi.data.byteOffset, s.yoshi.data.byteLength);

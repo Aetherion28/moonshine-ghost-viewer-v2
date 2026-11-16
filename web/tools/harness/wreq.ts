@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { readMstr } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstr.ts';
-import { parseMstrGhost } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstrghost.ts';
+import { readMstr } from '../../src/ghost/mstr.ts';
+import { parseMstrGhost } from '../../src/ghost/mstrghost.ts';
 const B = readFileSync(process.argv[2]); const buf = B.buffer.slice(B.byteOffset, B.byteOffset + B.length);
 const g: any = parseMstrGhost(buf, 'x'); const q0 = g.segments[0].startQf; const a = +process.argv[3], b = +process.argv[4];
 // tick -> world qf as mstrghost does: track frames

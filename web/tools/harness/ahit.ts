@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { replayMstr } from '/home/claude/moonshine-ghost-viewer-v2/web/src/ghost/mstr.ts';
+import { replayMstr } from '../../src/ghost/mstr.ts';
 const B = readFileSync(process.argv[2]); const want = +process.argv[3];
 const f = new Float32Array(1), u = new Uint32Array(f.buffer); const fl = (w: number) => { u[0] = w; return f[0]; };
 let n = 0;

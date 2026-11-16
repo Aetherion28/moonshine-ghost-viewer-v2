@@ -233,7 +233,7 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
     const lastQf = ticks[n - 1].qf;
     // The "DPad Functions" Gecko code (Psychonauter et al.): a pad of exactly X + D-pad Up writes TAKE (0x383) into Mario's
     // status, and D-pad Right reloads the position D-pad Left saved. Neither is the game's, so a run that shows either
-    // effect is played from its recording, as a TAS (the user asked, 2026-11-06).
+    // effect is played from its recording, as a TAS.
     const cheats = dpadFunctionsUsed(ticks);
     // What makes Moonshine refuse a PB (moonshine-source 2026-11-03: ILing::liveGlobalAssistReasons, Records::invalidateAttempt,
     // Ghost's run flags): a practice assist or savestate (run flags 1 / 2 / 32), fast-forward (4, or the session's

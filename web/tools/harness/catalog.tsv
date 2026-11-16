@@ -5,7 +5,7 @@ a/trace_12345678_000004D3.msgt	JP	NTSC60	6	3	load	7359	61.39	trace	0
 a/trace_12345678_000004D4.msgt	JP	NTSC60	9	3	load	11755	98.06	trace	0
 a/trace_22ADE86D_07AE6958.msgt	PAL	NTSC60	3	2	load	1495	12.47	trace	0
 a/trace_22ADE86D_1620A5AE.msgt	PAL	NTSC60	3	2	load	2319	19.34	trace	0
-/tmp/claude-0/up3/a/trace_22ADE86D_18928C07.msgt	ERROR The replay has no Mario movement updates.
+/tmp/gv/up3/a/trace_22ADE86D_18928C07.msgt	ERROR The replay has no Mario movement updates.
 a/trace_22ADE86D_38CC57A6.msgt	PAL	NTSC60	47	0	load	1759	14.67	trace	0
 a/trace_2A1D8909_80000002.msgt	JP	NTSC60	3	2	load	1191	9.93	trace	0
 a/trace_2A1D8909_80000005.msgt	JP	NTSC60	3	2	load	2023	16.88	trace	0

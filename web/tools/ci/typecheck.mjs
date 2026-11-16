@@ -1,4 +1,4 @@
-// The lenient type-check (CLAUDE.md section 3), against a baseline of the errors known to be noise
+// The lenient type-check (DEVELOPMENT.md section 3), against a baseline of the errors known to be noise
 // (mixins, noclip's stubs, DOM typing). A new error fails: it is usually a real bug (a name used but
 // never imported, a duplicate import, a function passed where its result belongs).
 //   node tools/ci/typecheck.mjs            check (run from web/)
