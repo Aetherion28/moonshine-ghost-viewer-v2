@@ -51,7 +51,7 @@ licences of the code and fonts the site uses.
 
 ## Licence
 
-The viewer's own code is free software, © 2026 ÆTHERION, under the GNU General Public License,
+The viewer's own code is free software, © 2026 Aether10n, under the GNU General Public License,
 version 3 or (at your option) any later version: see [LICENSE](LICENSE). The code it includes from
 others keeps its own licence: noclip.website's renderer (`web/noclip`, MIT), three.js
 (`web/vendor/three`, MIT), gl-matrix, fzstd and mp4-muxer (MIT), and the fonts (`web/vendor/fonts`,
