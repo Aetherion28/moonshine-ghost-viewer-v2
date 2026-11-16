@@ -58,7 +58,7 @@ licences of the code and fonts the site uses.
   ghosts and replays, and tested the viewer.
 - **zeldocto** made [Delfino Ghosts](https://zeldocto.github.io/delfino-ghosts/), where ghosts are
   shared, and tested the viewer.
-- **Lotfy** tested the viewer.
+- **Lotfy** and **Basten** tested the viewer.
 - [noclip.website](https://github.com/magcius/noclip.website) by Jasper St. Pierre and contributors
   draws the game's models.
 
