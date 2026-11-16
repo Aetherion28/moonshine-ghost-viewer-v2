@@ -2,8 +2,29 @@
 # Green: running. Yellow: paused. Red: stopped or stuck. The tooltip and the menu's top lines show the progress.
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$created = $false; $mutex = New-Object System.Threading.Mutex($true, 'MantaSweepTray', [ref]$created)
-if (-not $created) { exit }
+# one tray: an older tray or the separate pointer hotkey script is ended first
+foreach ($o in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.ProcessId -ne $PID -and ($_.CommandLine -like '*sweep_tray.ps1*' -or $_.CommandLine -like '*cursor_toggle.ps1*') })) { Stop-Process -Id $o.ProcessId -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Milliseconds 500
+# the mouse pointer: Ctrl+Alt+M (or the menu) hides / shows it everywhere; it comes back when the tray ends
+Add-Type -ReferencedAssemblies System.Windows.Forms -TypeDefinition @"
+using System; using System.Runtime.InteropServices; using System.Windows.Forms;
+public class PointerToggle : NativeWindow {
+    [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr h, int id, uint mods, uint vk);
+    [DllImport("user32.dll")] static extern IntPtr CreateCursor(IntPtr inst, int x, int y, int w, int h, byte[] andMask, byte[] xorMask);
+    [DllImport("user32.dll")] static extern IntPtr CopyIcon(IntPtr c);
+    [DllImport("user32.dll")] static extern bool SetSystemCursor(IntPtr c, uint id);
+    [DllImport("user32.dll")] static extern bool SystemParametersInfo(uint a, uint b, IntPtr c, uint d);
+    static readonly uint[] IDS = { 32512, 32513, 32514, 32515, 32516, 32642, 32643, 32644, 32645, 32646, 32648, 32649, 32650, 32651 };
+    public bool Hidden, HotkeyOk;
+    public PointerToggle() { CreateHandle(new CreateParams()); HotkeyOk = RegisterHotKey(Handle, 1, 0x1 | 0x2 | 0x4000, 0x4D); }
+    public void Hide() { var a = new byte[128]; for (int i = 0; i < 128; i++) a[i] = 0xFF; var x = new byte[128];
+        IntPtr blank = CreateCursor(IntPtr.Zero, 0, 0, 32, 32, a, x); foreach (uint id in IDS) SetSystemCursor(CopyIcon(blank), id); Hidden = true; }
+    public void Show() { SystemParametersInfo(0x57, 0, IntPtr.Zero, 0); Hidden = false; }
+    public void Toggle() { if (Hidden) Show(); else Hide(); }
+    protected override void WndProc(ref Message m) { if (m.Msg == 0x0312) Toggle(); base.WndProc(ref m); }
+}
+"@
+$pointer = New-Object PointerToggle
 $pause = Join-Path $here 'pause.txt'; $stop = Join-Path $here 'stop.txt'
 function Workers { @(Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" | Where-Object { $_.CommandLine -like '*run_worker.cmd*' }).Count }
 function Lines($f) { if (Test-Path $f) { [IO.File]::ReadAllLines($f) } else { @() } }
@@ -18,7 +39,8 @@ foreach ($x in @($l1, $l2, $l3, $l4)) { $x.Enabled = $false }
 [void]$menu.Items.Add('-')
 $mp = $menu.Items.Add('Pause (running attempts finish)'); $ms = $menu.Items.Add('Start'); $mc = $menu.Items.Add('Capture winners')
 [void]$menu.Items.Add('-')
-$mo = $menu.Items.Add('Open the sweep folder'); $mx = $menu.Items.Add('Hide this icon (the sweep goes on)')
+$mm = $menu.Items.Add('Hide / show the mouse pointer (Ctrl+Alt+M)')
+$mo = $menu.Items.Add('Open the sweep folder'); $mx = $menu.Items.Add('Hide this icon (the sweep goes on; the pointer comes back)')
 $ni.ContextMenuStrip = $menu
 function Refresh {
     $res = Lines (Join-Path $here 'sweep_results.txt'); $done = @($res | Where-Object { $_ -like 'split_*' }).Count
@@ -39,11 +61,12 @@ $mp.Add_Click({ Set-Content -Path $pause -Value 'paused from the tray'; Refresh 
 $ms.Add_Click({ Remove-Item -ErrorAction SilentlyContinue $pause, $stop
     if ((Workers) -eq 0 -or (Idle) -gt 5) { Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $here 'parallel.ps1')`"" -WorkingDirectory $here -WindowStyle Hidden }
     Refresh })
-$mc.Add_Click({ Start-Process -FilePath 'cmd.exe' -ArgumentList "/c `"$(Join-Path $here 'capture_winners.cmd')`"" -WorkingDirectory $here })
+$mc.Add_Click({ Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $here 'capture_winners.ps1')`" -Quiet" -WorkingDirectory $here -WindowStyle Hidden
+    $ni.ShowBalloonTip(5000, 'Manta sweep', 'Capturing the winners in the background (captures folder); the sweep pauses meanwhile.', 'Info') })
+$mm.Add_Click({ $pointer.Toggle() })
 $mo.Add_Click({ Start-Process explorer.exe $here })
-$mx.Add_Click({ $ni.Visible = $false; [Windows.Forms.Application]::Exit() })
+$mx.Add_Click({ $pointer.Show(); $ni.Visible = $false; [Windows.Forms.Application]::Exit() })
 $ni.Add_MouseClick({ param($s, $e) if ($e.Button -eq 'Left') { Refresh; $m = [Windows.Forms.NotifyIcon].GetMethod('ShowContextMenu', [Reflection.BindingFlags]'Instance,NonPublic'); $m.Invoke($ni, $null) } })
 $timer = New-Object Windows.Forms.Timer; $timer.Interval = 10000; $timer.Add_Tick({ Refresh }); $timer.Start()
 Refresh
-[Windows.Forms.Application]::Run()
-$ni.Dispose()
+try { [Windows.Forms.Application]::Run() } finally { $pointer.Show(); $ni.Dispose() }

@@ -10,4 +10,4 @@ Start-Sleep -Seconds 2
 # runs that were going when the workers ended have no result: a RESET line frees them to run again
 Add-Content -Path (Join-Path $here "sweep_claims.txt") -Value ("RESET | " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
 for ($i = 1; $i -lt $Workers; $i++) { $d = Join-Path $here "Dolphin-x64-w$i"; if (-not (Test-Path $d)) { Write-Host "copying Dolphin for worker $i"; Copy-Item -Recurse (Join-Path $here "Dolphin-x64") $d } }
-for ($i = 0; $i -lt $Workers; $i++) { Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$(Join-Path $here "run_worker.cmd")`" $i" -WorkingDirectory $here -WindowStyle Minimized; Start-Sleep -Seconds 3 }
+for ($i = 0; $i -lt $Workers; $i++) { Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$(Join-Path $here "run_worker.cmd")`" $i" -WorkingDirectory $here -WindowStyle Hidden; Start-Sleep -Seconds 3 }

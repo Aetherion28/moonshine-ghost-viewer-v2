@@ -8,11 +8,14 @@ What it does
   A run where Mario grabs the Sirena Shine is a WINNER.
 
 Control
-  Double-click sweep_control.cmd: a coloured dot appears in the taskbar notification area (green running, yellow paused, red stopped); click it for the menu. It shows progress, the rate, the time left and the number of winners.
+  Double-click sweep_control.cmd: a coloured dot (the workers run hidden, no console windows) appears in the taskbar notification area (green running, yellow paused, red stopped); click it for the menu. It shows progress, the rate, the time left and the number of winners.
     Pause  - each Dolphin finishes its current run, then no new runs start (use this when you need the PC).
     Start  - continue. If the workers aren't running (after a reboot, say) or are stuck, Start relaunches them.
   It always picks up where it left off: sweep_results.txt records every finished value.
   Runs that were cut off (reboot, crash) are run again automatically.
+
+Mouse pointer
+  Ctrl+Alt+M (or the dot's menu) hides / shows the mouse pointer while the dot is running; it comes back when the dot ends.
 
 After a reboot
   Double-click sweep_control.cmd, press Start.
