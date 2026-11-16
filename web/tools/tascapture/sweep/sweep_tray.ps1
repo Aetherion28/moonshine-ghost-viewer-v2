@@ -29,8 +29,24 @@ $pause = Join-Path $here 'pause.txt'; $stop = Join-Path $here 'stop.txt'
 function Workers { @(Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" | Where-Object { $_.CommandLine -like '*run_worker.cmd*' }).Count }
 function Lines($f) { if (Test-Path $f) { [IO.File]::ReadAllLines($f) } else { @() } }
 function Idle { $l = Get-ChildItem (Join-Path $here 'sweep_log*.txt') | Sort-Object LastWriteTime | Select-Object -Last 1; if ($l) { ((Get-Date) - $l.LastWriteTime).TotalMinutes } else { 999 } }
-function Dot($color) { $b = New-Object Drawing.Bitmap 16, 16; $g = [Drawing.Graphics]::FromImage($b); $g.SmoothingMode = 'AntiAlias'; $g.Clear([Drawing.Color]::Transparent)
-    $g.FillEllipse((New-Object Drawing.SolidBrush $color), 1, 1, 14, 14); $g.DrawEllipse((New-Object Drawing.Pen ([Drawing.Color]::Black), 1), 1, 1, 14, 14); $g.Dispose(); [Drawing.Icon]::FromHandle($b.GetHicon()) }
+# the icon: a manta ray seen from above, coloured by the sweep's state
+function Dot($color) { $b = New-Object Drawing.Bitmap 32, 32; $g = [Drawing.Graphics]::FromImage($b); $g.SmoothingMode = 'AntiAlias'; $g.Clear([Drawing.Color]::Transparent)
+    $p = New-Object Drawing.Drawing2D.GraphicsPath
+    $p.AddBeziers([Drawing.PointF[]]@(
+        (New-Object Drawing.PointF 16, 5),
+        (New-Object Drawing.PointF 19, 5), (New-Object Drawing.PointF 22, 9), (New-Object Drawing.PointF 31, 15),
+        (New-Object Drawing.PointF 26, 18), (New-Object Drawing.PointF 21, 19), (New-Object Drawing.PointF 18, 22),
+        (New-Object Drawing.PointF 17, 23), (New-Object Drawing.PointF 16.5, 24), (New-Object Drawing.PointF 16, 24),
+        (New-Object Drawing.PointF 15.5, 24), (New-Object Drawing.PointF 15, 23), (New-Object Drawing.PointF 14, 22),
+        (New-Object Drawing.PointF 11, 19), (New-Object Drawing.PointF 6, 18), (New-Object Drawing.PointF 1, 15),
+        (New-Object Drawing.PointF 10, 9), (New-Object Drawing.PointF 13, 5), (New-Object Drawing.PointF 16, 5)))
+    $p.CloseFigure()
+    $br = New-Object Drawing.SolidBrush $color; $pen = New-Object Drawing.Pen ([Drawing.Color]::Black), 1.5
+    $g.FillPath($br, $p); $g.DrawPath($pen, $p)
+    # the head fins and the tail
+    $g.FillEllipse($br, 12.5, 2.5, 3, 5); $g.FillEllipse($br, 16.5, 2.5, 3, 5); $g.DrawEllipse($pen, 12.5, 2.5, 3, 5); $g.DrawEllipse($pen, 16.5, 2.5, 3, 5)
+    $tp = New-Object Drawing.Pen ([Drawing.Color]::Black), 2.5; $g.DrawLine($tp, 16, 23, 16, 31); $tc = New-Object Drawing.Pen $color, 1.2; $g.DrawLine($tc, 16, 23.5, 16, 30.5)
+    $g.Dispose(); [Drawing.Icon]::FromHandle($b.GetHicon()) }
 $icons = @{ run = (Dot ([Drawing.Color]::LimeGreen)); pause = (Dot ([Drawing.Color]::Gold)); stop = (Dot ([Drawing.Color]::Red)) }
 $ni = New-Object Windows.Forms.NotifyIcon; $ni.Icon = $icons.stop; $ni.Visible = $true; $ni.Text = 'Manta sweep'
 $menu = New-Object Windows.Forms.ContextMenuStrip
