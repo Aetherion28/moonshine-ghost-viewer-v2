@@ -1,0 +1,113 @@
+noclip/AnimationController.ts: TS2709: Cannot use namespace 'ViewerRenderInput' as a type.
+noclip/Camera.ts: TS2304: Cannot find name 'XRRigidTransform'.
+noclip/Camera.ts: TS2347: Untyped function calls may not accept type arguments.
+noclip/Camera.ts: TS2709: Cannot use namespace 'CameraAnimationManager' as a type.
+noclip/Camera.ts: TS2709: Cannot use namespace 'InterpolationStep' as a type.
+noclip/Camera.ts: TS2709: Cannot use namespace 'InterpolationStep' as a type.
+noclip/Camera.ts: TS2709: Cannot use namespace 'StudioPanel' as a type.
+noclip/Camera.ts: TS2709: Cannot use namespace 'WebXRContext' as a type.
+noclip/Camera.ts: TS2709: Cannot use namespace 'WebXRInputManager' as a type.
+noclip/Common/JSYSTEM/J3D/J3DGraphBase.ts: TS2694: Namespace '"*.js"' has no exported member 'Texture'.
+noclip/Common/JSYSTEM/J3D/J3DGraphSimple.ts: TS2709: Cannot use namespace 'ViewerRenderInput' as a type.
+noclip/Common/JSYSTEM/JKRArchive.ts: TS2709: Cannot use namespace 'NamedArrayBufferSlice' as a type.
+noclip/Common/JSYSTEM/JKRArchive.ts: TS2709: Cannot use namespace 'NamedArrayBufferSlice' as a type.
+noclip/Common/JSYSTEM/JKRArchive.ts: TS2709: Cannot use namespace 'NamedArrayBufferSlice' as a type.
+noclip/Common/JSYSTEM/JKRArchive.ts: TS2709: Cannot use namespace 'NamedArrayBufferSlice' as a type.
+noclip/Common/JSYSTEM/JKRArchive.ts: TS2709: Cannot use namespace 'NamedArrayBufferSlice' as a type.
+noclip/Common/JSYSTEM/JKRArchive.ts: TS2709: Cannot use namespace 'NamedArrayBufferSlice' as a type.
+noclip/Common/JSYSTEM/JUTTexture.ts: TS2694: Namespace '"*.js"' has no exported member 'Texture'.
+noclip/Common/NW4R/lyt/Font.ts: TS2709: Cannot use namespace 'NamedArrayBufferSlice' as a type.
+noclip/Common/NW4R/lyt/Font.ts: TS2709: Cannot use namespace 'Texture' as a type.
+noclip/DebugJunk.ts: TS2339: Property 'main' does not exist on type 'Window & typeof globalThis'.
+noclip/DebugJunk.ts: TS2339: Property 'main' does not exist on type 'Window & typeof globalThis'.
+noclip/DebugJunk.ts: TS2339: Property 'main' does not exist on type 'Window & typeof globalThis'.
+noclip/DebugJunk.ts: TS2339: Property 'main' does not exist on type 'Window & typeof globalThis'.
+noclip/DebugJunk.ts: TS2339: Property 'main' does not exist on type 'Window & typeof globalThis'.
+noclip/Geometry.ts: TS2307: Cannot find module 'noclip-rust-support' or its corresponding type declarations.
+noclip/InputManager.ts: TS2709: Cannot use namespace 'SaveManager' as a type.
+noclip/InputManager.ts: TS2709: Cannot use namespace 'SaveManager' as a type.
+noclip/TextureHolder.ts: TS2694: Namespace '"*.js"' has no exported member 'Texture'.
+noclip/TextureHolder.ts: TS2694: Namespace '"*.js"' has no exported member 'Texture'.
+noclip/TextureHolder.ts: TS2709: Cannot use namespace 'TextureListHolder' as a type.
+noclip/gfx/helpers/DebugTextDrawer.ts: TS2709: Cannot use namespace 'SceneContext' as a type.
+noclip/gfx/platform/GfxPlatform.ts: TS2304: Cannot find name 'XRSession'.
+noclip/gfx/platform/GfxPlatform.ts: TS2304: Cannot find name 'XRWebGLLayer'.
+noclip/gfx/platform/GfxPlatformWebGL2.ts: TS2304: Cannot find name 'XRSession'.
+noclip/gfx/platform/GfxPlatformWebGL2.ts: TS2304: Cannot find name 'XRWebGLLayer'.
+noclip/gfx/platform/GfxPlatformWebGL2.ts: TS2304: Cannot find name 'XRWebGLLayer'.
+noclip/gfx/platform/GfxPlatformWebGL2.ts: TS2339: Property 'makeXRCompatible' does not exist on type 'WebGL2RenderingContext'.
+noclip/gfx/render/GfxRenderDynamicUniformBuffer.ts: TS2550: Property 'transfer' does not exist on type 'ArrayBuffer'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2024' or later.
+noclip/gfx/render/GfxRenderHelper.ts: TS2709: Cannot use namespace 'SceneContext' as a type.
+noclip/gx/DDraw.ts: TS2550: Property 'transfer' does not exist on type 'ArrayBuffer'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2024' or later.
+noclip/gx/DDraw.ts: TS2550: Property 'transfer' does not exist on type 'ArrayBuffer'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2024' or later.
+noclip/gx/DDraw.ts: TS2550: Property 'transfer' does not exist on type 'ArrayBuffer'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2024' or later.
+noclip/gx/DDraw.ts: TS2550: Property 'transfer' does not exist on type 'ArrayBuffer'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2024' or later.
+noclip/gx/gx_displaylist.ts: TS7029: Fallthrough case in switch.
+noclip/gx/gx_displaylist.ts: TS7029: Fallthrough case in switch.
+noclip/gx/gx_displaylist.ts: TS7029: Fallthrough case in switch.
+noclip/gx/gx_render.ts: TS2694: Namespace '"*.js"' has no exported member 'SceneGfx'.
+noclip/gx/gx_render.ts: TS2694: Namespace '"*.js"' has no exported member 'Texture'.
+noclip/gx/gx_render.ts: TS2694: Namespace '"*.js"' has no exported member 'Texture'.
+noclip/gx/gx_render.ts: TS2694: Namespace '"*.js"' has no exported member 'Texture'.
+noclip/gx/gx_render.ts: TS2694: Namespace '"*.js"' has no exported member 'Texture'.
+noclip/gx/gx_render.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+noclip/gx/gx_render.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+noclip/gx/gx_render.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+noclip/gx/gx_render.ts: TS2709: Cannot use namespace 'TextureListHolder' as a type.
+src/audio/engine.ts: TS7029: Fallthrough case in switch.
+src/game/enemies/aminoko.ts: TS2339: Property 'scale' does not exist on type '{ x: number; y: number; z: number; }'.
+src/game/enemies/bossgesso.ts: TS7029: Fallthrough case in switch.
+src/game/enemies/bossgesso.ts: TS7029: Fallthrough case in switch.
+src/game/flags.ts: TS7029: Fallthrough case in switch.
+src/game/mapobj/base.ts: TS2339: Property 'world' does not exist on type 'HitActor'.
+src/game/mapobj/base.ts: TS2339: Property 'world' does not exist on type 'HitActor'.
+src/game/mapobj/cloud.ts: TS2416: Property 'getShadowType' in type 'RailMapObj' is not assignable to the same property in base type 'MapObjBase'.
+src/game/player/jump.ts: TS7029: Fallthrough case in switch.
+src/game/player/move.ts: TS2339: Property 'mGamePad' does not exist on type 'MarioMove'.
+src/game/player/move.ts: TS2339: Property 'mGamePad' does not exist on type 'MarioMove'.
+src/game/player/move.ts: TS2367: This comparison appears to be unintentional because the types 'this' and 'MarioProxy | PlayerMario' have no overlap.
+src/game/player/player.ts: TS7029: Fallthrough case in switch.
+src/game/player/player.ts: TS7029: Fallthrough case in switch.
+src/game/player/player.ts: TS7029: Fallthrough case in switch.
+src/game/player/player.ts: TS7029: Fallthrough case in switch.
+src/game/player/special.ts: TS2339: Property 'mWaterGun' does not exist on type 'MarioSpecial'.
+src/game/player/special.ts: TS2339: Property 'mWaterGun' does not exist on type 'MarioSpecial'.
+src/game/stagechange.ts: TS2345: Argument of type 'number' is not assignable to parameter of type '121 | 232 | 268 | 292 | 294 | 299'.
+src/layer.ts: TS2339: Property 'set' does not exist on type 'mat4'.
+src/layer.ts: TS2339: Property 'set' does not exist on type 'mat4'.
+src/layer.ts: TS2339: Property 'set' does not exist on type 'mat4'.
+src/layer.ts: TS2339: Property 'set' does not exist on type 'mat4'.
+src/mantashadow.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/mantashadow.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/marioshadow.ts: TS2345: Argument of type '113 | 114' is not assignable to parameter of type 'GfxRendererLayer'.
+src/marioshadow.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/marioshadow.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/marioshadow.ts: TS2740: Type 'Float64Array<ArrayBuffer>' is missing the following properties from type 'number[]': pop, push, concat, shift, and 6 more.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'SceneDesc'.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'SceneGfx'.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'SceneGfx'.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'SceneGroup'.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/sms_scene.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/sms_scene.ts: TS2709: Cannot use namespace 'Destroyable' as a type.
+src/sms_scene.ts: TS2709: Cannot use namespace 'SceneContext' as a type.
+src/v1data/objparts.ts: TS2339: Property 'toLowerCase' does not exist on type 'string | string[]'.
+src/v1data/objparts.ts: TS2538: Type 'string[]' cannot be used as an index type.
+src/v1data/objparts.ts: TS2538: Type 'string[]' cannot be used as an index type.
+src/v1data/objparts.ts: TS2538: Type 'string[]' cannot be used as an index type.
+src/v1data/objparts.ts: TS2538: Type 'string[]' cannot be used as an index type.
+src/wavedraw.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/wavedraw.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/wavedraw.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/wavedraw.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/wavedraw.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/wavedraw.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/wiredraw.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/wiredraw.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.
+src/wiredraw.ts: TS2694: Namespace '"*.js"' has no exported member 'ViewerRenderInput'.

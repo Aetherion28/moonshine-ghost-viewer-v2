@@ -450,7 +450,7 @@ export class GameLayer {
         const yoshi = fs.has('data/yoshi.szs') ? parseArchive(await fs.read('data/yoshi.szs'), Yaz0.decompressSW) : null;
         this.destroyScene();
         setGameVersion(fs.id, fs.revision || 0);
-        this.fs = fs; this.stageTable = table; this.marioArc = mario; this.yoshiArc = yoshi;
+        this.fs = fs; this.failedScenes.clear(); this.stageTable = table; this.marioArc = mario; this.yoshiArc = yoshi;
         this.common = common || await DiscCommon.load(fs);
         this.sim = new SimRunner(this.common);
         this.ghostSim = null;
@@ -483,9 +483,11 @@ export class GameLayer {
         this.prefetched.set(name, p);
     }
     /** Load a scene archive (e.g. "dolpic0"); resolves once it is the one drawn (or another was asked for). */
+    /** Scenes that failed to load from this disc: not tried again every frame (each try would show its error again). */
+    private failedScenes = new Set<string>();
     public async loadScene(name: string) {
         const fs = this.fs;
-        if (!fs || name === this.scene || name === this.loading) return;
+        if (!fs || name === this.scene || name === this.loading || this.failedScenes.has(name)) return;
         if (!this.hasScene(name)) { this.destroyScene(); this.scene = name; return; }
         this.loading = name;
         this.onStatus(`Loading ${name} from the disc…`);
@@ -576,7 +578,7 @@ export class GameLayer {
             if (r.sceneBin) findAry(r.sceneBin);
             const l0 = la && la.children[0];
             this.shadowLight = l0 ? [l0.x, l0.y, l0.z] : null;
-        } catch (e) { this.onError(e); }
+        } catch (e) { if (this.fs === fs) this.failedScenes.add(name); this.onError(e); }
         finally { if (this.loading === name) { this.loading = ''; this.onStatus(''); } }
     }
 

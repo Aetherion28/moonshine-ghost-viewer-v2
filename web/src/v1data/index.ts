@@ -20,7 +20,28 @@ type Arc = Map<string, Bytes>;
 
 setImageEncoder(async (img, alpha, max) => ({ bytes: await encodePng(img, alpha, max), mime: 'image/png' }));
 
+/** Drops the oldest of the keys `which` picks while more than `max` are left (a Map keeps insertion order: most recent last). */
+function trim<V>(m: Map<string, V>, which: (k: string) => boolean, max: number) {
+    let n = 0;
+    for (const k of m.keys()) if (which(k)) n++;
+    for (const k of [...m.keys()]) { if (n <= max) break; if (which(k)) { m.delete(k); n--; } }
+}
+/** m's value for k, made most recent */
+function touch<V>(m: Map<string, V>, k: string): V | undefined {
+    const v = m.get(k);
+    if (v !== undefined) { m.delete(k); m.set(k, v); }
+    return v;
+}
+const isScene = (k: string) => k.startsWith('data/scene/');
+const isStageFile = (k: string) => /^(maps|objects)\//.test(k);
+
 export class V1Data {
+    // Scene archives, stage outputs and areas are kept for the last few stages only: kept for every
+    // stage of a session they ran to hundreds of MB (each scene decompressed); converted outputs come
+    // back from browser storage (store.ts). Params, Mario, Yoshi and the other archives stay.
+    static readonly KEEP_SCENES = 3;
+    static readonly KEEP_FILES = 8;
+    static readonly KEEP_AREAS = 3;
     private arcs = new Map<string, Promise<Arc | null>>();
     private files = new Map<string, Promise<any>>();
     private areas = new Map<string, Promise<AreaObjects>>();
@@ -34,28 +55,38 @@ export class V1Data {
         }
     }
     private arc(path: string): Promise<Arc | null> {
-        if (!this.arcs.has(path)) this.arcs.set(path, this.fs.has(path) ? this.fs.read(path).then((b) => openArc(new Uint8Array(b))) : Promise.resolve(null));
-        return this.arcs.get(path)!;
+        let p = touch(this.arcs, path);
+        if (!p) {
+            this.arcs.set(path, p = this.fs.has(path) ? this.fs.read(path).then((b) => openArc(new Uint8Array(b))) : Promise.resolve(null));
+            trim(this.arcs, isScene, V1Data.KEEP_SCENES);
+        }
+        return p;
     }
     sceneArc(scene: string) { return this.arc(`data/scene/${scene}.szs`); }
     /** set up what the converters read from params.szs */
     async init() { setParamsArchive(await this.arc('data/params.szs')); }
 
     private area(id: string): Promise<AreaObjects> {
-        if (!this.areas.has(id)) {
+        let p = touch(this.areas, id);
+        if (!p) {
             const entry = this.index.find((e) => e.id === id);
             if (!entry) return Promise.reject(new Error(`no stage ${id}`));
-            this.areas.set(id, buildArea(entry, this.table, (s) => this.sceneArc(s), (img) => pngDataUri(img, true)));
+            this.areas.set(id, p = buildArea(entry, this.table, (s) => this.sceneArc(s), (img) => pngDataUri(img, true)));
+            trim(this.areas, () => true, V1Data.KEEP_AREAS);
         }
-        return this.areas.get(id)!;
+        return p;
     }
     private entryOfScene(scene: string) { return this.index.find((e) => Object.values<string>((e.objects || {}).scenes || {}).includes(`objects/${scene}.json`)); }
 
     /** A v1 site file: an ArrayBuffer for binary ones (the .b64.txt are served decoded), else parsed JSON. */
     get(path: string): Promise<any> {
         path = path.replace(/^\.?\//, '');
-        if (!this.files.has(path)) this.files.set(path, this.stored(path));
-        return this.files.get(path)!;
+        let p = touch(this.files, path);
+        if (!p) {
+            this.files.set(path, p = this.stored(path));
+            trim(this.files, isStageFile, V1Data.KEEP_FILES);
+        }
+        return p;
     }
     /** make(path), or its result from an earlier visit (store.ts); bgeso.json depends on what was loaded before, so it isn't kept */
     private async stored(path: string): Promise<any> {

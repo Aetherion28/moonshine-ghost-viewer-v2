@@ -30,10 +30,14 @@ This file is the short version: what was just done, what is open, where everythi
 - A clean JP disc folder for headless tests: `/tmp/claude-0/jpdisc` (`files/` hard links to `/mnt/user-data/uploads/Games/_ghostviewer_extract/data` plus its `jp/` files, and `sys/boot.bin` = `GMSJ01`).
   The extract's root mixes JP and PAL, so don't point the viewer at it directly.
 - Playwright is at `/opt/npm-tools/node_modules/playwright` (the scripts load it from there).
+- Disc images for testing the viewer's disc reader: `/tmp/claude-0/discs/` (`jp10.iso` and the same disc as `.rvz`, `.gcz`, `.ciso`, `n.wia` uncompressed and `.wia` LZMA). The ISOs are on the user's PC in `Desktop\SMS` (`JP 1.0 (GMSJ01).iso`, `NA (GMSE01).iso`, …): staging takes files under 400 MB, so cut one into parts with `dd bs=4000000 skip=… count=95` in device_bash (a plain `split` outlives the 3-minute call) and `cat` them here.
+  nodtool converts them (`cargo install nodtool --root /tmp/nod`, from crates.io, about a minute): `nodtool convert -c zstd:19 jp10.iso jp10.rvz` (`.gcz`, `.ciso`, `.wia` by the output's extension, `-c none` for an uncompressed WIA).
 
 ## Testing the viewer
 
-- Headless (swiftshader): `web/tools/smoke/smoke.mjs <site> <disc> <outdir> <files...>` loads the disc folder, then each recording, plays a few seconds, screenshots it and prints page errors and console errors.
+- Headless (swiftshader): `web/tools/smoke/smoke.mjs <site> <disc> <outdir> <files...>` loads the disc (an extracted folder, or an image file picked as a visitor does), then each recording, plays a few seconds, screenshots it and prints page errors and console errors.
+  `badfiles.mjs` (same arguments) loads broken or wrong files one by one and reports the notice each showed, how often it was set (a retry loop sets it every frame) and whether the page still answers.
+  `web/tools/disc/disctest.mjs <iso> <images…>` (node, from `web/`) reads every file of the disc through each image and compares it with the ISO, then checks that cut-off, empty and random files are turned down.
   `mobile.mjs` (iPhone 13 layout), `scrub.mjs` (screens at chosen times), `mirtest.mjs` (a view with the mirrors on and off), `palm.mjs` (header at several widths).
   Swiftshader draws some water black (Bianco's river): that is the software renderer, not the viewer.
 - Real hardware: the Claude in Chrome extension on the live site. The page has `#mapSelect`, `#episodeSelect`, `#sharedList` (Delfino Ghosts' shared ghosts: their Load buttons need no files), `#play`, `#scrub`, `#clockNow`.
@@ -60,7 +64,8 @@ This file is the short version: what was just done, what is open, where everythi
 - **Mirrors**: not confirmed against the game. A mirror is used only while Mario is inside its 鏡キューブ (from map/tables.bin): Bianco's covers its water (plane y 2303), Pinna Park's the pond (y 710), Gelato's only the wet slopes high up, Hotel Delfino's is a wall mirror whose plane the game takes from the raw S16 vertex (z -8354; the mirror is at z -1044).
   Not done: TMirrorActor's coins, enemies and Yoshi; the lean mirrors' TMirrorModelObj (Gelato episode 2); lights in the mirror pass use the main camera.
   When the user confirms the look, turn it on by default (the `__mirrors` check in setUpMirror and the option) and drop "(experimental)" from its label.
-- **For the user to decide**: a licence for the repository (there is none, so all rights are reserved); whether to wire in `web/src/discformats.ts` (RVZ / WIA / GCZ / CISO readers, written but never imported or tested; most Dolphin libraries are RVZ).
+- **For the user to decide**: a licence for the repository (there is none, so all rights are reserved).
+- WIA images compressed with LZMA or bzip2 (the compressions Dolphin offers for WIA) are turned down with a message saying how to convert them; reading them needs an LZMA / bzip2 decoder. NKit images are untested (no tool here makes one).
 - Specular light on Mario and NPCs is still off (turning it on washed them white; cause not found; `layer.ts`, search "specular").
 - `CLAUDE.md` section 11, "Still not ported", lists the remaining rendering plumbing.
 

@@ -8,10 +8,11 @@ own copy of the game.
 
 ## What you need
 
-- **Your own copy of the game**: a disc image (`.iso` / `.gcm`) or an extracted game folder, from
-  the US, Japanese or European release. RVZ, WIA, CISO and NKit images need converting to ISO first
-  (in Dolphin: right-click the game, Convert File, ISO). Nothing is drawn until the game is loaded:
-  the site hosts no game data, and nothing you load is uploaded.
+- **Your own copy of the game**: a disc image (`.iso` / `.gcm`, or Dolphin's `.rvz`, `.gcz` and
+  `.ciso`) or an extracted game folder, from the US, Japanese or European release. A WIA image
+  compressed with LZMA or bzip2 needs converting to RVZ or ISO first (in Dolphin: right-click the
+  game, Convert File). Nothing is drawn until the game is loaded: the site hosts no game data, and
+  nothing you load is uploaded.
 - **Ghosts**: `.smsghost` files exported from Moonshine (format v5 or newer; exports are in the
   share folder on your SD card), `.msgt` replays, or ghosts shared on
   [Delfino Ghosts](https://zeldocto.github.io/delfino-ghosts/), which the viewer can browse and load.
@@ -62,7 +63,7 @@ licences of the code and fonts the site uses.
   in sync.
 
 Known gaps: the specular light on Mario and the characters is off, the water mirrors are still being
-checked against the game, and the viewer reads ISO / GCM images only.
+checked against the game, and WIA images compressed with LZMA or bzip2 aren't read (RVZ is).
 
 ## Building
 

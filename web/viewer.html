@@ -379,10 +379,10 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <button id="camFree" aria-pressed="false">Free</button>
       <button id="camTop" aria-pressed="false">Top</button>
     </div>
-    <button id="pickDisc" title="Draw the stages, objects and Mario with the game's own models and renderer, read from your Super Mario Sunshine disc image (.iso / .gcm) or extracted game folder. Nothing is uploaded.">Game disc</button>
+    <button id="pickDisc" title="Draw the stages, objects and Mario with the game's own models and renderer, read from your Super Mario Sunshine disc image (.iso, .gcm, or Dolphin's .rvz, .gcz, .ciso and .wia) or extracted game folder. Nothing is uploaded.">Game disc</button>
     <button id="reopenDisc" hidden></button>
     <button id="forgetDisc" class="tool" hidden title="Remove the copy of your disc image this browser keeps, so it isn't opened automatically next time">Forget disc</button>
-    <input type="file" id="isoFile" accept=".iso,.gcm" hidden>
+    <input type="file" id="isoFile" accept=".iso,.gcm,.rvz,.gcz,.ciso,.wia" hidden>
     <input type="file" id="folderFile" webkitdirectory hidden>
     <button id="browseGhosts" title="Browse ghosts shared on Delfino Ghosts">Browse</button>
     <button class="primary" id="addGhost">Add ghost</button>
@@ -439,7 +439,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
       <div class="discGateBox">
         <h2>Load your Super Mario Sunshine disc</h2>
         <p>Watch ghosts and replays recorded with the <a href="https://dogecyanide.github.io/moonshine-site/" target="_blank" rel="noopener">Moonshine</a> practice mod, played back in the game's own stages.</p>
-        <p>The viewer draws and plays everything with the game itself, read from your own copy: a disc image (.iso / .gcm) or an extracted game folder. Nothing is uploaded, and the site hosts no game data.</p>
+        <p>The viewer draws and plays everything with the game itself, read from your own copy: a disc image (ISO, or Dolphin's RVZ, GCZ, CISO or WIA) or an extracted game folder. Nothing is uploaded, and the site hosts no game data.</p>
         <div class="discGateBtns">
           <button class="primary" id="gateDisc" type="button">Choose disc image…</button>
           <button id="gateFolder" type="button" class="linkBtn">Use an extracted game folder…</button>
@@ -1016,7 +1016,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     } else { m.transparent = false; m.blending = THREE.NormalBlending; }
     m.onBeforeCompile = gxTevCompile; m.customProgramCacheKey = gxTevKey;
   }
-  const GX_MIP_TEX = new Map();
+  const GX_MIP_TEX = new WeakMap();   // glTF parser -> texture index -> texture with the game's mips
   // Textures named in extras.gxTev.tex, fetched from the glTF (raw texels, as GX samples them).
   async function gxTevTextures(gltf) {
     const mats = [];
@@ -1030,16 +1030,18 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
           const lv = mips[slot];
           if (lv && lv.length) {   // the game's own mip levels (e.g. waves that only show at a distance)
             const imgs = await Promise.all(lv.map((li) => gltf.parser.getDependency('texture', li).then((t) => t.image)));
-            const key = 'mip' + i;
-            if (!GX_MIP_TEX.has(key)) {
+            // (one per glTF texture: its index means nothing in another glTF)
+            let mine = GX_MIP_TEX.get(gltf.parser);
+            if (!mine) GX_MIP_TEX.set(gltf.parser, mine = new Map());
+            if (!mine.has(i)) {
               const t2 = tx.clone();
               t2.mipmaps = [tx.image, ...imgs];
               t2.generateMipmaps = false;
               t2.minFilter = THREE.LinearMipmapLinearFilter;
               t2.needsUpdate = true;
-              GX_MIP_TEX.set(key, t2);
+              mine.set(i, t2);
             }
-            tx = GX_MIP_TEX.get(key);
+            tx = mine.get(i);
           }
           return tx;
         }));
@@ -1259,8 +1261,36 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     });
   }
 
-  // Loaded stages stay in memory so switching back (e.g. leaving a secret) is instant.
-  const mapCache = new Map();
+  // Loaded stages stay in memory so switching back (e.g. leaving a secret) is instant: the last few,
+  // as every stage's geometry and textures add up (a long session through many stages ran out of memory).
+  const mapCache = new Map(), MAP_CACHE_MAX = 6;
+  function cacheMap(id, group) {
+    mapCache.delete(id); mapCache.set(id, group);   // (most recent last)
+    for (const [k, g] of mapCache) {
+      if (mapCache.size <= MAP_CACHE_MAX) break;
+      if (g.parent || (g.userData.sky && g.userData.sky.parent)) continue;   // on screen (this view's or the comparison's)
+      mapCache.delete(k);
+      disposeTree(g);
+      if (g.userData.sky) disposeTree(g.userData.sky);
+    }
+  }
+  /** Frees a group's geometry, materials and textures on the GPU (three.js uploads them again if they're drawn again). */
+  function disposeTree(root) {
+    const done = new Set();
+    root.traverse((o) => {
+      if (o.geometry && !done.has(o.geometry)) { done.add(o.geometry); o.geometry.dispose(); }
+      for (const m of [].concat(o.material || [])) {
+        if (done.has(m)) continue;
+        done.add(m);
+        for (const k of Object.keys(m)) { const t = m[k]; if (t && t.isTexture && !done.has(t)) { done.add(t); t.dispose(); } }
+        for (const t of [].concat(m.gxTevTex || [])) if (t && t.isTexture && !done.has(t)) { done.add(t); t.dispose(); }
+        m.dispose();
+      }
+    });
+  }
+  /** A small most-recent-last cache: the oldest entries go past max. */
+  function lruGet(map, key) { const v = map.get(key); if (v !== undefined) { map.delete(key); map.set(key, v); } return v; }
+  function lruSet(map, key, v, max) { map.delete(key); map.set(key, v); while (map.size > max) map.delete(map.keys().next().value); }
   let mapRequest = 0;
   async function loadMap(id, routeKey) {
     const entry = maps.find((m) => m.id === id);
@@ -1275,7 +1305,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     const request = ++mapRequest;
     let back = null;
     try {
-      let group = mapCache.get(id);
+      let group = lruGet(mapCache, id);
       if (!group) {
         if (main) showNotice(`Loading ${entry.name}…`);
         group = /\.glb(\.b64\.txt)?$/.test(entry.file) ? await loadGlb(entry) : buildCollisionMesh(await fetchBinary(entry.file));
@@ -1361,7 +1391,7 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
         });
         group.userData.bounds = box.isEmpty() ? new THREE.Box3().setFromObject(group) : box;
         group.userData.id = id;
-        mapCache.set(id, group);
+        cacheMap(id, group);
       }
       back = enterCtx(myCtx);
       if (request !== mapRequest) return;
@@ -1568,17 +1598,19 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
     objectsGroup = null; objList = []; objNodes = []; wireMeshes = []; objDyn = {}; objProtos = {}; objSpawn = null; objCams = { tools: {}, bck: {} }; objShineSrc = []; objTrig = [];
     const info = entry.objects;
     if (!info || !info.scenes[routeKey]) { update(); return; }
-    let lib = objLibCache.get(info.lib);
+    let lib = lruGet(objLibCache, info.lib);
     if (!lib) {
       lib = fetchBinary(info.lib).then((buf) => new Promise((res, rej) => new THREE.GLTFLoader().parse(buf, '', async (g) => {
         rawTextures(g);
         await gxEnvTextures(g); await gxTevTextures(g); await gxAltTextures(g); gxLight(g.scene); res(g.scene);
       }, rej)));
       objLibCache.set(info.lib, lib);
+      // the last few areas' object models (an evicted one's clones still draw: three.js uploads again what it needs)
+      while (objLibCache.size > 4) { const [k, old] = objLibCache.entries().next().value; objLibCache.delete(k); old.then(disposeTree, () => {}); }
     }
     const file = info.scenes[routeKey];
-    let list = objListCache.get(file);
-    if (!list) { list = fetchJson(file); objListCache.set(file, list); }
+    let list = lruGet(objListCache, file);
+    if (!list) { list = fetchJson(file); lruSet(objListCache, file, list, 12); }
     let back = null;
     try {
       const [libScene, data] = await Promise.all([lib, list]);
@@ -1958,8 +1990,8 @@ document.write('<script src="' + V2 + 'hud.js"><\/script>');
   }
   async function loadCollision(entry) {
     if (!entry.col) return;
-    let c = colCache.get(entry.id);
-    if (!c) { c = fetchBinary(entry.col).then(parseCollision).catch(() => null); colCache.set(entry.id, c); }
+    let c = lruGet(colCache, entry.id);
+    if (!c) { c = fetchBinary(entry.col).then(parseCollision).catch(() => null); lruSet(colCache, entry.id, c, MAP_CACHE_MAX); }
     const myCtx = stageCtx;
     const C = await c;
     const back = enterCtx(myCtx);
@@ -8800,7 +8832,7 @@ void main() {
       if (scene) gameLayer.prefetchScene(scene);
       const r = worldRoutes ? [...worldRoutes.values()].flat().find((x) => x.key === `${p.area}:${p.episode}`) : null;
       const entry = r && maps.find((m) => m.id === r.map), info = entry && entry.objects, file = info && info.scenes[r.key];
-      if (file && !objListCache.has(file)) objListCache.set(file, fetchJson(file));
+      if (file && !objListCache.has(file)) lruSet(objListCache, file, fetchJson(file), 12);
     }
   }
   let debugView = null;
@@ -9702,7 +9734,7 @@ void main() {
   window.addEventListener('dragover', (e) => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
   window.addEventListener('dragleave', (e) => { if (!hasFiles(e)) return; if (--dragDepth <= 0) { dragDepth = 0; $('drop').hidden = true; } });
   window.addEventListener('drop', (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; $('drop').hidden = true;
-    const iso = [...e.dataTransfer.files].find((f) => /\.(iso|gcm)$/i.test(f.name));
+    const iso = [...e.dataTransfer.files].find((f) => /\.(iso|gcm|rvz|gcz|ciso|wia)$/i.test(f.name));
     if (iso) { useDiscFile(iso); return; }
     const files = [...e.dataTransfer.files].filter((f) => /\.(smsghost|msgt)$/i.test(f.name) || !/\.[a-z0-9]+$/i.test(f.name));
     if (files.length) readFiles(files); else showNotice('Drop ghosts (.smsghost), replays (.msgt) or a Super Mario Sunshine disc image to load them.'); });
@@ -10255,7 +10287,7 @@ void main() {
     if (!gameLayer) { showNotice('This browser can\'t run the game renderer (it needs WebGL 2).'); return; }
     GameDisc.openDisc(f).then((d) => { const r = useDisc(d); DiscStore.put(f); return r; }, (e) => showNotice(e.message || String(e)));
   }
-  // Phones and tablets know no file type for .iso / .gcm / .smsghost / .msgt (Android names an ISO
+  // Phones and tablets know no file type for disc images, .smsghost or .msgt (Android names an ISO
   // application/x-iso9660-image, iOS has no type at all), so a picker filtered by them greys the files
   // out: there the pickers show every file, and a file that isn't one is turned down once it's read.
   const touchPicker = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
@@ -10265,7 +10297,7 @@ void main() {
     if (!gameLayer) { showNotice('This browser can\'t run the game renderer (it needs WebGL 2).'); return; }
     if (window.showOpenFilePicker) {
       try {
-        const [h] = await window.showOpenFilePicker(touchPicker ? {} : { types: [{ description: 'GameCube disc image', accept: { 'application/octet-stream': ['.iso', '.gcm'] } }] });
+        const [h] = await window.showOpenFilePicker(touchPicker ? {} : { types: [{ description: 'GameCube disc image', accept: { 'application/octet-stream': ['.iso', '.gcm', '.rvz', '.gcz', '.ciso', '.wia'] } }] });
         const hf = await h.getFile();
         await useDisc(await GameDisc.openDisc(hf));
         DiscStore.put(hf);

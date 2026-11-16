@@ -53,6 +53,8 @@ The viewer also draws what the game draws, so a ported object that the viewer ca
 - `npm install` in `web` after a container reset.
 - The page loads nothing from other sites but Delfino Ghosts' listing: three.js r128 and the fonts are in `web/vendor/` (build.mjs copies it to `site/vendor/`, with the noclip and gl-matrix licences the legal page links). Don't add CDN or Google Fonts links back.
 - There is no tsconfig in the repo. A lenient type-check (`strict` off, `noImplicitAny` off, `noFallthroughCasesInSwitch` on, include `web/src/**/*.ts`) runs in seconds with `web/node_modules/.bin/tsc -p <that config>` and finds real bugs: an import that's missing or doubled, a function passed where its result belongs. The remaining errors are noise (mixins, noclip stubs, DOM typing).
+  `node tools/ci/typecheck.mjs` (from `web/`) runs it and compares with `tools/ci/tsc-baseline.txt`, the known noise (keyed without line numbers): a new error fails. Once a new one is checked and found to be noise, `--update` takes it into the baseline.
+- CI (`.github/workflows/check.yml`, on every push) runs that type-check, `tools/ci/sitecheck.mjs` (`site/` must equal a fresh build of the sources, build stamps aside) and `tools/ci/pagecheck.sh` (the built page in headless Chrome: no uncaught error, no missing file of the site's own). No game data is involved.
 
 ## 4. Where things are
 
@@ -78,6 +80,8 @@ The viewer also draws what the game draws, so a ported object that the viewer ca
 | `web/legacy/` | v1's scripts, the pixel sprites, `favicon.png`, `social.png` (the link preview) and `legal.html` (legal notice, privacy, credits and licences); copied to the site's root. |
 | `web/vendor/` | three.js r128 and the two fonts, served from the site (each with its licence). |
 | `web/tools/harness/` | The command-line test harness (section 6). |
+| `web/src/disc.ts`, `discformats.ts` | The player's disc: an image (ISO / GCM; Dolphin's RVZ, GCZ, CISO and uncompressed WIA) or an extracted folder. A cut-off image is turned down when it's opened. `tools/disc/disctest.mjs` reads every file through each format and compares it with the ISO. |
+| `web/tools/ci/`, `web/tools/smoke/` | The CI checks (section 3); the headless viewer sweeps (`smoke.mjs` takes a disc folder or an image file). |
 | `REGIONS.md` | How the regions differ and how `src/game/version.ts` follows the decomp's `VERSION_*`. |
 | `SUGGESTIONS.md` | Suggestions kept for the user. |
 

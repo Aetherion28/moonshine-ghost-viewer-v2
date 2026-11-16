@@ -14,6 +14,8 @@ export interface DiscSource {
     read(off: number, len: number): Promise<Uint8Array>;
 }
 
+const incomplete = (kind: string) => new Error(`This ${kind} image is incomplete: the file ends before the disc's data does. Copy or convert it again.`);
+
 const u64 = (v: DataView, o: number, le = false) => v.getUint32(o + (le ? 4 : 0), le) * 0x100000000 + v.getUint32(o + (le ? 0 : 4), le);
 
 async function bytes(blob: Blob, off: number, len: number) {
@@ -72,7 +74,10 @@ class CisoSource implements DiscSource {
         this.map = new Int32Array(n);
         let c = 0;
         for (let i = 0; i < n; i++) this.map[i] = head[8 + i] === 1 ? c++ : -1;
+        // An upper bound, as Dolphin's (CISOBlob GetDataSize): the map has room for 32760 blocks.
+        // Absent blocks read as zeros (converters leave out the disc's padding; no file lies there).
         this.size = n * this.blockSize;
+        if (c && blob.size < 0x8000 + (c - 1) * this.blockSize) throw incomplete('CISO');
     }
     async read(off: number, len: number) {
         const out = new Uint8Array(len), bs = this.blockSize;
@@ -91,7 +96,7 @@ class CisoSource implements DiscSource {
 // u32 block size, u32 block count; then u64 block pointers (top bit: stored uncompressed), u32
 // Adler-32 hashes, then the data. Compressed blocks are zlib streams.
 async function inflate(data: Uint8Array): Promise<Uint8Array> {
-    const s = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate'));
+    const s = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate'));
     return new Uint8Array(await new Response(s).arrayBuffer());
 }
 class GczSource implements DiscSource {
@@ -117,6 +122,7 @@ class GczSource implements DiscSource {
             this.ptrs.push((hi & 0x7FFFFFFF) * 0x100000000 + t.getUint32(i * 8, true));
         }
         this.dataOff = 32 + n * 8 + n * 4;
+        if (this.blob.size < this.dataOff + this.compressedSize) throw incomplete('GCZ');
         return this;
     }
     private block(i: number) {
@@ -185,7 +191,7 @@ class WiaRvzSource implements DiscSource {
     private decompress(data: Uint8Array, expected: number, compressed = true): Uint8Array {
         if (!compressed || this.comp === 0) return data;
         if (this.comp === 5) return zstdDecompress(data);
-        throw new Error(`This ${this.kind} image uses ${['', 'Purge', 'bzip2', 'LZMA', 'LZMA2'][this.comp] || 'an unknown'} compression, which the viewer can't read yet. Convert it to RVZ (Zstandard) or ISO in Dolphin.`);
+        throw new Error(`This ${this.kind} image uses ${['', 'Purge', 'bzip2', 'LZMA', 'LZMA2'][this.comp] || 'an unknown'} compression, which the viewer can't read. In Dolphin, right-click the game, pick Convert File and convert it to RVZ or ISO.`);
     }
 
     async init(head: Uint8Array) {
@@ -196,6 +202,8 @@ class WiaRvzSource implements DiscSource {
         if (v.getUint32(0) !== 1) throw new Error(`This ${this.kind} image isn't a GameCube disc.`);
         this.comp = v.getUint32(4);
         this.chunk = v.getUint32(0x0C);
+        // about 32 MB of decoded chunks (Dolphin's chunk size runs from 32 KiB to 2 MiB)
+        this.cache = new BlockCache(Math.max(4, Math.floor((32 << 20) / this.chunk)));
         this.header = h2.slice(0x10, 0x90);
         const nRaw = v.getUint32(0xB4), rawOff = u64(v, 0xB8), rawSize = v.getUint32(0xC0);
         const nGroups = v.getUint32(0xC4), groupOff = u64(v, 0xC8), groupSize = v.getUint32(0xD0);
@@ -212,6 +220,7 @@ class WiaRvzSource implements DiscSource {
                 compressed: this.rvz ? !!(size & 0x80000000) : true, packed: this.rvz ? gv.getUint32(i * gs + 8) : 0,
             });
         }
+        if (this.groups.some((g) => g.off + g.size > this.blob.size)) throw incomplete(this.kind);
         return this;
     }
 
