@@ -10,6 +10,8 @@ function LogErr($e) { try { Add-Content -Path $errlog -Value ((Get-Date -Format 
 trap { LogErr $_; continue }
 # one copy of the program: older copies (and the older tray / pointer scripts) are ended
 foreach ($o in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.ProcessId -ne $PID -and ($_.CommandLine -like '*sweep_tray.ps1*' -or $_.CommandLine -like '*cursor_toggle.ps1*' -or $_.CommandLine -clike '*MantaSweepApp.ps1*' -or ($_.CommandLine -like '*MantaSweep.ps1*' -and $_.CommandLine -notlike '*-Worker*')) })) { Stop-Process -Id $o.ProcessId -Force -ErrorAction SilentlyContinue }
+# (a copy that was started under another name still shows its windows: found by their titles)
+foreach ($o in @(Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $PID -and $_.MainWindowTitle -like 'Manta Sweep*' })) { Stop-Process -Id $o.Id -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Milliseconds 400
 Add-Type -ReferencedAssemblies System.Windows.Forms -TypeDefinition @"
 using System; using System.Runtime.InteropServices; using System.Windows.Forms;
