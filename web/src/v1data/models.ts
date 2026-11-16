@@ -189,7 +189,10 @@ export async function buildShineGet(scene: Arc, common: Arc, game: Arc, png: (im
     const pics = bloPictures(game.get('scrn/big_tx_1.blo')!);
     const letters = [];
     for (let i = 0; i < 9; i++) {
-        const [x, y, w, h, tex, corners] = pics[`sg${String(i).padStart(2, '0')}`];
+        // (the Japanese and US "SHINE GET!" has nine letters; PAL's banner is laid out differently)
+        const pic = pics[`sg${String(i).padStart(2, '0')}`];
+        if (!pic || !game.get(`timg/${pic[4]}`)) continue;
+        const [x, y, w, h, tex, corners] = pic;
         letters.push({ x, y, w, h, c: corners, tex: await png(btiRgba(game.get(`timg/${tex}`)!), true) });
     }
     return { SHINE_BCK: shine, CAM_BCK: cam, SG_LETTERS: letters };

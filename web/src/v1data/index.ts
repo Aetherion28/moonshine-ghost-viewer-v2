@@ -14,6 +14,7 @@ import { buildMario, buildYoshi, buildWaterTex, buildShineGet } from './models.j
 import { exportJpa, EFFECTS, BW_EFFECTS, BG_EFFECTS } from './jpa.js';
 import STAGES from './tables/stages.json';
 import { storeKey, storeGet, storePut } from './store.js';
+import { localizedPath } from '../disclang.js';
 
 interface GameFS { id?: string; revision?: number; has(path: string): boolean; read(path: string): Promise<ArrayBuffer> }
 type Arc = Map<string, Bytes>;
@@ -148,7 +149,7 @@ export class V1Data {
         const out: any = { JPA_RES: exportJpa(todo) };
         const mario = await this.arc('data/mario.szs');
         if (mario) out.WATER_TEX = await buildWaterTex(mario, (img, alpha) => pngDataUri(img, alpha));
-        const sg = await this.sceneArc('mare1'), common = await this.arc('data/common.szs'), game = await this.arc('data/game_6.szs');
+        const sg = await this.sceneArc('mare1'), common = await this.arc('data/common.szs'), game = await this.arc(localizedPath(this.fs, 'data/game_6.szs'));
         if (sg && common && game) Object.assign(out, await buildShineGet(sg, common, game, (img, alpha) => pngDataUri(img, alpha)));
         return out;
     }

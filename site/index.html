@@ -228,7 +228,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .speed input[type=range] { flex: 1; min-width: 90px; accent-color: var(--accent); }
 .speed #speedOut { width: 4.2em; text-align: right; font: inherit; font-variant-numeric: tabular-nums; color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 4px; cursor: text; }
 .speed #speedOut:hover { border-color: var(--line); }
-.speed #speedOut:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+.speed #speedOut:focus { outline: 2px solid var(--focus); outline-offset: 1px; border-color: var(--accent); background: var(--bg); }
 
 aside { grid-area: side; border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 14px 16px; display: grid; align-content: start; gap: 14px; }
 aside h2 { margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--value); }
@@ -434,7 +434,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
     </script>
   </header>
 
-  <div class="stage" id="stage">
+  <div class="stage" id="stage" role="main" aria-label="Stage view">
     <div class="discGate" id="discGate">
       <div class="discGateBox">
         <h2>Load your Super Mario Sunshine disc</h2>
@@ -446,13 +446,13 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
           <button id="gateReopen" type="button" hidden></button>
         </div>
         <p class="discGateNote" id="gateNote"></p>
-        <p class="discGateNote"><a href="legal.html">Legal notice</a></p>
+        <p class="discGateNote"><a href="legal.html">Legal notice</a> · <a class="reportLink" href="https://github.com/Aetherion28/moonshine-ghost-viewer-v2/issues/new" target="_blank" rel="noopener">Report a problem</a></p>
       </div>
     </div>
     <div class="hud" id="hud" aria-live="off"></div>
     <div class="fpsBox" id="fpsBox" aria-live="off" hidden></div>
     <div class="tasTag" id="tasTag" hidden>TAS</div>
-    <div class="notice" id="notice" hidden></div>
+    <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
     <div class="inputsStage" id="inputsStage" hidden></div>
     <div class="inputsStage" id="inputsStageB" hidden></div>
     <div class="joy" id="joy" hidden>
@@ -595,6 +595,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
     </div>
     <p class="help">Click the stage to play or pause. Drag to orbit, scroll or pinch to zoom. <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or the arrow keys move the camera, <kbd>Q</kbd> <kbd>E</kbd> lower and raise it, hold <kbd>Shift</kbd> to go faster. <kbd>Space</kbd> play, <kbd>,</kbd> <kbd>.</kbd> step one frame, <kbd>F</kbd> follow camera. The button in the scene's top right corner goes full screen. On a touch screen, tick <b>Movement joystick</b> for an on-screen stick that flies the camera; dragging with one finger then turns the camera where it stands.</p>
     <p class="help">To load a ghost, drag .smsghost files (or .msgt replays) from your computer and drop them anywhere on the page, use <b>Add ghost</b>, or pick one from <b>Shared ghosts</b>.</p>
+    <p class="help">Something wrong? <a class="reportLink" href="https://github.com/Aetherion28/moonshine-ghost-viewer-v2/issues/new" target="_blank" rel="noopener">Report a problem</a> on GitHub: your browser, graphics and disc version are filled in for you, and you see everything before it's sent. <a href="https://github.com/Aetherion28/moonshine-ghost-viewer-v2" target="_blank" rel="noopener">Source code</a> · <a href="legal.html">Legal notice</a></p>
     <div class="doodles" aria-hidden="true"><span class="sprite sp-fish"></span><span class="sprite sp-ship"></span><span class="sprite sp-pad"></span><span class="sprite sp-hand"></span></div>
   </aside>
 </div>
@@ -628,14 +629,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="vendor/three/GLTFLoader.js"></script>
 <script src="vendor/three/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1794795791837"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1794795791837"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1794795791837"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1794795791837"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1794795791837"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1794795791837"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1794795791837"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1794795791837"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1794801006260"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1794801006260"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1794801006260"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1794801006260"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1794801006260"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1794801006260"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1794801006260"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1794801006260"><\/script>');
 </script>
 <script>
 (() => {
@@ -755,6 +756,8 @@ document.write('<script src="' + V2 + 'hud.js?v=1794795791837"><\/script>');
     };
   }
   stageEl.prepend(renderer.domElement);
+  renderer.domElement.setAttribute('role', 'img');
+  renderer.domElement.setAttribute('aria-label', 'The stage with the loaded ghosts. Drag to orbit, scroll to zoom; Space plays and pauses.');
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 1, 10, 200000);
   camera.position.set(0, 3000, 5000);
@@ -8643,7 +8646,21 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1794795791837';
+  const BUILD_STAMP = '1794801006260';
+  // "Report a problem" opens a new GitHub issue with what a report needs filled in. The reader sees
+  // and can edit all of it before sending; nothing is sent from here.
+  document.querySelectorAll('.reportLink').forEach((a) => a.addEventListener('click', () => {
+    let gfx = 'unknown';
+    try { const gl = renderer && renderer.getContext(), d = gl && gl.getExtension('WEBGL_debug_renderer_info'); if (gl) gfx = d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); } catch (e) { }
+    let fs = null, recs = [];
+    try { fs = gameLayer && gameLayer.fs; recs = ghosts.filter((g) => !g.isSample).map((g) => g.fileName); } catch (e) { }   // (a page that stopped early)
+    const body = ['**What happened**', '', '', '**What you expected**', '', '',
+      '**How to make it happen** (which stage, which ghost or replay, what you clicked)', '', '', '---',
+      `Build: ${BUILD_STAMP || 'local'}`, `Browser: ${navigator.userAgent}`, `Graphics: ${gfx}`,
+      `Disc: ${fs ? `${fs.id || 'unknown'} revision ${fs.revision || 0} (${fs.format || 'unknown'})` : 'none loaded'}`,
+      `Recordings: ${recs.join(', ') || 'none'}`].join('\n');
+    a.href = 'https://github.com/Aetherion28/moonshine-ghost-viewer-v2/issues/new?body=' + encodeURIComponent(body);
+  }));
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
@@ -9924,6 +9941,7 @@ void main() {
     const canvas = document.createElement('canvas');
     canvas.className = 'gameLayer';
     canvas.hidden = true;
+    canvas.setAttribute('aria-hidden', 'true');   // (the stage the view's canvas stands for)
     canvas.addEventListener('webglcontextlost', contextLost);
     stageEl.prepend(canvas);
     let layer = null;
@@ -9962,6 +9980,7 @@ void main() {
       gameHud = new GameHud();
       // (over the scene, under the page's own overlays: the info box, the inputs, the controls)
       const rc = renderer && renderer.domElement;
+      gameHud.canvas.setAttribute('aria-hidden', 'true');
       if (rc && rc.parentNode === stageEl) rc.after(gameHud.canvas); else stageEl.append(gameHud.canvas);
       // (the full-screen 2D screens: the menus, the movies and the miss's wipes, over the page's fade)
       if (gameHud.overlay) stageEl.append(gameHud.overlay);

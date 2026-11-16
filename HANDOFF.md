@@ -30,7 +30,7 @@ This file is the short version: what was just done, what is open, where everythi
 - A clean JP disc folder for headless tests: `/tmp/claude-0/jpdisc` (`files/` hard links to `/mnt/user-data/uploads/Games/_ghostviewer_extract/data` plus its `jp/` files, and `sys/boot.bin` = `GMSJ01`).
   The extract's root mixes JP and PAL, so don't point the viewer at it directly.
 - Playwright is at `/opt/npm-tools/node_modules/playwright` (the scripts load it from there).
-- Disc images for testing the viewer's disc reader: `/tmp/claude-0/discs/` (`jp10.iso` and the same disc as `.rvz`, `.gcz`, `.ciso`, `n.wia` uncompressed and `.wia` LZMA). The ISOs are on the user's PC in `Desktop\SMS` (`JP 1.0 (GMSJ01).iso`, `NA (GMSE01).iso`, …): staging takes files under 400 MB, so cut one into parts with `dd bs=4000000 skip=… count=95` in device_bash (a plain `split` outlives the 3-minute call) and `cat` them here.
+- Disc images for testing the viewer's disc reader: `/tmp/claude-0/discs/` (`jp10.iso` and the same disc as `.rvz`, `.gcz`, `.ciso`, `n.wia` uncompressed, `.wia` LZMA, `l2.wia` / `l2.rvz` LZMA2 and `b.wia` bzip2; `pal.iso`). The ISOs are on the user's PC in `Desktop\SMS` (`JP 1.0 (GMSJ01).iso`, `NA (GMSE01).iso`, …): staging takes files under 400 MB, so cut one into parts with `dd bs=4000000 skip=… count=95` in device_bash (a plain `split` outlives the 3-minute call) and `cat` them here.
   nodtool converts them (`cargo install nodtool --root /tmp/nod`, from crates.io, about a minute): `nodtool convert -c zstd:19 jp10.iso jp10.rvz` (`.gcz`, `.ciso`, `.wia` by the output's extension, `-c none` for an uncompressed WIA).
 
 ## Testing the viewer
@@ -44,7 +44,16 @@ This file is the short version: what was just done, what is open, where everythi
   A background tab is throttled to near nothing (timers and rAF), so long scripted sweeps there stall; use headless for sweeps, Chrome for looking.
   Local files can't be uploaded through the extension (only files shared with the session), so in Chrome use the shared ghosts.
 
-## What the last session did (2026-11-15, second part: robustness, live on main)
+## What the last session did (2026-11-15, third part, live on main)
+
+- **Report a problem** links (the disc box and the side panel) open a GitHub issue with the build, browser, graphics, disc version and recordings filled in.
+- WIA and RVZ in every compression: LZMA, LZMA2 (`web/src/lzma.ts`) and bzip2 (`web/src/bzip2.ts`), each checked byte for byte against the ISO (Purge is written but untested).
+- PAL: the HUD and the Shine overlay read PAL's per-language archives (`game_6_en.szs` …; `web/src/disclang.ts`, the reader's language, else English); before, a PAL disc had no HUD. All 16 PAL stages in the test set load from the PAL ISO.
+- Accessibility (`web/tools/smoke/a11y.mjs`): the view's canvases are named or hidden for screen readers, notices are announced, the stage is the main landmark, the speed box shows its focus. Contrast passes AA in both themes; every control is reachable by Tab.
+- Firefox and WebKit (Safari's engine): the sweep runs in both (`BROWSER=firefox|webkit`, under `xvfb-run -a` with `LIBGL_ALWAYS_SOFTWARE=1`; Playwright's builds are in `/opt/pw-browsers`, downloaded with the user's OK) and six stages load and play in each from the RVZ.
+- The temporary copies on the user's PC (`ghosts\_incoming\regions`) are deleted.
+
+## What the session before that did (2026-11-15, second part: robustness, live on main)
 
 - Disc images in Dolphin's formats: RVZ, GCZ, CISO and uncompressed WIA are read (`web/src/discformats.ts`, wired into `disc.ts`), checked byte for byte against the ISO. WIA with LZMA or bzip2 gets a message saying how to convert.
 - A cut-off disc image is turned down when it's opened; a stage that can't be read shows its error once (it used to retry every frame) and the status line says so.
@@ -55,7 +64,7 @@ This file is the short version: what was just done, what is open, where everythi
 - Licence: **GPL-3.0-or-later** (the user's choice): `LICENSE`, README, the legal page (with the source link), `package.json`. Third-party code keeps its own licence (noclip, three.js, gl-matrix, fzstd, mp4-muxer MIT; the fonts OFL).
 - The user said most speedrunners use the JP disc, and that ghost simulation (.smsghost) no longer worries them; the US, PAL, JP 1.1 and Korean discs weren't swept this time.
 
-## What the session before did (2026-11-14/15: polish before the public announcement, live on main)
+## Earlier (2026-11-14/15: polish before the public announcement, live on main)
 
 - The name is **Moonshine Ghost Viewer** everywhere (page title and header, README, legal page; the user dropped the "v2" tag). The repo and URL keep `-v2`.
 - The page serves three.js r128 and its two fonts itself (`web/vendor/`, copied to `site/vendor/` by build.mjs with their licences): no CDN or Google Fonts requests.
@@ -75,7 +84,8 @@ This file is the short version: what was just done, what is open, where everythi
 - **Mirrors**: not confirmed against the game. A mirror is used only while Mario is inside its 鏡キューブ (from map/tables.bin): Bianco's covers its water (plane y 2303), Pinna Park's the pond (y 710), Gelato's only the wet slopes high up, Hotel Delfino's is a wall mirror whose plane the game takes from the raw S16 vertex (z -8354; the mirror is at z -1044).
   Not done: TMirrorActor's coins, enemies and Yoshi; the lean mirrors' TMirrorModelObj (Gelato episode 2); lights in the mirror pass use the main camera.
   When the user confirms the look, turn it on by default (the `__mirrors` check in setUpMirror and the option) and drop "(experimental)" from its label.
-- WIA images compressed with LZMA or bzip2 (the compressions Dolphin offers for WIA) are turned down with a message saying how to convert them; reading them needs an LZMA / bzip2 decoder. NKit images are untested (no tool here makes one).
+- NKit images and WIA's Purge compression are untested (no tool here makes either). Memory still creeps by about 1–2 MB of JS heap per stage load; heap snapshots showed no single holder.
+- The user checks by eye: the water reflections, the Gelato tower's glow, the page on a phone.
 - Specular light on Mario and NPCs is still off (turning it on washed them white; cause not found; `layer.ts`, search "specular").
 - `CLAUDE.md` section 11, "Still not ported", lists the remaining rendering plumbing.
 

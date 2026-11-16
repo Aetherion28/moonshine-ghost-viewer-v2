@@ -1,6 +1,9 @@
 // smoke sweep of the viewer: a disc (folder or image file), then each recording; collects page errors, console errors, screenshots
 import { createRequire } from 'node:module';
-const { chromium } = createRequire('/opt/npm-tools/node_modules/')('playwright');
+const pw = createRequire('/opt/npm-tools/node_modules/')('playwright');
+// BROWSER=firefox|webkit runs the sweep there (Playwright's builds: `npx playwright install firefox webkit`;
+// Firefox needs a display for WebGL: xvfb-run -a with LIBGL_ALWAYS_SOFTWARE=1)
+const BROWSER = process.env.BROWSER || 'chromium';
 import http from 'node:http';
 import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync } from 'node:fs';
 import { extname, join, basename } from 'node:path';
@@ -13,7 +16,7 @@ const url = `http://127.0.0.1:${srv.address().port}/index.html`;
 // MEM=1: after each recording, the JS heap after a garbage collection and the browser's biggest
 // processes' memory (to spot leaks across stage loads)
 const MEM = !!process.env.MEM;
-const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const b = await pw[BROWSER].launch(BROWSER === 'chromium' ? { args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] } : BROWSER === 'firefox' ? { firefoxUserPrefs: { 'webgl.force-enabled': true } } : {});
 const pg = await b.newPage({ viewport: { width: 1280, height: 800 } });
 let log = [];
 pg.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning' || /\[mirror\]/.test(m.text())) log.push(`[${m.type()}] ${m.text().slice(0, 300)}`); });
@@ -37,7 +40,7 @@ for (const f of files) {
   await pg.waitForTimeout(6000);
   await pg.screenshot({ path: join(out, name + '_b.png') });
   const st = await pg.evaluate(() => ({ mir: JSON.stringify(globalThis.__smsMirror), notice: document.getElementById('notice')?.textContent?.slice(0, 200), info: document.getElementById('replayInfo')?.textContent?.slice(0, 200), scrub: document.getElementById('scrub')?.value, list: document.getElementById('ghostList')?.innerText?.slice(0, 200) }));
-  if (MEM) {
+  if (MEM && BROWSER === 'chromium') {
     const cdp = await pg.context().newCDPSession(pg);
     await cdp.send('HeapProfiler.collectGarbage');
     st.heapMB = Math.round((await cdp.send('Runtime.getHeapUsage')).usedSize / 1048576);

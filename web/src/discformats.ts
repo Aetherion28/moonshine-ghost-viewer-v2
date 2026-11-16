@@ -1,11 +1,13 @@
 // Disc image formats Dolphin users keep their games in, read in the browser: plain ISO / GCM,
-// RVZ and WIA (zstd or uncompressed), GCZ (zlib) and CISO. Each is a byte source for the disc's
+// RVZ and WIA (any of their compressions: none, Purge, bzip2, LZMA, LZMA2, Zstandard), GCZ (zlib) and CISO. Each is a byte source for the disc's
 // own address space; disc.ts reads the file system through it.
 //
 // Formats from Dolphin's Source/Core/DiscIO (WIABlob.cpp, WIACompression.cpp,
 // LaggedFibonacciGenerator.cpp, CompressedBlob.cpp, CISOBlob.cpp) and docs/WiaAndRvz.md.
 
 import { decompress as zstdDecompress } from 'fzstd';
+import { unlzma, unlzma2 } from './lzma.js';
+import { bunzip2 } from './bzip2.js';
 
 export interface DiscSource {
     /** Size of the disc data. */
@@ -182,6 +184,8 @@ class WiaRvzSource implements DiscSource {
     size = 0;
     private chunk = 0;
     private comp = 0;
+    /** the compressor's settings (LZMA: its 5 property bytes) */
+    private comprData = new Uint8Array(0);
     private header = new Uint8Array(0x80);
     private raw: RawEntry[] = [];
     private groups: Group[] = [];
@@ -190,8 +194,14 @@ class WiaRvzSource implements DiscSource {
 
     private decompress(data: Uint8Array, expected: number, compressed = true): Uint8Array {
         if (!compressed || this.comp === 0) return data;
-        if (this.comp === 5) return zstdDecompress(data);
-        throw new Error(`This ${this.kind} image uses ${['', 'Purge', 'bzip2', 'LZMA', 'LZMA2'][this.comp] || 'an unknown'} compression, which the viewer can't read. In Dolphin, right-click the game, pick Convert File and convert it to RVZ or ISO.`);
+        switch (this.comp) {
+            case 1: if (!this.rvz) return unpurge(data, expected); break;
+            case 2: return bunzip2(data, expected);
+            case 3: return unlzma(data, this.comprData, expected);
+            case 4: return unlzma2(data, expected);
+            case 5: return zstdDecompress(data);
+        }
+        throw new Error(`This ${this.kind} image uses a compression the viewer doesn't know (type ${this.comp}). In Dolphin, right-click the game, pick Convert File and convert it to RVZ or ISO.`);
     }
 
     async init(head: Uint8Array) {
@@ -201,6 +211,7 @@ class WiaRvzSource implements DiscSource {
         const v = new DataView(h2.buffer);
         if (v.getUint32(0) !== 1) throw new Error(`This ${this.kind} image isn't a GameCube disc.`);
         this.comp = v.getUint32(4);
+        this.comprData = h2.slice(0xD5, 0xD5 + Math.min(7, h2[0xD4]));
         this.chunk = v.getUint32(0x0C);
         // about 32 MB of decoded chunks (Dolphin's chunk size runs from 32 KiB to 2 MiB)
         this.cache = new BlockCache(Math.max(4, Math.floor((32 << 20) / this.chunk)));
@@ -256,6 +267,20 @@ class WiaRvzSource implements DiscSource {
         }
         return out;
     }
+}
+
+/** WIA's Purge: segments of [u32 offset, u32 size, the bytes] over zeros, then the data's SHA-1. */
+function unpurge(d: Uint8Array, size: number): Uint8Array {
+    const out = new Uint8Array(size), v = new DataView(d.buffer, d.byteOffset, d.byteLength), end = d.length - 20;
+    let p = 0;
+    while (p + 8 <= end) {
+        const off = v.getUint32(p), n = v.getUint32(p + 4);
+        p += 8;
+        if (off + n > size || p + n > end) throw new Error('The Purge data in this disc image is damaged.');
+        out.set(d.subarray(p, p + n), off);
+        p += n;
+    }
+    return out;
 }
 
 /** RVZ packing: [u32 size] then size bytes, or (top bit set) 68 bytes of seed for size bytes of padding. */

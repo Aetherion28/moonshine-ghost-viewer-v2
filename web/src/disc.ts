@@ -23,6 +23,8 @@ export interface GameFS {
     readRange?(path: string, off: number, len: number): Promise<ArrayBuffer>;
     /** a file's size */
     size?(path: string): number;
+    /** what it was read from: ISO, RVZ, GCZ, CISO, WIA or folder (for bug reports) */
+    format?: string;
 }
 
 const GC_MAGIC = 0xC2339F3D;
@@ -30,7 +32,8 @@ const GC_MAGIC = 0xC2339F3D;
 class DiscImage implements GameFS {
     private files = new Map<string, { off: number, len: number }>();
     public revision = 0;
-    constructor(private src: DiscSource, public id: string, public label: string) { }
+    public format: string;
+    constructor(private src: DiscSource, public id: string, public label: string) { this.format = src.kind; }
 
     static async open(blob: Blob, name: string): Promise<DiscImage> {
         const src = await openSource(blob, name);
@@ -97,6 +100,7 @@ class ExtractedFolder implements GameFS {
     private files = new Map<string, File>();
     public id = '';
     public revision = 0;
+    public format = 'folder';
     constructor(public label: string) { }
 
     static async open(list: File[]): Promise<ExtractedFolder> {

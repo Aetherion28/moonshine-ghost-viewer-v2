@@ -25,6 +25,7 @@ import { TalkView } from './talkview.js';
 import { PauseMenu, GameOverMenu, SelectMenu } from './menus.js';
 import { Wipe, HX_W, HX_H } from './wipe.js';
 import { MovieScreen } from './moviescreen.js';
+import { localizedPath } from '../disclang.js';
 import './menu.js';
 import { loadSlot } from '../game/savefile.js';
 
@@ -146,7 +147,7 @@ export class GameHud {
     private async load() {
         const fs = this.fs!;
         const read = async (p: string) => (fs.has(p) ? archive(await fs.read(p)) : null);
-        const g6 = await read('data/game_6.szs');
+        const g6 = await read(localizedPath(fs, 'data/game_6.szs'));   // (PAL: game_6_<language>.szs)
         if (!g6) throw new Error('no data/game_6.szs');
         this.files = g6;
         this.common = (await read('data/common.szs')) || new Map();
@@ -178,10 +179,10 @@ export class GameHud {
     private archive2(name: string): Map<string, Uint8Array> | null | undefined {
         const v = this.more.get(name);
         if (v instanceof Promise) return undefined;
-        const fs = this.fs;
-        if (v !== undefined && (v !== null || !fs || !fs.has(`data/${name}`))) return v;
-        if (!fs || !fs.has(`data/${name}`)) { this.more.set(name, null); return null; }
-        this.more.set(name, fs.read(`data/${name}`).then((b) => { this.more.set(name, archive(b)); }, (e) => { console.warn('[hud]', name, e); this.more.set(name, null); }));
+        const fs = this.fs, path = fs ? localizedPath(fs, `data/${name}`) : '';   // (PAL: select_<language>.szs …)
+        if (v !== undefined && (v !== null || !fs || !fs.has(path))) return v;
+        if (!fs || !fs.has(path)) { this.more.set(name, null); return null; }
+        this.more.set(name, fs.read(path).then((b) => { this.more.set(name, archive(b)); }, (e) => { console.warn('[hud]', name, e); this.more.set(name, null); }));
         return undefined;
     }
     private texFrom(files: Map<string, Uint8Array>, key: string) {
