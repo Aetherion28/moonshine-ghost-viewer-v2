@@ -49,6 +49,17 @@ Invalid claims, including ones filed with the hosting provider, will be conteste
 See the full [legal notice](https://aetherion28.github.io/moonshine-ghost-viewer-v2/legal.html), which also lists the credits and the
 licences of the code and fonts the site uses.
 
+## Licence
+
+The viewer's own code is free software, © 2026 Aetherion28, under the GNU General Public License,
+version 3 or (at your option) any later version: see [LICENSE](LICENSE). The code it includes from
+others keeps its own licence: noclip.website's renderer (`web/noclip`, MIT), three.js
+(`web/vendor/three`, MIT), gl-matrix, fzstd and mp4-muxer (MIT), and the fonts (`web/vendor/fonts`,
+SIL Open Font License 1.1).
+
+The licence covers this project's own work only. It grants nothing in *Super Mario Sunshine*,
+which is Nintendo's; no game data is included.
+
 ## How it works
 
 - `web/viewer.html` is the page: the ghost list, timeline, cameras and overlays (water, particles,

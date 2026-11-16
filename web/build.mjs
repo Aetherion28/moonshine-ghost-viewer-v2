@@ -43,6 +43,9 @@ fs.cpSync(path.join(here, 'vendor'), path.join(here, '../site/vendor'), { recurs
 fs.mkdirSync(path.join(here, '../site/vendor/licenses'), { recursive: true });
 fs.copyFileSync(path.join(here, 'noclip/LICENSE'), path.join(here, '../site/vendor/licenses/noclip.txt'));
 fs.copyFileSync(path.join(here, 'node_modules/gl-matrix/LICENSE.md'), path.join(here, '../site/vendor/licenses/gl-matrix.txt'));
+fs.copyFileSync(path.join(here, 'node_modules/fzstd/LICENSE'), path.join(here, '../site/vendor/licenses/fzstd.txt'));
+// the viewer's own licence (GPL-3.0-or-later), linked from the legal page
+fs.copyFileSync(path.join(here, '../LICENSE'), path.join(here, '../site/LICENSE.txt'));
 // the game audio: the page side (audio.js) and its worklet (audio-worklet.js); the HUD (hud.js)
 const audio = [
   { ...opts, entryPoints: [path.join(here, 'src/audio/index.ts')], outfile: path.join(here, '../site/audio.js'), metafile: false },

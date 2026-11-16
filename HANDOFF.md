@@ -52,6 +52,7 @@ This file is the short version: what was just done, what is open, where everythi
 - A cut-off or damaged replay plays up to the damage, with a warning; broken files get plain messages.
 - CI on every push (`.github/workflows/check.yml`, `CLAUDE.md` section 3): the type-check against its baseline, `site/` against a fresh build, the page in headless Chrome.
 - Sweeps: all 81 JP stages load and play from the ISO; RVZ, GCZ, CISO and WIA play; every broken file tried got a message.
+- Licence: **GPL-3.0-or-later** (the user's choice): `LICENSE`, README, the legal page (with the source link), `package.json`. Third-party code keeps its own licence (noclip, three.js, gl-matrix, fzstd, mp4-muxer MIT; the fonts OFL).
 - The user said most speedrunners use the JP disc, and that ghost simulation (.smsghost) no longer worries them; the US, PAL, JP 1.1 and Korean discs weren't swept this time.
 
 ## What the session before did (2026-11-14/15: polish before the public announcement, live on main)
@@ -74,7 +75,6 @@ This file is the short version: what was just done, what is open, where everythi
 - **Mirrors**: not confirmed against the game. A mirror is used only while Mario is inside its 鏡キューブ (from map/tables.bin): Bianco's covers its water (plane y 2303), Pinna Park's the pond (y 710), Gelato's only the wet slopes high up, Hotel Delfino's is a wall mirror whose plane the game takes from the raw S16 vertex (z -8354; the mirror is at z -1044).
   Not done: TMirrorActor's coins, enemies and Yoshi; the lean mirrors' TMirrorModelObj (Gelato episode 2); lights in the mirror pass use the main camera.
   When the user confirms the look, turn it on by default (the `__mirrors` check in setUpMirror and the option) and drop "(experimental)" from its label.
-- **For the user to decide**: a licence for the repository (there is none, so all rights are reserved).
 - WIA images compressed with LZMA or bzip2 (the compressions Dolphin offers for WIA) are turned down with a message saying how to convert them; reading them needs an LZMA / bzip2 decoder. NKit images are untested (no tool here makes one).
 - Specular light on Mario and NPCs is still off (turning it on washed them white; cause not found; `layer.ts`, search "specular").
 - `CLAUDE.md` section 11, "Still not ported", lists the remaining rendering plumbing.
