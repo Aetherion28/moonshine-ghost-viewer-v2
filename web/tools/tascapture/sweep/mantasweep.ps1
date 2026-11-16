@@ -62,12 +62,12 @@ $c = $c -replace '^EnableCheats = .*', ('EnableCheats = ' + $(if ($gecko.Count) 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -Name Dpi -Namespace Sweep2 -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();'
 [void][Sweep2.Dpi]::SetProcessDPIAware()
-$wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea; $ww = [int][math]::Floor($wa.Width / 3); $wh = [int][math]::Floor($wa.Height / 2)
+$wa = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $ww = [int][math]::Floor($wa.Width / 3); $wh = [int][math]::Floor($wa.Height / 2)
 $wx = $wa.X + ($Worker % 3) * $ww; $wy = $wa.Y + ([math]::Floor($Worker / 3) % 2) * $wh
-$c = $c -replace '^RenderToMain = .*', 'RenderToMain = True' -replace '^Fullscreen = .*', 'Fullscreen = False' -replace '^MainWindowPosX = .*', "MainWindowPosX = $wx" -replace '^MainWindowPosY = .*', "MainWindowPosY = $wy" -replace '^MainWindowWidth = .*', "MainWindowWidth = $ww" -replace '^MainWindowHeight = .*', "MainWindowHeight = $wh"
+$c = $c -replace '^RenderToMain = .*', 'RenderToMain = True' -replace '^Fullscreen = .*', 'Fullscreen = False' -replace '^MainWindowPosX = .*', "MainWindowPosX = $wx" -replace '^MainWindowPosY = .*', "MainWindowPosY = $wy" -replace '^MainWindowWidth = .*', "MainWindowWidth = $ww" -replace '^MainWindowHeight = .*', "MainWindowHeight = $wh" -replace '^ShowToolbar = .*', 'ShowToolbar = False' -replace '^ShowStatusbar = .*', 'ShowStatusbar = False'
 Set-Content -Path $ini -Value $c
 # adapter=N: the D3D adapter by index (GFX.ini [Hardware] Adapter; the last one is Windows' software WARP, "Microsoft Basic Render Driver")
-Set-Content -Path (Join-Path $dol 'User\Config\GFX.ini') -Value "[Hardware]`r`nAdapter = $adapter"
+Set-Content -Path (Join-Path $dol 'User\Config\GFX.ini') -Value "[Hardware]`r`nAdapter = $adapter`r`n[Settings]`r`nAspectRatio = 3"
 # the game ini
 $gdir = Join-Path $dol 'User\GameSettings'; New-Item -ItemType Directory -Force -Path $gdir | Out-Null
 $g = @(); foreach ($s in $game.Keys) { $g += "[$s]"; $g += $game[$s] }
@@ -105,11 +105,33 @@ public static class Sweep {
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
     static string menuText(IntPtr m, int i) { var sb = new System.Text.StringBuilder(256); GetMenuString(m, (uint)i, sb, 256, 0x400); return sb.ToString().Replace("&", ""); }
     // Dolphin's own menu command Emulation > (Save|Load) State > Slot n, posted to its main window (no focus or hotkey needed)
+    // Dolphin's main window and its menu, found once: the menu is then taken off the window (strip), but its items still work
+    [DllImport("user32.dll")] static extern bool SetMenu(IntPtr hwnd, IntPtr m);
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hwnd, int i);
+    [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hwnd, int i, int v);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint f);
+    static IntPtr gMain = IntPtr.Zero, gBar = IntPtr.Zero;
+    public static int cellX, cellY, cellW, cellH;
+    static IntPtr mainOf(int pid) {
+        if (gMain != IntPtr.Zero) return gMain;
+        IntPtr m = IntPtr.Zero;
+        EnumWindows((w, l) => { uint q; GetWindowThreadProcessId(w, out q); if (q == pid && GetMenu(w) != IntPtr.Zero) { m = w; return false; } return true; }, IntPtr.Zero);
+        if (m != IntPtr.Zero) { gMain = m; gBar = GetMenu(m); }
+        return m;
+    }
+    // no menu, title bar or border, and the window fills its grid cell
+    static void strip(int pid) {
+        if (mainOf(pid) == IntPtr.Zero || cellW <= 0) return;
+        SetMenu(gMain, IntPtr.Zero);
+        int st = GetWindowLong(gMain, -16);
+        st = (int)(((uint)st & ~(0x00C00000u | 0x00040000u | 0x00080000u | 0x00020000u | 0x00010000u)) | 0x80000000u);
+        SetWindowLong(gMain, -16, st);
+        SetWindowPos(gMain, IntPtr.Zero, cellX, cellY, cellW, cellH, 0x0020 | 0x0040);
+    }
     public static string stateCommand(int pid, string which, int slot) {
-        IntPtr main = IntPtr.Zero;
-        EnumWindows((w, l) => { uint q; GetWindowThreadProcessId(w, out q); if (q == pid && GetMenu(w) != IntPtr.Zero) { main = w; return false; } return true; }, IntPtr.Zero);
+        IntPtr main = mainOf(pid);
         if (main == IntPtr.Zero) return "no main window";
-        IntPtr bar = GetMenu(main);
+        IntPtr bar = gBar;
         for (int i = 0; i < GetMenuItemCount(bar); i++) {
             if (!menuText(bar, i).StartsWith("Emulation")) continue;
             IntPtr em = GetSubMenu(bar, i);
@@ -126,10 +148,9 @@ public static class Sweep {
     }
     // any menu item whose text starts with the prefix, in any top-level menu (Emulation > Pause / Play, Take Screenshot)
     public static string menuCmd(int pid, string prefix) {
-        IntPtr main = IntPtr.Zero;
-        EnumWindows((w, l) => { uint q; GetWindowThreadProcessId(w, out q); if (q == pid && GetMenu(w) != IntPtr.Zero) { main = w; return false; } return true; }, IntPtr.Zero);
+        IntPtr main = mainOf(pid);
         if (main == IntPtr.Zero) return "no main window";
-        IntPtr bar = GetMenu(main);
+        IntPtr bar = gBar;
         for (int i = 0; i < GetMenuItemCount(bar); i++) {
             IntPtr em = GetSubMenu(bar, i);
             for (int j = 0; j < GetMenuItemCount(em); j++) {
@@ -195,6 +216,8 @@ public static class Sweep {
             var sw = Stopwatch.StartNew();
             while (ram == 0 && !p.HasExited && sw.ElapsedMilliseconds < 120000) { System.Threading.Thread.Sleep(100); ram = findRam(); }
             if (ram == 0) return "ERROR no game memory";
+            for (int sw2 = 0; sw2 < 100 && mainOf(p.Id) == IntPtr.Zero; sw2++) System.Threading.Thread.Sleep(100);
+            strip(p.Id);
             if (loadState > 0) {
                 // load the savestate made at Sirena's start through Dolphin's menu, then check only Sirena
                 System.Threading.Thread.Sleep(5000);
@@ -381,6 +404,7 @@ $t0 = Get-Date
 $st = Join-Path $dol "User\StateSaves\GMSJ01.s0$loadstate"
 if ($loadstate -gt 0 -and -not (Test-Path $st)) { Log "waiting for the savestate $st"; exit 2 }
 if ($true) {
+[Sweep]::cellX = $wx; [Sweep]::cellY = $wy; [Sweep]::cellW = $ww; [Sweep]::cellH = $wh
 $r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate, $pokes, $kill, $grab, $logall, $shots, $saveat, $follow, $mlog, $savefield, $splitshots, (Join-Path $dol 'User\ScreenShots\GMSJ01'), $seedk) }
 $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
 Log "result $name : $r ($mins min)"

@@ -8,7 +8,7 @@ What it does
   A run where Mario grabs the Sirena Shine is a WINNER.
 
 Control
-  Double-click sweep_control.cmd. The window shows progress, the rate, the time left and the number of winners.
+  Double-click sweep_control.cmd: a coloured dot appears in the taskbar notification area (green running, yellow paused, red stopped); click it for the menu. It shows progress, the rate, the time left and the number of winners.
     Pause  - each Dolphin finishes its current run, then no new runs start (use this when you need the PC).
     Start  - continue. If the workers aren't running (after a reboot, say) or are stuck, Start relaunches them.
   It always picks up where it left off: sweep_results.txt records every finished value.
@@ -28,7 +28,7 @@ To see the runs that got furthest (PowerShell in this folder):
   Get-Content sweep_results.txt | Select-String '^split_' | Sort-Object { [int]([regex]::Match($_, 'field (\d+)').Groups[1].Value) } | Select-Object -Last 20
 
 Capturing the winners (continuing the TAS capture)
-  Press "Capture winners" in the control window, or double-click capture_winners.cmd. For every winner without a
+  Pick "Capture winners" in the dot's menu, or double-click capture_winners.cmd. For every winner without a
   finished capture it loads the Sirena savestate, sets that winner's split value and records the rest of the movie
   exactly as capture3 did (speed 1, every tick and frame), up to six at once in the same 3x2 grid, each with its own
   Dolphin copy (Dolphin-x64-c0..c5). The sweep pauses while they run (its current runs finish first) and goes on after.
