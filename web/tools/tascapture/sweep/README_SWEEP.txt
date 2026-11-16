@@ -18,6 +18,10 @@ After a reboot
   Double-click sweep_control.cmd, press Start.
 
 Where the results are
+  sweep_results.csv    THE SPREADSHEET (opens in Excel): attempt number, split value, outcome (hit / fail / WINNER /
+                       error), the field of the first hit, minutes, worker, time finished. Sort or filter it freely.
+  The attempt number is shown in the top-right corner of each Dolphin panel ("#1234  (value 18992)"), so a winner
+  caught on stream can be found and clipped by its number; winners.txt and the spreadsheet carry the same number.
   winners.txt          one line per Shine grab: time | name (split_<value>) | result | the queue line
   sweep\winners\       the full log of each winner
   sweep_results.txt    every finished run (FAIL hit at field N ... = Mario's first hit; higher N = got further)

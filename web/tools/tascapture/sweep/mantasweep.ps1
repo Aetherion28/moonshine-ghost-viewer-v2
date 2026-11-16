@@ -36,10 +36,10 @@ if (Test-Path $results) { foreach ($l in [IO.File]::ReadAllLines($results)) { $f
     if ($f.Count -gt 1 -and $f[1].Trim().StartsWith('ERROR')) { $errs[$n] = 1 + [int]$errs[$n]; if ($errs[$n] -ge 3) { $done[$n] = 1 } } else { $done[$n] = 1 } } }
 $ncl = @{}
 if (Test-Path $claims) { foreach ($l in [IO.File]::ReadAllLines($claims)) { if ($l.StartsWith('RESET')) { $ncl = @{}; continue }; $n = ($l -split '\|')[0].Trim(); if ($n) { $ncl[$n] = 1 + [int]$ncl[$n] } } }
-$entry = $null
+$entry = $null; $num = 0; $attemptNo = 0
 foreach ($l in [IO.File]::ReadAllLines($queue)) {
     $t = $l.Trim(); if (-not $t -or $t.StartsWith('#')) { continue }
-    $n = ($t -split ';')[0].Trim(); if (-not $done.ContainsKey($n) -and [int]$ncl[$n] -le [int]$nres[$n]) { $entry = $t; break }
+    $n = ($t -split ';')[0].Trim(); if ($n -like 'split_*') { $num++ }; if (-not $done.ContainsKey($n) -and [int]$ncl[$n] -le [int]$nres[$n]) { $entry = $t; $attemptNo = $num; break }
 }
 if ($entry) { Add-Content -Path $claims -Value ((($entry -split ';')[0].Trim()) + " | w$Worker | " + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) }
 } finally { $lk.Close() }
@@ -88,7 +88,27 @@ using System;
 using System.IO;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+public class SweepLabel : System.Windows.Forms.Form {
+    protected override bool ShowWithoutActivation { get { return true; } }
+    protected override System.Windows.Forms.CreateParams CreateParams { get { var cp = base.CreateParams; cp.ExStyle |= 0x08000000 | 0x80 | 0x20 | 0x8; return cp; } }
+}
 public static class Sweep {
+    // the attempt's number shown in its cell's top-right corner (for clipping a winner on stream)
+    public static string label = "";
+    static SweepLabel ov;
+    static void overlay() {
+        if (label.Length == 0 || cellW <= 0) return;
+        var t = new System.Threading.Thread(() => {
+            var f = new SweepLabel(); f.FormBorderStyle = System.Windows.Forms.FormBorderStyle.None; f.ShowInTaskbar = false; f.TopMost = true;
+            f.StartPosition = System.Windows.Forms.FormStartPosition.Manual; f.BackColor = System.Drawing.Color.Black;
+            var l = new System.Windows.Forms.Label(); l.AutoSize = true; l.Font = new System.Drawing.Font("Segoe UI", 12f, System.Drawing.FontStyle.Bold);
+            l.ForeColor = System.Drawing.Color.White; l.BackColor = System.Drawing.Color.Black; l.Text = label; l.Padding = new System.Windows.Forms.Padding(6, 2, 6, 2);
+            f.Controls.Add(l); f.AutoSize = true; f.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
+            f.Load += (s2, e2) => { f.Location = new System.Drawing.Point(cellX + cellW - f.Width, cellY); };
+            ov = f; System.Windows.Forms.Application.Run(f); });
+        t.SetApartmentState(System.Threading.ApartmentState.STA); t.IsBackground = true; t.Start();
+    }
+    static void overlayClose() { try { var f = ov; if (f != null) f.BeginInvoke((Action)(() => f.Close())); } catch { } }
     [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int a, bool b, int pid);
     [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] buf, IntPtr n, out IntPtr r);
     [DllImport("kernel32.dll")] static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] buf, IntPtr n, out IntPtr w);
@@ -217,7 +237,7 @@ public static class Sweep {
             while (ram == 0 && !p.HasExited && sw.ElapsedMilliseconds < 120000) { System.Threading.Thread.Sleep(100); ram = findRam(); }
             if (ram == 0) return "ERROR no game memory";
             for (int sw2 = 0; sw2 < 100 && mainOf(p.Id) == IntPtr.Zero; sw2++) System.Threading.Thread.Sleep(100);
-            strip(p.Id);
+            strip(p.Id); overlay();
             if (loadState > 0) {
                 // load the savestate made at Sirena's start through Dolphin's menu, then check only Sirena
                 System.Threading.Thread.Sleep(5000);
@@ -391,12 +411,12 @@ public static class Sweep {
             }
         } finally {
             try { if (!p.HasExited) { p.Kill(); p.WaitForExit(20000); } } catch { }
-            track.Close(); log.Close();
+            overlayClose(); track.Close(); log.Close();
         }
     }
 }
 "@
-Add-Type -TypeDefinition $src -ReferencedAssemblies System.Drawing 
+Add-Type -TypeDefinition $src -ReferencedAssemblies System.Drawing, System.Windows.Forms 
 $safe = $name -replace '[^A-Za-z0-9_-]', '_'
 New-Item -ItemType Directory -Force -Path (Join-Path $here 'sweep') | Out-Null
 $dargs = "-b -e `"$iso`" -m `"$dtm`""
@@ -404,11 +424,18 @@ $t0 = Get-Date
 $st = Join-Path $dol "User\StateSaves\GMSJ01.s0$loadstate"
 if ($loadstate -gt 0 -and -not (Test-Path $st)) { Log "waiting for the savestate $st"; exit 2 }
 if ($true) {
-[Sweep]::cellX = $wx; [Sweep]::cellY = $wy; [Sweep]::cellW = $ww; [Sweep]::cellH = $wh
+$value = $name -replace '^split_', ''
+[Sweep]::label = $(if ($attemptNo -gt 0) { "#$attemptNo  (value $value)" } else { $name }); [Sweep]::cellX = $wx; [Sweep]::cellY = $wy; [Sweep]::cellW = $ww; [Sweep]::cellH = $wh
 $r = [Sweep]::Run((Join-Path $dol 'Dolphin.exe'), $dargs, (Join-Path $here "sweep\$safe.txt"), $log, $loadstate, $savestate, $pokes, $kill, $grab, $logall, $shots, $saveat, $follow, $mlog, $savefield, $splitshots, (Join-Path $dol 'User\ScreenShots\GMSJ01'), $seedk) }
 $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
 Log "result $name : $r ($mins min)"
-$lk = Lock; try { Add-Content -Path $results -Value "$name | $r | $mins min | $entry (w$Worker)" } finally { $lk.Close() }
+$csv = Join-Path $here 'sweep_results.csv'
+$hitf = if ($r -match 'field (\d+)') { $matches[1] } else { '' }
+$kind = if ($r.StartsWith('SUCCESS')) { 'WINNER' } elseif ($r.StartsWith('FAIL hit')) { 'hit' } elseif ($r.StartsWith('ERROR')) { 'error (retried)' } elseif ($r.StartsWith('FAIL')) { 'fail' } else { 'other' }
+$rq = $r -replace '"', "'"
+$lk = Lock; try { Add-Content -Path $results -Value "$name | $r | $mins min | $entry (w$Worker, #$attemptNo)"
+    if (-not (Test-Path $csv)) { Add-Content -Path $csv -Value 'attempt,value,outcome,field,minutes,worker,finished,result' }
+    if ($name -like 'split_*') { Add-Content -Path $csv -Value ("$attemptNo,$value,$kind,$hitf,$mins,w$Worker," + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ",`"$rq`"") } } finally { $lk.Close() }
 if ($r.StartsWith('SUCCESS') -and ($kill -or $grab)) {
     # a forced pass: capture3 doesn't force yet, so stop here for it to be taught (stop.txt ends the loop)
     Set-Content -Path (Join-Path $here 'FORCED_WINNER.txt') -Value "$entry`r`n$r"
@@ -419,6 +446,6 @@ if ($r.StartsWith('SUCCESS') -and ($kill -or $grab)) {
 if ($r.StartsWith('SUCCESS')) {
     $wd = Join-Path $here 'sweep\winners'; New-Item -ItemType Directory -Force -Path $wd | Out-Null
     Copy-Item (Join-Path $here "sweep\$safe.txt") (Join-Path $wd "$safe.txt") -Force
-    $lk = Lock; try { Add-Content -Path (Join-Path $here 'winners.txt') -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + " | $name | $r | $entry") } finally { $lk.Close() }
+    $lk = Lock; try { Add-Content -Path (Join-Path $here 'winners.txt') -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + " | #$attemptNo | $name | $r | $entry") } finally { $lk.Close() }
 }
 exit 0
