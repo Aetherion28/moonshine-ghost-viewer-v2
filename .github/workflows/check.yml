@@ -23,6 +23,8 @@ jobs:
       - run: npm ci
       - name: Type-check (no new errors)
         run: node tools/ci/typecheck.mjs
+      - name: The page's own script has no undefined names
+        run: node tools/ci/pagescript.mjs
       - name: site/ is a fresh build of the sources
         run: node tools/ci/sitecheck.mjs
       - name: The page loads without errors

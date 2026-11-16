@@ -98,6 +98,7 @@ function parseSmsGhost(buffer) {
   const sampleOff = dv.getUint32(0xc4);
   const sampleSize = dv.getUint32(0xc8);
   if (segCount < 1 || segCount > 64) fail('Ghost has an invalid segment count.');
+  if (segTable + segCount * 0x20 > bytes.length) fail('Ghost segment table is out of bounds.');
   if (sampleOff + sampleSize > bytes.length || sampleSize !== header.sampleCount * 16) fail('Ghost sample data is out of bounds.');
 
   const be24s = (o) => { const v = (bytes[o] << 16) | (bytes[o + 1] << 8) | bytes[o + 2]; return v & 0x800000 ? v - 0x1000000 : v; };

@@ -241,7 +241,7 @@ aside h2 { margin: 0; font-size: 11px; font-weight: 800; text-transform: upperca
 .ghost .meta { grid-column: 2 / 4; font-size: 12px; color: var(--muted); font-family: var(--mono); display: flex; flex-wrap: wrap; gap: 2px 12px; }
 .ghost .tag { font-size: 10px; font-family: var(--display); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
   border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--muted); }
-.ghost .actions { display: flex; gap: 4px; }
+.ghost .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 132px; }   /* (three buttons take two rows, so the name keeps room) */
 .ghost .actions button { padding: 2px 7px; font-size: 12px; }
 .ghost.off .name, .ghost.off .meta { opacity: 0.45; }
 .warn { color: var(--danger); font-size: 12px; grid-column: 2 / 4; }
@@ -629,14 +629,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="vendor/three/GLTFLoader.js"></script>
 <script src="vendor/three/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1794801601007"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1794801601007"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1794801601007"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1794801601007"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1794801601007"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1794801601007"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1794801601007"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1794801601007"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1794805425079"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1794805425079"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1794805425079"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1794805425079"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1794805425079"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1794805425079"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1794805425079"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1794805425079"><\/script>');
 </script>
 <script>
 (() => {
@@ -5997,6 +5997,8 @@ document.write('<script src="' + V2 + 'hud.js?v=1794801601007"><\/script>');
   // (the game layer's LiveRunner: the player Mario and the sim camera) from the gamepad, one game
   // frame per 1/29.97 s; a loaded ghost stops it and the gamepad is ignored.
   const livePad = { on: false, id: '', index: -1, clock: 0, frames: 0, reset: 0, active: false, runner: null, rec: false, last: null, ease: null, goKey: '', note: '' };
+  /** forgets the last live recording and frees its download URL */
+  function dropLiveLast() { if (livePad.last && livePad.last.url) URL.revokeObjectURL(livePad.last.url); livePad.last = null; }
   const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
   let konamiAt = 0;
   window.addEventListener('keydown', (e) => {
@@ -6011,7 +6013,7 @@ document.write('<script src="' + V2 + 'hud.js?v=1794801601007"><\/script>');
     on = !!on && livePad.active;
     if (on === livePad.rec) return null;
     let out = null;
-    if (on) { livePad.rec = true; livePad.reset++; livePad.frames = 0; livePad.clock = 0; livePad.last = null; }
+    if (on) { livePad.rec = true; livePad.reset++; livePad.frames = 0; livePad.clock = 0; dropLiveLast(); }
     else {
       livePad.rec = false;
       const st = livePad.runner && livePad.runner.stage, [a, e] = objectsKey ? objectsKey.split('|').pop().split(':').map(Number) : [0, 0];
@@ -6020,6 +6022,7 @@ document.write('<script src="' + V2 + 'hud.js?v=1794801601007"><\/script>');
       try { buf = livePad.runner ? livePad.runner.takeRecording({ area: a, episode: e, region: ({ J: 0, E: 1, P: 2 })[id[3]] ?? 0, gameId: id.slice(0, 4), discRevision: (gameLayer && gameLayer.fs && gameLayer.fs.revision) || 0 }) : null; } catch (err) { console.warn('[live] record', err); }
       if (buf) {
         const name = `live-${ghostRouteLabel({ area: a, episode: e, parentArea: 0xff, variant: -1 })}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.smsghost`;
+        dropLiveLast();
         livePad.last = { buf, name, url: URL.createObjectURL(new Blob([buf], { type: 'application/octet-stream' })), qf: st ? st.qf : 0 };
         out = { name, size: buf.byteLength };
       }
@@ -7894,6 +7897,20 @@ void main() {
       jpaBatches = new Map();
     }
     // (a batch per effect; effects loaded later, e.g. Gooper Blooper's, get theirs when they come)
+    if (jpaBatches.size !== Object.keys(JPA_RES).length) {
+      // (a stage's own effects, "scene:<file>", are exported again with each stage: the batch of the one replaced goes)
+      const live = new Set(Object.values(JPA_RES));
+      jpaBatches.forEach((old, res) => {
+        if (live.has(res)) return;
+        jpaBatches.delete(res);
+        if (old.mesh.parent) old.mesh.parent.remove(old.mesh);
+        old.mesh.geometry.dispose();
+        [].concat(old.mesh.material).forEach((m) => {
+          for (const u of Object.values(m.uniforms || {})) if (u && u.value && u.value.isTexture && u.value !== jpaScreen) u.value.dispose();
+          m.dispose();
+        });
+      });
+    }
     if (jpaBatches.size !== Object.keys(JPA_RES).length) Object.keys(JPA_RES).forEach((k) => {
       if (jpaBatches.has(JPA_RES[k])) return;
       const b = new JPA.Batch(JPA_RES[k], k.startsWith('bw_') || k.startsWith('bg_') ? 2000 : 6000, jpaScreen);
@@ -8007,7 +8024,8 @@ void main() {
     try { data = (window.GameTrace && window.GameTrace.isMstr(buffer)) ? window.GameTrace.parseMstrGhost(buffer, fileName) : parseSmsGhost(buffer); }
     catch (err) {
       // (a .msgt without the replay header was tried as a ghost: say what it isn't)
-      showNotice(/\.msgt$/i.test(fileName) && /missing SGHF header/.test(err.message) ? `${fileName} isn't a Moonshine replay (it has no replay header).` : `${fileName}: ${err.message}`);
+      showNotice(/\.msgt$/i.test(fileName) && /missing SGHF header/.test(err.message) ? `${fileName} isn't a Moonshine replay (it has no replay header).`
+        : err instanceof RangeError || err instanceof TypeError ? `${fileName} is damaged and can't be read.` : `${fileName}: ${err.message}`);
       return null;
     }
     const color = GHOST_COLORS[ghosts.length % GHOST_COLORS.length];
@@ -8034,6 +8052,7 @@ void main() {
     waterScene.remove(g.water);
     if (g.appear) scene.remove(g.appear);
     ghosts.splice(ghosts.indexOf(g), 1);
+    if (voiceLast.g === g) voiceLast = { g: null, t: -1 };   // (the removed ghost isn't kept alive by the voice cursor)
     refreshDuration();
     renderGhostList();
     updateMapNotice();
@@ -8646,7 +8665,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1794801601007';
+  const BUILD_STAMP = '1794805425079';
   // "Report a problem" opens a new GitHub issue with what a report needs filled in. The reader sees
   // and can edit all of it before sending; nothing is sent from here.
   document.querySelectorAll('.reportLink').forEach((a) => a.addEventListener('click', () => {
@@ -9529,7 +9548,7 @@ void main() {
 
   // ---------------------------------------------------------------- UI wiring
   // (live play: the Play button restarts the live stage, as starting a recording does, without recording)
-  $('play').onclick = () => { if (livePad.active) { livePad.reset++; livePad.frames = 0; livePad.clock = 0; livePad.last = null; return; } setPlaying(!playing); };
+  $('play').onclick = () => { if (livePad.active) { livePad.reset++; livePad.frames = 0; livePad.clock = 0; dropLiveLast(); return; } setPlaying(!playing); };
   // A plain click on the stage (not a drag to orbit) plays or pauses, like a video player.
   (() => {
     let down = null;
@@ -9612,7 +9631,7 @@ void main() {
   const dgRpc = (fn, body) => fetch(`${DG.url}/rest/v1/rpc/${fn}`, { method: 'POST',
     headers: { apikey: DG.key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     .then((r) => r.ok ? r.json() : r.text().then((t) => { throw new Error(t || r.status); }));
-  const dgFileUrl = (path) => `${DG.url}/storage/v1/object/public/ghosts/${path.split('/').map(encodeURIComponent).join('/')}`;
+  const dgFileUrl = (path) => `${DG.url}/storage/v1/object/public/ghosts/${path.split('/').filter((p) => p && p !== '.' && p !== '..').map(encodeURIComponent).join('/')}`;   // (no climbing out of the ghosts folder from a link)
   const fmtMs = (ms) => { if (ms == null) return ''; const m = Math.floor(ms / 60000), sec = (ms % 60000) / 1000;
     return m ? `${m}:${sec.toFixed(3).padStart(6, '0')}` : sec.toFixed(3); };
   // Ghosts older than v5 carry no controller inputs, which the viewer needs: they're not listed.

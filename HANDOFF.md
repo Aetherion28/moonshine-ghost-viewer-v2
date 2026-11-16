@@ -44,7 +44,14 @@ This file is the short version: what was just done, what is open, where everythi
   A background tab is throttled to near nothing (timers and rAF), so long scripted sweeps there stall; use headless for sweeps, Chrome for looking.
   Local files can't be uploaded through the extension (only files shared with the session), so in Chrome use the shared ghosts.
 
-## What the last session did (2026-11-15, third part, live on main)
+## What the last session did (2026-11-16: a deep search, live on main)
+
+- Two leaks fixed: the sim's byte-keyed caches (WeakMaps now) and the particle batches that grew with every stage load. Memory is flat across repeated stage loads.
+- `tools/smoke/leak.mjs` hunts leaks by scenario (traces, stages, options, scrub, split) and names each survivor's holder; `tools/ci/pagescript.mjs` (in CI) catches undefined names in viewer.html's own script.
+- Parsers fuzzed (3,000 ghosts, 300 replays): no hangs; one raw error made a plain message. Share links can't climb out of the ghosts folder. The ghost list's buttons wrap.
+- Details: `CLAUDE.md` fix log, 2026-11-16.
+
+## The session before (2026-11-15, third part, live on main)
 
 - **Report a problem** links (the disc box and the side panel) open a GitHub issue with the build, browser, graphics, disc version and recordings filled in.
 - WIA and RVZ in every compression: LZMA, LZMA2 (`web/src/lzma.ts`) and bzip2 (`web/src/bzip2.ts`), each checked byte for byte against the ISO (Purge is written but untested).
