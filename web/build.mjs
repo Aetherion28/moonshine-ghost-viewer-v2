@@ -53,9 +53,23 @@ const audio = [
   // the game's HUD (hud.js)
   { ...opts, entryPoints: [path.join(here, 'src/hud/index.ts')], outfile: path.join(here, '../site/hud.js'), metafile: false },
 ];
+// the service worker (sw.js): the site's files to keep for offline use, and a version that changes
+// when any of them does (not with the build stamp, so an unchanged site builds the same sw.js)
+function writeServiceWorker() {
+  const site = path.join(here, '../site');
+  const files = [];
+  const walk = (d) => { for (const f of fs.readdirSync(d).sort()) { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else files.push(path.relative(site, p).split(path.sep).join('/')); } };
+  walk(site);
+  const keep = files.filter((f) => !/\.map$/.test(f) && !['build.txt', 'sw.js', '.nojekyll'].includes(f));
+  const h = crypto.createHash('sha1');
+  for (const f of keep) { h.update(f); h.update(f === 'index.html' ? fs.readFileSync(path.join(here, 'viewer.html')) : fs.readFileSync(path.join(site, f))); }
+  const list = ['./', ...keep];
+  fs.writeFileSync(path.join(site, 'sw.js'), fs.readFileSync(path.join(here, 'sw.template.js'), 'utf8').replace('__VERSION__', h.digest('hex').slice(0, 12)).replace('__FILES__', JSON.stringify(list, null, 1)));
+}
 if (process.argv.includes('--watch')) { await (await esbuild.context(opts)).watch(); for (const a of audio) await (await esbuild.context(a)).watch(); }
 else {
   const r = await esbuild.build(opts);
   for (const a of audio) await esbuild.build(a);
   if (process.argv.includes('--meta')) fs.writeFileSync(path.join(here, 'meta.json'), JSON.stringify(r.metafile));
+  writeServiceWorker();
 }

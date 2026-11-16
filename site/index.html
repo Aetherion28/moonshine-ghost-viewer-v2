@@ -25,6 +25,12 @@ window.V2 = location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, '');
 <meta property="og:image:alt" content="Moonshine Ghost Viewer: pixel-art sun, ship, fish and palm on green">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="favicon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#a48340">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ghost Viewer">
 <!-- three.js r128 and the fonts are served from the site itself (vendor/, each with its licence) -->
 <link rel="stylesheet" href="vendor/fonts/fonts.css">
 <style>
@@ -145,6 +151,14 @@ header .seg button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--trim
 .inputs .solid { fill: var(--in); }
 .notice { position: absolute; right: 12px; top: 56px; max-width: min(320px, 70%); font-size: 13px;
   background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 8px 10px; }
+.installBar { position: fixed; left: 12px; bottom: 12px; z-index: 30; max-width: min(380px, calc(100vw - 24px)); background: var(--panel); color: var(--fg); border-radius: 6px; padding: 12px 14px; font-size: 13px; box-shadow: 0 0 0 2px var(--trim), 4px 5px 0 2px var(--drop); }
+.installBar[hidden] { display: none; }
+.installBar p { margin: 0 0 10px; }
+.installBar .row { display: flex; gap: 8px; justify-content: flex-end; }
+.installBar button { border: 0; padding: 6px 12px; border-radius: 8px; background: var(--panel); color: var(--fg); font-weight: 800; box-shadow: 0 0 0 2px var(--trim); cursor: pointer; }
+.installBar button.primary { background: var(--accent); color: var(--accent-ink); }
+#installDlg .installBody { padding: 4px 18px 6px; font-size: 14px; }
+#installDlg .installBody li { margin: 4px 0; }
 .discGate { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 16px; background: var(--bg); }
 .discGate[hidden] { display: none; }
 .discGateBox { max-width: 460px; background: var(--panel); border: 0; border-radius: 6px; padding: 20px 22px; box-shadow: 0 0 0 2px var(--trim), 4px 5px 0 2px var(--drop); }
@@ -394,6 +408,7 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
     <nav class="siteLinks" aria-label="Related sites">
       <a class="btn" href="https://dogecyanide.github.io/moonshine-site/" target="_blank" rel="noopener noreferrer" title="Moonshine, the practice mod that records these ghosts (opens in a new tab)">Moonshine<span class="ext" aria-hidden="true">&#x2197;&#xFE0E;</span></a>
       <a class="btn" href="https://zeldocto.github.io/delfino-ghosts/" target="_blank" rel="noopener noreferrer" title="Delfino Ghosts, the ghost database (opens in a new tab)">Delfino<span class="long">Ghosts</span><span class="ext" aria-hidden="true">&#x2197;&#xFE0E;</span></a>
+      <button type="button" class="btn" id="installBtn" hidden title="Install this as an app that also works offline">Install app</button>
     </nav>
     <div class="seg themeSeg" role="group" aria-label="Theme">
       <button type="button" data-theme-set="light" aria-pressed="false" aria-label="Light theme" title="Light theme">&#x2600;&#xFE0E;</button>
@@ -503,6 +518,17 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
   </div>
 
 
+  <div class="installBar" id="installBar" role="region" aria-label="Install the app" hidden>
+    <p><b>Install Moonshine Ghost Viewer as an app?</b> It opens in its own window and works offline once your game is loaded. You'll only be asked this once; the <b>Install app</b> button stays at the top.</p>
+    <div class="row"><button type="button" id="installNo">No thanks</button><button type="button" class="primary" id="installYes">Install</button></div>
+  </div>
+  <dialog class="browse" id="installDlg" aria-labelledby="installTitle" style="width:min(520px,calc(100vw - 32px))">
+    <form method="dialog">
+      <header><h2 id="installTitle">Install as an app</h2><button value="close" aria-label="Close">&times;</button></header>
+      <div class="installBody" id="installBody"></div>
+      <footer><span></span><span></span><button value="close" class="primary">Done</button></footer>
+    </form>
+  </dialog>
   <dialog class="browse ctrls" id="ctrlDlg" aria-labelledby="ctrlTitle">
     <form method="dialog">
       <header><h2 id="ctrlTitle">Controls</h2><button value="close" aria-label="Close">&times;</button></header>
@@ -633,14 +659,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="vendor/three/GLTFLoader.js"></script>
 <script src="vendor/three/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1794850321594"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1794850321594"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1794850321594"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1794850321594"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1794850321594"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1794850321594"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1794850321594"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1794850321594"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1794865930675"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1794865930675"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1794865930675"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1794865930675"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1794865930675"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1794865930675"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1794865930675"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1794865930675"><\/script>');
 </script>
 <script>
 (() => {
@@ -8669,7 +8695,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1794850321594';
+  const BUILD_STAMP = '1794865930675';
   // "Report a problem" opens a new GitHub issue with what a report needs filled in. The reader sees
   // and can edit all of it before sending; nothing is sent from here.
   document.querySelectorAll('.reportLink').forEach((a) => a.addEventListener('click', () => {
@@ -10453,5 +10479,57 @@ void main() {
     openShared().catch((e) => console.warn('[share]', e));
   }
   boot();
+
+  // Installable app: a manifest, icons and a service worker (sw.js) that keeps the site's own files, so the
+  // installed app opens offline. The page asks once (a flag in localStorage, set when the question is shown);
+  // the Install button stays in the header for anyone who said no, or whose browser can't ask.
+  (function installApp() {
+    const KEY = 'ghostViewer.installAsked';
+    const standalone = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: window-controls-overlay)').matches || navigator.standalone === true;
+    const secure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if (standalone()) return;
+    const ua = navigator.userAgent, iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const firefox = /Firefox|FxiOS/.test(ua), safari = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Android/.test(ua);
+    const android = /Android/.test(ua), mac = /Macintosh/.test(ua) && !iOS;
+    let asked = false; try { asked = !!localStorage.getItem(KEY); } catch (e) { }
+    let deferred = null, shown = false;
+    const btn = $('installBtn'), bar = $('installBar');
+    const markAsked = () => { asked = true; try { localStorage.setItem(KEY, '1'); } catch (e) { } };
+    if (secure && 'serviceWorker' in navigator) {
+      const had = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[sw]', e));
+      let first = !had;
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (first) { first = false; return; } showNotice('The viewer was updated. Reload the page to use the new version.'); });
+    }
+    function steps() {
+      const l = (items) => '<ol>' + items.map((t) => '<li>' + t + '</li>').join('') + '</ol>';
+      if (iOS) return '<p>On iPhone and iPad, install it from Safari:</p>' + l(['Tap the <b>Share</b> button (the square with an arrow).', 'Choose <b>Add to Home Screen</b>.', 'Tap <b>Add</b>.']) + (safari ? '' : '<p>Other browsers on iOS can\'t do this: open the page in Safari first.</p>');
+      if (android && firefox) return '<p>In Firefox on Android: open the menu (<b>&#8942;</b>), choose <b>Install</b> (or <b>Add to Home screen</b>).</p>';
+      if (android) return '<p>Open the browser menu (<b>&#8942;</b>) and choose <b>Install app</b> (or <b>Add to Home screen</b>).</p>';
+      if (mac && safari) return '<p>In Safari 17 or newer, choose <b>File &rarr; Add to Dock</b>.</p>';
+      if (firefox) return '<p>Firefox on a computer can\'t install web apps. Open this page in Chrome, Edge or Brave and use the install icon in the address bar, or in Safari on a Mac use <b>File &rarr; Add to Dock</b>.</p>';
+      return '<p>In Chrome, Edge or Brave, look for the install icon at the right end of the address bar, or open the menu and choose <b>Install Moonshine Ghost Viewer</b> (in Chrome: <b>Cast, save and share &rarr; Install page as app</b>).</p>';
+    }
+    async function install() {
+      if (deferred) {
+        const d = deferred; deferred = null;
+        try { d.prompt(); await d.userChoice; } catch (e) { }
+        return;
+      }
+      $('installBody').innerHTML = steps() + '<p style="color:var(--muted)">Once installed it opens in its own window and works offline. Load your game once and it is kept in the app\'s storage; shared ghosts from Delfino Ghosts still need a connection.</p>';
+      $('installDlg').showModal();
+    }
+    function ask() {
+      if (asked || shown || standalone()) return;
+      shown = true; markAsked(); bar.hidden = false;
+    }
+    btn.hidden = false;
+    btn.addEventListener('click', () => { bar.hidden = true; install(); });
+    $('installYes').addEventListener('click', () => { bar.hidden = true; install(); });
+    $('installNo').addEventListener('click', () => { bar.hidden = true; });
+    window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferred = e; setTimeout(ask, 8000); });
+    window.addEventListener('appinstalled', () => { deferred = null; bar.hidden = true; btn.hidden = true; markAsked(); });
+    if (iOS && safari) setTimeout(ask, 8000);
+  })();
 })();
 </script>

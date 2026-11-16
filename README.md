@@ -32,6 +32,9 @@ own copy of the game.
   display, splits and an info box (position, speed, animation, FLUDD).
 - Clips: save a stretch of a ghost as an MP4 video.
 - Share links to a moment (ghost, time and camera) for ghosts from Delfino Ghosts.
+- Installable as an app (Chrome, Edge, Android, iPhone and iPad via Safari's Add to Home Screen, Safari
+  on a Mac via Add to Dock; there is an **Install app** button at the top). Once installed it opens
+  offline; the page asks about installing only once.
 - Extras: the invisible triggers and cubes, model names, a wireframe stage, Mario drawn as Shadow
   Mario, Il Piantissimo and others, and the game's water mirrors (experimental).
 

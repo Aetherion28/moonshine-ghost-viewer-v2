@@ -1,0 +1,18 @@
+{
+  "id": "./",
+  "name": "Moonshine Ghost Viewer",
+  "short_name": "Ghost Viewer",
+  "description": "Watch Super Mario Sunshine ghosts and replays recorded with Moonshine, played back in the game's own stages from your own copy of the game.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#dcdbb2",
+  "theme_color": "#a48340",
+  "categories": ["games", "utilities"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
