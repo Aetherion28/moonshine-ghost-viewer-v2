@@ -207,7 +207,8 @@ export function parseMstrGhost(buf: ArrayBuffer, name = 'trace'): TraceGhost {
             }
         },
     });
-    if (!summary.complete) warnings.push(`The replay stopped early (producer error ${summary.producerError}); it plays up to where it ends.`);
+    if (summary.cut) warnings.push(`The replay file ends early or is damaged (it may not have finished copying); it plays up to where its data stops.`);
+    else if (!summary.complete) warnings.push(`The replay stopped early (producer error ${summary.producerError}); it plays up to where it ends.`);
     if (!ticks.length) throw new MstrError('The replay has no Mario movement updates.');
 
     // Ghosts are taken to be 60 Hz: the game code always runs at the 60 Hz frame rate.

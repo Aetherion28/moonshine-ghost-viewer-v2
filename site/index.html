@@ -628,14 +628,14 @@ dialog.browse::backdrop { background: rgba(0,0,0,.45); }
 <script src="vendor/three/GLTFLoader.js"></script>
 <script src="vendor/three/SkeletonUtils.js"></script>
 <script>
-document.write('<script src="' + V2 + 'ghost.js?v=1794791996192"><\/script>');
-document.write('<script src="' + V2 + 'mario_anims.js?v=1794791996192"><\/script>');
-document.write('<script src="' + V2 + 'mario_rig.js?v=1794791996192"><\/script>');
-document.write('<script src="' + V2 + 'jpa.js?v=1794791996192"><\/script>');
-document.write('<script src="' + V2 + 'gesso.js?v=1794791996192"><\/script>');
-document.write('<script src="' + V2 + 'game.js?v=1794791996192"><\/script>');
-document.write('<script src="' + V2 + 'audio.js?v=1794791996192"><\/script>');
-document.write('<script src="' + V2 + 'hud.js?v=1794791996192"><\/script>');
+document.write('<script src="' + V2 + 'ghost.js?v=1794794092029"><\/script>');
+document.write('<script src="' + V2 + 'mario_anims.js?v=1794794092029"><\/script>');
+document.write('<script src="' + V2 + 'mario_rig.js?v=1794794092029"><\/script>');
+document.write('<script src="' + V2 + 'jpa.js?v=1794794092029"><\/script>');
+document.write('<script src="' + V2 + 'gesso.js?v=1794794092029"><\/script>');
+document.write('<script src="' + V2 + 'game.js?v=1794794092029"><\/script>');
+document.write('<script src="' + V2 + 'audio.js?v=1794794092029"><\/script>');
+document.write('<script src="' + V2 + 'hud.js?v=1794794092029"><\/script>');
 </script>
 <script>
 (() => {
@@ -1422,6 +1422,7 @@ document.write('<script src="' + V2 + 'hud.js?v=1794791996192"><\/script>');
   const PICKUP_TINT = { coin: 0xffc21a, coin_blue: 0x3d7dff, coin_red: 0xff2b2b, shine: 0xffd640 };
   let objNoFludd = false, objSpawn = null;
   let objTrig = [];
+  let objectsFailed = '';   // the objects key whose load failed (the stage can't be drawn without them)
   let objectsGroup = null, objectsKey = '', objList = [], objNodes = [], wireMeshes = [], objDyn = {}, objProtos = {};
   // The stage's cameras: its camera map tools (name -> [demo length (ticks), mode, x, y, z, pitch,
   // yaw, flags]) and its demo camera BCKs (map/camera, by name).
@@ -1593,7 +1594,7 @@ document.write('<script src="' + V2 + 'hud.js?v=1794791996192"><\/script>');
   async function loadObjects(entry, routeKey) {
     const key = entry.id + '|' + routeKey, myCtx = stageCtx, main = myCtx === mainCtx;
     if (key === objectsKey) return;
-    objectsKey = key;
+    objectsKey = key; objectsFailed = '';
     if (objectsGroup) scene.remove(objectsGroup);
     objectsGroup = null; objList = []; objNodes = []; wireMeshes = []; objDyn = {}; objProtos = {}; objSpawn = null; objCams = { tools: {}, bck: {} }; objShineSrc = []; objTrig = [];
     const info = entry.objects;
@@ -1763,7 +1764,7 @@ document.write('<script src="' + V2 + 'hud.js?v=1794791996192"><\/script>');
       update();
     } catch (err) {
       console.error(err);
-      if (main) showNotice('This episode\'s objects could not be loaded.');
+      if (main) { objectsFailed = key; showNotice(`This episode's objects could not be loaded${/zstd|compress|incomplete|isn't on the disc/i.test(err && err.message) ? ': the disc image is damaged' : ''}.`); }
     } finally { if (back) back(); }
   }
 
@@ -8001,7 +8002,11 @@ void main() {
     let data;
     // a replay (.msgt: Moonshine's per-frame MSTR capture) loads as a ghost too
     try { data = (window.GameTrace && window.GameTrace.isMstr(buffer)) ? window.GameTrace.parseMstrGhost(buffer, fileName) : parseSmsGhost(buffer); }
-    catch (err) { showNotice(`${fileName}: ${err.message}`); return null; }
+    catch (err) {
+      // (a .msgt without the replay header was tried as a ghost: say what it isn't)
+      showNotice(/\.msgt$/i.test(fileName) && /missing SGHF header/.test(err.message) ? `${fileName} isn't a Moonshine replay (it has no replay header).` : `${fileName}: ${err.message}`);
+      return null;
+    }
     const color = GHOST_COLORS[ghosts.length % GHOST_COLORS.length];
     const g = { data, fileName, color, visible: true, isSample, marker: makeMarker(color), path: makePath(data, color),
       secondary: buildSecondaryTimeline(data), selected: buildSelectedTimeline(data), water: makeWaterFx(), puddles: makeWetSpots() };
@@ -8638,7 +8643,7 @@ void main() {
   }
   // ?bench: a hands-off timing run. Live play starts with a stand-in controller running Mario in a
   // wide circle; after 5 s it times 15 s of frames and shows where the time went.
-  const BUILD_STAMP = '1794791996192';
+  const BUILD_STAMP = '1794794092029';
   (function bench() {
     if (!/[?&]bench\b/.test(location.search)) return;
     // (a new build of the site reloads the page and runs again: build.txt names the deployed one)
@@ -8928,7 +8933,8 @@ void main() {
       // (transparent, and the clear colour put back: the game's canvas is under this one)
       renderer.getClearColor(_clearC); const a = renderer.getClearAlpha();
       renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.setClearColor(_clearC, a);
-      setText($('discInfo'), discLabel ? discLabel + ' · loading the stage…' : 'none loaded');
+      const failed = discLabel && ((objectsKey && objectsFailed === objectsKey) || (gameLayer && gameLayer.hasFailed(gameWanted())));
+      setText($('discInfo'), discLabel ? discLabel + (failed ? ' · this stage couldn\'t be read from the disc' : ' · loading the stage…') : 'none loaded');
       return;
     }
     // (the simulated stage catches up with t over several drawn frames: its water is read each one)

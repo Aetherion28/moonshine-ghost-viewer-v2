@@ -485,6 +485,7 @@ export class GameLayer {
     /** Load a scene archive (e.g. "dolpic0"); resolves once it is the one drawn (or another was asked for). */
     /** Scenes that failed to load from this disc: not tried again every frame (each try would show its error again). */
     private failedScenes = new Set<string>();
+    public hasFailed(name: string) { return this.failedScenes.has(name); }
     public async loadScene(name: string) {
         const fs = this.fs;
         if (!fs || name === this.scene || name === this.loading || this.failedScenes.has(name)) return;

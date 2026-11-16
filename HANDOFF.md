@@ -44,7 +44,17 @@ This file is the short version: what was just done, what is open, where everythi
   A background tab is throttled to near nothing (timers and rAF), so long scripted sweeps there stall; use headless for sweeps, Chrome for looking.
   Local files can't be uploaded through the extension (only files shared with the session), so in Chrome use the shared ghosts.
 
-## What the last session did (2026-11-14/15: polish before the public announcement, live on main)
+## What the last session did (2026-11-15, second part: robustness, live on main)
+
+- Disc images in Dolphin's formats: RVZ, GCZ, CISO and uncompressed WIA are read (`web/src/discformats.ts`, wired into `disc.ts`), checked byte for byte against the ISO. WIA with LZMA or bzip2 gets a message saying how to convert.
+- A cut-off disc image is turned down when it's opened; a stage that can't be read shows its error once (it used to retry every frame) and the status line says so.
+- Memory: the stage caches kept every stage of a session, and a headless session through 57 stages stopped answering. They keep the last few stages now. Mip textures were cached across glTFs by texture index (one stage could get another's texture): fixed.
+- A cut-off or damaged replay plays up to the damage, with a warning; broken files get plain messages.
+- CI on every push (`.github/workflows/check.yml`, `CLAUDE.md` section 3): the type-check against its baseline, `site/` against a fresh build, the page in headless Chrome.
+- Sweeps: all 81 JP stages load and play from the ISO; RVZ, GCZ, CISO and WIA play; every broken file tried got a message.
+- The user said most speedrunners use the JP disc, and that ghost simulation (.smsghost) no longer worries them; the US, PAL, JP 1.1 and Korean discs weren't swept this time.
+
+## What the session before did (2026-11-14/15: polish before the public announcement, live on main)
 
 - The name is **Moonshine Ghost Viewer** everywhere (page title and header, README, legal page; the user dropped the "v2" tag). The repo and URL keep `-v2`.
 - The page serves three.js r128 and its two fonts itself (`web/vendor/`, copied to `site/vendor/` by build.mjs with their licences): no CDN or Google Fonts requests.

@@ -34,6 +34,8 @@ export const CAP = {
 export const INPUT_BYTES = 300;
 
 export class MstrError extends Error { }
+/** The file ends early or a chunk is damaged (its framing, compression or checksum): what came before is good. */
+class MstrCut extends MstrError { }
 
 export function fnv1a(b: Uint8Array, h = 2166136261): number {
     for (let i = 0; i < b.length; i++) h = Math.imul(h ^ b[i], 16777619) >>> 0;
@@ -59,6 +61,8 @@ export interface MstrRecord {
 export interface MstrSummary {
     header: MstrHeader;
     complete: boolean; producerError: number;
+    /** why the capture stops early when the file is cut off or damaged (the chunks before it are read) */
+    cut?: string;
     chunks: number; payloadBytes: number;
     frames: number; movementUpdates: number; rngCalls: number;
     records: Record<string, number>;
@@ -107,11 +111,14 @@ export function readMstr(buf: ArrayBuffer, visit?: (r: MstrRecord) => void): Mst
     let frames = 0, ticks = 0, chunks = 0, payload = 0, rngCalls = 0, scene: number | null = null;
     let input: Uint8Array | null = null;
     let at = 64;
+    // A cut-off or damaged chunk ends the capture there: the chunks before it were checked whole.
+    const cut = (m: string): never => { throw new MstrCut(m); };
+    try {
     for (; ;) {
-        if (at + 32 > bytes.length) fail(`Truncated capture at 0x${at.toString(16)}`);
+        if (at + 32 > bytes.length) cut(`Truncated capture at 0x${at.toString(16)}`);
         const v = (i: number) => dv.getUint32(at + i * 4);
         if (v(0) === MSTR_DONE) {
-            if (v(1) !== header.run || v(2) !== chunks || v(3) !== at || at + 32 !== bytes.length) fail('Invalid final capture boundary');
+            if (v(1) !== header.run || v(2) !== chunks || v(3) !== at || at + 32 !== bytes.length) cut('Invalid final capture boundary');
             const err = v(4) >>> 24;
             if ((v(4) & 0xffffff) !== header.capabilities) fail('Capture capabilities changed');
             return { header, complete: err === 0, producerError: err, chunks, payloadBytes: payload, frames, movementUpdates: ticks, rngCalls, records: counts };
@@ -120,26 +127,26 @@ export function readMstr(buf: ArrayBuffer, visit?: (r: MstrRecord) => void): Mst
         // v3: a chunk may be stored LZ4-compressed (r0 = 1) in blocks of r1 bytes: each block a u32 raw size and
         // a u32 stored size (high bit: LZ4 block format, else the raw bytes); n is the decompressed size
         const packed = header.version >= 3 && r0 === 1;
-        if (run !== header.run || seq !== chunks + 1 || !(n > 0 && n <= 0x80000) || (packed ? !(r1 > 0 && r1 <= 0x80000) : (r0 || r1)) || first > last) fail('Invalid chunk boundary');
+        if (run !== header.run || seq !== chunks + 1 || !(n > 0 && n <= 0x80000) || (packed ? !(r1 > 0 && r1 <= 0x80000) : (r0 || r1)) || first > last) cut('Invalid chunk boundary');
         let cbytes = bytes, cdv = dv, start = at + 32, stored = n;
         if (packed) {
             const out = new Uint8Array(n);
             let p = start, o = 0;
             while (o < n) {
-                if (p + 8 > bytes.length) fail(`Truncated capture at 0x${p.toString(16)}`);
+                if (p + 8 > bytes.length) cut(`Truncated capture at 0x${p.toString(16)}`);
                 const raw = dv.getUint32(p), sz = dv.getUint32(p + 4), len = sz & 0x7fffffff;
                 p += 8;
-                if (raw > r1 || o + raw > n || p + len > bytes.length) fail('Invalid compressed block');
-                if (sz & 0x80000000) { if (lz4Block(bytes, p, len, out, o) !== raw) fail('Invalid compressed block'); }
-                else { if (len !== raw) fail('Invalid stored block'); out.set(bytes.subarray(p, p + len), o); }
+                if (raw > r1 || o + raw > n || p + len > bytes.length) cut('Invalid compressed block');
+                if (sz & 0x80000000) { if (lz4Block(bytes, p, len, out, o) !== raw) cut('Invalid compressed block'); }
+                else { if (len !== raw) cut('Invalid stored block'); out.set(bytes.subarray(p, p + len), o); }
                 p += len; o += raw;
             }
             stored = p - start;
             cbytes = out; cdv = new DataView(out.buffer); start = 0;
         }
-        if (start + n > cbytes.length) fail(`Truncated capture at 0x${start.toString(16)}`);
+        if (start + n > cbytes.length) cut(`Truncated capture at 0x${start.toString(16)}`);
         const data = cbytes.subarray(start, start + n);
-        if (fnv1a(data) !== digest) fail(`Chunk ${seq} checksum mismatch`);
+        if (fnv1a(data) !== digest) cut(`Chunk ${seq} checksum mismatch`);
         let pos = 0, firstFrame = -1, lastFrame = -1;
         while (pos < n) {
             if (n - pos < 12) fail('Truncated record header');
@@ -177,6 +184,11 @@ export function readMstr(buf: ArrayBuffer, visit?: (r: MstrRecord) => void): Mst
         }
         if (firstFrame < 0 || firstFrame !== first || lastFrame !== last) fail('Chunk frame range mismatch');
         chunks++; payload += n; at = packed ? at + 32 + stored : start + n;
+    }
+    } catch (e) {
+        if (!(e instanceof MstrCut)) throw e;
+        if (!chunks) throw new MstrError(`The replay file is cut off or damaged before any of its data (${e.message}).`);
+        return { header, complete: false, producerError: 0, cut: e.message, chunks, payloadBytes: payload, frames, movementUpdates: ticks, rngCalls, records: counts };
     }
 }
 
