@@ -92,7 +92,9 @@ Everything is in the `v3` branch's `CLAUDE.md` (section 12, "The any% TAS throug
 - The sweep runner is `mantasweep.ps1` on the user's PC (`Desktop\SMS\ghosts\_incoming\tas`; queue `sweep_queue.txt`, results `sweep_results.txt`, the loop `run_mantasweep.cmd`, which the user starts).
 - **What was found**: the run really parts at Manta Storm's first split (~field 173182). The split's angle is a `rand()` in TBossMantaManager::spawn, so our RNG is already out of step there (a GPU-dependent consumer before it). The never-set f26 in spawn is not the cause.
   Only the savestate at Sirena's start (slot 1, field 170554) is faithful; a state saved mid-stage (slot 4) is not.
-- Paused there: a seed-offset test (`seedk=K`, queued as `seed1k_*`, commented out) to see how many rand steps we are off.
+- Seed offsets of ±40 matched nothing (2026-11-15). Since then a sweep of **every value (0..32767) of the first split's rand()** runs on the user's PC by itself, six Dolphins at once, about 5 days in all.
+  The user controls it with `sweep_control.cmd` (Pause / Start) in the `tas` folder; `README_SWEEP.txt` there explains it. Shine grabs land in `winners.txt` and `sweep\winners\`.
+  How it works, and what to do with a winner: the v3 branch's `CLAUDE.md` ("The split sweep") and `web/tools/tascapture/sweep/`.
 - The user's fallback is fine: re-sync per level.
 - **zelpikukirby's newer TAS** (Any% No ACE, YouTube igm67ZABQgE, 2024-11-01) was made on a modern GPU and may sync better, but its .dtm isn't public.
   The user is contacting him (drafts were written for an X reply; other routes: speedrun.com message, TASVideos PM, YouTube or Niconico comment, Twitch).
