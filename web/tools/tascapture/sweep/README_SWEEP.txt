@@ -27,13 +27,20 @@ Where the results are
 To see the runs that got furthest (PowerShell in this folder):
   Get-Content sweep_results.txt | Select-String '^split_' | Sort-Object { [int]([regex]::Match($_, 'field (\d+)').Groups[1].Value) } | Select-Object -Last 20
 
-When it's finished (or when you have a winner)
-  The value is the number in split_<value>. Its queue line (in sweep_queue.txt / winners.txt) holds the pokes that
-  force that split. Making a ghost and trace from it needs capture3.ps1 taught to load slot 1 and apply those pokes;
-  give that to the next Claude session with this file and the repository notes (v3 branch CLAUDE.md, "The any% TAS").
+Capturing the winners (continuing the TAS capture)
+  Press "Capture winners" in the control window, or double-click capture_winners.cmd. For every winner without a
+  finished capture it loads the Sirena savestate, sets that winner's split value and records the rest of the movie
+  exactly as capture3 did (speed 1, every tick and frame), up to six at once in the same 3x2 grid, each with its own
+  Dolphin copy (Dolphin-x64-c0..c5). The sweep pauses while they run (its current runs finish first) and goes on after.
+  Each capture takes about 25 minutes. Output: captures\split_<value>.bin, its _log.txt, and .done when finished.
+  A capture shows whether the movie stays in sync after Sirena: its log prints the area every 10 seconds.
+  You can run it again any time; finished winners are skipped. To recapture one, delete its .done file.
+  Turning a capture into per-level ghosts and traces is done in the repository (web/tools/tascapture/convert.ts and
+  mkghost.py, v3 branch); give the .bin to the next Claude session with this file.
 
 Files
   mantasweep.ps1  one run (read by every worker each run, so edits apply to the next run)
   run_worker.cmd  a worker's loop        parallel.ps1 / run_parallel.cmd  start the 6 workers
-  sweep_control.ps1 / .cmd  the window   pause.txt  exists while paused   stop.txt  ends the workers
+  sweep_control.ps1 / .cmd  the window   capture_winner.ps1 / capture_winners.ps1 / .cmd  the winners' captures
+    pause.txt  exists while paused   stop.txt  ends the workers
   Dolphin-x64, Dolphin-x64-w1..w5  each worker's own portable Dolphin (same settings, own savestates)
