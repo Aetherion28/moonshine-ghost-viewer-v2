@@ -52,10 +52,10 @@ if ($entry) { Add-Content -Path $claims -Value ((($entry -split ';')[0].Trim()) 
 } finally { $lk.Close() }
 if (-not $entry) { Log 'queue empty'; exit 2 }
 $parts = $entry -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0; $gecko = @(); $pokes = ''; $kill = 0; $grab = 0; $adapter = 0; $logall = 0; $shots = ''; $saveat = ''; $follow = 0; $speed = '0.00000000'; $mlog = ''; $savefield = 0; $splitshots = 0; $seedk = 'none'
+$name = $parts[0]; $sram = 'stereo'; $backend = 'D3D'; $game = @{}; $loadstate = 0; $savestate = 0; $gecko = @(); $pokes = ''; $kill = 0; $grab = 0; $adapter = 0; $logall = 0; $shots = ''; $saveat = ''; $follow = 0; $speed = '0.00000000'; $mlog = ''; $savefield = 0; $splitshots = 0; $seedk = 'none'; $rs = 0; $seedidx = '0:1'; $ycheck = ''; $endfield = 0
 foreach ($p in $parts[1..($parts.Count - 1)]) {
     $k, $v = $p -split '=', 2
-    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v } elseif ($k -eq 'gecko') { $gecko += $v } elseif ($k -eq 'poke') { $pokes = $v } elseif ($k -eq 'kill') { $kill = [int]$v } elseif ($k -eq 'grab') { $grab = [int]$v } elseif ($k -eq 'adapter') { $adapter = [int]$v } elseif ($k -eq 'logall') { $logall = [int]$v } elseif ($k -eq 'shots') { $shots = $v } elseif ($k -eq 'saveat') { $saveat = $v } elseif ($k -eq 'follow') { $follow = [int]$v } elseif ($k -eq 'speed') { $speed = $v } elseif ($k -eq 'mlog') { $mlog = $v } elseif ($k -eq 'savefield') { $savefield = [int]$v } elseif ($k -eq 'splitshots') { $splitshots = [int]$v } elseif ($k -eq 'seedk') { $seedk = $v }
+    if ($k -eq 'sram') { $sram = $v } elseif ($k -eq 'backend') { $backend = $v } elseif ($k -eq 'loadstate') { $loadstate = [int]$v } elseif ($k -eq 'savestate') { $savestate = [int]$v } elseif ($k -eq 'gecko') { $gecko += $v } elseif ($k -eq 'poke') { $pokes = $v } elseif ($k -eq 'kill') { $kill = [int]$v } elseif ($k -eq 'grab') { $grab = [int]$v } elseif ($k -eq 'adapter') { $adapter = [int]$v } elseif ($k -eq 'logall') { $logall = [int]$v } elseif ($k -eq 'shots') { $shots = $v } elseif ($k -eq 'saveat') { $saveat = $v } elseif ($k -eq 'follow') { $follow = [int]$v } elseif ($k -eq 'speed') { $speed = $v } elseif ($k -eq 'mlog') { $mlog = $v } elseif ($k -eq 'savefield') { $savefield = [int]$v } elseif ($k -eq 'splitshots') { $splitshots = [int]$v } elseif ($k -eq 'seedk') { $seedk = $v } elseif ($k -eq 'rs') { $rs = [int]$v } elseif ($k -eq 'seedidx') { $seedidx = $v } elseif ($k -eq 'ycheck') { $ycheck = $v } elseif ($k -eq 'endfield') { $endfield = [int]$v }
     else { $s, $key = $k -split '\.', 2; if (-not $game.ContainsKey($s)) { $game[$s] = @() }; $game[$s] += "$key = $v" }
 }
 Log "attempt $name : $entry"
@@ -274,6 +274,70 @@ public static class Sweep {
     }
     const uint VT_MANTA = 0x803E1874, VT_SHINE = 0x803C11E4;
     static double[] shotErr = new double[2];
+    // resync mode (rs=K): one Dolphin tries a batch of seed offsets from a level's start state. Each try: pause, load the state,
+    // step rand's seed (sweep order 0, 1, -1, 2, -2, ...: index i), play; Mario's y at rsYField (if set) must be >= rsYMin; success is a
+    // Shine (status 0x1302), then play on through the plaza and save the next level's start into rsSaveSlot
+    public static int rsStage = 0, rsIdx0 = 0, rsCount = 0, rsSaveSlot = 0; public static uint rsYField = 0, rsEnd = 0; public static float rsYMin = 0; public static int rsYArea = -1;
+    public static void setLabel(string s) { label = s; try { var f = ov; if (f != null && f.IsHandleCreated && f.Controls.Count > 0) f.BeginInvoke((Action)(() => { f.Controls[0].Text = s; f.Location = new System.Drawing.Point(cellX + cellW - f.Width, cellY); })); } catch { } }
+    static int rsDelta(int i) { return i == 0 ? 0 : (i % 2 == 1 ? (i + 1) / 2 : -(i / 2)); }
+    static string rsLoop(Process p, Stopwatch sw, StreamWriter track, StreamWriter log, int loadState) {
+        Action<string> L = (msg) => log.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "   " + msg);
+        System.Threading.Thread.Sleep(5000);
+        string baseLabel = label, passed = "", best = ""; int tested = 0; float bestY = -1e9f;
+        for (int ii = rsIdx0; ii < rsIdx0 + rsCount; ii++) {
+            int k = rsDelta(ii);
+            setLabel(baseLabel + "  seed " + k + "  (" + (ii - rsIdx0 + 1) + "/" + rsCount + ")");
+            L("seed " + k + ": pause " + menuCmd(p.Id, "Pause")); System.Threading.Thread.Sleep(600);
+            w32(0x80409F00, 0);
+            string lsr = stateCommand(p.Id, "Load State", loadState);
+            for (int tr = 0; tr < 30 && !lsr.StartsWith("ok"); tr++) { System.Threading.Thread.Sleep(1000); lsr = stateCommand(p.Id, "Load State", loadState); }
+            if (!lsr.StartsWith("ok")) return "ERROR load state " + loadState + ": " + lsr + " (" + tested + " seeds tried)";
+            long lw = sw.ElapsedMilliseconds; uint lrc = u32(0x80409F00); bool played = false;
+            while (lrc < 100000 && sw.ElapsedMilliseconds - lw < 60000) { System.Threading.Thread.Sleep(50); lrc = u32(0x80409F00);
+                if (!played && sw.ElapsedMilliseconds - lw > 15000) { played = true; L("no load while paused, play: " + menuCmd(p.Id, "Play")); } }
+            if (lrc < 100000) return "ERROR the state load didn't finish (field " + lrc + ", " + tested + " seeds tried)";
+            System.Threading.Thread.Sleep(200);
+            uint sd = u32(0x80408CF0), s0 = sd;
+            unchecked { for (int i = 0; i < Math.Abs(k); i++) sd = k > 0 ? sd * 1103515245u + 12345u : (sd - 12345u) * 0xEEB9EB65u; }
+            w32(0x80408CF0, sd); uint rc1 = u32(0x80409F00);
+            string pl = played ? "already running" : menuCmd(p.Id, "Play");
+            L("seed " + k + " at field " + rc1 + (played ? " (running)" : " (paused)") + ": " + s0.ToString("X8") + " -> " + sd.ToString("X8") + ", play " + pl);
+            track.WriteLine("seed " + rc1 + " " + s0.ToString("X8") + " " + k + " " + sd.ToString("X8") + (played ? " running" : " paused"));
+            tested++;
+            uint lastRc = rc1, lastTrack = 0, wonRc = 0; long lastChange = sw.ElapsedMilliseconds; bool won = false, wonPlaza = false, yDone = false; string fail = null, wonText = "";
+            while (true) {
+                if (p.HasExited) return "ERROR Dolphin exited at field " + lastRc + " (" + tested + " seeds tried)";
+                long now = sw.ElapsedMilliseconds;
+                if (now - lastFit > 500) { lastFit = now; fit(); }
+                uint rc = u32(0x80409F00);
+                if (rc != lastRc) { lastRc = rc; lastChange = now; }
+                if (now - lastChange > 60000) return "ERROR stalled at field " + rc + " (seed " + k + ")";
+                byte area = (byte)(u32(0x803E600C) >> 8), ep = (byte)u32(0x803E600C);
+                uint md = u32(0x8040A2A8), mario = u32(0x8040A378);
+                if (!won) {
+                    if (okp(md) && okp(mario) && u32(mario + 0x7C) == 0x1302) { won = true; wonRc = rc; wonText = "SUCCESS rs" + rsStage + " seed " + k + ": Shine at field " + rc + " in " + area + "," + ep;
+                        L("WINNER seed " + k + ": Shine at field " + rc + " in " + area + "," + ep); track.WriteLine("winner " + k + " " + rc + " " + area + "," + ep); glow(); continue; }
+                    if (rsYField > 0 && !yDone && rc >= rsYField && okp(mario)) { yDone = true; float yy = f32(mario + 0x14);
+                        track.WriteLine("ycheck " + k + " " + rc + " " + yy); if (yy > bestY) { bestY = yy; best = k.ToString(); }
+                        if (rsYArea >= 0 && area != rsYArea) { fail = "in area " + area + "," + ep + " at field " + rc + " (needs " + rsYArea + ")"; break; }
+                        if (yy < rsYMin) { fail = "y " + yy + " at field " + rc; break; }
+                        passed += (passed.Length > 0 ? "," : "") + k; L("seed " + k + " passed the y check (" + yy + ")"); }
+                    if (rc > rsEnd) { fail = "no Shine by field " + rc + " (area " + area + "," + ep + ")"; break; }
+                } else {
+                    if (area == 1 && okp(md)) wonPlaza = true;
+                    if (wonPlaza && area != 1 && okp(md) && okp(mario)) {
+                        System.Threading.Thread.Sleep(1500); uint src = u32(0x80409F00);
+                        L("save state " + rsSaveSlot + " at field " + src + " in " + area + "," + ep + ": " + stateCommand(p.Id, "Save State", rsSaveSlot)); System.Threading.Thread.Sleep(5000);
+                        return wonText + ", saved slot " + rsSaveSlot + " at field " + src + " in " + area + "," + ep; }
+                    if (rc - wonRc > 15000) return "FAIL rs" + rsStage + " seed " + k + ": Shine at " + wonRc + " but no next stage by field " + rc;
+                }
+                if (rc - lastTrack >= 10 && okp(mario)) { lastTrack = rc; track.WriteLine(rc + " s" + k + " a" + area + "," + ep + " " + u32(mario + 0x7C).ToString("X") + " " + f32(mario + 0x10) + " " + f32(mario + 0x14) + " " + f32(mario + 0x18) + " " + u32(0x80408CF0).ToString("X") + " h" + (u32(mario + 0x120) >> 16)); }
+                System.Threading.Thread.Sleep(1);
+            }
+            L("seed " + k + ": " + fail);
+        }
+        return "FAIL rs" + rsStage + " seeds " + rsDelta(rsIdx0) + " .. " + rsDelta(rsIdx0 + rsCount - 1) + ": no Shine (" + tested + " tried" + (rsYField > 0 ? ", best y " + bestY + " at seed " + best + ", y passed: " + (passed.Length > 0 ? passed : "none") : "") + ")";
+    }
     // the TAS video's Manta centroid (320x240, salmon pixels left of the text box), field:x:y
     const string VID = "173236:127.6:129.0,173237:128.8:128.8,173238:128.8:128.8,173239:128.1:127.4,173240:128.1:127.4,173241:128.2:126.1,173242:128.2:126.1,173243:131.7:126.2,173244:131.7:126.2,173245:129.8:124.0,173246:129.8:124.0,173247:130.8:122.0,173248:130.8:122.0,173249:130.4:120.4,173250:130.4:120.4,173251:130.1:119.7,173252:130.1:119.7,173253:132.1:117.4,173254:132.1:117.4,173255:132.3:115.2,173256:132.3:115.2,173257:133.5:112.6,173258:133.5:112.6,173259:132.8:111.2,173260:132.8:111.2,173261:133.7:109.9,173262:133.7:109.9,173263:135.0:107.3,173264:135.0:107.3,173265:136.2:105.5,173266:136.2:105.5,173267:137.1:104.3,173268:137.1:104.3,173269:138.4:103.2,173270:138.4:103.2,173271:139.3:103.4,173272:139.3:103.4,173273:139.5:102.3,173274:139.5:102.3,173275:140.6:102.5,173276:140.6:102.5,173277:140.8:101.9,173278:140.8:101.9,173279:141.0:100.5,173280:141.0:100.5,173281:142.0:102.4,173282:142.0:102.4,173283:139.5:98.3,173284:139.5:98.3,173285:135.6:91.9,173286:135.6:91.9,173287:132.0:91.3,173288:132.0:91.3,173289:124.5:90.5,173290:124.5:90.5,173291:124.1:93.7,173292:124.1:93.7,173293:132.2:106.1,173294:132.2:106.1,173295:138.0:112.1,173296:138.0:112.1,173297:137.8:108.5,173298:137.8:108.5,173299:137.6:106.9,173300:137.6:106.9";
     static void vidAt(uint f, out double x, out double y) { x = 0; y = 0; uint best = uint.MaxValue;
@@ -300,6 +364,7 @@ public static class Sweep {
             if (ram == 0) return "ERROR no game memory";
             for (int sw2 = 0; sw2 < 100 && mainOf(p.Id) == IntPtr.Zero; sw2++) System.Threading.Thread.Sleep(100);
             strip(p.Id); overlay();
+            if (rsStage > 0) return rsLoop(p, sw, track, log, loadState);
             if (loadState > 0) {
                 // load the savestate made at Sirena's start through Dolphin's menu, then check only Sirena
                 System.Threading.Thread.Sleep(5000);
@@ -495,6 +560,10 @@ $st = Join-Path $dol "User\StateSaves\GMSJ01.s0$loadstate"
 if ($loadstate -gt 0 -and -not (Test-Path $st)) { Log "waiting for the savestate $st"; exit 2 }
 if ($true) {
 $value = ($name -replace '^split\d*_', '') -replace '_', '+'
+$rsSlot = 5 + (($rs + 1) % 5); $si = $seedidx -split ':'
+if ($rs -gt 0) { $value = "level $rs" }
+[Sweep]::rsStage = $rs; [Sweep]::rsIdx0 = [int]$si[0]; [Sweep]::rsCount = [int]$si[1]; [Sweep]::rsSaveSlot = $rsSlot; [Sweep]::rsEnd = [uint32]$endfield
+if ($ycheck) { $yc = $ycheck -split ':'; [Sweep]::rsYField = [uint32]$yc[0]; [Sweep]::rsYMin = [float]$yc[1]; if ($yc.Count -gt 2) { [Sweep]::rsYArea = [int]$yc[2] } }
 $stageFile = Join-Path $here 'stage\stage.txt'
 [Sweep]::stage = 0; if (Test-Path $stageFile) { try { [Sweep]::stage = [long](Get-Content $stageFile -First 1) } catch { } }
 [Sweep]::cellIndex = $Worker % 6; [Sweep]::cellFile = Join-Path $here ("stage\cell" + ($Worker % 6) + ".txt")
@@ -509,7 +578,25 @@ $kind = if ($r.StartsWith('SUCCESS')) { 'WINNER' } elseif ($r.StartsWith('FAIL h
 $rq = $r -replace '"', "'"
 $lk = Lock; try { Add-Content -Path $results -Value "$name | $r | $mins min | $entry (w$Worker, #$attemptNo)"
     if (-not (Test-Path $csv)) { Add-Content -Path $csv -Value 'attempt,value,outcome,field,minutes,worker,finished,result' }
-    if ($name -like 'split*_*') { Add-Content -Path $csv -Value ("$attemptNo,$value,$kind,$hitf,$mins,w$Worker," + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ",`"$rq`"") } } finally { $lk.Close() }
+    if ($name -like 'split*_*' -or $name -like 'rs*_*') { Add-Content -Path $csv -Value ("$attemptNo,$value,$kind,$hitf,$mins,w$Worker," + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ",`"$rq`"") } } finally { $lk.Close() }
+if ($r.StartsWith('SUCCESS') -and $rs -gt 0 -and $r -match 'saved slot (\d+) at field (\d+) in (\d+),(\d+)') {
+    # resync: this level's seed is found; hand its next level's start state to every Dolphin and queue the next level's seed batches
+    $slot = [int]$matches[1]; $sfield = [int]$matches[2]; $narea = $matches[3]; $nep = $matches[4]; $next = $rs + 1
+    $sd = Join-Path $dol 'User\StateSaves'; $rsd = Join-Path $here 'resync'; $keep = Join-Path $rsd "level$next"; New-Item -ItemType Directory -Force -Path $keep | Out-Null
+    Copy-Item (Join-Path $here "sweep\$safe.txt") (Join-Path $rsd "level$rs`_winner_track.txt") -Force
+    $lk = Lock; try {
+        $q1 = @(); if (Test-Path $queue1) { $q1 = [IO.File]::ReadAllLines($queue1) }
+        if (-not ($q1 | Where-Object { $_ -like "rs$next`_*" })) {
+            foreach ($f in @("GMSJ01.s0$slot", "GMSJ01.s0$slot.dtm")) { Copy-Item (Join-Path $sd $f) (Join-Path $keep $f) -Force
+                foreach ($d in Get-ChildItem $here -Directory -Filter 'Dolphin-x64*') { $t = Join-Path $d.FullName 'User\StateSaves'; if ((Test-Path $t) -and ($t -ne $sd)) { Copy-Item (Join-Path $sd $f) (Join-Path $t $f) -Force } } }
+            $out = New-Object System.Collections.Generic.List[string]
+            foreach ($l in $q1) { if ($l -like "rs$rs`_*") { $out.Add("# " + $l) } else { $out.Add($l) } }
+            for ($i0 = 0; $i0 -lt 40000; $i0 += 50) { $out.Add("rs$next`_b$i0; sram=stereo; backend=D3D; loadstate=$slot; rs=$next; seedidx=$i0`:50; endfield=" + ($sfield + 9000)) }
+            [IO.File]::WriteAllLines($queue1, $out)
+            Add-Content -Path (Join-Path $rsd 'resync_log.txt') -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + " | level $rs solved by $name (#$attemptNo) | $r | level $next starts in $narea,$nep at field $sfield, slot $slot")
+        } else { Add-Content -Path (Join-Path $rsd 'resync_log.txt') -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + " | another level $rs winner, not used: $name | $r") }
+    } finally { $lk.Close() }
+}
 if ($r.StartsWith('SUCCESS') -and ($kill -or $grab)) {
     # a forced pass: capture3 doesn't force yet, so stop here for it to be taught (stop.txt ends the loop)
     Set-Content -Path (Join-Path $here 'FORCED_WINNER.txt') -Value "$entry`r`n$r"

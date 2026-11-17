@@ -11,6 +11,21 @@ direction. On this PC the random direction comes out different from the original
 fails. The SWEEP tries every possible direction (there are 32768) to find one where Mario survives the fight and
 grabs the Shine. A run that does is called a WINNER. Six copies of the game run at the same time to go faster.
 
+1b. WHAT IS RUNNING NOW (FROM 17 NOVEMBER 2026): THE RESYNC
+
+Manta Storm could not be won the way the TAS won it. So the Mantas are now killed by force (a state saved after that,
+at the start of Sirena Beach episode 2, is save slot 3), and the rest of the TAS is put back in step ONE LEVEL AT A TIME.
+After the forced fight the game's random numbers are different from the TAS's. Each run (lines named rs1_b..., rs2_b...)
+loads the level's start, moves the random numbers forward or back by a small number (0, 1, -1, 2, -2, ...), and plays the
+TAS from there. One game window tries 50 such numbers in a row without closing; its label shows "seed N (k/50)".
+A try ends early when Mario is in the wrong place (level 1: not in the hotel above the ground floor at field 178700),
+or when no Shine came in time. A try that gets the Shine is the winner: its window glows gold, plays on to the next
+level, saves that level's start (slot 5 to 9), gives it to all six games and queues the next level's runs by itself.
+
+Where to look: resync\resync_log.txt (one line per level solved), sweep_results.txt (one line per batch of 50),
+resync\levelN\ (the saved start of level N). Buttons work as before: PAUSE, START, Stop right now.
+To go back to the old Manta search: put a # in front of the rs lines in sweep_queue_first.txt.
+
 2. HOW DO I OPEN THE PROGRAM?
 -----------------------------
 Double-click  "Manta Sweep.vbs"  in the folder above (or the "Manta Sweep" shortcut on the Desktop, if you made one
